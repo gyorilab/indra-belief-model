@@ -285,13 +285,17 @@ def ingest_statements(
 
         # Supports/supported_by edges (UUIDs in the dump; resolved post-ingest
         # in a separate pass since the referenced statement may not have been
-        # ingested yet)
+        # ingested yet). Force str() — INDRA leaves cross-dump references as
+        # `Unresolved(...)` placeholder objects when the referenced Statement
+        # isn't in the same JSON dump (real condition in rasmachine corpora).
+        # DuckDB's binder rejects those; str() yields the UUID-like repr that
+        # the post-ingest resolve pass can still join against indra_uuid.
         for to_uuid in supports:
             con.execute(
                 """INSERT OR REPLACE INTO supports_edge
                    (from_stmt_hash, to_stmt_hash, kind, source_dump_id)
                    VALUES (?, ?, 'supports', ?)""",
-                [stmt_hash, to_uuid, source_dump_id],
+                [stmt_hash, str(to_uuid), source_dump_id],
             )
             counters["n_edges"] += 1
         for from_uuid in supported_by:
@@ -299,7 +303,7 @@ def ingest_statements(
                 """INSERT OR REPLACE INTO supports_edge
                    (from_stmt_hash, to_stmt_hash, kind, source_dump_id)
                    VALUES (?, ?, 'supported_by', ?)""",
-                [stmt_hash, from_uuid, source_dump_id],
+                [stmt_hash, str(from_uuid), source_dump_id],
             )
             counters["n_edges"] += 1
 
