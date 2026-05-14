@@ -92,6 +92,13 @@ LOCAL_MODELS: dict[str, dict] = {
         "typical_tokens": 400,
         "max_tokens": 8192,
         "timeout": 120,
+        # Google's OpenAI-compat endpoint strictly rejects unknown
+        # extra_body keys (400 INVALID_ARGUMENT on chat_template_kwargs,
+        # format, num_ctx — see model_client.call() for the field list).
+        # Surfaced 2026-05-14 by a 10h rasmachine score that completed
+        # 21k/47k evidences with every LLM call 400-failing; deterministic
+        # substrate-only fallback was masking it from the progress stream.
+        "strict_openai_compat": True,
         # PaidTier3 quota: 16k input tokens/min for Gemma. With ~3k input
         # tokens per parse_evidence call, true sustainable throughput is
         # ~5 req/min — so concurrency above 2 just burns the budget on
@@ -107,6 +114,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "typical_tokens": 400,
         "max_tokens": 8192,
         "timeout": 120,
+        "strict_openai_compat": True,
         "concurrency_hint": 2,
     },
 }
@@ -405,20 +413,29 @@ class ModelClient:
         #     emitting 2400+ tokens of reasoning_content despite the
         #     "reasoning_effort=none" doctrine.
         extra_body = {}
+        # Backend strictness: Google's OpenAI-compat endpoint
+        # (generativelanguage.googleapis.com/v1beta/openai/) rejects unknown
+        # extra_body fields with 400 INVALID_ARGUMENT. Ollama / LiteLLM proxy
+        # backends ignore unknown keys. Skip the Ollama-isms when the model
+        # is flagged strict_openai_compat.
+        strict = bool(self.config.get("strict_openai_compat"))
         effort = reasoning_effort if reasoning_effort is not None \
                  else self.config.get("reasoning_effort")
         if effort:
             extra_body["reasoning_effort"] = effort
             # When the caller asks for "none", that's a request to disable
             # thinking entirely. Translate to the chat_template_kwargs
-            # mechanism Ollama honors.
-            if effort == "none":
+            # mechanism Ollama honors — but only on permissive backends.
+            if effort == "none" and not strict:
                 extra_body["chat_template_kwargs"] = {"enable_thinking": False}
-        if self.config.get("num_ctx"):
+        if self.config.get("num_ctx") and not strict:
             extra_body["num_ctx"] = self.config["num_ctx"]
-        if response_format is not None:
+        if response_format is not None and not strict:
             # Belt-and-suspenders: set Ollama's native `format` field too.
-            # Backends that don't recognize it ignore unknown extra_body keys.
+            # Backends that don't recognize it ignore unknown extra_body keys
+            # — except Google's strict OpenAI-compat, which 400s. The
+            # standard `response_format` (set above) is sufficient for
+            # Google AI Studio's JSON mode.
             extra_body["format"] = "json"
         if extra_body:
             kwargs["extra_body"] = extra_body
