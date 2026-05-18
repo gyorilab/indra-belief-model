@@ -47,6 +47,42 @@ modification (phosphorylation, methylation, etc.), activity \
 binding (Complex/protein-protein), localization (translocation). \
 Signs: positive, negative, neutral (binding/translocation).
 
+BINDING CRITERION (read before answering): `direct_sign_match` means \
+the relation is asserted between the CLAIM SUBJECT and the CLAIM OBJECT \
+SPECIFICALLY — not merely that both entities appear near relation \
+language. Three adversarial patterns that look like a match but are \
+`no_relation`:
+  • Tangential mention — the subject's effect is asserted on a DIFFERENT \
+    downstream entity, and the claim object appears only as background \
+    (e.g., "LPA induces p38" with JNK mentioned in the same paragraph \
+    but not acted on by LPA).
+  • Co-occurrence via third party — subject and object both bind / are \
+    acted on by a THIRD entity, not each other (e.g., MED12 and MED13 \
+    each interact with the Middle module — not described as binding each \
+    other).
+  • Co-listed effect — subject and object are co-listed as features or \
+    downstream effects of a third cause, with no direct edge asserted \
+    between them (e.g., catalase and AP-1 both linked to ICAM-1 \
+    induction; catalase is not asserted to activate AP-1).
+If any of these patterns describe the evidence, answer `no_relation`.
+
+COUNTER-EXAMPLES that ARE `direct_sign_match` (do NOT collapse to \
+`no_relation`):
+  • LOF-mediated regulation — silencing/knockdown/blockade of the \
+    SUBJECT attenuates or eliminates the OBJECT's response or activity. \
+    The subject regulates the object; the LOF readout asserts the \
+    relation indirectly but unambiguously.
+  • Complex-disruption / multi-member complex — the SUBJECT "binds and \
+    disrupts" OR is named as a member of a NAMED multi-protein complex \
+    that also contains the OBJECT (e.g., "trimeric complex of A with B \
+    and C", "PLpro binds and disrupts the STING-TRAF3-TBK1 complex"). \
+    Co-membership of one named complex is direct binding evidence.
+  • Effect via named effector — the SUBJECT's effect is described \
+    through a NAMED downstream effector that is the canonical regulator \
+    of the OBJECT (e.g., "X activates Y's effector Z" with Z the \
+    accepted downstream readout of Y). For causal axes (activity / \
+    amount), this is `via_mediator` — NOT `no_relation`.
+
 Answer ONE of:
   direct_sign_match     — the evidence directly asserts the SAME \
     axis+sign between subject and object. (Sign may have been inverted \
@@ -107,6 +143,19 @@ _FEW_SHOTS: list[tuple[str, str]] = [
         '"rationale": "DNA binding, not protein-protein Complex"}',
     ),
     (
+        # Z1b: multi-member complex — both claim entities are CO-MEMBERS
+        # of the same NAMED multi-protein complex. Distinct from
+        # co-occurrence-via-third-party (where each entity separately
+        # binds a third party without being members of one complex).
+        # Synthetic placeholder names — no holdout paraphrase.
+        "CLAIM: subject=ProteinQ, object=ProteinR, axis=binding, sign=neutral\n"
+        "EVIDENCE: A heterotrimeric complex composed of ProteinP, "
+        "ProteinQ, and ProteinR assembles on the membrane to drive "
+        "signaling.",
+        '{"answer": "direct_sign_match", '
+        '"rationale": "ProteinQ and ProteinR are co-members of one named heterotrimeric complex"}',
+    ),
+    (
         "CLAIM: subject=FactorR, object=TargetA, axis=activity, sign=negative\n"
         "EVIDENCE: AdaptorP is recruited by FactorR to drive expression by "
         "suppressing TargetA activity in cell models.",
@@ -119,6 +168,40 @@ _FEW_SHOTS: list[tuple[str, str]] = [
         "downstream steps.",
         '{"answer": "via_mediator_partial", '
         '"rationale": "chain via several steps but no named intermediate"}',
+    ),
+    (
+        # Tangential mention: subject acts on a DIFFERENT downstream
+        # entity; claim object only appears as background. (LPA/JNK
+        # pattern from eval_set_v4 walk.)
+        "CLAIM: subject=LPA, object=JNK, axis=activity, sign=positive\n"
+        "EVIDENCE: LPA induces p38 activation in prostate cancer cells "
+        "and suggests a potential involvement of ERK and p38 in LPA-"
+        "induced PC3 cell migration. Although LPA activates several "
+        "MAPKs, JNK was not measured here.",
+        '{"answer": "no_relation", '
+        '"rationale": "LPA→p38 is asserted; LPA→JNK is not — JNK appears only as background"}',
+    ),
+    (
+        # Co-occurrence via third party: subject and object each bind a
+        # third entity, not each other. (MED12/MED13 pattern from
+        # eval_set_v4 walk.)
+        "CLAIM: subject=MED12, object=MED13, axis=binding, sign=neutral\n"
+        "EVIDENCE: Mediator Middle module subunits are primarily "
+        "responsible for interactions with Med13 (strong) and Med12 "
+        "(weak).",
+        '{"answer": "no_relation", '
+        '"rationale": "MED12 and MED13 each bind the Middle module — not described as binding each other"}',
+    ),
+    (
+        # Co-listed effect: subject and object are co-listed downstream
+        # of a third cause; no direct edge between them. (CAT/AP-1
+        # pattern from eval_set_v4 walk.)
+        "CLAIM: subject=CAT, object=AP1, axis=activity, sign=positive\n"
+        "EVIDENCE: Gamma-irradiation-induced intercellular adhesion "
+        "molecule-1 expression is associated with catalase: activation "
+        "of AP-1 and JNK.",
+        '{"answer": "no_relation", '
+        '"rationale": "catalase and AP-1 are co-listed as features of the ICAM-1 system; catalase is not asserted to activate AP-1"}',
     ),
     (
         "CLAIM: subject=MAPK1, object=GAPDH, axis=activity, sign=positive\n"

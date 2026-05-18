@@ -579,11 +579,14 @@ def _route_scope(
     subj_positions = _find_alias_positions(evidence_text, subj_aliases)
     obj_positions = _find_alias_positions(evidence_text, obj_aliases)
 
-    # Negation detection — fires ONLY when a verb-negator cue sits
-    # between the subject and object positions in linear order AND
-    # within proximity window of at least one. This catches "X did NOT
-    # activate Y" but rejects "X activates Z, but [unrelated negation]"
-    # where the negator governs a different clause.
+    # Y1 — Negation detection PROPOSES, never commits. The regex was
+    # over-firing on contrastive controls ("but not GST alone"),
+    # excluded substrates ("not TCRζ ITAMs"), and other-clause negations
+    # ("did not impair OTHER pathways"). 6 of 13 eval_set_v4 FN cases
+    # were substrate scope=negated false-positives. Escalate to LLM
+    # whenever any negation cue is in the (subj, obj) span; the hint
+    # names the cue position so the LLM can decide whether it governs
+    # the claim relation or a contrastive clause.
     if subj_positions and obj_positions:
         span_lo = min(min(subj_positions), min(obj_positions))
         span_hi = max(max(subj_positions), max(obj_positions))
@@ -596,14 +599,21 @@ def _route_scope(
             within_obj = any(abs(p - neg_pos) <= _LOCAL_WINDOW_CHARS
                              for p in obj_positions)
             if within_subj or within_obj:
-                return ProbeResponse(
+                neg_hint = (
+                    f"substrate detected negation cue {m.group()!r} at "
+                    f"position {neg_pos}, between subject @ "
+                    f"{subj_positions[:2]} and object @ {obj_positions[:2]}. "
+                    f"Verify whether this cue governs the claim relation "
+                    f"or a contrastive control / non-claim clause "
+                    f"(e.g., 'A but not B', 'X did not affect Y but did "
+                    f"affect Z', 'pulled down X but not control'). Answer "
+                    f"'negated' only if the cue negates the claim relation."
+                )
+                return ProbeRequest(
                     kind="scope",
-                    answer="negated",
-                    source="substrate",
-                    confidence="medium",
-                    rationale=f"negation cue {m.group()!r} between "
-                              f"claim entities, within "
-                              f"{_LOCAL_WINDOW_CHARS}-char window",
+                    claim_component=claim_component,
+                    evidence_text=evidence_text,
+                    substrate_hint=neg_hint,
                 )
 
     # M10 explicit hedge markers — already scope-anchored at detection time.

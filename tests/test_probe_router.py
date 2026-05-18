@@ -329,7 +329,11 @@ def test_relation_binding_symmetric_swapped_treated_as_match() -> None:
 # scope probe
 # ---------------------------------------------------------------------------
 
-def test_scope_negation_within_window() -> None:
+def test_scope_negation_within_window_escalates_to_llm() -> None:
+    """Y1: substrate detected a negation cue in (subj, obj) span, but
+    cannot commit. The regex was over-firing on contrastive controls
+    ('but not X', 'did not impair OTHER pathways') — defer to LLM.
+    The substrate_hint names the cue + position for the LLM to verify."""
     claim = _claim()
     ctx = _ctx(
         aliases={"MAPK1": frozenset({"MAPK1"}), "JUN": frozenset({"JUN"})},
@@ -337,8 +341,9 @@ def test_scope_negation_within_window() -> None:
     routings = substrate_route(
         claim, ctx, "MAPK1 did not activate JUN in any condition tested.")
     r = routings["scope"]
-    assert isinstance(r, ProbeResponse)
-    assert r.answer == "negated"
+    assert isinstance(r, ProbeRequest)
+    # hint must name the negation cue so the LLM doesn't redo the detection
+    assert "negation cue" in (r.substrate_hint or "")
 
 
 def test_scope_negation_too_far_escalates() -> None:

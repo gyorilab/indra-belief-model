@@ -83,6 +83,28 @@ _FEW_SHOTS: list[tuple[str, str]] = [
         '"rationale": "negation governs ELK1, not the MAPK1-JUN relation"}',
     ),
     (
+        # Y1: contrastive-suppression pattern. "X suppresses A and B but did not
+        # impair C" — the negation governs the OTHER targets (C), not the
+        # claim relation (X → A). Substrate flags the negation cue; LLM resolves.
+        "CLAIM: relation between SLIT2 and RAC2\n"
+        "EVIDENCE: Slit2 mediated these effects by suppressing inducible "
+        "activation of Cdc42 and Rac2 but did not impair activation of "
+        "other major kinase pathways involved in neutrophil migration.",
+        '{"answer": "asserted", '
+        '"rationale": "Slit2 suppresses Cdc42 and Rac2 — affirmed; '
+        '\\"did not impair\\" governs OTHER pathways (contrastive scope)"}',
+    ),
+    (
+        # Y1: pull-down with control exclusion — "X pulled down Y but not control".
+        "CLAIM: relation between SOX10 and CTNNB1\n"
+        "EVIDENCE: V5-tagged SOX10 was able to pull down GST-tagged "
+        "β-catenin (GST-β-catenin) but not GST alone, suggesting that "
+        "SOX10 directly interacts with β-catenin.",
+        '{"answer": "asserted", '
+        '"rationale": "\\"but not GST alone\\" excludes the control bait; '
+        'the SOX10-β-catenin interaction IS asserted"}',
+    ),
+    (
         "CLAIM: relation between MAPK1 and JUN\n"
         "EVIDENCE: We characterized MAPK1 substrates in cycling cells.",
         '{"answer": "abstain", '

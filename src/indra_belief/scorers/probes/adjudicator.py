@@ -62,18 +62,56 @@ SCOPE_RETAIN = {
 }
 
 
-def _apply_scope(joint_score: float, scope_answer: str | None) -> float:
+def _apply_scope(
+    joint_score: float,
+    scope_answer: str | None,
+    ra_effective: str | None = None,
+) -> float:
     """Modulate the pre-scope score by scope answer.
 
     - direct/asserted → unchanged
     - hedged → pull toward 0.5 (retain 40% of polarity)
-    - negated → flip (1 - score); sentence asserts the opposite
+    - negated → handled below; semantics depend on ra_effective
     - abstain → mild pull toward 0.5
+
+    AA-T1.A: when scope=negated, only flip when ra_effective was a
+    `direct_sign_match` (post-LOF). For any other ra_effective the score
+    already encodes "relation not asserted" (low base for sign_mismatch,
+    axis_mismatch, no_relation, partner_mismatch); applying `1 - x` there
+    DOUBLE-COUNTS the negation and turns a 0.10 floor into a 0.90
+    false-positive (the Y-phase Class-B FPs: #9 MICA→B2M, #10 P2RX4→IL1B,
+    #11 VHL→RALBP1, all "neither X nor Y interacted"-style evidence).
+    Negation on a non-match axis is the SECOND signal that the relation
+    isn't being asserted — confirm low rather than flipping.
     """
     if scope_answer == "negated":
-        return 1.0 - joint_score
+        if ra_effective == "direct_sign_match":
+            # Genuine flip: evidence positively asserts the relation,
+            # then scope says "this assertion is negated" → incorrect.
+            return 1.0 - joint_score
+        # Any non-match ra under negated: confirm the relation isn't
+        # asserted. Clamp to the existing floor without flipping.
+        return min(joint_score, 0.10)
     retain = SCOPE_RETAIN.get(scope_answer or "direct", 1.0)
     return 0.5 + retain * (joint_score - 0.5)
+
+
+def _effective_relation_axis(bundle: ProbeBundle) -> str:
+    """Apply Y2 LOF perturbation propagation to the relation_axis answer.
+
+    Returns the answer interpreted under the subject's perturbation state:
+    - LOF on subject inverts direct_sign_{match,mismatch}
+    - GOF / none: passthrough
+    Other answers (axis_mismatch, partner_mismatch, no_relation, mediator,
+    abstain) are unchanged regardless of perturbation.
+    """
+    ra = bundle.relation_axis.answer
+    if bundle.subject_role.perturbation == "LOF":
+        return {
+            "direct_sign_match":    "direct_sign_mismatch",
+            "direct_sign_mismatch": "direct_sign_match",
+        }.get(ra, ra)
+    return ra
 
 
 def _confidence_from_score(score: float) -> str:
@@ -320,8 +358,18 @@ def _claim_score(bundle: ProbeBundle, claim: ClaimCommitment) -> float:
     if has_mediator and not _is_causal_claim(claim.stmt_type):
         return 0.30
 
-    # Stage 3: relation strength.
-    return RELATION_AXIS_BASE.get(ra, 0.50)
+    # Y2 — Stage 3a: perturbation propagation.
+    # When the subject is observed under loss-of-function (knockout,
+    # knockdown, inhibitor, mutant), the sentence describes the
+    # INVERTED relationship. Example: 'AGER blockade reduced MMP-2'
+    # ⇒ AGER normally INCREASES MMP-2 ⇒ Activation(AGER, MMP2) is correct.
+    # The relation_axis probe reports what it OBSERVES; perturbation
+    # flips the interpretation. Mirror this for GOF (gain-of-function)
+    # which preserves the observed direction.
+    ra_effective = _effective_relation_axis(bundle)
+
+    # Stage 3b: relation strength under effective answer.
+    return RELATION_AXIS_BASE.get(ra_effective, 0.50)
 
 
 def _collect_reasons(
@@ -398,7 +446,9 @@ def adjudicate(
     )
 
     pre_scope = _claim_score(bundle, claim)
-    score = _apply_scope(pre_scope, bundle.scope.answer)
+    score = _apply_scope(
+        pre_scope, bundle.scope.answer, _effective_relation_axis(bundle),
+    )
 
     reasons, rationale = _collect_reasons(bundle, claim)
 

@@ -848,11 +848,13 @@ def _detect_hedge_markers(
 # marker construct names ANY surface form of the claim subject (or
 # object). When found, ctx.subject_perturbation_marker is set.
 _LOF_PATTERNS = (
-    # "<X> inhibitor", "<X> inhibitors", "<X> blocker", "<X> antagonist"
+    # "<X> inhibitor", "<X> blocker", "<X> antagonist", "<X> blockade"
     # Optionally allow a parenthetical acronym/expansion between entity
-    # and marker: "histone deacetylase (HDAC) inhibitors".
+    # and marker: "histone deacetylase (HDAC) inhibitors". Z2 added
+    # "blockade" to the entity-first alternation; previously only
+    # "blockade of X" was captured.
     r"\b(?P<X>{name})(?:\s*\([^)]*\))?\s+"
-    r"(?:inhibitor[s]?|blocker[s]?|antagonist[s]?)\b",
+    r"(?:inhibitor[s]?|blocker[s]?|antagonist[s]?|blockade)\b",
     # Catch the parenthetical-inner case too: "(HDAC) inhibitors"
     # binds to HDAC even when the "X (Y) inhibitor" outer form is
     # captured by the same regex above (X=histone deacetylase). The
@@ -860,7 +862,7 @@ _LOF_PATTERNS = (
     # missing the marker when ctx.aliases doesn't include the
     # spelled-out form.
     r"\((?P<X>{name})\)\s+"
-    r"(?:inhibitor[s]?|blocker[s]?|antagonist[s]?)\b",
+    r"(?:inhibitor[s]?|blocker[s]?|antagonist[s]?|blockade)\b",
     # "inhibitor of <X>", "inhibition of <X>", "blockade of <X>"
     r"\b(?:inhibitor[s]?|inhibition|blockade)\s+of\s+(?P<X>{name})\b",
     # "<X> knockdown", "<X> KO", "<X> siRNA", "<X> shRNA"
@@ -868,14 +870,25 @@ _LOF_PATTERNS = (
     # regression VHL-VIM ("VHL silencing increased vimentin") missed
     # the perturbation flag because entity-first "silencing" wasn't
     # in the alternation; only verb-first "silencing of X" was.
+    # Z2: extended with "mutant" — perturbation comparator. INDRA
+    # evidence treats "<X> mutant" as a deliberate variant, not
+    # natural occurrence. Z2 also adds "dominant-negative/dominant
+    # negative" as a perturbation form (separate pattern below).
     r"\b(?P<X>{name})\s+(?:knockdown|knock[\- ]?down|knockout|KO|"
-    r"siRNA|shRNA|silencing|null|deficient|deficiency|depletion)\b",
+    r"siRNA|shRNA|silencing|null|deficient|deficiency|depletion|"
+    r"mutant)\b",
     # "knockdown of <X>", "silencing of <X>", "depletion of <X>",
     # "inhibiting <X>", "blocking <X>", "blockade of <X>"
     r"\b(?:knockdown|knock[\- ]?down|silencing|depletion|"
     r"inhibiting|blocking|disruption)\s+of\s+(?P<X>{name})\b",
     # "inhibiting <X>", "blocking <X>" (without "of")
     r"\b(?:inhibiting|blocking|antagonizing|abrogating)\s+(?P<X>{name})\b",
+    # Z2: "dominant-negative <X>", "dominant negative <X>",
+    # "mutant <X>" — verb-first / adjective-first LOF surface forms.
+    # "Dominant-negative" is always a deliberate perturbation in INDRA
+    # evidence; "mutant <X>" pairs with the entity-first form above
+    # for symmetric coverage.
+    r"\b(?:dominant[\- ]negative|mutant)\s+(?P<X>{name})\b",
 )
 _GOF_PATTERNS = (
     # "overexpression of <X>", "ectopic expression of <X>"

@@ -95,6 +95,143 @@ def test_sign_mismatch_incorrect() -> None:
     assert "sign_mismatch" in adj.reasons
 
 
+# --- AA-T1.A: negated + non-match-axis must not flip to correct ---
+
+def test_aa_negated_sign_mismatch_stays_incorrect() -> None:
+    """AA-T1.A: scope=negated + relation_axis=direct_sign_mismatch must
+    NOT flip to correct/high via `1 - 0.10 = 0.90`. This was the
+    Y-phase Class-B FP pattern (#9, #10, #11): evidence like 'neither X
+    nor Y interacted' double-encodes the negation across both probes
+    and the legacy `_apply_scope` flip double-counted it."""
+    adj = adjudicate(
+        _claim(),
+        _bundle(relation="direct_sign_mismatch", scope="negated"),
+        (), ctx=EvidenceContext(),
+    )
+    assert adj.verdict == "incorrect"
+    assert adj.score <= 0.10
+
+
+def test_aa_negated_no_relation_stays_incorrect() -> None:
+    """AA-T1.A: negated + no_relation must stay incorrect.
+    Without the fix, 1 - 0.08 = 0.92 → false positive."""
+    adj = adjudicate(
+        _claim(),
+        _bundle(relation="no_relation", scope="negated"),
+        (), ctx=EvidenceContext(),
+    )
+    assert adj.verdict == "incorrect"
+    assert adj.score <= 0.10
+
+
+def test_aa_negated_axis_mismatch_stays_incorrect() -> None:
+    """AA-T1.A: negated + axis_mismatch must stay incorrect."""
+    adj = adjudicate(
+        _claim(),
+        _bundle(relation="direct_axis_mismatch", scope="negated"),
+        (), ctx=EvidenceContext(),
+    )
+    assert adj.verdict == "incorrect"
+    assert adj.score <= 0.10
+
+
+def test_aa_negated_direct_sign_match_still_flips() -> None:
+    """AA-T1.A: the genuine flip case still works: scope=negated on a
+    direct_sign_match should land at 1 - 0.92 = 0.08 → incorrect/high.
+    This is the original Y1-era semantics; we did not break it."""
+    adj = adjudicate(
+        _claim(),
+        _bundle(relation="direct_sign_match", scope="negated"),
+        (), ctx=EvidenceContext(),
+    )
+    assert adj.verdict == "incorrect"
+    assert adj.score <= 0.10
+
+
+def test_aa_lof_plus_negated_observed_match_clamps_low() -> None:
+    """AA-T1.A: LOF + observed direct_sign_match + scope=negated.
+    LOF swaps ra_effective → direct_sign_mismatch (base 0.10). Negation
+    on non-match axis no longer flips, so score stays at 0.10. Without
+    the fix, the legacy flip turned this into 0.90 → false positive.
+    """
+    adj = adjudicate(
+        _claim(),
+        _bundle(
+            relation="direct_sign_match",
+            scope="negated",
+            perturbation="LOF",
+        ),
+        (), ctx=EvidenceContext(),
+    )
+    assert adj.verdict == "incorrect"
+    assert adj.score <= 0.10
+
+
+def test_aa_lof_plus_negated_observed_mismatch_flips() -> None:
+    """AA-T1.A symmetric: LOF + observed direct_sign_mismatch + negated.
+    LOF swaps ra_effective → direct_sign_match (0.92). Negation flips
+    → 0.08. This is the post-LOF case where the relation is genuinely
+    asserted in the claim direction and then negated by scope."""
+    adj = adjudicate(
+        _claim(),
+        _bundle(
+            relation="direct_sign_mismatch",
+            scope="negated",
+            perturbation="LOF",
+        ),
+        (), ctx=EvidenceContext(),
+    )
+    assert adj.verdict == "incorrect"
+    assert adj.score <= 0.10
+
+
+def test_lof_perturbation_flips_sign_mismatch_to_match() -> None:
+    """Y2: when subject is observed under LOF perturbation (knockout,
+    knockdown, inhibitor, mutant), the relation_axis probe sees the
+    INVERTED relationship. Example: 'AGER blockade reduced MMP-2 activity'
+    ⇒ relation_axis observes 'direct_sign_mismatch' (LOF caused decrease)
+    ⇒ effective interpretation: AGER normally INCREASES MMP-2 ⇒ correct.
+    """
+    adj = adjudicate(
+        _claim(),  # Activation(MAPK1, JUN), sign=positive
+        _bundle(relation="direct_sign_mismatch", perturbation="LOF"),
+        (), ctx=EvidenceContext(),
+    )
+    assert adj.verdict == "correct"
+    # Effective answer is direct_sign_match (0.92) → high score after scope
+    assert adj.score is not None and adj.score >= 0.85
+
+
+def test_lof_perturbation_flips_sign_match_to_mismatch() -> None:
+    """Symmetric: LOF causing INCREASE in observed target means the
+    relation is INVERTED — claim direction is wrong."""
+    adj = adjudicate(
+        _claim(),
+        _bundle(relation="direct_sign_match", perturbation="LOF"),
+        (), ctx=EvidenceContext(),
+    )
+    assert adj.verdict == "incorrect"
+    assert adj.score is not None and adj.score <= 0.20
+
+
+def test_no_perturbation_preserves_relation_interpretation() -> None:
+    """Y2: control case — without LOF marker, relation_axis is
+    interpreted as-is."""
+    adj_normal = adjudicate(
+        _claim(),
+        _bundle(relation="direct_sign_match"),  # perturbation=None
+        (), ctx=EvidenceContext(),
+    )
+    adj_lof = adjudicate(
+        _claim(),
+        _bundle(relation="direct_sign_match", perturbation="LOF"),
+        (), ctx=EvidenceContext(),
+    )
+    assert adj_normal.verdict == "correct"
+    assert adj_lof.verdict == "incorrect"
+    assert adj_normal.score != adj_lof.score
+
+
 def test_axis_mismatch_incorrect() -> None:
     adj = adjudicate(_claim(),
                      _bundle(relation="direct_axis_mismatch"),
