@@ -102,8 +102,8 @@ def test_orchestrator_handles_llm_failure_gracefully() -> None:
 
 def test_orchestrator_alias_miss_escalates_to_llm() -> None:
     """When subject/object aliases aren't in evidence, substrate
-    escalates to LLM with hint. LLM-confirmed absent → grounding_gap
-    abstain, but LLM gets a chance to recover anaphora/paraphrase."""
+    escalates to LLM with hint. X3: LLM-confirmed absent commits to
+    `incorrect` (Stage 1 veto) with `grounding_gap` reason tag."""
     stmt = Activation(Agent("MAPK1"), Agent("JUN"))
     ev = Evidence(source_api="reach",
                   text="The cell cycle was monitored using flow cytometry.")
@@ -117,11 +117,12 @@ def test_orchestrator_alias_miss_escalates_to_llm() -> None:
     })
     result = score_via_probes(stmt, ev, client)
     kinds_called = {c["kind"] for c in client.calls}
-    # Now LLM IS called for subject/object (substrate doesn't commit absent)
+    # LLM IS called for subject/object (substrate doesn't commit absent).
     assert "probe_subject_role" in kinds_called
     assert "probe_object_role" in kinds_called
-    # LLM confirmed absent → grounding_gap abstain
-    assert result["verdict"] == "abstain"
+    # X3 doctrine: model says absent → incorrect (extraction unsupported).
+    assert result["verdict"] == "incorrect"
+    assert "grounding_gap" in result["reasons"]
 
 
 def test_orchestrator_call_log_populated() -> None:

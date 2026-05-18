@@ -83,7 +83,7 @@ def test_subject_no_alias_match_escalates_to_llm() -> None:
     routings = substrate_route(claim, ctx, "Some unrelated sentence.")
     r = routings["subject_role"]
     assert isinstance(r, ProbeRequest)
-    assert "matched no aliases" in (r.substrate_hint or "")
+    assert "no listed alias matched" in (r.substrate_hint or "")
 
 
 def test_subject_present_as_subject_via_catalog_match() -> None:
@@ -168,7 +168,7 @@ def test_object_no_alias_match_escalates_to_llm() -> None:
     routings = substrate_route(claim, ctx, "MAPK1 phosphorylates ELK1.")
     r = routings["object_role"]
     assert isinstance(r, ProbeRequest)
-    assert "matched no aliases" in (r.substrate_hint or "")
+    assert "no listed alias matched" in (r.substrate_hint or "")
 
 
 def test_object_present_as_object_via_catalog() -> None:

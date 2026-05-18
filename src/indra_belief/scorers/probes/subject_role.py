@@ -65,6 +65,16 @@ words from the evidence. NO prose outside the JSON."""
 
 
 _FEW_SHOTS: list[tuple[str, str]] = [
+    # Alias-aware shot — teaches the model that "a.k.a." in the claim
+    # names alternative surface forms; presence under ANY listed alias
+    # counts as present. The substrate computes the alias roster via
+    # Gilda + INDRA db_refs.TEXT; the LLM should not re-derive it.
+    (
+        "CLAIM SUBJECT: STK4 (a.k.a. MST1, MST-1, KRS2)\n"
+        "EVIDENCE: MST1 phosphorylates LATS1 in canonical Hippo signaling.",
+        '{"answer": "present_as_subject", '
+        '"rationale": "STK4 named as MST1 (canonical alias) — \\"MST1 phosphorylates\\""}',
+    ),
     (
         "CLAIM SUBJECT: MAPK1\n"
         "EVIDENCE: MAPK1 phosphorylates JUN at Ser63 in stimulated cells.",

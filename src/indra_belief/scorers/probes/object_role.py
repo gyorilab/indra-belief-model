@@ -46,6 +46,15 @@ the evidence. NO prose outside the JSON."""
 
 
 _FEW_SHOTS: list[tuple[str, str]] = [
+    # Alias-aware shot — substrate provides the alias roster via "a.k.a.".
+    # The LLM should not require canonical-symbol verbatim match when an
+    # alternative form is listed.
+    (
+        "CLAIM OBJECT: RPS6KA3 (a.k.a. RSK2, RSK-2, MAPKAPK-1b)\n"
+        "EVIDENCE: PDPK1 activates RSK2 through phosphorylation at S227.",
+        '{"answer": "present_as_object", '
+        '"rationale": "RPS6KA3 named as RSK2 — \\"activates RSK2\\""}',
+    ),
     (
         "CLAIM OBJECT: JUN\n"
         "EVIDENCE: MAPK1 phosphorylates JUN at Ser63 in stimulated cells.",

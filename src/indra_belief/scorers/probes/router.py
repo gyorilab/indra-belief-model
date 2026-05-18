@@ -78,6 +78,62 @@ def _find_alias_positions(text: str, alias_set: frozenset[str]) -> list[int]:
     return sorted(positions)
 
 
+# X1: substrate-to-LLM alias bridge ---------------------------------------
+#
+# Pre-X1, the substrate computed `ctx.aliases` via Gilda but threw the
+# alias set away when escalating to LLM — the prompt showed only the
+# canonical name. Result: 13,506 absent-answer LLM responses on the
+# 2026-05-14d rasmachine run came from the model not knowing
+# RPS6KA3==RSK2, STK4==MST1, etc. The substrate already knew.
+#
+# These helpers preserve and forward the substrate's alias work.
+
+_ALIAS_ROSTER_CAP = 8       # max aliases rendered into claim_component
+_MATCHED_FORMS_CAP = 5      # max matched surface forms in substrate_hint
+_ALIAS_MIN_LEN = 2          # mirror EvidenceContext.aliases policy
+
+
+def _other_aliases(name: str, alias_set: frozenset[str]) -> list[str]:
+    """Return aliases excluding the canonical name itself, sorted, capped."""
+    others = sorted(
+        a for a in alias_set
+        if a and a != name and len(a) >= _ALIAS_MIN_LEN
+    )
+    return others[:_ALIAS_ROSTER_CAP]
+
+
+def _matched_surface_forms(text: str, alias_set: frozenset[str]) -> list[str]:
+    """Aliases that actually appear in `text` (case-insensitive word-boundary)."""
+    if not text or not alias_set:
+        return []
+    matched: list[str] = []
+    seen: set[str] = set()
+    for alias in alias_set:
+        if len(alias) < _ALIAS_MIN_LEN:
+            continue
+        if alias.lower() in seen:
+            continue
+        if re.search(rf"\b{re.escape(alias)}\b", text, re.IGNORECASE):
+            matched.append(alias)
+            seen.add(alias.lower())
+        if len(matched) >= _MATCHED_FORMS_CAP:
+            break
+    return matched
+
+
+def _claim_component_with_aliases(
+    name: str, alias_set: frozenset[str], suffix: str = "",
+) -> str:
+    """Render '<name> (a.k.a. X, Y, Z)<suffix>' for ProbeRequest.claim_component.
+
+    `suffix` carries the existing axis/sign/objects metadata so the LLM sees
+    both the canonical-name+aliases AND the claim shape.
+    """
+    others = _other_aliases(name, alias_set)
+    aka = f" (a.k.a. {', '.join(others)})" if others else ""
+    return f"{name}{aka}{suffix}"
+
+
 def _detected_relations_for_pair(
     ctx: EvidenceContext,
     subject_canonical: str,
@@ -135,26 +191,21 @@ def _route_subject_role(
         else "GOF" if perturbation == "gain_of_function"
         else "none"
     )
-    claim_component = (
-        f"{claim.subject} (axis={claim.axis}, sign={claim.sign}, "
-        f"objects={list(claim.objects)})"
+    aliases = _alias_set(claim.subject, ctx.aliases)
+    claim_component = _claim_component_with_aliases(
+        claim.subject, aliases,
+        suffix=f" [axis={claim.axis}, sign={claim.sign}, objects={list(claim.objects)}]",
     )
 
-    aliases = _alias_set(claim.subject, ctx.aliases)
     positions = _find_alias_positions(evidence_text, aliases)
     if not positions:
         # Substrate did not match any of the known aliases. Escalate to
-        # LLM rather than commit to absent — Gilda's alias map is
-        # incomplete and the LLM can recognize alternative surface forms
-        # (anaphora, paraphrase, family-member references) that substrate
-        # missed. Hint says what aliases substrate tried so the LLM
-        # doesn't waste attention re-deriving them.
+        # LLM — Gilda's alias map is incomplete and the LLM may
+        # recognize alternative surface forms (anaphora, paraphrase,
+        # family-member references) that substrate missed.
         hint = (
-            f"substrate matched no aliases for {claim.subject!r}: "
-            f"tried {sorted(a for a in aliases if len(a) >= 2)[:6]}. "
-            f"LLM should check for alternative surface forms (anaphora, "
-            f"paraphrase, family-member reference); answer 'absent' only "
-            f"if confident."
+            f"no listed alias matched lexically in this evidence; "
+            f"check for paraphrase / anaphora / family-member reference."
         )
         return ProbeRequest(
             kind="subject_role",
@@ -206,7 +257,11 @@ def _route_subject_role(
         )
 
     # Substrate sees the entity but can't disambiguate role — escalate.
-    hint_parts = [f"{claim.subject!r} mentioned in evidence "
+    # Name the matched surface forms so the LLM doesn't waste attention
+    # re-deriving them (the central X1 fix).
+    matched = _matched_surface_forms(evidence_text, aliases)
+    hint_parts = [f"matched surface forms: {matched}"] if matched else \
+                 [f"{claim.subject!r} mentioned in evidence "
                   f"(positions={positions[:3]})"]
     if pert_marker != "none":
         hint_parts.append(f"perturbation marker: {pert_marker}")
@@ -249,22 +304,20 @@ def _route_object_role(
         )
 
     obj = claim.objects[0]
-    claim_component = (
-        f"{obj} (axis={claim.axis}, sign={claim.sign}, "
-        f"subject={claim.subject})"
+    aliases = _alias_set(obj, ctx.aliases)
+    claim_component = _claim_component_with_aliases(
+        obj, aliases,
+        suffix=f" [axis={claim.axis}, sign={claim.sign}, subject={claim.subject}]",
     )
 
-    aliases = _alias_set(obj, ctx.aliases)
     positions = _find_alias_positions(evidence_text, aliases)
     if not positions:
         # Symmetric with subject_role: escalate rather than commit to
         # absent. Gilda alias coverage is the limiting factor; the LLM
         # can recognize anaphora, paraphrase, family references.
         hint = (
-            f"substrate matched no aliases for {obj!r}: "
-            f"tried {sorted(a for a in aliases if len(a) >= 2)[:6]}. "
-            f"LLM should check for alternative surface forms; answer "
-            f"'absent' only if confident."
+            f"no listed alias matched lexically in this evidence; "
+            f"check for paraphrase / anaphora / family-member reference."
         )
         return ProbeRequest(
             kind="object_role",
@@ -311,7 +364,9 @@ def _route_object_role(
             rationale="L1 chain signal + object in intermediate candidates",
         )
 
-    hint_parts = [f"{obj!r} mentioned in evidence (positions={positions[:3]})"]
+    matched = _matched_surface_forms(evidence_text, aliases)
+    hint_parts = [f"matched surface forms: {matched}"] if matched else \
+                 [f"{obj!r} mentioned in evidence (positions={positions[:3]})"]
     if ctx.has_chain_signal:
         hint_parts.append("chain signal present in evidence")
     hint = "; ".join(hint_parts)
@@ -362,9 +417,15 @@ def _route_relation_axis(
       - Else → ProbeRequest with CATALOG hint
     """
     obj = claim.objects[0] if claim.objects else claim.subject  # self-mod case
+    subj_aliases = _alias_set(claim.subject, ctx.aliases)
+    obj_aliases = _alias_set(obj, ctx.aliases)
+    subj_others = _other_aliases(claim.subject, subj_aliases)
+    obj_others = _other_aliases(obj, obj_aliases)
+    subj_aka = f" (a.k.a. {', '.join(subj_others)})" if subj_others else ""
+    obj_aka = f" (a.k.a. {', '.join(obj_others)})" if obj_others else ""
     claim_component = (
-        f"({claim.subject}, {obj}) — claim axis={claim.axis}, "
-        f"sign={claim.sign}"
+        f"({claim.subject}{subj_aka}, {obj}{obj_aka}) — "
+        f"claim axis={claim.axis}, sign={claim.sign}"
     )
 
     aligned, swapped = _detected_relations_for_pair(ctx, claim.subject, obj)
@@ -462,6 +523,14 @@ def _route_relation_axis(
         hint_parts.append(
             f"nominalized hints: {list(ctx.nominalized_relations)[:3]}"
         )
+    # X1: name matched surface forms for both endpoints so the LLM
+    # doesn't waste attention on alias resolution.
+    s_matched = _matched_surface_forms(evidence_text, subj_aliases)
+    o_matched = _matched_surface_forms(evidence_text, obj_aliases)
+    if s_matched:
+        hint_parts.append(f"subject surface forms matched: {s_matched}")
+    if o_matched:
+        hint_parts.append(f"object surface forms matched: {o_matched}")
     hint = "; ".join(hint_parts) if hint_parts else None
 
     return ProbeRequest(
@@ -497,12 +566,16 @@ def _route_scope(
       - Otherwise → ProbeRequest with available cues as hint
     """
     obj = claim.objects[0] if claim.objects else claim.subject
-    claim_component = (
-        f"relation between {claim.subject} and {obj}"
-    )
-
     subj_aliases = _alias_set(claim.subject, ctx.aliases)
     obj_aliases = _alias_set(obj, ctx.aliases)
+    subj_others = _other_aliases(claim.subject, subj_aliases)
+    obj_others = _other_aliases(obj, obj_aliases)
+    subj_aka = f" (a.k.a. {', '.join(subj_others)})" if subj_others else ""
+    obj_aka = f" (a.k.a. {', '.join(obj_others)})" if obj_others else ""
+    claim_component = (
+        f"relation between {claim.subject}{subj_aka} and {obj}{obj_aka}"
+    )
+
     subj_positions = _find_alias_positions(evidence_text, subj_aliases)
     obj_positions = _find_alias_positions(evidence_text, obj_aliases)
 

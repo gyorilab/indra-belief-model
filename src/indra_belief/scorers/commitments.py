@@ -66,9 +66,13 @@ ReasonCode = Literal[
     "binding_domain_mismatch", # binding-axis but wrong partner type
     "chain_extraction_gap",   # chain markers present but no extractable mediator
     "regex_substrate_match",  # final-arm CATALOG fallback rescued an abstain
+    "no_sentence_evidence",   # evidence.text is empty; deferred to INDRA prior
 ]
 
-Verdict = Literal["correct", "incorrect", "abstain"]
+# X3 (no-abstain doctrine): the FINAL verdict is binary. Probe-level
+# closed sets still include "abstain"/"absent" as legitimate features
+# the adjudicator consumes — but the adjudicator never emits abstain.
+Verdict = Literal["correct", "incorrect"]
 Confidence = Literal["high", "medium", "low"]
 
 
@@ -158,15 +162,23 @@ class GroundingVerdict:
 class Adjudication:
     """Final verdict over typed commitments.
 
-    `reasons` is a structured enum tuple: every disagreement maps to a
-    ReasonCode so error stratification can aggregate mechanically.
+    `reasons` is a multi-label tuple of ReasonCode tags so error
+    stratification can aggregate mechanically. Reasons are DIAGNOSTIC
+    annotations, not decision drivers — the verdict + score come from
+    the probe-product log-odds combiner.
 
     `rationale` is INFORMATIONAL ONLY — decision logic must not depend on it.
+
+    `score` is the continuous [0,1] belief from the log-odds combiner.
+    When None, the score is derived from (verdict, confidence) via the
+    legacy `_VERDICT_SCORE` lookup — that path is reserved for tests
+    and back-compat callers.
     """
     verdict: Verdict
     confidence: Confidence
     reasons: tuple[ReasonCode, ...] = field(default_factory=tuple)
     rationale: str = ""
+    score: float | None = None
 
     def __post_init__(self) -> None:
         _reject("verdict", self.verdict, _VALID_VERDICT)
@@ -175,13 +187,13 @@ class Adjudication:
             _reject("reason", r, _VALID_REASON)
 
 
+# Legacy lookup for callers that construct Adjudication without an
+# explicit score (mostly tests). The log-odds adjudicator sets
+# Adjudication.score directly and `adjudication_to_score` returns it.
 _VERDICT_SCORE = {
     ("correct", "high"):     0.95,
     ("correct", "medium"):   0.80,
     ("correct", "low"):      0.65,
-    ("abstain", "high"):     0.50,
-    ("abstain", "medium"):   0.50,
-    ("abstain", "low"):      0.50,
     ("incorrect", "low"):    0.35,
     ("incorrect", "medium"): 0.20,
     ("incorrect", "high"):   0.05,
@@ -190,4 +202,6 @@ _VERDICT_SCORE = {
 
 def adjudication_to_score(a: Adjudication) -> float:
     """Map an Adjudication to the [0, 1] belief score used downstream."""
+    if a.score is not None:
+        return a.score
     return _VERDICT_SCORE[(a.verdict, a.confidence)]

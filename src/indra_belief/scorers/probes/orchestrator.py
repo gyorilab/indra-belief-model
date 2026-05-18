@@ -175,6 +175,28 @@ def score_via_probes(statement, evidence, client: "ModelClient") -> dict:
     _pop()
     evidence_text = getattr(evidence, "text", "") or ""
 
+    # X3.5: empty-text fast path. When the source provided no sentence
+    # (curated databases like biogrid/biopax/tas emit Evidence with
+    # source_hash + db_refs but no `text`), the LLM probes have no
+    # signal to consume. Honestly defer to INDRA's published belief —
+    # this is a COMMITMENT, not abstention: we trust the curated DB's
+    # provenance and adopt its parametric score as our own.
+    if not evidence_text.strip():
+        prior = float(getattr(statement, "belief", 0.5) or 0.5)
+        verdict = "correct" if prior >= 0.5 else "incorrect"
+        adj = Adjudication(
+            verdict=verdict,
+            confidence="low",   # honest about uncertainty — no LLM signal
+            reasons=("no_sentence_evidence",),
+            rationale=(
+                f"no evidence text; deferred to INDRA published belief "
+                f"{prior:.3f} (curated DB extraction — source provenance "
+                f"is the score)"
+            ),
+            score=prior,
+        )
+        return _format_output(adj, (), None, _pop())
+
     # 1. Deterministic claim parse.
     try:
         claim = parse_claim(statement)
