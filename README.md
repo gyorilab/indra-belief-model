@@ -34,7 +34,14 @@ Mapped to a continuous score: `{correct+high: 0.95, correct+medium: 0.80, ..., i
 
 Model: gemma-4-26b (Ollama remote or local MLX 8-bit).
 
-### Two-tier architecture
+### Production scoring architecture
+
+The CLI default is the monolithic scorer: one deterministic LLM call per
+`(Statement, Evidence)` pair with type-adaptive contrastive examples. The
+decomposed four-probe scorer remains available for ablations with
+`--arch decomposed`.
+
+### Two-tier monolithic path
 
 **Tier 1: Deterministic grounding** (no LLM call)
 
@@ -49,7 +56,7 @@ Model: gemma-4-26b (Ollama remote or local MLX 8-bit).
 
 - Six-rule system prompt (negation, hedging, family/member equivalence, etc.)
 - Seven adaptive contrastive pairs (14 examples) selected by statement type
-- Self-consistency voting (k=3 default, majority vote at temperature=0.6)
+- Single deterministic call at low temperature
 
 ### Adaptive few-shot selection
 
@@ -62,12 +69,12 @@ The example bank has type-specific contrastive pairs. For each record, 7 pairs a
 
 Types with bank examples: Activation (2 pairs), Inhibition (2), Phosphorylation, Complex, IncreaseAmount, DecreaseAmount, Dephosphorylation, Autophosphorylation, Translocation, Ubiquitination.
 
-### Self-consistency voting
-
-Model confidence scores are useless (100% report "high"). Self-consistency uses implicit confidence via agreement across k independent samples at temperature=0.6:
+### Run the scorer
 
 ```bash
-PYTHONPATH=src python -m indra_belief.scorers.scorer --voting-k 3
+PYTHONPATH=src python -m indra_belief.scorers.scorer \
+    --model gemma-remote \
+    --arch monolithic
 ```
 
 ## Design decisions we already paid for
@@ -76,7 +83,7 @@ Earlier iterations measured the following approaches and rejected them. If you'r
 
 | Approach | Outcome | Why it fails |
 |---|---|---|
-| Decomposed 3-call scorer | 65.9% accuracy | Natural-language extraction can't bridge INDRA's soft ontology boundaries — requires three LLMs to agree on a fuzzy contract |
+| Decomposed multi-call scorer | Strictly dominated on holdout_cc (F1 0.657 vs 0.751 monolithic) | Natural-language extraction can't bridge INDRA's soft ontology boundaries — requires multiple LLM probes to agree on a fuzzy contract |
 | Native tool-calling (agentic lookup) | 84.9%, below baseline | Model ignores tool results after committing to a verdict in its first pass |
 | Structured provenance, full population | -6.7pp accuracy | Attention dilution on 26B model outweighs disambiguation benefit — selectively enabling provenance only for flagged-grounding records preserves the signal without the cost |
 | Graduated warnings for every grounding quirk | 3 regressions per 1 fix | Redirects attention from sentence comprehension; now limited to PSEUDOGENE and LOW_CONFIDENCE |
@@ -271,9 +278,9 @@ The dashboard discovers files in `data/corpora/` and `data/benchmark/` and expos
 ```bash
 PYTHONPATH=src python -m indra_belief.scorers.scorer \
     --model gemma-remote \
+    --arch monolithic \
     --holdout data/benchmark/holdout_large.jsonl \
     --output data/results/run.jsonl \
-    --voting-k 3 \
     --resume data/results/run.jsonl  # resume interrupted runs
 ```
 
@@ -294,7 +301,7 @@ src/indra_belief/
   noise_model.py           # INDRA SimpleScorer (parametric belief from source priors)
   composed_scorer.py       # LLM verdict → hard gate over the parametric noise model
   worker.py                # Viewer-spawned worker: ingest / estimate-cost / score / register-truth-set
-  scorers/                 # 9-step probe orchestrator (parse → context → 4 probes → grounding → adjudicate)
+  scorers/                 # Monolithic default plus decomposed probe orchestrator
   corpus/                  # Corpus persistence + scoring orchestration (DuckDB)
     schema.py              # 10-table schema (statement / evidence / agent / truth_set / metric / …)
     loader.py              # from_indra_json + ingest_statements + register_truth_set

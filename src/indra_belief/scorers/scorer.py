@@ -2,20 +2,19 @@
 
 Two scoring architectures live side-by-side in this package:
 
-  decomposed (default)
+  decomposed
     parse_claim → substrate_route → four probes (subject_role,
     object_role, relation_axis, scope) → ProbeBundle → adjudicate.
     Implemented in `indra_belief.scorers.probes.*`.
 
-  monolithic
+  monolithic (default)
     Single LLM call per (Statement, Evidence) with type-adaptive
     contrastive few-shot retrieval. Implemented in
     `indra_belief.scorers.monolithic.*`.
 
 Both expose the same shape — `score_evidence(stmt, ev, client) -> dict`
 and `score_statement(stmt, client) -> list[dict]`. This module
-dispatches to one or the other via the CLI `--arch` flag (or the
-library-level `score_evidence_via` helper below).
+dispatches to one or the other via the CLI `--arch` flag.
 
 Run:
     PYTHONPATH=src python -m indra_belief.scorers.scorer --arch decomposed
@@ -46,7 +45,7 @@ def _resolve_scorer(arch: Arch) -> Callable:
     if arch == "monolithic":
         from indra_belief.scorers.monolithic import score_evidence as _ev
         return _ev
-    return score_evidence  # decomposed default
+    return score_evidence  # decomposed path
 
 
 def score_evidence(statement, evidence, client: ModelClient) -> dict:
@@ -101,11 +100,14 @@ def main():
     )
     parser.add_argument("--model", default="gemma-remote")
     parser.add_argument("--arch", choices=("decomposed", "monolithic"),
-                        default="decomposed",
+                        default="monolithic",
                         help="Which scoring architecture to run. "
-                             "decomposed (default) = four-probe + adjudicator. "
-                             "monolithic = single LLM call per (Stmt, Ev) with "
-                             "type-adaptive contrastive few-shots.")
+                             "monolithic (default) = single LLM call per "
+                             "(Stmt, Ev) with type-adaptive contrastive "
+                             "few-shots. Empirically dominant on holdout_cc "
+                             "(F1 0.751 vs decomposed 0.657, McNemar p<10^-4). "
+                             "decomposed = four-probe + adjudicator (sibling "
+                             "implementation, retained for ablation).")
     parser.add_argument("--holdout",
                         default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
     parser.add_argument("--output",
