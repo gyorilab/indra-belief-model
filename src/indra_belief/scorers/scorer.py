@@ -1,29 +1,52 @@
-"""Evidence quality scorer using native INDRA objects (S-phase).
+"""Evidence quality scorer entry point — two architectures available.
 
-The S-phase scorer has exactly one path: parse_claim → substrate_route
-→ four probes (LLM where escalated) → ProbeBundle → adjudicate.
-The doctrine §7 migration discipline removed:
-  - the monolithic prompt + tool-use path (parse-evidence-as-extraction)
-  - the use_decomposed flag (no flag, no fallback)
-  - the cascade-on-abstain logic (abstention is the calibrated signal)
+Two scoring architectures live side-by-side in this package:
 
-All scoring routes through `score_via_probes` in
-`indra_belief.scorers.probes.orchestrator`.
+  decomposed (default)
+    parse_claim → substrate_route → four probes (subject_role,
+    object_role, relation_axis, scope) → ProbeBundle → adjudicate.
+    Implemented in `indra_belief.scorers.probes.*`.
+
+  monolithic
+    Single LLM call per (Statement, Evidence) with type-adaptive
+    contrastive few-shot retrieval. Implemented in
+    `indra_belief.scorers.monolithic.*`.
+
+Both expose the same shape — `score_evidence(stmt, ev, client) -> dict`
+and `score_statement(stmt, client) -> list[dict]`. This module
+dispatches to one or the other via the CLI `--arch` flag (or the
+library-level `score_evidence_via` helper below).
 
 Run:
-    PYTHONPATH=src python -m indra_belief.scorers.scorer
+    PYTHONPATH=src python -m indra_belief.scorers.scorer --arch decomposed
+    PYTHONPATH=src python -m indra_belief.scorers.scorer --arch monolithic
 """
 from __future__ import annotations
 
 import json
 import time
 from pathlib import Path
+from typing import Callable, Literal
 
 from indra_belief.model_client import ModelClient
 from indra_belief.scorers.probes.orchestrator import score_via_probes
 
 
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+
+Arch = Literal["decomposed", "monolithic"]
+
+
+def _resolve_scorer(arch: Arch) -> Callable:
+    """Return a `score_evidence(stmt, ev, client) -> dict` callable for
+    the requested architecture. Imports the monolithic sibling lazily
+    so library callers that only use the decomposed path don't pay the
+    monolithic prompt-asset load cost."""
+    if arch == "monolithic":
+        from indra_belief.scorers.monolithic import score_evidence as _ev
+        return _ev
+    return score_evidence  # decomposed default
 
 
 def score_evidence(statement, evidence, client: ModelClient) -> dict:
@@ -74,9 +97,15 @@ def main():
     from indra_belief.data.corpus import CorpusIndex
 
     parser = argparse.ArgumentParser(
-        description="Evidence quality scorer (INDRA native, S-phase)"
+        description="Evidence quality scorer (INDRA native)"
     )
     parser.add_argument("--model", default="gemma-remote")
+    parser.add_argument("--arch", choices=("decomposed", "monolithic"),
+                        default="decomposed",
+                        help="Which scoring architecture to run. "
+                             "decomposed (default) = four-probe + adjudicator. "
+                             "monolithic = single LLM call per (Stmt, Ev) with "
+                             "type-adaptive contrastive few-shots.")
     parser.add_argument("--holdout",
                         default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
     parser.add_argument("--output",
@@ -85,6 +114,8 @@ def main():
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume from existing output file (skip scored records)")
     args = parser.parse_args()
+
+    score_fn = _resolve_scorer(args.arch)
 
     index = CorpusIndex()
     records = index.build_records(args.holdout)
@@ -104,7 +135,7 @@ def main():
                         pass
             print(f"Resuming: {len(scored_hashes)} records already scored")
 
-    print(f"\nScorer (S-phase): {len(records)} records, model={args.model}")
+    print(f"\nScorer (arch={args.arch}): {len(records)} records, model={args.model}")
 
     client = ModelClient(args.model)
 
@@ -121,7 +152,7 @@ def main():
         if record.source_hash in scored_hashes:
             continue
 
-        result = score_evidence(record.statement, record.evidence, client)
+        result = score_fn(record.statement, record.evidence, client)
 
         gt_correct = record.tag == "correct"
         verdict = result.get("verdict")
@@ -137,6 +168,7 @@ def main():
             "subject": record.subject,
             "stmt_type": record.stmt_type,
             "object": record.object,
+            "arch": args.arch,
         })
 
         r_save = {k: v for k, v in result.items() if k != "raw_text"}
