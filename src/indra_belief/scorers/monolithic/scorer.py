@@ -323,32 +323,17 @@ def score(
     client: ModelClient,
     record: ScoringRecord,
     max_tokens: int = 12000,
-    voting_k: int = 3,
 ) -> dict:
-    """Score a single extraction.
+    """Score a single extraction with a single deterministic LLM call.
 
-    Args:
-        voting_k: Self-consistency voting — number of independent samples at
-            temperature=0.6. k=1 is a single deterministic call (temp=0.1).
-            k=3 (default) runs up to 3 samples with early-stop after a
-            majority is reached. k=5 for hard cases. Must be odd; even k
-            is rejected because it cannot produce strict majorities.
-
-    Under voting_k >= 3 the confidence is derived from agreement:
-      - all votes agree (k/k) → high
-      - bare majority (e.g. 2/3, 3/5) → medium
-      - "low" is effectively unreachable from voting; it appears only
-        when single-call (k=1) LLM self-rates low.
+    Two-tier:
+      Tier 1: deterministic grounding auto-reject (mismatch/pseudogene).
+      Tier 2: single LLM call (temp=0.1) — tool-use variant when grounding
+              is flagged; otherwise straight comprehension.
 
     Returns dict with: score, verdict, confidence, raw_text, tokens,
     tier, grounding_status, provenance_triggered.
     """
-    if voting_k != 1 and voting_k % 2 == 0:
-        raise ValueError(
-            f"voting_k must be 1 or odd (got {voting_k}). "
-            "Even values cannot produce strict majorities and degenerate "
-            "into longer runs of k=1 with higher temperature."
-        )
     # --- Tier 1: Deterministic auto-reject ---
     reject = record.tier1_auto_reject()
     if reject:
@@ -375,10 +360,7 @@ def score(
     needs_tool_use = flagged
     grounding_status = "flagged" if flagged else "all_match"
 
-    # --- Tier 2: LLM text comprehension ---
-    # Ambiguous-grounding records go through tool-use (single deterministic
-    # call with gilda lookup available); external signal substitutes for
-    # voting's stochastic diversity. Clean records use voting as configured.
+    # --- Tier 2: single LLM call (deterministic, temp=0.1) ---
     if needs_tool_use:
         result = _score_with_tools(client, record, max_tokens)
         verdict = result["verdict"]
@@ -386,81 +368,13 @@ def score(
         total_tokens = result["tokens"]
         raw = f"[TIER 2 TOOL-USE]\n{result['raw_text']}"
         tier = "llm_tool_use"
-    elif voting_k <= 1:
+    else:
         result = _score_single(client, record, max_tokens)
         verdict = result["verdict"]
         confidence = result["confidence"]
         total_tokens = result["tokens"]
         raw = f"[TIER 2 LLM]\n{result['raw_text']}"
         tier = "llm_comprehension"
-    else:
-        # Self-consistency voting with early-stop: stop once a majority is
-        # guaranteed (e.g., 2/3 agreement after sample 2 wins; sample 3 cannot
-        # overturn it).
-        majority = voting_k // 2 + 1
-        votes: list[str] = []
-        total_tokens = 0
-        raw_parts = []
-        samples_taken = 0
-        for i in range(voting_k):
-            r = _score_single(client, record, max_tokens, temperature=0.6)
-            total_tokens += r["tokens"]
-            samples_taken += 1
-            raw_parts.append(f"[VOTE {i+1}] {r['verdict']}({r['confidence']})")
-            if r["verdict"]:
-                votes.append(r["verdict"])
-            correct_votes = sum(1 for v in votes if v == "correct")
-            incorrect_votes = sum(1 for v in votes if v == "incorrect")
-            if correct_votes >= majority or incorrect_votes >= majority:
-                break  # majority decided; remaining samples can't overturn
-
-        correct_votes = sum(1 for v in votes if v == "correct")
-        incorrect_votes = sum(1 for v in votes if v == "incorrect")
-        total_votes = correct_votes + incorrect_votes
-
-        if correct_votes > incorrect_votes:
-            verdict = "correct"
-        elif incorrect_votes > correct_votes:
-            verdict = "incorrect"
-        elif total_votes > 0:
-            # True tie (only possible if some votes failed to parse).
-            # Fall back to None+low rather than order-dependent pick.
-            verdict = None
-        else:
-            verdict = None
-
-        if total_votes > 0 and verdict is not None:
-            # Confidence is DERIVED from the voting trajectory. Under early-
-            # stop (break at majority), two possible outcomes:
-            #
-            #   - samples_taken < voting_k: first N samples were unanimous
-            #     and the loop broke once a majority was reached. This is
-            #     the strongest observable signal from voting — both
-            #     independent samples agreed on first try. Map to "high".
-            #
-            #   - samples_taken == voting_k: the first two samples disagreed
-            #     and a third-sample tiebreaker produced a majority. This
-            #     is weaker — the model waffled. Map to "medium".
-            #
-            # "high" via full-k unanimous is mathematically unreachable
-            # under early-stop (loop would have broken earlier). Expressing
-            # confidence via WHEN the loop stopped aligns calibration with
-            # the observed evidence, not with a never-reached ideal.
-            agreement = max(correct_votes, incorrect_votes) / total_votes
-            early_stop_unanimous = (
-                samples_taken < voting_k and agreement == 1.0
-            )
-            if early_stop_unanimous:
-                confidence = "high"
-            elif agreement >= 0.6:
-                confidence = "medium"
-            else:
-                confidence = "low"
-        else:
-            confidence = None
-
-        raw = " | ".join(raw_parts)
-        tier = f"llm_voting_k{voting_k}_n{samples_taken}"
 
     return {
         "score": verdict_to_score(verdict, confidence),
@@ -479,13 +393,12 @@ def score_statement(
     evidence,
     client: ModelClient,
     *,
-    voting_k: int = 3,
     max_tokens: int = 12000,
 ) -> dict:
     """Score a single INDRA Statement + Evidence pair.
 
-    Primary public API. Takes native INDRA objects; returns the belief
-    score dict (score ∈ [0,1], verdict, confidence, tier, …).
+    Single deterministic LLM call per (Statement, Evidence) at temp=0.1
+    (with a tool-use variant when grounding is flagged).
 
     Args:
         statement: An `indra.statements.Statement` instance. Binary types
@@ -498,8 +411,6 @@ def score_statement(
             For manually-constructed Evidence, verification is skipped
             and scoring is driven entirely by the LLM tier.
         client: A `ModelClient` configured for the chosen backend.
-        voting_k: Self-consistency voting samples (odd, or 1). Default 3
-            triggers up to three independent LLM calls with early-stop.
         max_tokens: Per-generation token limit. Default 12000.
 
     Returns:
@@ -515,26 +426,10 @@ def score_statement(
             raw_text         decision trace (for debugging)
 
     Callers should handle `verdict is None` explicitly; it denotes a
-    parse failure or a voting tie, not a neutral judgement.
-
-    Example (scoring an NLP extraction):
-        >>> from indra.statements import Phosphorylation, Agent, Evidence
-        >>> from indra_belief import ModelClient, score_statement
-        >>> stmt = Phosphorylation(
-        ...     Agent("RPS6KA1"), Agent("YBX1"),
-        ...     residue="S", position="102",
-        ... )
-        >>> ev = Evidence(
-        ...     source_api="reach",
-        ...     text="RSK1 phosphorylates YB-1 at S102 in response to stress.",
-        ... )
-        >>> client = ModelClient("gemma-remote")
-        >>> result = score_statement(stmt, ev, client)
-        >>> # result["verdict"] ∈ {"correct", "incorrect", None}
-        >>> # result["score"]   ∈ [0, 1]
+    parse failure, not a neutral judgement.
     """
     record = ScoringRecord(statement=statement, evidence=evidence)
-    return score(client, record, max_tokens=max_tokens, voting_k=voting_k)
+    return score(client, record, max_tokens=max_tokens)
 
 
 def main():
@@ -546,9 +441,6 @@ def main():
     parser.add_argument("--holdout", default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
     parser.add_argument("--output", default=str(ROOT / "data" / "results" / "scorer_output.jsonl"))
     parser.add_argument("--max-tokens", type=int, default=12000)
-    parser.add_argument("--voting-k", type=int, default=3,
-                        help="Self-consistency voting: k samples with early-stop "
-                             "(1=single deterministic call at temp=0.1; 3=default production)")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume from existing output file (skip scored records)")
@@ -574,8 +466,7 @@ def main():
                         pass
             print(f"Resuming: {len(scored_hashes)} records already scored")
 
-    voting_label = f", voting_k={args.voting_k}" if args.voting_k > 1 else ""
-    print(f"\nScorer: {len(records)} records, model={args.model}{voting_label}")
+    print(f"\nScorer: {len(records)} records, model={args.model}")
 
     client = ModelClient(args.model)
 
@@ -593,7 +484,7 @@ def main():
         if record.source_hash in scored_hashes:
             continue
 
-        result = score(client, record, args.max_tokens, voting_k=args.voting_k)
+        result = score(client, record, args.max_tokens)
 
         gt_correct = record.tag == "correct"
         llm_correct = (result["verdict"] == "correct") if result["verdict"] else None
