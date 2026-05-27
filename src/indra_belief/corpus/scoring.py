@@ -40,7 +40,12 @@ class ScoreEvidenceFn(Protocol):
 
 
 Architecture = Literal["decomposed", "monolithic"]
-CANCEL_TERMINAL_STATUSES = {"canceled", "cancelled", "aborted"}
+# Pre-started-cancelled denotes a paired-architecture cancel that fires before
+# the per-architecture worker spawns and emits `started.run_id`. The viewer's
+# score-paired handler synthesizes a score_run row with this status so the
+# cancellation is queryable in the same table as canceled/succeeded runs
+# instead of only being visible in the sidecar workflow-state JSON.
+CANCEL_TERMINAL_STATUSES = {"canceled", "cancelled", "aborted", "pre_started_cancelled"}
 PROBE_STEP_KIND_TO_TRACE_KEY = {
     "subject_role_probe": "subject_role",
     "object_role_probe": "object_role",
@@ -918,24 +923,45 @@ def score_corpus(
             token_cost_usd(model_id or model_id_default, total_in, total_out)
             for model_id, total_in, total_out in actual_rows
         )
+        # Two-step finalize so a row already flipped to 'canceled' by an
+        # external cancel still gets finished_at + cost_actual filled in
+        # for queryability. The cancel-status itself is preserved (the
+        # NOT IN guard on the status-update branch); audit columns are
+        # written here.
+        #
+        # cost_actual_usd is overwritten (not COALESCEd): the canceler
+        # computes it from a separate DuckDB connection that may not yet
+        # see all the worker's just-written scorer_step rows. The worker's
+        # own connection has authoritative row visibility — overwriting
+        # ensures the audited cost reflects the actual writes, not the
+        # canceler's stale snapshot.
+        #
+        # finished_at, terminated_by, termination_reason are COALESCEd so
+        # the canceler's "who and why" survives if it set them first.
         con.execute(
             """UPDATE score_run
-               SET finished_at = ?, status = ?, n_stmts = ?,
+               SET finished_at = COALESCE(finished_at, ?),
+                   n_stmts = ?,
                    cost_actual_usd = ?,
-                   terminated_by = COALESCE(?, terminated_by),
-                   termination_reason = COALESCE(?, termination_reason)
-               WHERE run_id = ?
-                 AND COALESCE(status, 'running')
-                     NOT IN ('canceled', 'cancelled', 'aborted')""",
+                   terminated_by = COALESCE(terminated_by, ?),
+                   termination_reason = COALESCE(termination_reason, ?)
+               WHERE run_id = ?""",
             [
                 finished_at,
-                status,
                 n_stmts,
                 cost_actual,
                 termination_by,
                 termination_reason,
                 run_id,
             ],
+        )
+        con.execute(
+            """UPDATE score_run
+               SET status = ?
+               WHERE run_id = ?
+                 AND COALESCE(status, 'running')
+                     NOT IN ('canceled', 'cancelled', 'aborted', 'pre_started_cancelled')""",
+            [status, run_id],
         )
         log.info(
             "score_corpus run_id=%s status=%s n_stmts=%d n_evidences=%d",

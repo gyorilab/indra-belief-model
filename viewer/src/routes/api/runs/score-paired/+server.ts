@@ -28,7 +28,10 @@ import {
 } from '$lib/server/pairedState';
 import type { WriterLockState } from '$lib/server/pairedState';
 import { terminateChildProcessWithEscalation } from '$lib/server/childProcess';
-import { markScoreRunCanceled } from '$lib/server/scoreRunLifecycle';
+import {
+	markScoreRunCanceled,
+	markScoreRunPreStartedCancelled
+} from '$lib/server/scoreRunLifecycle';
 import type { RequestHandler } from './$types';
 
 type Architecture = 'monolithic' | 'decomposed';
@@ -213,6 +216,12 @@ export const POST: RequestHandler = async (event) => {
 			const terminalBlock: { current: { code: string; message: string } | null } = { current: null };
 			let stopActiveWriterHeartbeat: (() => void) | null = null;
 			const runIds: Partial<Record<Architecture, string>> = {};
+			// runIds tracks ANY reserved runId (UUID minted before spawn);
+			// spawnedRunIds tracks only runIds whose worker process actually
+			// started. The pre-started-cancelled path must tombstone every
+			// reserved runId whose worker never spawned, not just archs that
+			// had no runId at all.
+			const spawnedRunIds: Partial<Record<Architecture, string>> = {};
 
 			const writeEvent = (obj: unknown) => {
 				if (closed) return;
@@ -265,8 +274,33 @@ export const POST: RequestHandler = async (event) => {
 					releaseReservedWriterLock();
 				}
 				for (const arch of ARCH_ORDER) {
-					if (!runIds[arch]) {
-						writeEvent({ event: 'arch_state', architecture: arch, state: 'canceled', reason: 'client_disconnected' });
+					// An arch needs a pre_started_cancelled tombstone if it
+					// either (a) never had a runId reserved, or (b) had one
+					// reserved but the worker never reached spawn. Both
+					// cases leave no other code path to write a terminal
+					// score_run row — markScoreRunCanceled relies on the
+					// child exit handler, which never fires without a child.
+					if (!spawnedRunIds[arch]) {
+						const tombstoneRunId =
+							runIds[arch] ?? randomUUID().replace(/-/g, '');
+						runIds[arch] = tombstoneRunId;
+						void markScoreRunPreStartedCancelled({
+							run_id: tombstoneRunId,
+							scorer_version,
+							architecture: arch,
+							model,
+							paired_run_group_id,
+							reason: 'client_disconnected'
+						}).catch((err) => {
+							console.error('arch_pre_started_cancel_tombstone_failed', err);
+						});
+						writeEvent({
+							event: 'arch_state',
+							architecture: arch,
+							state: 'pre_started_cancelled',
+							reason: 'client_disconnected',
+							run_id: tombstoneRunId
+						});
 					}
 				}
 				writeEvent({ event: 'paired_canceled', paired_run_group_id, reason: 'client_disconnected' });
@@ -427,6 +461,10 @@ export const POST: RequestHandler = async (event) => {
 						INDRA_VIEWER_WRITER_LOCK_TOKEN: writerLock.token
 					}
 				});
+				// Mark the runId as having reached spawn so onAbort knows the
+				// worker (not the pre-started path) is responsible for the
+				// terminal score_run write.
+				spawnedRunIds[architecture] = runId;
 				let writerHeartbeat: ReturnType<typeof setInterval> | null = null;
 				const stopWriterHeartbeat = () => {
 					if (writerHeartbeat) clearInterval(writerHeartbeat);

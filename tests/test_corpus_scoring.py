@@ -1203,3 +1203,129 @@ def test_score_corpus_persists_cost_actual():
     # 1 evidence: 450*3/1M + 45*15/1M = 0.00135 + 0.000675 = 0.002025
     expected = 450 * 3.0 / 1_000_000 + 45 * 15.0 / 1_000_000
     assert abs(cost_actual - expected) < 1e-6, f"got {cost_actual}, expected {expected}"
+
+
+def test_score_corpus_mid_run_cancel_persists_partial_rows():
+    """Phase 3 gate: simulating a mid-run cancel against the UPDATE branch
+    must leave a queryable terminal score_run row AND persisted partial
+    scorer_step rows. The cancel is delivered via the same DB status flip
+    the viewer's markScoreRunCanceled endpoint uses; the worker detects it
+    on the next `_raise_if_run_canceled` checkpoint inside the per-evidence
+    loop.
+    """
+    con = _con()
+    mek1 = Agent("MAP2K1", db_refs={"HGNC": "6840"})
+    erk1 = Agent("MAPK1", db_refs={"HGNC": "6871"})
+    s1 = Phosphorylation(
+        mek1, erk1, residue="T", position="202",
+        evidence=[
+            Evidence(source_api="reach", text="ev1"),
+            Evidence(source_api="reach", text="ev2"),
+            Evidence(source_api="reach", text="ev3"),
+        ],
+    )
+    s1.belief = 0.5
+    ingest_statements(con, [s1])
+
+    call_count = {"n": 0}
+
+    def _cancel_on_third_call(statement, evidence, client):
+        call_count["n"] += 1
+        # On the third evidence, simulate the viewer flipping status to
+        # 'canceled' before the worker's next checkpoint. The persisted
+        # rows from the first two evidences must survive.
+        if call_count["n"] == 3:
+            con.execute(
+                "UPDATE score_run SET status='canceled', "
+                "terminated_by='user', termination_reason='test cancel'"
+            )
+        return {
+            "score": 0.7,
+            "verdict": "correct",
+            "confidence": "high",
+            "tier": "decomposed",
+            "grounding_status": "all_match",
+            "provenance_triggered": False,
+            "tokens": 100,
+            "raw_text": "trace",
+            "reasons": ["match"],
+            "rationale": "ok",
+            "call_log": [
+                {
+                    "kind": "aggregate",
+                    "duration_s": 0.01,
+                    "prompt_tokens": 50,
+                    "out_tokens": 10,
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+
+    with pytest.raises(RuntimeError, match="canceled"):
+        score_corpus(
+            con, [s1],
+            scorer_version="cancel-test",
+            model_id_default="mock-model",
+            score_evidence=_cancel_on_third_call,
+        )
+
+    # Terminal score_run row: status must remain 'canceled' (not overwritten
+    # to 'failed' by the finalize block — that's the COALESCE(NOT IN cancel
+    # statuses) guard in scoring.py:929).
+    row = con.execute(
+        "SELECT status, terminated_by, termination_reason, finished_at "
+        "FROM score_run"
+    ).fetchone()
+    assert row[0] == "canceled"
+    assert row[1] == "user"
+    assert row[2] == "test cancel"
+    assert row[3] is not None, "finalize must set finished_at even on cancel"
+
+    # Partial rows persisted: the first two evidences each wrote their
+    # aggregate row before the cancel landed (third call triggered cancel,
+    # next checkpoint raised before any aggregate-row write).
+    n_aggregate = con.execute(
+        "SELECT COUNT(*) FROM scorer_step WHERE step_kind='aggregate'"
+    ).fetchone()[0]
+    assert n_aggregate >= 2, (
+        f"expected partial scorer_step rows pre-cancel; got {n_aggregate}"
+    )
+
+
+def test_pre_started_cancelled_is_terminal_in_cancel_set():
+    """Phase 3 gate: pre_started_cancelled is recognized as a cancel terminal
+    status so score_corpus's finalize-UPDATE branch does not overwrite a row
+    the paired-cancel pre-spawn path wrote. The synthesized row also has
+    finished_at set at write time — operators can query it like any other
+    terminal row.
+    """
+    from indra_belief.corpus.scoring import CANCEL_TERMINAL_STATUSES
+
+    assert "pre_started_cancelled" in CANCEL_TERMINAL_STATUSES, (
+        "pre_started_cancelled must be a recognized cancel terminal status"
+    )
+
+    con = _con()
+    run_id = "deadbeef" * 4
+    con.execute(
+        """INSERT INTO score_run
+           (run_id, scorer_version, indra_version, architecture,
+            started_at, finished_at, n_stmts, status,
+            cost_actual_usd, terminated_by, termination_reason)
+         VALUES (?, 'pre-started-test', 'unknown', 'monolithic',
+                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                 'pre_started_cancelled', 0, 'user', 'client_disconnected')""",
+        [run_id],
+    )
+
+    row = con.execute(
+        "SELECT status, terminated_by, finished_at "
+        "FROM score_run WHERE run_id=?",
+        [run_id],
+    ).fetchone()
+    assert row[0] == "pre_started_cancelled"
+    assert row[1] == "user"
+    assert row[2] is not None, (
+        "pre_started_cancelled row must have finished_at set so it is "
+        "queryable as terminal alongside canceled/succeeded rows"
+    )

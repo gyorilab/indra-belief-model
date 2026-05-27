@@ -98,3 +98,63 @@ export async function markScoreRunCanceled(input: MarkScoreRunCanceledInput): Pr
 	}
 	throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
+
+export interface MarkScoreRunPreStartedCancelledInput {
+	run_id: string;
+	scorer_version: string;
+	architecture: string;
+	model: string;
+	paired_run_group_id?: string;
+	parent_run_id?: string;
+	reason: string;
+}
+
+async function writeScoreRunPreStartedCancelled(
+	input: MarkScoreRunPreStartedCancelledInput
+): Promise<void> {
+	await closeInstance();
+	const instance = await DuckDBInstance.create(dbPath());
+	const con = await instance.connect();
+	try {
+		await con.run(
+			`INSERT INTO score_run
+			   (run_id, scorer_version, indra_version, architecture,
+			    paired_run_group_id, parent_run_id, model_id_default,
+			    started_at, finished_at, n_stmts, status,
+			    cost_actual_usd, terminated_by, termination_reason)
+			 SELECT ?, ?, 'unknown', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+			        0, 'pre_started_cancelled', 0, 'user', ?
+			  WHERE NOT EXISTS (SELECT 1 FROM score_run WHERE run_id=?)`,
+			[
+				input.run_id,
+				input.scorer_version,
+				input.architecture,
+				input.paired_run_group_id ?? null,
+				input.parent_run_id ?? null,
+				input.model,
+				input.reason,
+				input.run_id
+			]
+		);
+	} finally {
+		con.disconnectSync?.();
+		instance.closeSync();
+	}
+}
+
+export async function markScoreRunPreStartedCancelled(
+	input: MarkScoreRunPreStartedCancelledInput
+): Promise<void> {
+	let lastErr: unknown = null;
+	for (let attempt = 0; attempt < 10; attempt += 1) {
+		try {
+			await writeScoreRunPreStartedCancelled(input);
+			return;
+		} catch (err) {
+			lastErr = err;
+			if (!isDuckDBLockError(err) || attempt === 9) break;
+			await sleep(150 * (attempt + 1));
+		}
+	}
+	throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
