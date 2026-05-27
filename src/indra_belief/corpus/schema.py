@@ -188,11 +188,12 @@ CREATE TABLE IF NOT EXISTS score_run (
     architecture       VARCHAR NOT NULL DEFAULT 'unknown', -- decomposed | monolithic | mixed | unknown
     paired_run_group_id VARCHAR,                   -- shared id for paired architecture experiments
     parent_run_id      VARCHAR,                    -- baseline run for repair / rerun loops
+    repair_kind        VARCHAR,                    -- 'rerun' | 'review_only' | NULL; typed lineage for Phase 4
     model_id_default   VARCHAR,                   -- LLM identifier (per-step may override)
     started_at         TIMESTAMP NOT NULL,
     finished_at        TIMESTAMP,
     n_stmts            INTEGER,
-    status             VARCHAR NOT NULL,          -- running | succeeded | failed | canceled
+    status             VARCHAR NOT NULL,          -- running | succeeded | failed | canceled | pre_started_cancelled | crashed_at_startup
     cost_estimate_usd  DOUBLE,
     cost_actual_usd    DOUBLE,
     reviewed_at        TIMESTAMP,
@@ -203,6 +204,9 @@ CREATE TABLE IF NOT EXISTS score_run (
     termination_reason TEXT,
     notes              TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_score_run_parent_run_id ON score_run(parent_run_id);
+CREATE INDEX IF NOT EXISTS idx_score_run_paired_group ON score_run(paired_run_group_id);
+CREATE INDEX IF NOT EXISTS idx_score_run_status ON score_run(status);
 
 CREATE TABLE IF NOT EXISTS scorer_step (
     step_hash             VARCHAR PRIMARY KEY,    -- composite hash over (run_id, stmt_hash, evidence_hash, scorer_version, model_id, architecture, step_kind, input_payload)
@@ -408,6 +412,7 @@ def _apply_additive_migrations(
         ("score_run", "review_notes", "TEXT"),
         ("score_run", "terminated_by", "VARCHAR"),
         ("score_run", "termination_reason", "TEXT"),
+        ("score_run", "repair_kind", "VARCHAR"),
         ("scorer_step", "architecture", "VARCHAR DEFAULT 'decomposed'"),
         ("scorer_step_correction", "architecture", "VARCHAR DEFAULT 'unknown'"),
         ("scorer_step_correction", "parent_correction_id", "BIGINT"),

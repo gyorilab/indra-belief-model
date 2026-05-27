@@ -8,6 +8,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"test:db-connection-manager": "node scripts/test-db-connection-manager.mjs",
+		"test:repair-estimate-token-roundtrip": "node scripts/test-repair-estimate-token-roundtrip.mjs",
 		"test:cohort-contract": "node scripts/test-run-cohort-contract.mjs",
 		"test:cohort-diagnostics": "node scripts/test-run-cohort-diagnostics.mjs",
 		"test:child-process-lifecycle": "node scripts/test-child-process-lifecycle.mjs",

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
 import { closeInstance, dbExists, dbPath, resolveTraceSnapshotStartedAt, type RunCohortFilters } from '$lib/db';
 import {
@@ -131,7 +131,28 @@ CREATE INDEX IF NOT EXISTS idx_scorer_step_correction_batch ON scorer_step_corre
 ${REPAIR_RERUN_LINEAGE_DDL}
 	`;
 const REPAIR_ESTIMATE_TTL_MS = 5 * 60 * 1000;
-const repairEstimateTokens = new Map<string, { fingerprint: string; expiresAt: number }>();
+// Phase 4: estimate tokens are now HMAC-signed and stateless so a multi-
+// process viewer (load-balanced or restarted between estimate and write)
+// can verify them without shared state. The secret is read at module load
+// time from `INDRA_VIEWER_REPAIR_TOKEN_SECRET`; for dev environments
+// without the env var a per-process secret is generated so the round-trip
+// keeps working within one process. Operators running a multi-process
+// viewer MUST set the env var to a shared 32+ byte secret.
+const REPAIR_ESTIMATE_TOKEN_SECRET: Buffer = (() => {
+	const fromEnv = process.env.INDRA_VIEWER_REPAIR_TOKEN_SECRET;
+	if (fromEnv && fromEnv.length >= 32) {
+		return Buffer.from(fromEnv, 'utf-8');
+	}
+	if (fromEnv && fromEnv.length > 0) {
+		console.warn(
+			'INDRA_VIEWER_REPAIR_TOKEN_SECRET is set but shorter than 32 chars; ' +
+			'falling back to a per-process secret. Multi-process viewers must ' +
+			'export a 32+ byte shared secret to keep estimate tokens valid ' +
+			'across restarts and replicas.'
+		);
+	}
+	return randomBytes(48);
+})();
 
 function sqlQuote(s: string): string {
 	return s.replace(/'/g, "''");
@@ -159,46 +180,81 @@ function repairEstimateFingerprint(
 	});
 }
 
-function pruneRepairEstimateTokens(now = Date.now()): void {
-	for (const [token, value] of repairEstimateTokens.entries()) {
-		if (value.expiresAt <= now) repairEstimateTokens.delete(token);
-	}
+// Exported for test scripts that exercise the cross-process round-trip
+// property. Production callers use the higher-level public API.
+export { issueRepairEstimateToken, consumeRepairEstimateToken, repairEstimateFingerprint };
+
+function signRepairEstimatePayload(payload: string): string {
+	return createHmac('sha256', REPAIR_ESTIMATE_TOKEN_SECRET).update(payload).digest('base64url');
+}
+
+function fingerprintHash(fingerprint: string): string {
+	return createHmac('sha256', REPAIR_ESTIMATE_TOKEN_SECRET)
+		.update(`fp:${fingerprint}`)
+		.digest('base64url')
+		.slice(0, 32);
 }
 
 function issueRepairEstimateToken(fingerprint: string): { token: string; expiresAt: number } {
 	const now = Date.now();
-	pruneRepairEstimateTokens(now);
-	const token = randomUUID();
 	const expiresAt = now + REPAIR_ESTIMATE_TTL_MS;
-	repairEstimateTokens.set(token, { fingerprint, expiresAt });
+	const fp = fingerprintHash(fingerprint);
+	// Token layout: `v1.<fp>.<expiresAt>.<sig>` — opaque to clients,
+	// verifiable by any process that holds the shared secret.
+	const payload = `v1.${fp}.${expiresAt}`;
+	const sig = signRepairEstimatePayload(payload);
+	const token = `${payload}.${sig}`;
 	return { token, expiresAt };
 }
 
+function timingSafeStringEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	let diff = 0;
+	for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	return diff === 0;
+}
+
 function consumeRepairEstimateToken(token: string | null | undefined, fingerprint: string): void {
-	const now = Date.now();
-	pruneRepairEstimateTokens(now);
 	if (!token) {
 		throw new RepairCohortInputError(
 			'repair_estimate_required',
 			'estimate this repair cohort before creating append-only repair candidates'
 		);
 	}
-	const record = repairEstimateTokens.get(token);
-	if (!record) {
+	const parts = token.split('.');
+	if (parts.length !== 4 || parts[0] !== 'v1') {
 		throw new RepairCohortHttpError(
 			409,
 			'repair_estimate_expired',
 			'repair estimate expired or was already used; estimate this cohort again'
 		);
 	}
-	if (record.fingerprint !== fingerprint) {
+	const [, fp, expiresAtRaw, sig] = parts;
+	const payload = `v1.${fp}.${expiresAtRaw}`;
+	const expected = signRepairEstimatePayload(payload);
+	if (!timingSafeStringEqual(expected, sig)) {
+		throw new RepairCohortHttpError(
+			409,
+			'repair_estimate_expired',
+			'repair estimate expired or was already used; estimate this cohort again'
+		);
+	}
+	const expiresAt = Number.parseInt(expiresAtRaw, 10);
+	if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
+		throw new RepairCohortHttpError(
+			409,
+			'repair_estimate_expired',
+			'repair estimate expired or was already used; estimate this cohort again'
+		);
+	}
+	const expectedFp = fingerprintHash(fingerprint);
+	if (!timingSafeStringEqual(expectedFp, fp)) {
 		throw new RepairCohortHttpError(
 			409,
 			'repair_estimate_stale',
 			'repair estimate no longer matches this cohort; estimate this cohort again'
 		);
 	}
-	repairEstimateTokens.delete(token);
 }
 
 async function openReadOnlyRepairInstance(): Promise<DuckDBInstance> {

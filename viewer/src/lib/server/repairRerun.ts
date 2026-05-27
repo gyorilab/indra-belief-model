@@ -27,6 +27,13 @@ import { OBSERVED_COST_SQL } from '$lib/server/scoreRunLifecycle';
 export type RepairRerunArchitecture = 'decomposed' | 'monolithic';
 export type RepairRerunScoringMode = 'aggregate' | 'probe_only';
 const MAX_RERUN_CORRECTION_IDS = 500;
+// Phase 4 hard caps: one visible statement can fan out into many repair
+// candidates (each evidence + the statement-scope candidate itself), so
+// the per-statement candidate count and the total evidence fan-out both
+// need explicit ceilings before write. These are *write-side* caps; the
+// preflight surface MAX_RERUN_CORRECTION_IDS is the read-side limit.
+const MAX_REPAIR_RERUN_EVIDENCES = 5_000;
+const MAX_REPAIR_RERUN_STATEMENTS = 1_000;
 const SOURCE_DUMP_RE = /^[a-z][a-z0-9_-]{1,63}$/i;
 const TYPED_REPAIR_RERUN_LINEAGE_SQL: RepairRerunLineageSqlOptions = { typedLineage: true };
 const REPAIR_RERUN_TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'canceled', 'cancelled', 'aborted']);
@@ -621,6 +628,20 @@ export async function exportRepairRerunCorpus(
 			}
 			if (statementJson.length === 0 || nEvidences === 0) {
 				throw new Error('repair rerun export produced no scorable evidence');
+			}
+			if (statementJson.length > MAX_REPAIR_RERUN_STATEMENTS) {
+				throw new Error(
+					`repair rerun export exceeded statement cap: ${statementJson.length} > ` +
+					`${MAX_REPAIR_RERUN_STATEMENTS}. Reduce the candidate selection or raise ` +
+					`MAX_REPAIR_RERUN_STATEMENTS after confirming token spend is acceptable.`
+				);
+			}
+			if (nEvidences > MAX_REPAIR_RERUN_EVIDENCES) {
+				throw new Error(
+					`repair rerun export exceeded evidence fan-out cap: ${nEvidences} > ` +
+					`${MAX_REPAIR_RERUN_EVIDENCES}. Reduce the candidate selection or raise ` +
+					`MAX_REPAIR_RERUN_EVIDENCES after confirming token spend is acceptable.`
+				);
 			}
 			const scoringMode: RepairRerunScoringMode =
 				parentArchitecture === 'decomposed' &&
