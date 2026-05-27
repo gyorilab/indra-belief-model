@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
 import { closeInstance, connect, dbExists, dbPath } from '$lib/db';
@@ -142,6 +142,101 @@ function dataRoot(): string {
 
 function repairRerunRoot(): string {
 	return resolve(dataRoot(), 'repair_reruns');
+}
+
+/**
+ * A2 of deferred hypergraph: GC + dedup for repair-rerun JSON exports.
+ *
+ * Each export writes `<source_dump_id>.json` + `<source_dump_id>.meta.json`
+ * under `data/repair_reruns/`. Without cleanup the directory grows
+ * unboundedly. Retention contract:
+ *  - keep any export whose `.meta.json` mtime is within `retainDays`
+ *    (default 14, env override `INDRA_REPAIR_RERUN_RETAIN_DAYS`);
+ *  - keep any export whose `source_dump_id` is referenced by an open
+ *    repair intent (queried via the supplied DuckDB connection);
+ *  - delete the rest (both .json and .meta.json).
+ *
+ * Idempotent; safe to call repeatedly. Returns the list of deleted
+ * source_dump_ids for observability.
+ */
+function repairRerunRetentionDays(): number {
+	const raw = process.env.INDRA_REPAIR_RERUN_RETAIN_DAYS;
+	if (!raw) return 14;
+	const parsed = Number.parseInt(raw, 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : 14;
+}
+
+export async function gcRepairRerunExports(
+	con: DuckDBConnection,
+	{ retainDays }: { retainDays?: number } = {}
+): Promise<{ deleted: string[]; kept_recent: number; kept_referenced: number }> {
+	const root = repairRerunRoot();
+	if (!existsSync(root)) {
+		return { deleted: [], kept_recent: 0, kept_referenced: 0 };
+	}
+	const keepDays = retainDays ?? repairRerunRetentionDays();
+	const cutoff = Date.now() - keepDays * 24 * 60 * 60 * 1000;
+
+	// Discover candidate source_dump_ids from on-disk meta files.
+	const entries = readdirSync(root);
+	const candidates: { source_dump_id: string; mtimeMs: number }[] = [];
+	for (const name of entries) {
+		if (!name.endsWith('.meta.json')) continue;
+		const source_dump_id = name.slice(0, -'.meta.json'.length);
+		try {
+			const stat = statSync(resolve(root, name));
+			candidates.push({ source_dump_id, mtimeMs: stat.mtimeMs });
+		} catch {
+			// best-effort
+		}
+	}
+
+	if (candidates.length === 0) {
+		return { deleted: [], kept_recent: 0, kept_referenced: 0 };
+	}
+
+	// Discover currently-referenced source_dump_ids from open repair
+	// intents. The intent's value_json carries the source_dump_id of the
+	// export it materialized.
+	const referencedReader = await con.runAndReadAll(
+		`SELECT DISTINCT json_extract_string(value_json, '$.source_dump_id') AS sdi
+		   FROM scorer_step_correction
+		  WHERE status='open'
+		    AND value_json IS NOT NULL`
+	);
+	const referenced = new Set(
+		referencedReader
+			.getRowObjects()
+			.map((row) => row.sdi)
+			.filter((sdi): sdi is string => typeof sdi === 'string' && sdi.length > 0)
+	);
+
+	let kept_recent = 0;
+	let kept_referenced = 0;
+	const deleted: string[] = [];
+	for (const { source_dump_id, mtimeMs } of candidates) {
+		if (mtimeMs >= cutoff) {
+			kept_recent += 1;
+			continue;
+		}
+		if (referenced.has(source_dump_id)) {
+			kept_referenced += 1;
+			continue;
+		}
+		// Delete both the JSON corpus and the meta file. Either may be
+		// missing if a prior partial-failure left a half-export; tolerate
+		// ENOENT on either.
+		for (const ext of ['.json', '.meta.json']) {
+			const path = resolve(root, `${source_dump_id}${ext}`);
+			try {
+				unlinkSync(path);
+			} catch {
+				// best-effort
+			}
+		}
+		deleted.push(source_dump_id);
+	}
+	return { deleted, kept_recent, kept_referenced };
 }
 
 function normalizedCorrectionIds(ids: number[] | null | undefined): number[] {
@@ -650,6 +745,43 @@ export async function exportRepairRerunCorpus(
 					? 'probe_only'
 					: 'aggregate';
 
+			// A3 of deferred hypergraph: capture the B1 denominator ledger
+			// rows the parent run currently emits, so the preflight UI can
+			// show "before" numbers next to the rerun's expected impact.
+			// Computing the precise "after" delta requires modeling the
+			// scoring outcome (which is what the rerun will produce), so
+			// we surface only the "before" snapshot here; the UI can show
+			// the delta as evidence/statement counts the rerun will touch.
+			// The query is guarded because fixture DBs in tests may not
+			// have the denominator_ledger view (it depends on every base
+			// table the VIEW UNIONs); a missing view should not block
+			// repair export — just emit an empty ledger snapshot.
+			let denominator_ledger_before: { family: string; kind: string; value: number }[] = [];
+			try {
+				const ledgerReader = await con.runAndReadAll(
+					`SELECT family, kind, value
+					   FROM denominator_ledger
+					  WHERE run_id = '${sqlQuote(input.run_id)}'`
+				);
+				denominator_ledger_before = ledgerReader
+					.getRowObjects()
+					.map((row) => ({
+						family: String(row.family),
+						kind: String(row.kind),
+						value: Number(row.value)
+					}));
+			} catch {
+				// view missing in fixture DBs; emit empty snapshot
+			}
+			const denominator_preview = {
+				ledger_before: denominator_ledger_before,
+				rerun_touches: {
+					n_statements: statementJson.length,
+					n_evidences: nEvidences,
+					n_candidates: nCandidates
+				}
+			};
+
 			const source_dump_id = `repair_${input.run_id.slice(0, 8)}_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
 			const root = repairRerunRoot();
 			mkdirSync(root, { recursive: true });
@@ -682,7 +814,8 @@ export async function exportRepairRerunCorpus(
 					scoring_mode: scoringMode,
 					probe_step_filter: probeStepFilter,
 					max_correction_ids: MAX_RERUN_CORRECTION_IDS,
-					truncated: ids.length === 0 && selectedIds.length === MAX_RERUN_CORRECTION_IDS
+					truncated: ids.length === 0 && selectedIds.length === MAX_RERUN_CORRECTION_IDS,
+					denominator_preview
 				}, null, 2)
 			);
 
