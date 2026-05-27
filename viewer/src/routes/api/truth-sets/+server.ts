@@ -112,7 +112,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Release the viewer's cached READ_ONLY DuckDB instance so the worker can
 	// acquire the file lock. Next dashboard read will lazy-reopen.
 	try {
-		closeInstance();
+		await closeInstance();
 	} catch (e) {
 		clearWriterLockToken(writerLock.token);
 		throw e;

@@ -14,7 +14,12 @@ Persistence is content-addressed and append-only; surviving scorer-architecture
 iterations is a hard requirement. Schema lives in `corpus.schema`.
 """
 
-from indra_belief.corpus.schema import apply_schema, SCHEMA_VERSION
+from indra_belief.corpus.schema import (
+    apply_schema,
+    reconcile_stale_running_runs,
+    SCHEMA_VERSION,
+    STALE_RUNNING_THRESHOLD_HOURS,
+)
 from indra_belief.corpus.loader import (
     from_indra_json,
     ingest_statements,
@@ -36,7 +41,9 @@ from indra_belief.corpus.cost import estimate_cost, MODEL_PRICES_PER_M_TOKENS
 
 __all__ = [
     "apply_schema",
+    "reconcile_stale_running_runs",
     "SCHEMA_VERSION",
+    "STALE_RUNNING_THRESHOLD_HOURS",
     "from_indra_json",
     "ingest_statements",
     "register_truth_set",

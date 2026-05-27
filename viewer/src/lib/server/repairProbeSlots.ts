@@ -55,7 +55,7 @@ async function openWriteConnection<T>(fn: (con: DuckDBConnection) => Promise<T>)
 	let instance: DuckDBInstance | null = null;
 	let con: DuckDBConnection | null = null;
 	try {
-		closeInstance();
+		await closeInstance();
 		instance = await DuckDBInstance.create(dbPath());
 		con = await instance.connect();
 		return await fn(con);

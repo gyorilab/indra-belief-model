@@ -276,7 +276,7 @@ export const POST: RequestHandler = async (event) => {
 			request.signal.addEventListener('abort', onAbort);
 			if (request.signal.aborted) onAbort();
 
-				const runArch = (architecture: Architecture): Promise<boolean> => new Promise((resolveP) => {
+				const runArch = (architecture: Architecture): Promise<boolean> => new Promise((resolveP) => { (async () => {
 					// Must stay before spawn: onAbort can run between serial
 					// architecture lanes when activeChild is null.
 					if (aborted) {
@@ -396,7 +396,7 @@ export const POST: RequestHandler = async (event) => {
 						cost_threshold_usd: caps[architecture]
 					});
 					try {
-						closeInstance();
+						await closeInstance();
 					} catch (err) {
 						const message = err instanceof Error ? err.message : String(err);
 						clearWriterLockToken(writerLock.token);
@@ -697,7 +697,10 @@ export const POST: RequestHandler = async (event) => {
 					writeEvent({ event: 'arch_state', architecture, state: 'crashed', error: err.message });
 					resolveP(false);
 				});
-			});
+			})().catch((err) => {
+				console.error('runArch unexpected error', err);
+				resolveP(false);
+			}); });
 
 			(async () => {
 				writeEvent({

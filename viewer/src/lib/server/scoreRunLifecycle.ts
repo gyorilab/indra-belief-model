@@ -43,7 +43,7 @@ function isDuckDBLockError(err: unknown): boolean {
 }
 
 async function writeScoreRunCanceled(input: MarkScoreRunCanceledInput): Promise<void> {
-	closeInstance();
+	await closeInstance();
 	const instance = await DuckDBInstance.create(dbPath());
 	const con = await instance.connect();
 	try {

@@ -25,6 +25,7 @@ Hashes (per Phase 1.5 lock):
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -298,7 +299,92 @@ def apply_schema(con: "duckdb.DuckDBPyConnection") -> None:
         "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', ?)",
         [str(SCHEMA_VERSION)],
     )
+    # The janitor writes to score_run, so a READ_ONLY connection (e.g., a
+    # future viewer/admin script that opens read-only and still calls
+    # apply_schema by mistake) would crash here. Log and continue rather
+    # than blocking apply_schema for the whole process.
+    try:
+        reconcile_stale_running_runs(con)
+    except Exception as e:
+        log.warning("startup janitor skipped: %s", e)
     log.info("corpus schema applied (version=%s)", SCHEMA_VERSION)
+
+
+# A score_run that has been in 'running' status for longer than this threshold
+# is assumed to be from a process that crashed/was killed between worker spawn
+# and tombstone. Default 48h: the full Rasmachine corpus monolithic-scoring
+# at 27B can run 6-12h, and a paused-laptop scenario can extend a live run
+# further; 48h is the conservative ceiling. Override via the
+# `INDRA_STALE_RUN_HOURS` env var (used by `apply_schema()`) for ops with
+# shorter SLAs. A future heartbeat column will replace this with precise
+# liveness detection.
+def _stale_running_threshold_hours_default() -> int:
+    raw = os.environ.get("INDRA_STALE_RUN_HOURS", "48")
+    try:
+        parsed = int(raw)
+        return max(1, parsed)
+    except ValueError:
+        return 48
+
+
+STALE_RUNNING_THRESHOLD_HOURS = _stale_running_threshold_hours_default()
+
+
+def reconcile_stale_running_runs(
+    con: "duckdb.DuckDBPyConnection",
+    *,
+    threshold_hours: int = STALE_RUNNING_THRESHOLD_HOURS,
+) -> list[str]:
+    """Tombstone score_run rows stuck in 'running' from a crashed prior worker.
+
+    Returns the list of run_ids that were tombstoned to `'crashed_at_startup'`.
+    A row is considered stale when its `started_at` is older than
+    `threshold_hours` and its status is still `'running'` — at that point we
+    assume the worker that owned the row did not survive to flip the status,
+    e.g. the host rebooted between worker spawn and tombstone.
+
+    Safety: a live run with `started_at` within the threshold is never touched.
+    The threshold needs to be wider than the largest plausible scoring time on
+    the largest corpus; bump `STALE_RUNNING_THRESHOLD_HOURS` if a real run
+    legitimately exceeds the default. A future Phase will add a heartbeat
+    column so the janitor can detect crashes precisely instead of by age.
+    """
+    if not _table_exists(con, "score_run"):
+        return []
+    candidate_rows = con.execute(
+        f"""
+        SELECT run_id
+          FROM score_run
+         WHERE status = 'running'
+           AND started_at IS NOT NULL
+           AND started_at < CURRENT_TIMESTAMP - INTERVAL '{int(threshold_hours)} hours'
+        """
+    ).fetchall()
+    if not candidate_rows:
+        return []
+    run_ids = [str(row[0]) for row in candidate_rows]
+    placeholders = ",".join(["?"] * len(run_ids))
+    con.execute(
+        f"""
+        UPDATE score_run
+           SET status = 'crashed_at_startup',
+               finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP),
+               terminated_by = COALESCE(terminated_by, 'janitor'),
+               termination_reason = COALESCE(
+                 termination_reason,
+                 'startup janitor: row was in running state for more than '
+                   || ? || ' hours; assuming the owning worker process did not survive'
+               )
+         WHERE run_id IN ({placeholders})
+        """,
+        [str(threshold_hours), *run_ids],
+    )
+    log.warning(
+        "startup janitor tombstoned %d stale running run(s): %s",
+        len(run_ids),
+        ", ".join(run_ids[:8]) + ("…" if len(run_ids) > 8 else ""),
+    )
+    return run_ids
 
 
 def _apply_additive_migrations(

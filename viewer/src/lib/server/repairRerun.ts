@@ -433,7 +433,7 @@ async function withRepairWriteConnection<T>(
 		let instance: DuckDBInstance | null = null;
 		let con: DuckDBConnection | null = null;
 		try {
-			closeInstance();
+			await closeInstance();
 			instance = await DuckDBInstance.create(dbPath());
 			con = await instance.connect();
 			return await fn(con);
@@ -694,7 +694,7 @@ export async function exportRepairRerunCorpus(
 			};
 		} finally {
 			con.disconnectSync?.();
-			closeInstance();
+			await closeInstance();
 	}
 }
 

@@ -98,6 +98,69 @@ let _instanceCtimeMs = 0;
 let _instanceSize = 0;
 const DUCKDB_LOCK_FRAGMENTS = ['Could not set lock', 'Conflicting lock'] as const;
 
+// Serialized/refcounted DuckDB connection manager. Closes the cycle 51-vintage
+// race: two concurrent `connect()` calls both saw `_instance == null`, both
+// called `DuckDBInstance.create()`, one win + one leak; the leaked instance
+// kept an OS-level read lock so writer-spawn endpoints got 503 storms.
+//
+// _instanceCreationPromise serializes acquisition: in-flight `connect()` calls
+// share the same create() promise. _activeReaderCount is a refcount of open
+// reader connections; on close we wait for it to drain (bounded by
+// CLOSE_INSTANCE_DRAIN_TIMEOUT_MS) before destroying the instance.
+// _closePending blocks new connects from landing on a soon-to-be-destroyed
+// handle. We use a counter (not a Set) so a caller that forgets to call
+// `disconnectSync` does not hard-reference the connection object and block GC.
+let _instanceCreationPromise: Promise<DuckDBInstance> | null = null;
+let _activeReaderCount = 0;
+let _closePending = false;
+let _closeWaiters: Array<() => void> = [];
+
+const CLOSE_INSTANCE_DRAIN_TIMEOUT_MS = 5_000;
+const CLOSE_INSTANCE_POLL_MS = 25;
+
+function delay(ms: number): Promise<void> {
+	return new Promise((r) => setTimeout(r, ms));
+}
+
+function notifyCloseDone(): void {
+	const waiters = _closeWaiters;
+	_closeWaiters = [];
+	for (const w of waiters) {
+		try {
+			w();
+		} catch {
+			// waiter callbacks must not throw into here
+		}
+	}
+}
+
+function registerConnection(con: DuckDBConnection): DuckDBConnection {
+	_activeReaderCount += 1;
+	const originalDisconnect = (con as unknown as { disconnectSync?: () => void }).disconnectSync;
+	let released = false;
+	const release = () => {
+		if (released) return;
+		released = true;
+		// Floor at 0 so a stray double-call doesn't poison the count.
+		_activeReaderCount = Math.max(0, _activeReaderCount - 1);
+	};
+	if (typeof originalDisconnect === 'function') {
+		(con as unknown as { disconnectSync: () => void }).disconnectSync = function patchedDisconnect() {
+			release();
+			try {
+				originalDisconnect.call(this);
+			} catch {
+				// best-effort — handle may already be gone
+			}
+		};
+	} else {
+		// Without disconnectSync we can't observe close, so don't pin the
+		// counter; assume the caller's lifecycle is short and release now.
+		release();
+	}
+	return con;
+}
+
 export function dbPath(): string {
 	if (_resolvedPath) return _resolvedPath;
 	const env = process.env.VIEWER_DUCKDB_PATH;
@@ -129,21 +192,28 @@ export async function connect(): Promise<DuckDBConnection> {
 	} catch {
 		// File may not exist yet
 	}
-	if (
-		_instance &&
+
+	// If a close is in flight, wait for it; otherwise new connects could land
+	// on a soon-to-be-destroyed instance.
+	while (_closePending) {
+		await new Promise<void>((r) => _closeWaiters.push(r));
+	}
+
+	const staleByFileStat =
+		_instance != null &&
 		statAvailable &&
 		(currentMtime !== _instanceMtimeMs ||
 			currentCtime !== _instanceCtimeMs ||
-			currentSize !== _instanceSize)
-	) {
-		try {
-			(_instance as unknown as { closeSync?: () => void }).closeSync?.();
-		} catch {
-			// best-effort
-		}
-		_instance = null;
+			currentSize !== _instanceSize);
+	if (staleByFileStat) {
+		// closeInstance() is the serialized path that handles in-flight readers.
+		// Bypass it only when our cached instance is provably stale and no in-
+		// flight create is running; otherwise we'd leak by recreating without
+		// waiting.
+		await closeInstance();
 	}
-	if (!_instance) {
+
+	if (!_instance && !_instanceCreationPromise) {
 		// READ_ONLY mode. DuckDB's file-level lock is held at the *instance*
 		// level: a process holding any open instance (even READ_ONLY) blocks
 		// another process from opening the same file for writing. Endpoints
@@ -153,45 +223,95 @@ export async function connect(): Promise<DuckDBConnection> {
 		// writer holds the lock surface as a typed 503 (caught by
 		// +error.svelte and rendered as a friendly waiting screen) rather
 		// than a raw 500 with a DuckDB stack trace.
-		try {
-			_instance = await DuckDBInstance.create(path, { access_mode: 'READ_ONLY' });
-		} catch (e) {
-			const msg = (e as Error)?.message ?? String(e);
-			if (DUCKDB_LOCK_FRAGMENTS.some((fragment) => msg.includes(fragment))) {
-				throw error(
-					503,
-					{
-						code: 'writer_in_progress',
-						message:
-							'writer_in_progress: an ingest or score worker is holding the DuckDB write lock. Wait for it to finish, then reload.'
-					}
-				);
+		_instanceCreationPromise = (async () => {
+			try {
+				const inst = await DuckDBInstance.create(path, { access_mode: 'READ_ONLY' });
+				_instance = inst;
+				_instanceMtimeMs = currentMtime;
+				_instanceCtimeMs = currentCtime;
+				_instanceSize = currentSize;
+				return inst;
+			} finally {
+				_instanceCreationPromise = null;
 			}
-			throw e;
-		}
-		_instanceMtimeMs = currentMtime;
-		_instanceCtimeMs = currentCtime;
-		_instanceSize = currentSize;
+		})();
 	}
-	return _instance.connect();
+
+	try {
+		const inst = await (_instanceCreationPromise ?? Promise.resolve(_instance as DuckDBInstance));
+		const con = await inst.connect();
+		return registerConnection(con);
+	} catch (e) {
+		const msg = (e as Error)?.message ?? String(e);
+		if (DUCKDB_LOCK_FRAGMENTS.some((fragment) => msg.includes(fragment))) {
+			throw error(
+				503,
+				{
+					code: 'writer_in_progress',
+					message:
+						'writer_in_progress: an ingest or score worker is holding the DuckDB write lock. Wait for it to finish, then reload.'
+				}
+			);
+		}
+		throw e;
+	}
 }
 
 /**
  * Release the cached READ_ONLY instance so a Python writer subprocess can
- * acquire the file lock. Call before spawning ingest / score workers; the
- * next `connect()` will lazily reopen. Cheap and idempotent.
+ * acquire the file lock. Drains in-flight reader connections first (bounded
+ * by `CLOSE_INSTANCE_DRAIN_TIMEOUT_MS`); after the timeout it closes anyway
+ * — leaking is worse than blocking writer spawn forever.
  */
-export function closeInstance(): void {
-	if (!_instance) return;
+export async function closeInstance(): Promise<void> {
+	if (!_instance && !_instanceCreationPromise) return;
+	_closePending = true;
 	try {
-		(_instance as unknown as { closeSync?: () => void }).closeSync?.();
-	} catch {
-		// best-effort — instance may already be closed
+		// Wait for any in-flight create() to finish so we have a real handle
+		// to close (and we don't race the assignment in the create promise).
+		if (_instanceCreationPromise) {
+			try {
+				await _instanceCreationPromise;
+			} catch {
+				// Creation failed; nothing to close.
+			}
+		}
+		// Snapshot the instance now so a concurrent closeInstance() racing
+		// with a fresh `connect()` after our drain finishes does not
+		// closeSync() the NEW instance someone else just opened.
+		const targetInstance = _instance;
+		const deadline = Date.now() + CLOSE_INSTANCE_DRAIN_TIMEOUT_MS;
+		while (_activeReaderCount > 0 && Date.now() < deadline) {
+			await delay(CLOSE_INSTANCE_POLL_MS);
+		}
+		if (_activeReaderCount > 0) {
+			console.warn(
+				`closeInstance: forced close after ${CLOSE_INSTANCE_DRAIN_TIMEOUT_MS}ms ` +
+					`with ${_activeReaderCount} reader(s) still active; ` +
+					`their next read may surface a destroyed-handle error`
+			);
+		}
+		if (targetInstance) {
+			try {
+				(targetInstance as unknown as { closeSync?: () => void }).closeSync?.();
+			} catch {
+				// best-effort — instance may already be closed
+			}
+		}
+		// Only reset shared state if our target is still the active one. A
+		// concurrent close that already swapped in a new instance must keep
+		// its bookkeeping intact.
+		if (_instance === targetInstance) {
+			_instance = null;
+			_instanceMtimeMs = 0;
+			_instanceCtimeMs = 0;
+			_instanceSize = 0;
+			_activeReaderCount = 0;
+		}
+	} finally {
+		_closePending = false;
+		notifyCloseDone();
 	}
-	_instance = null;
-	_instanceMtimeMs = 0;
-	_instanceCtimeMs = 0;
-	_instanceSize = 0;
 }
 
 export interface CorpusOverview {

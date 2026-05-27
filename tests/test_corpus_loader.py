@@ -20,7 +20,9 @@ from indra_belief.corpus import (
     apply_schema,
     ingest_statements,
     load_truth_labels,
+    reconcile_stale_running_runs,
     register_truth_set,
+    STALE_RUNNING_THRESHOLD_HOURS,
     validate_statement_evidence_denominators,
 )
 
@@ -619,3 +621,76 @@ def test_load_truth_labels_raises_on_unregistered_truth_set():
             {"target_kind": "stmt", "target_id": stmt_hash,
              "field": "verdict", "value_text": "correct"}
         ])
+
+
+def _seed_score_run(con, *, run_id, status, started_offset_hours):
+    """Seed one score_run row at a given age and status for janitor tests."""
+    con.execute(
+        f"""
+        INSERT INTO score_run
+            (run_id, scorer_version, indra_version, architecture,
+             started_at, status)
+        VALUES (?, 'janitor-test', 'unknown', 'decomposed',
+                CURRENT_TIMESTAMP - INTERVAL '{int(started_offset_hours)} hours',
+                ?)
+        """,
+        [run_id, status],
+    )
+
+
+def test_startup_janitor_tombstones_stale_running_runs():
+    """Phase 2 gate: a row stuck in 'running' beyond the stale threshold must
+    be tombstoned as 'crashed_at_startup'. Live and terminal rows must not be
+    touched.
+    """
+    con = _con()
+    _seed_score_run(
+        con,
+        run_id="stale",
+        status="running",
+        started_offset_hours=STALE_RUNNING_THRESHOLD_HOURS + 1,
+    )
+    _seed_score_run(con, run_id="live", status="running", started_offset_hours=1)
+    _seed_score_run(con, run_id="done", status="succeeded", started_offset_hours=24)
+
+    tombstoned = reconcile_stale_running_runs(con)
+    assert tombstoned == ["stale"]
+
+    rows = dict(
+        con.execute(
+            "SELECT run_id, status FROM score_run"
+        ).fetchall()
+    )
+    assert rows["stale"] == "crashed_at_startup"
+    assert rows["live"] == "running"
+    assert rows["done"] == "succeeded"
+
+    finished, terminated_by, reason = con.execute(
+        "SELECT finished_at, terminated_by, termination_reason "
+        "FROM score_run WHERE run_id='stale'"
+    ).fetchone()
+    assert finished is not None
+    assert terminated_by == "janitor"
+    assert reason is not None
+    assert "running state for more than" in reason
+
+
+def test_startup_janitor_runs_inside_apply_schema():
+    """`apply_schema` is the natural process-startup hook; it must invoke the
+    janitor so a stale row is reconciled even when the caller doesn't know
+    about the janitor function.
+    """
+    con = duckdb.connect(":memory:")
+    apply_schema(con)
+    _seed_score_run(
+        con,
+        run_id="prior_crashed",
+        status="running",
+        started_offset_hours=STALE_RUNNING_THRESHOLD_HOURS + 2,
+    )
+    # apply_schema again — simulates a fresh process opening the file
+    apply_schema(con)
+    status = con.execute(
+        "SELECT status FROM score_run WHERE run_id='prior_crashed'"
+    ).fetchone()
+    assert status == ("crashed_at_startup",)

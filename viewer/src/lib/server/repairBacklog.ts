@@ -606,7 +606,7 @@ export async function materializeRepairCohort(
 	let instance: DuckDBInstance | null = null;
 	let con: DuckDBConnection | null = null;
 	try {
-		closeInstance();
+		await closeInstance();
 		instance = await DuckDBInstance.create(dbPath());
 		con = await instance.connect();
 		await con.run(CORRECTION_DDL);
