@@ -202,9 +202,18 @@ CREATE TABLE IF NOT EXISTS score_run (
     review_notes       TEXT,
     terminated_by      VARCHAR,                   -- user | worker_error | janitor | system
     termination_reason TEXT,
-    notes              TEXT
+    notes              TEXT,
+    -- C1 of deferred hypergraph: heartbeat-based liveness for the startup
+    -- janitor. The worker writes `heartbeat_at = CURRENT_TIMESTAMP` every K
+    -- evidence loops; the janitor tombstones rows whose heartbeat is older
+    -- than a configurable grace (default 10 min). `worker_pid` is captured
+    -- at insert time so future tooling can also use `os.kill(pid, 0)` for
+    -- precise liveness; today the column is informational.
+    heartbeat_at       TIMESTAMP,
+    worker_pid         INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_score_run_parent_run_id ON score_run(parent_run_id);
+CREATE INDEX IF NOT EXISTS idx_score_run_heartbeat ON score_run(heartbeat_at);
 CREATE INDEX IF NOT EXISTS idx_score_run_paired_group ON score_run(paired_run_group_id);
 CREATE INDEX IF NOT EXISTS idx_score_run_status ON score_run(status);
 
@@ -385,6 +394,10 @@ def apply_schema(con: "duckdb.DuckDBPyConnection") -> None:
         reconcile_stale_running_runs(con)
     except Exception as e:
         log.warning("startup janitor skipped: %s", e)
+    try:
+        reconcile_stale_repair_intents(con)
+    except Exception as e:
+        log.warning("repair intent reconcile skipped: %s", e)
     log.info("corpus schema applied (version=%s)", SCHEMA_VERSION)
 
 
@@ -408,54 +421,89 @@ def _stale_running_threshold_hours_default() -> int:
 STALE_RUNNING_THRESHOLD_HOURS = _stale_running_threshold_hours_default()
 
 
+def _heartbeat_grace_minutes_default() -> int:
+    raw = os.environ.get("INDRA_HEARTBEAT_STALE_MINUTES", "10")
+    try:
+        parsed = int(raw)
+        return max(1, parsed)
+    except ValueError:
+        return 10
+
+
+HEARTBEAT_STALE_GRACE_MINUTES = _heartbeat_grace_minutes_default()
+
+
 def reconcile_stale_running_runs(
     con: "duckdb.DuckDBPyConnection",
     *,
     threshold_hours: int = STALE_RUNNING_THRESHOLD_HOURS,
+    heartbeat_grace_minutes: int = HEARTBEAT_STALE_GRACE_MINUTES,
 ) -> list[str]:
     """Tombstone score_run rows stuck in 'running' from a crashed prior worker.
 
     Returns the list of run_ids that were tombstoned to `'crashed_at_startup'`.
-    A row is considered stale when its `started_at` is older than
-    `threshold_hours` and its status is still `'running'` — at that point we
-    assume the worker that owned the row did not survive to flip the status,
-    e.g. the host rebooted between worker spawn and tombstone.
 
-    Safety: a live run with `started_at` within the threshold is never touched.
-    The threshold needs to be wider than the largest plausible scoring time on
-    the largest corpus; bump `STALE_RUNNING_THRESHOLD_HOURS` if a real run
-    legitimately exceeds the default. A future Phase will add a heartbeat
-    column so the janitor can detect crashes precisely instead of by age.
+    Two predicates fire OR-style:
+      1. **Heartbeat predicate (preferred)**: `heartbeat_at IS NOT NULL AND
+         heartbeat_at < now - heartbeat_grace_minutes`. A live worker writes
+         heartbeat every K evidence loops; if the grace passes without a write
+         the process is presumed dead.
+      2. **Wall-clock fallback (legacy)**: `heartbeat_at IS NULL AND
+         started_at < now - threshold_hours`. Used for rows that predate the
+         heartbeat column or workers that don't write heartbeats.
+
+    Safety: a live run with a fresh heartbeat is never touched, regardless of
+    `started_at`. A live run that has not yet recorded its first heartbeat is
+    protected by the wall-clock fallback.
     """
     if not _table_exists(con, "score_run"):
         return []
-    candidate_rows = con.execute(
-        f"""
-        SELECT run_id
-          FROM score_run
-         WHERE status = 'running'
-           AND started_at IS NOT NULL
-           AND started_at < CURRENT_TIMESTAMP - INTERVAL '{int(threshold_hours)} hours'
+    has_heartbeat_col = _column_exists(con, "score_run", "heartbeat_at")
+    if has_heartbeat_col:
+        sql = f"""
+            SELECT run_id, heartbeat_at, started_at
+              FROM score_run
+             WHERE status = 'running'
+               AND (
+                 (heartbeat_at IS NOT NULL
+                  AND heartbeat_at < CURRENT_TIMESTAMP
+                      - INTERVAL '{int(heartbeat_grace_minutes)} minutes')
+                 OR
+                 (heartbeat_at IS NULL
+                  AND started_at IS NOT NULL
+                  AND started_at < CURRENT_TIMESTAMP
+                      - INTERVAL '{int(threshold_hours)} hours')
+               )
         """
-    ).fetchall()
+    else:
+        sql = f"""
+            SELECT run_id, NULL AS heartbeat_at, started_at
+              FROM score_run
+             WHERE status = 'running'
+               AND started_at IS NOT NULL
+               AND started_at < CURRENT_TIMESTAMP
+                   - INTERVAL '{int(threshold_hours)} hours'
+        """
+    candidate_rows = con.execute(sql).fetchall()
     if not candidate_rows:
         return []
     run_ids = [str(row[0]) for row in candidate_rows]
     placeholders = ",".join(["?"] * len(run_ids))
+    reason_msg = (
+        f"startup janitor: heartbeat absent or older than "
+        f"{heartbeat_grace_minutes} min, or started_at older than "
+        f"{threshold_hours} h; assuming the owning worker did not survive"
+    )
     con.execute(
         f"""
         UPDATE score_run
            SET status = 'crashed_at_startup',
                finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP),
                terminated_by = COALESCE(terminated_by, 'janitor'),
-               termination_reason = COALESCE(
-                 termination_reason,
-                 'startup janitor: row was in running state for more than '
-                   || ? || ' hours; assuming the owning worker process did not survive'
-               )
+               termination_reason = COALESCE(termination_reason, ?)
          WHERE run_id IN ({placeholders})
         """,
-        [str(threshold_hours), *run_ids],
+        [reason_msg, *run_ids],
     )
     log.warning(
         "startup janitor tombstoned %d stale running run(s): %s",
@@ -463,6 +511,59 @@ def reconcile_stale_running_runs(
         ", ".join(run_ids[:8]) + ("…" if len(run_ids) > 8 else ""),
     )
     return run_ids
+
+
+def reconcile_stale_repair_intents(
+    con: "duckdb.DuckDBPyConnection",
+) -> list[int]:
+    """Release repair-intent rows whose child run is in a terminal-cancel state.
+
+    A1 of the deferred hypergraph: on viewer/worker restart the repair intent
+    table can hold an `'open'` row whose `child_run_id` points to a
+    `score_run` that the startup janitor (or an earlier cancel) has flipped
+    to `'crashed_at_startup'`/`'canceled'`/`'pre_started_cancelled'`. Mark
+    such intents as released so the UI does not show them as "in progress
+    forever".
+
+    Returns the list of correction_ids that were released.
+    """
+    if not _table_exists(con, "scorer_step_correction"):
+        return []
+    if not _column_exists(con, "scorer_step_correction", "child_run_id"):
+        return []
+    candidates = con.execute(
+        """
+        SELECT c.correction_id
+          FROM scorer_step_correction c
+          JOIN score_run sr ON sr.run_id = c.child_run_id
+         WHERE c.status = 'open'
+           AND sr.status IN (
+                'canceled', 'cancelled', 'aborted',
+                'crashed_at_startup', 'pre_started_cancelled'
+           )
+        """
+    ).fetchall()
+    if not candidates:
+        return []
+    ids = [int(row[0]) for row in candidates]
+    placeholders = ",".join(["?"] * len(ids))
+    con.execute(
+        f"""
+        UPDATE scorer_step_correction
+           SET status = 'released',
+               note = COALESCE(
+                 note,
+                 'startup janitor: child score_run is in a terminal cancel '
+                 'state; intent released so UI no longer shows it pending'
+               )
+         WHERE correction_id IN ({placeholders})
+        """,
+        ids,
+    )
+    log.warning(
+        "startup janitor released %d stale repair intent(s)", len(ids)
+    )
+    return ids
 
 
 def _apply_additive_migrations(
@@ -487,6 +588,8 @@ def _apply_additive_migrations(
         ("score_run", "terminated_by", "VARCHAR"),
         ("score_run", "termination_reason", "TEXT"),
         ("score_run", "repair_kind", "VARCHAR"),
+        ("score_run", "heartbeat_at", "TIMESTAMP"),
+        ("score_run", "worker_pid", "INTEGER"),
         ("scorer_step", "architecture", "VARCHAR DEFAULT 'decomposed'"),
         ("scorer_step_correction", "architecture", "VARCHAR DEFAULT 'unknown'"),
         ("scorer_step_correction", "parent_correction_id", "BIGINT"),

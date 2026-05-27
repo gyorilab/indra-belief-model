@@ -16,6 +16,8 @@ iterations is a hard requirement. Schema lives in `corpus.schema`.
 
 from indra_belief.corpus.schema import (
     apply_schema,
+    HEARTBEAT_STALE_GRACE_MINUTES,
+    reconcile_stale_repair_intents,
     reconcile_stale_running_runs,
     SCHEMA_VERSION,
     STALE_RUNNING_THRESHOLD_HOURS,
@@ -45,6 +47,8 @@ from indra_belief.corpus.cost import estimate_cost, MODEL_PRICES_PER_M_TOKENS
 
 __all__ = [
     "apply_schema",
+    "HEARTBEAT_STALE_GRACE_MINUTES",
+    "reconcile_stale_repair_intents",
     "reconcile_stale_running_runs",
     "SCHEMA_VERSION",
     "STALE_RUNNING_THRESHOLD_HOURS",

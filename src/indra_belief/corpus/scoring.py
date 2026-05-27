@@ -419,6 +419,21 @@ def _raise_if_run_canceled(con: "duckdb.DuckDBPyConnection", run_id: str) -> Non
     status = str(row[0]) if row and row[0] is not None else "running"
     if status in CANCEL_TERMINAL_STATUSES:
         raise RuntimeError(f"score_corpus canceled: score_run {run_id} is {status}")
+    # C1 heartbeat: free piggyback on the cancel-check hot path. Every
+    # evidence loop already reads score_run.status here, so updating the
+    # heartbeat is one additional cheap UPDATE that gives the startup
+    # janitor precise liveness signal.
+    try:
+        con.execute(
+            "UPDATE score_run SET heartbeat_at = CURRENT_TIMESTAMP "
+            "WHERE run_id = ? AND status = 'running'",
+            [run_id],
+        )
+    except Exception:
+        # Heartbeat write failure is non-fatal: the wall-clock fallback in
+        # the janitor still catches stale rows. Don't crash the scoring
+        # loop just because a column is missing on a very-old DB.
+        pass
 
 
 def _detect_indra_version() -> str:
@@ -686,15 +701,17 @@ def score_corpus(
     started_at = datetime.now(timezone.utc)
     indra_version = _detect_indra_version()
 
+    import os as _os
     con.execute(
         """INSERT INTO score_run
            (run_id, scorer_version, indra_version, model_id_default,
             architecture, paired_run_group_id, parent_run_id,
-            started_at, status, n_stmts, cost_estimate_usd)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', 0, ?)""",
+            started_at, status, n_stmts, cost_estimate_usd,
+            heartbeat_at, worker_pid)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', 0, ?, ?, ?)""",
         [run_id, scorer_version, indra_version, model_id_default,
          architecture, paired_run_group_id, parent_run_id, started_at,
-         cost_estimate],
+         cost_estimate, started_at, _os.getpid()],
     )
 
     n_stmts = 0

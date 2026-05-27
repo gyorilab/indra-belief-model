@@ -1,4 +1,4 @@
-import { DuckDBInstance } from '@duckdb/node-api';
+import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
 import { closeInstance, dbPath } from '$lib/db';
 import { buildObservedCostSql } from '$lib/modelPrices';
 
@@ -30,11 +30,41 @@ function isDuckDBLockError(err: unknown): boolean {
 	return message.includes('Could not set lock') || message.includes('Conflicting lock');
 }
 
-async function writeScoreRunCanceled(input: MarkScoreRunCanceledInput): Promise<void> {
-	await closeInstance();
-	const instance = await DuckDBInstance.create(dbPath());
-	const con = await instance.connect();
-	try {
+// C3: shared writer-acquisition helper. Every score_run-table writer that
+// runs outside the worker subprocess (cancel, pre-spawn cancel, future
+// heartbeat reset, future state corrections) goes through here:
+// closeInstance() drains the viewer's READ_ONLY handle, opens a write
+// instance, runs the callback inside a try/finally that always closes
+// the handle, then retries the whole thing on DuckDB-lock errors up to
+// `maxAttempts` times. Funneling everyone through one path means a
+// future change (e.g., a global writer-lease queue) lands in one place.
+export async function withScoreRunWriter<T>(
+	fn: (con: DuckDBConnection) => Promise<T>,
+	{ maxAttempts = 10, baseDelayMs = 150 }: { maxAttempts?: number; baseDelayMs?: number } = {}
+): Promise<T> {
+	let lastErr: unknown = null;
+	for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+		try {
+			await closeInstance();
+			const instance = await DuckDBInstance.create(dbPath());
+			const con = await instance.connect();
+			try {
+				return await fn(con);
+			} finally {
+				con.disconnectSync?.();
+				instance.closeSync();
+			}
+		} catch (err) {
+			lastErr = err;
+			if (!isDuckDBLockError(err) || attempt === maxAttempts - 1) break;
+			await sleep(baseDelayMs * (attempt + 1));
+		}
+	}
+	throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+export async function markScoreRunCanceled(input: MarkScoreRunCanceledInput): Promise<void> {
+	await withScoreRunWriter(async (con) => {
 		await con.run(
 			`UPDATE score_run
 			    SET status='canceled',
@@ -66,25 +96,7 @@ async function writeScoreRunCanceled(input: MarkScoreRunCanceledInput): Promise<
 				input.run_id
 			]
 		);
-	} finally {
-		con.disconnectSync?.();
-		instance.closeSync();
-	}
-}
-
-export async function markScoreRunCanceled(input: MarkScoreRunCanceledInput): Promise<void> {
-	let lastErr: unknown = null;
-	for (let attempt = 0; attempt < 10; attempt += 1) {
-		try {
-			await writeScoreRunCanceled(input);
-			return;
-		} catch (err) {
-			lastErr = err;
-			if (!isDuckDBLockError(err) || attempt === 9) break;
-			await sleep(150 * (attempt + 1));
-		}
-	}
-	throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+	});
 }
 
 export interface MarkScoreRunPreStartedCancelledInput {
@@ -97,13 +109,10 @@ export interface MarkScoreRunPreStartedCancelledInput {
 	reason: string;
 }
 
-async function writeScoreRunPreStartedCancelled(
+export async function markScoreRunPreStartedCancelled(
 	input: MarkScoreRunPreStartedCancelledInput
 ): Promise<void> {
-	await closeInstance();
-	const instance = await DuckDBInstance.create(dbPath());
-	const con = await instance.connect();
-	try {
+	await withScoreRunWriter(async (con) => {
 		await con.run(
 			`INSERT INTO score_run
 			   (run_id, scorer_version, indra_version, architecture,
@@ -124,25 +133,5 @@ async function writeScoreRunPreStartedCancelled(
 				input.run_id
 			]
 		);
-	} finally {
-		con.disconnectSync?.();
-		instance.closeSync();
-	}
-}
-
-export async function markScoreRunPreStartedCancelled(
-	input: MarkScoreRunPreStartedCancelledInput
-): Promise<void> {
-	let lastErr: unknown = null;
-	for (let attempt = 0; attempt < 10; attempt += 1) {
-		try {
-			await writeScoreRunPreStartedCancelled(input);
-			return;
-		} catch (err) {
-			lastErr = err;
-			if (!isDuckDBLockError(err) || attempt === 9) break;
-			await sleep(150 * (attempt + 1));
-		}
-	}
-	throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+	});
 }

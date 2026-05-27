@@ -672,7 +672,94 @@ def test_startup_janitor_tombstones_stale_running_runs():
     assert finished is not None
     assert terminated_by == "janitor"
     assert reason is not None
-    assert "running state for more than" in reason
+    assert "startup janitor" in reason
+
+
+def test_startup_janitor_tombstones_by_heartbeat_grace():
+    """C1 gate: a row with a stale heartbeat must be tombstoned even when
+    started_at is well within the wall-clock fallback threshold. A live
+    row with a fresh heartbeat must NOT be tombstoned even if started_at
+    is older than the heartbeat grace (because heartbeat is the precise
+    liveness signal; wall-clock is the fallback).
+    """
+    con = _con()
+    # Stale heartbeat (15 min old), started 1 hour ago — must tombstone
+    con.execute(
+        """INSERT INTO score_run
+            (run_id, scorer_version, indra_version, architecture,
+             started_at, heartbeat_at, status)
+        VALUES ('stale_hb', 'janitor-test', 'unknown', 'decomposed',
+                CURRENT_TIMESTAMP - INTERVAL '1 hour',
+                CURRENT_TIMESTAMP - INTERVAL '15 minutes',
+                'running')"""
+    )
+    # Fresh heartbeat (1 min ago), started 30 hours ago — must NOT
+    # tombstone (heartbeat says alive)
+    con.execute(
+        """INSERT INTO score_run
+            (run_id, scorer_version, indra_version, architecture,
+             started_at, heartbeat_at, status)
+        VALUES ('fresh_hb', 'janitor-test', 'unknown', 'decomposed',
+                CURRENT_TIMESTAMP - INTERVAL '30 hours',
+                CURRENT_TIMESTAMP - INTERVAL '1 minute',
+                'running')"""
+    )
+
+    tombstoned = reconcile_stale_running_runs(con)
+    assert tombstoned == ["stale_hb"]
+    rows = dict(con.execute(
+        "SELECT run_id, status FROM score_run"
+    ).fetchall())
+    assert rows["stale_hb"] == "crashed_at_startup"
+    assert rows["fresh_hb"] == "running"
+
+
+def test_startup_janitor_releases_stale_repair_intents():
+    """A1 gate: scorer_step_correction rows with status='open' whose
+    child score_run is in a cancel-terminal state must be released so
+    the UI doesn't show them as "in progress forever".
+    """
+    from indra_belief.corpus import reconcile_stale_repair_intents
+
+    con = _con()
+    # Need two score_run rows: one terminal-cancel, one running
+    con.execute(
+        """INSERT INTO score_run
+            (run_id, scorer_version, indra_version, architecture,
+             started_at, status)
+        VALUES ('crashed_child', 'rs', 'unknown', 'decomposed',
+                CURRENT_TIMESTAMP, 'crashed_at_startup')"""
+    )
+    con.execute(
+        """INSERT INTO score_run
+            (run_id, scorer_version, indra_version, architecture,
+             started_at, status)
+        VALUES ('live_child', 'rs', 'unknown', 'decomposed',
+                CURRENT_TIMESTAMP, 'running')"""
+    )
+    # Two intents: one pointing at crashed child, one at live child.
+    con.execute(
+        """INSERT INTO scorer_step_correction
+            (correction_id, step_hash, run_id, stmt_hash,
+             correction_kind, status, child_run_id)
+        VALUES (10001, 'sh1', 'parent_run', 'st1',
+                'repair_candidate', 'open', 'crashed_child')"""
+    )
+    con.execute(
+        """INSERT INTO scorer_step_correction
+            (correction_id, step_hash, run_id, stmt_hash,
+             correction_kind, status, child_run_id)
+        VALUES (10002, 'sh2', 'parent_run', 'st2',
+                'repair_candidate', 'open', 'live_child')"""
+    )
+
+    released = reconcile_stale_repair_intents(con)
+    assert released == [10001]
+    intent_status = dict(con.execute(
+        "SELECT correction_id, status FROM scorer_step_correction"
+    ).fetchall())
+    assert intent_status[10001] == "released"
+    assert intent_status[10002] == "open"
 
 
 def test_startup_janitor_runs_inside_apply_schema():
