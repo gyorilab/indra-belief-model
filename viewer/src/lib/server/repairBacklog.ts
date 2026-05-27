@@ -13,7 +13,7 @@ import {
 	nonTraceStatementCohortWhereClauses,
 	RUN_COHORT_LIMIT,
 	traceStateCohortWhereClauses
-} from '$lib/runCohortSql';
+} from '$lib/cohorts/sql';
 import { REPAIR_RERUN_LINEAGE_DDL } from '$lib/repairRerunSql';
 import { validateRunCohortFilterValues } from '$lib/server/runCohortContract';
 import {
@@ -24,6 +24,8 @@ import {
 	writerLockConflictCode,
 	writerLockConflictText
 } from '$lib/server/pairedState';
+import { sqlQuote } from '../cohorts/sqlEscape';
+
 
 export interface MaterializeRepairCohortInput {
 	run_id: string;
@@ -154,9 +156,6 @@ const REPAIR_ESTIMATE_TOKEN_SECRET: Buffer = (() => {
 	return randomBytes(48);
 })();
 
-function sqlQuote(s: string): string {
-	return s.replace(/'/g, "''");
-}
 
 function stableJson(value: unknown): string {
 	if (value === null || typeof value !== 'object') return JSON.stringify(value);

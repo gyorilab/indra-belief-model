@@ -1,11 +1,14 @@
+// Renamed from $lib/runCohortDiagnostics.ts on 2026-05-27 (B4 of deferred hypergraph).
+// No code changes vs the prior location; see git mv for history.
+
 import { error } from '@sveltejs/kit';
 import type { DuckDBConnection, DuckDBValue } from '@duckdb/node-api';
-import type { RunCohortFilters } from './runCohortTypes';
+import type { RunCohortFilters } from './types';
 import {
 	aggregateEvidenceTraceFidelityPredicate,
 	cohortEvidenceLevelFilterCount,
 	statementEvidenceTraceFidelityPredicate
-} from './runCohortSql';
+} from './sql';
 
 export interface RunCohortEmptyDiagnostic {
 	kind: 'absent_in_run' | 'not_applicable' | 'no_intersection' | 'empty_run';

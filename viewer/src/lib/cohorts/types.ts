@@ -1,4 +1,7 @@
-import type { TraceFidelityFilter, TraceFidelityState } from './traceState';
+// Renamed from $lib/runCohortTypes.ts on 2026-05-27 (B4 of deferred hypergraph).
+// No code changes vs the prior location; see git mv for history.
+
+import type { TraceFidelityFilter, TraceFidelityState } from '../traceState';
 
 export interface RunCohortFilters {
 	grain?: string | null;

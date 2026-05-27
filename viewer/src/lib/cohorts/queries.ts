@@ -1,11 +1,13 @@
-import type { RunCohortFilters } from './runCohortTypes';
-import { statementEvidenceSourceStratumSql } from './evidenceMembershipSql';
-import { cohortEvidenceLevelPredicates } from './runCohortSql';
-import { traceEvidenceCteForRun } from './traceStateSql';
+// Renamed from $lib/runCohortQueries.ts on 2026-05-27 (B4 of deferred hypergraph).
+// No code changes vs the prior location; see git mv for history.
 
-function sqlQuote(s: string): string {
-	return s.replace(/'/g, "''");
-}
+import type { RunCohortFilters } from './types';
+import { statementEvidenceSourceStratumSql } from './evidenceMembership';
+import { cohortEvidenceLevelPredicates } from './sql';
+import { traceEvidenceCteForRun } from '../traceStateSql';
+import { sqlQuote } from './sqlEscape';
+
+
 
 export function runCohortAgentNamesCte(): string {
 	return `ags AS (

@@ -23,6 +23,8 @@ import {
 	writerLockConflictText
 } from '$lib/server/pairedState';
 import { OBSERVED_COST_SQL } from '$lib/server/scoreRunLifecycle';
+import { sqlQuote } from '../cohorts/sqlEscape';
+
 
 export type RepairRerunArchitecture = 'decomposed' | 'monolithic';
 export type RepairRerunScoringMode = 'aggregate' | 'probe_only';
@@ -133,9 +135,6 @@ export interface TombstoneRepairRerunChildResult {
 	correction_ids: number[];
 }
 
-function sqlQuote(s: string): string {
-	return s.replace(/'/g, "''");
-}
 
 function dataRoot(): string {
 	return resolve(dbPath(), '..');

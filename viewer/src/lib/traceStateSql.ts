@@ -1,6 +1,4 @@
-function sqlQuote(s: string): string {
-	return s.replace(/'/g, "''");
-}
+import { sqlQuote } from './cohorts/sqlEscape';
 
 function sqlString(s: string): string {
 	return `'${sqlQuote(s)}'`;

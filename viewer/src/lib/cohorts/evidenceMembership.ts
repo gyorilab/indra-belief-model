@@ -1,3 +1,6 @@
+// Renamed from $lib/evidenceMembershipSql.ts on 2026-05-27 (B4 of deferred hypergraph).
+// No code changes vs the prior location; see git mv for history.
+
 // Membership SQL helpers. After Phase 1 of the active hypergraph goal,
 // `statement_evidence` is the sole contextual membership surface; the
 // legacy `evidence.stmt_hash` column is dropped.

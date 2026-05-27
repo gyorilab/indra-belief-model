@@ -1,6 +1,11 @@
-import type { RunCohortFilters } from './runCohortTypes';
-import { statementEvidenceSourceStratumSql } from './evidenceMembershipSql';
-import { cleanTraceStateFilter, INVALID_TRACE_STATE } from './traceState';
+// Renamed from $lib/runCohortSql.ts on 2026-05-27 (B4 of deferred hypergraph).
+// No code changes vs the prior location; see git mv for history.
+
+import type { RunCohortFilters } from './types';
+import { statementEvidenceSourceStratumSql } from './evidenceMembership';
+import { cleanTraceStateFilter, INVALID_TRACE_STATE } from '../traceState';
+import { sqlQuote } from './sqlEscape';
+
 
 export const RUN_COHORT_LIMIT = 500;
 export const COHORT_EVIDENCE_LEVEL_FILTER_KEYS = [
@@ -23,9 +28,6 @@ interface CohortEvidenceLevelAliases {
 	truthLabel?: string;
 }
 
-function sqlQuote(s: string): string {
-	return s.replace(/'/g, "''");
-}
 
 function boolish(v: unknown): boolean {
 	return v === true || v === 'true' || v === '1' || v === 'yes';

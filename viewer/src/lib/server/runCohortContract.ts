@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { DuckDBConnection, DuckDBValue } from '@duckdb/node-api';
-import type { RunCohortFilters } from '$lib/runCohortTypes';
+import type { RunCohortFilters } from '$lib/cohorts/types';
 import {
 	cleanTraceSnapshot,
 	INVALID_TRACE_SNAPSHOT,
