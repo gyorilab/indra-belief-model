@@ -195,6 +195,20 @@ function fingerprintHash(fingerprint: string): string {
 		.slice(0, 32);
 }
 
+// Best-effort replay prevention: a signed token is multi-use within its
+// expiry window by cryptographic design (stateless), but operators expect
+// "estimate once, use once" semantics within a single viewer process. We
+// keep a process-local Set of consumed tokens so a single process rejects
+// the same token twice. Multi-process viewers lose this guarantee (any
+// process can use the token until expiry); that is the documented
+// trade-off for stateless cross-process verification.
+const consumedRepairEstimateTokens = new Map<string, number>();
+function pruneConsumedTokens(now = Date.now()): void {
+	for (const [token, expiresAt] of consumedRepairEstimateTokens) {
+		if (expiresAt <= now) consumedRepairEstimateTokens.delete(token);
+	}
+}
+
 function issueRepairEstimateToken(fingerprint: string): { token: string; expiresAt: number } {
 	const now = Date.now();
 	const expiresAt = now + REPAIR_ESTIMATE_TTL_MS;
@@ -255,6 +269,16 @@ function consumeRepairEstimateToken(token: string | null | undefined, fingerprin
 			'repair estimate no longer matches this cohort; estimate this cohort again'
 		);
 	}
+	const now = Date.now();
+	pruneConsumedTokens(now);
+	if (consumedRepairEstimateTokens.has(token)) {
+		throw new RepairCohortHttpError(
+			409,
+			'repair_estimate_expired',
+			'repair estimate expired or was already used; estimate this cohort again'
+		);
+	}
+	consumedRepairEstimateTokens.set(token, expiresAt);
 }
 
 async function openReadOnlyRepairInstance(): Promise<DuckDBInstance> {
