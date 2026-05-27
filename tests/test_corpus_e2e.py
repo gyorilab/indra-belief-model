@@ -283,3 +283,91 @@ def test_full_pipeline_handles_empty_corpus(tmp_path: Path):
     assert data == []  # nothing to export
 
     con.close()
+
+
+def test_denominator_ledger_agrees_with_direct_queries(tmp_path: Path):
+    """B1 gate: every denominator the unified ledger emits must match the
+    direct query that would otherwise produce it. Pins the ledger view
+    against handwritten SQL across run_meta, scorer_step, aggregate,
+    corpus, and truth_label families.
+    """
+    from indra_belief.corpus import query_denominator_ledger
+
+    con = duckdb.connect(":memory:")
+    apply_schema(con)
+    stmts = _build_corpus()
+    ingest_statements(con, stmts, source_dump_id="ledger_smoke")
+    run_id = score_corpus(
+        con, stmts,
+        scorer_version="ledger-test",
+        model_id_default="mock",
+        score_evidence=_mock_scorer,
+        decompose=True,
+        cost_threshold_usd=10.0,
+    )
+    assert run_id
+
+    # Build a {(run_id, family, kind): value} dict from the ledger rows.
+    ledger = {
+        (row.run_id, row.family, row.kind): row.value
+        for row in query_denominator_ledger(con)
+    }
+
+    # Direct verifications:
+    # 1. run_meta n_stmts must match score_run.n_stmts.
+    direct_n_stmts = con.execute(
+        "SELECT n_stmts FROM score_run WHERE run_id=?", [run_id]
+    ).fetchone()[0]
+    assert ledger[(run_id, 'run_meta', 'n_stmts')] == direct_n_stmts
+
+    # 2. scorer_step counts per step_kind must match direct GROUP BY.
+    step_counts = dict(
+        con.execute(
+            "SELECT step_kind, COUNT(*) FROM scorer_step "
+            "WHERE run_id=? GROUP BY step_kind",
+            [run_id],
+        ).fetchall()
+    )
+    for step_kind, count in step_counts.items():
+        assert ledger[(run_id, 'scorer_step', step_kind)] == count, (
+            f"ledger row for ({run_id}, scorer_step, {step_kind}) "
+            f"disagrees with direct: ledger="
+            f"{ledger.get((run_id, 'scorer_step', step_kind))} direct={count}"
+        )
+
+    # 3. aggregate n_evidences must match COUNT(DISTINCT evidence_hash).
+    direct_n_ev = con.execute(
+        "SELECT COUNT(DISTINCT evidence_hash) FROM scorer_step "
+        "WHERE run_id=? AND step_kind='aggregate' AND evidence_hash IS NOT NULL",
+        [run_id],
+    ).fetchone()[0]
+    assert ledger[(run_id, 'aggregate', 'n_evidences')] == direct_n_ev
+
+    # 4. corpus n_statements / n_evidences / n_statements_with_evidence.
+    assert ledger[(None, 'corpus', 'n_statements')] == con.execute(
+        "SELECT COUNT(*) FROM statement"
+    ).fetchone()[0]
+    assert ledger[(None, 'corpus', 'n_evidences')] == con.execute(
+        "SELECT COUNT(*) FROM evidence"
+    ).fetchone()[0]
+    assert ledger[(None, 'corpus', 'n_statements_with_evidence')] == con.execute(
+        "SELECT COUNT(DISTINCT stmt_hash) FROM statement_evidence"
+    ).fetchone()[0]
+
+    # 5. truth_label rows present for indra_* truth sets registered at ingest.
+    tl_rows = [
+        (r.kind, r.slice_json, r.value)
+        for r in query_denominator_ledger(con, family='truth_label')
+    ]
+    assert tl_rows, "expected at least one truth_label denominator row"
+    # Each row's count must agree with direct query.
+    for kind, slice_json, value in tl_rows:
+        # slice_json is a JSON object string like '{"truth_set_id":"..."}'
+        import json
+        truth_set_id = json.loads(slice_json)['truth_set_id']
+        direct = con.execute(
+            "SELECT COUNT(*) FROM truth_label "
+            "WHERE target_kind=? AND truth_set_id=?",
+            [kind, truth_set_id],
+        ).fetchone()[0]
+        assert direct == value

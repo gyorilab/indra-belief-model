@@ -282,6 +282,80 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     key    VARCHAR PRIMARY KEY,
     value  VARCHAR NOT NULL
 );
+
+-- ─── Unified denominator ledger (B1 of deferred hypergraph) ────────────
+-- Single queryable surface across run/scorer-step/corpus/truth-label
+-- denominators. Each row names a (family, kind) and a count; `slice_json`
+-- carries optional parentage (e.g., truth_set_id, step_kind) so UI cells
+-- can link back to the producing row. Computed on demand — no persistence
+-- or refresh logic. Adding a denominator source is a UNION ALL branch
+-- here; consumers query the view by (run_id, family, kind).
+CREATE VIEW IF NOT EXISTS denominator_ledger AS
+    -- Per-run n_stmts from score_run
+    SELECT
+        run_id,
+        'run_meta' AS family,
+        'n_stmts' AS kind,
+        CAST(COALESCE(n_stmts, 0) AS BIGINT) AS value,
+        CAST(NULL AS JSON) AS slice_json
+    FROM score_run
+    UNION ALL
+    -- scorer_step row counts by step_kind, per run
+    SELECT
+        run_id,
+        'scorer_step' AS family,
+        step_kind AS kind,
+        CAST(COUNT(*) AS BIGINT) AS value,
+        CAST(NULL AS JSON) AS slice_json
+    FROM scorer_step
+    GROUP BY run_id, step_kind
+    UNION ALL
+    -- Distinct aggregate evidences per run (the denominator that
+    -- repair-rerun + cohort use as the "scored evidence" count).
+    SELECT
+        run_id,
+        'aggregate' AS family,
+        'n_evidences' AS kind,
+        CAST(COUNT(DISTINCT evidence_hash) AS BIGINT) AS value,
+        CAST(NULL AS JSON) AS slice_json
+    FROM scorer_step
+    WHERE step_kind = 'aggregate' AND evidence_hash IS NOT NULL
+    GROUP BY run_id
+    UNION ALL
+    -- Corpus-level totals — no run scope.
+    SELECT
+        CAST(NULL AS VARCHAR) AS run_id,
+        'corpus' AS family,
+        'n_statements' AS kind,
+        CAST(COUNT(*) AS BIGINT) AS value,
+        CAST(NULL AS JSON) AS slice_json
+    FROM statement
+    UNION ALL
+    SELECT
+        CAST(NULL AS VARCHAR) AS run_id,
+        'corpus' AS family,
+        'n_statements_with_evidence' AS kind,
+        CAST(COUNT(DISTINCT stmt_hash) AS BIGINT) AS value,
+        CAST(NULL AS JSON) AS slice_json
+    FROM statement_evidence
+    UNION ALL
+    SELECT
+        CAST(NULL AS VARCHAR) AS run_id,
+        'corpus' AS family,
+        'n_evidences' AS kind,
+        CAST(COUNT(*) AS BIGINT) AS value,
+        CAST(NULL AS JSON) AS slice_json
+    FROM evidence
+    UNION ALL
+    -- Truth-label denominators by (truth_set, target_kind).
+    SELECT
+        CAST(NULL AS VARCHAR) AS run_id,
+        'truth_label' AS family,
+        target_kind AS kind,
+        CAST(COUNT(*) AS BIGINT) AS value,
+        json_object('truth_set_id', truth_set_id) AS slice_json
+    FROM truth_label
+    GROUP BY truth_set_id, target_kind;
 """
 
 
