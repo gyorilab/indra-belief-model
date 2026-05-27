@@ -1357,3 +1357,127 @@ def test_pre_started_cancelled_has_null_cost_estimate(tmp_path):
         "the worker never ran, so any number would be misleading"
     )
     assert cost_actual == 0
+
+
+def test_score_corpus_mid_run_cancel_cross_connection_visibility(tmp_path):
+    """C5 of deferred hypergraph: mid-run cancel must be visible across
+    DuckDB connections — the worker reads its own connection but the
+    canceler writes from a separate connection (different process in
+    production). DuckDB allows multiple connections to the same file;
+    a commit on one is visible to other connections on the next read.
+
+    This pins the cross-connection visibility property the Phase 3
+    single-connection test could not exercise.
+    """
+    import threading
+    import time
+
+    db_path = str(tmp_path / "corpus.duckdb")
+    worker_con = duckdb.connect(db_path)
+    canceler_con = duckdb.connect(db_path)
+
+    apply_schema(worker_con)
+    # Build the corpus via the worker connection.
+    mek1 = Agent("MAP2K1", db_refs={"HGNC": "6840"})
+    erk1 = Agent("MAPK1", db_refs={"HGNC": "6871"})
+    stmt = Phosphorylation(
+        mek1, erk1, residue="T", position="202",
+        evidence=[
+            Evidence(source_api="reach", text=f"ev{i}")
+            for i in range(8)
+        ],
+    )
+    stmt.belief = 0.5
+    ingest_statements(worker_con, [stmt])
+
+    # Mock scorer that paces itself: each call sleeps 50ms so the
+    # canceler thread has time to inject the UPDATE before the worker
+    # finishes its loop.
+    call_count = {"n": 0}
+
+    def _slow_scorer(statement, evidence, client):
+        call_count["n"] += 1
+        time.sleep(0.05)
+        return {
+            "score": 0.7,
+            "verdict": "correct",
+            "confidence": "high",
+            "tier": "decomposed",
+            "grounding_status": "all_match",
+            "provenance_triggered": False,
+            "tokens": 100,
+            "raw_text": "trace",
+            "reasons": ["match"],
+            "rationale": "ok",
+            "call_log": [
+                {
+                    "kind": "aggregate",
+                    "duration_s": 0.05,
+                    "prompt_tokens": 50,
+                    "out_tokens": 10,
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+
+    # Run the worker in a thread; the main thread acts as canceler.
+    worker_error = {"err": None}
+
+    def _worker_thread():
+        try:
+            score_corpus(
+                worker_con, [stmt],
+                scorer_version="cross-conn-cancel",
+                model_id_default="mock-model",
+                score_evidence=_slow_scorer,
+            )
+        except Exception as e:
+            worker_error["err"] = e
+
+    t = threading.Thread(target=_worker_thread)
+    t.start()
+
+    # Wait until the worker has processed at least 2 evidences, then
+    # write the cancel from the *other* connection.
+    deadline = time.time() + 5
+    while call_count["n"] < 2 and time.time() < deadline:
+        time.sleep(0.01)
+    canceler_con.execute(
+        "UPDATE score_run SET status='canceled', "
+        "terminated_by='user', termination_reason='cross-connection cancel'"
+    )
+    t.join(timeout=10)
+    assert not t.is_alive(), "worker thread did not exit within timeout"
+
+    # Worker should have raised RuntimeError carrying the cancel.
+    assert worker_error["err"] is not None
+    assert "canceled" in str(worker_error["err"])
+
+    # Final state: the score_run row is 'canceled', the canceler's
+    # terminated_by/termination_reason survived, and partial aggregate
+    # rows are persisted.
+    status, terminated_by, reason, finished_at = worker_con.execute(
+        "SELECT status, terminated_by, termination_reason, finished_at "
+        "FROM score_run"
+    ).fetchone()
+    assert status == "canceled"
+    assert terminated_by == "user"
+    assert reason == "cross-connection cancel"
+    assert finished_at is not None, (
+        "finalize must set finished_at on cancel even when cross-connection"
+    )
+
+    n_aggregate = worker_con.execute(
+        "SELECT COUNT(*) FROM scorer_step WHERE step_kind='aggregate'"
+    ).fetchone()[0]
+    # At least one partial aggregate row must have committed before the
+    # cancel landed. The exact count depends on timing.
+    assert n_aggregate >= 1, (
+        f"expected partial aggregate rows pre-cancel; got {n_aggregate}"
+    )
+    assert n_aggregate < 8, (
+        f"all 8 evidences scored — cancel did not take effect; got {n_aggregate}"
+    )
+
+    worker_con.close()
+    canceler_con.close()
