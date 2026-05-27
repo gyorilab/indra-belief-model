@@ -273,38 +273,68 @@ export const POST: RequestHandler = async (event) => {
 				} else {
 					releaseReservedWriterLock();
 				}
+				// C4 of deferred hypergraph: tombstone-completion barrier.
+				// Previously we fire-and-forgot markScoreRunPreStartedCancelled
+				// and emitted the SSE event immediately; a client polling
+				// the runId right after the event could observe "row not
+				// found" until the async write landed. Now we emit a
+				// `pre_started_cancelled_pending` intermediate event with
+				// the runId, then await all tombstone writes, then emit the
+				// terminal `pre_started_cancelled` event for each arch.
+				const pendingArchs: { arch: Architecture; tombstoneRunId: string }[] = [];
 				for (const arch of ARCH_ORDER) {
-					// An arch needs a pre_started_cancelled tombstone if it
-					// either (a) never had a runId reserved, or (b) had one
-					// reserved but the worker never reached spawn. Both
-					// cases leave no other code path to write a terminal
-					// score_run row — markScoreRunCanceled relies on the
-					// child exit handler, which never fires without a child.
 					if (!spawnedRunIds[arch]) {
 						const tombstoneRunId =
 							runIds[arch] ?? randomUUID().replace(/-/g, '');
 						runIds[arch] = tombstoneRunId;
-						void markScoreRunPreStartedCancelled({
-							run_id: tombstoneRunId,
-							scorer_version,
-							architecture: arch,
-							model,
-							paired_run_group_id,
-							reason: 'client_disconnected'
-						}).catch((err) => {
-							console.error('arch_pre_started_cancel_tombstone_failed', err);
-						});
+						pendingArchs.push({ arch, tombstoneRunId });
 						writeEvent({
 							event: 'arch_state',
 							architecture: arch,
-							state: 'pre_started_cancelled',
+							state: 'pre_started_cancelled_pending',
 							reason: 'client_disconnected',
 							run_id: tombstoneRunId
 						});
 					}
 				}
-				writeEvent({ event: 'paired_canceled', paired_run_group_id, reason: 'client_disconnected' });
-				cleanup();
+				(async () => {
+					for (const { arch, tombstoneRunId } of pendingArchs) {
+						try {
+							await markScoreRunPreStartedCancelled({
+								run_id: tombstoneRunId,
+								scorer_version,
+								architecture: arch,
+								model,
+								paired_run_group_id,
+								reason: 'client_disconnected'
+							});
+							writeEvent({
+								event: 'arch_state',
+								architecture: arch,
+								state: 'pre_started_cancelled',
+								reason: 'client_disconnected',
+								run_id: tombstoneRunId
+							});
+						} catch (err) {
+							const message = err instanceof Error ? err.message : String(err);
+							console.error('arch_pre_started_cancel_tombstone_failed', err);
+							writeEvent({
+								event: 'arch_state',
+								architecture: arch,
+								state: 'pre_started_cancelled_tombstone_failed',
+								reason: 'client_disconnected',
+								run_id: tombstoneRunId,
+								error: message
+							});
+						}
+					}
+					writeEvent({ event: 'paired_canceled', paired_run_group_id, reason: 'client_disconnected' });
+					cleanup();
+				})().catch((err) => {
+					console.error('paired_cancel_finalize_failed', err);
+					cleanup();
+				});
+				return;
 			};
 			cancelFromStream = onAbort;
 			request.signal.addEventListener('abort', onAbort);

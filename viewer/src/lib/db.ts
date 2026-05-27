@@ -136,7 +136,9 @@ function notifyCloseDone(): void {
 
 function registerConnection(con: DuckDBConnection): DuckDBConnection {
 	_activeReaderCount += 1;
-	const originalDisconnect = (con as unknown as { disconnectSync?: () => void }).disconnectSync;
+	const proto = Object.getPrototypeOf(con);
+	const originalDisconnect = (con as unknown as { disconnectSync?: () => void }).disconnectSync
+		?? proto?.disconnectSync;
 	let released = false;
 	const release = () => {
 		if (released) return;
@@ -145,6 +147,14 @@ function registerConnection(con: DuckDBConnection): DuckDBConnection {
 		_activeReaderCount = Math.max(0, _activeReaderCount - 1);
 	};
 	if (typeof originalDisconnect === 'function') {
+		// C7 of deferred hypergraph: patch lives on the instance (own
+		// property) AND falls back to the prototype's disconnectSync if
+		// the binding closes through an internal path that doesn't go
+		// through the instance method we patched. The release() is
+		// idempotent (released flag + Math.max floor) so a binding
+		// internal path that bypasses the patch is safe — it leaves the
+		// counter pinned, but the next legitimate disconnectSync call
+		// (or a forced closeInstance drain after timeout) releases it.
 		(con as unknown as { disconnectSync: () => void }).disconnectSync = function patchedDisconnect() {
 			release();
 			try {
@@ -153,6 +163,18 @@ function registerConnection(con: DuckDBConnection): DuckDBConnection {
 				// best-effort — handle may already be gone
 			}
 		};
+		// Also schedule a FinalizationRegistry cleanup so a connection
+		// that gets garbage-collected without an explicit disconnect
+		// (caller forgot in an exception path) still releases the
+		// counter. Best-effort — Node does not guarantee finalizer
+		// timing, but worst case is identical to the no-finalizer
+		// version (the slot eventually expires through closeInstance's
+		// drain timeout).
+		try {
+			_connectionFinalizers.register(con, release);
+		} catch {
+			// FinalizationRegistry not available in some runtimes
+		}
 	} else {
 		// Without disconnectSync we can't observe close, so don't pin the
 		// counter; assume the caller's lifecycle is short and release now.
@@ -160,6 +182,16 @@ function registerConnection(con: DuckDBConnection): DuckDBConnection {
 	}
 	return con;
 }
+
+// Single shared FinalizationRegistry so connections garbage-collected
+// without explicit `disconnectSync()` still release the refcount.
+const _connectionFinalizers = new FinalizationRegistry<() => void>((heldValue) => {
+	try {
+		heldValue();
+	} catch {
+		// finalizer callbacks must not throw
+	}
+});
 
 export function dbPath(): string {
 	if (_resolvedPath) return _resolvedPath;
@@ -226,6 +258,20 @@ export async function connect(): Promise<DuckDBConnection> {
 		_instanceCreationPromise = (async () => {
 			try {
 				const inst = await DuckDBInstance.create(path, { access_mode: 'READ_ONLY' });
+				// C6 of deferred hypergraph: re-stat AFTER the file is open
+				// so a concurrent rewrite that landed during our initial
+				// stat-then-create window invalidates the cached signature.
+				// The next connect() will re-detect stale-by-stat and
+				// re-open against the actually-current contents.
+				try {
+					const restat = statSync(path);
+					currentMtime = restat.mtimeMs;
+					currentCtime = restat.ctimeMs;
+					currentSize = restat.size;
+				} catch {
+					// File may have been removed between create() and re-stat;
+					// surface the original create's contents as-is.
+				}
 				_instance = inst;
 				_instanceMtimeMs = currentMtime;
 				_instanceCtimeMs = currentCtime;

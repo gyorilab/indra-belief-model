@@ -1329,3 +1329,31 @@ def test_pre_started_cancelled_is_terminal_in_cancel_set():
         "pre_started_cancelled row must have finished_at set so it is "
         "queryable as terminal alongside canceled/succeeded rows"
     )
+
+
+def test_pre_started_cancelled_has_null_cost_estimate(tmp_path):
+    """A4 of deferred hypergraph: pre_started_cancelled rows are written
+    before the worker spawns, so no cost estimate is computed. The column
+    is left NULL as the honest signal — audit queries aggregating
+    cost_estimate_usd must handle NULL (COALESCE or filter by status).
+    """
+    con = _con()
+    con.execute(
+        """INSERT INTO score_run
+           (run_id, scorer_version, indra_version, architecture,
+            started_at, finished_at, n_stmts, status,
+            cost_actual_usd, terminated_by, termination_reason)
+         VALUES (?, 'a4-test', 'unknown', 'monolithic',
+                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                 'pre_started_cancelled', 0, 'user', 'client_disconnected')""",
+        ['deadbeef' * 4],
+    )
+    cost_estimate, cost_actual = con.execute(
+        "SELECT cost_estimate_usd, cost_actual_usd FROM score_run "
+        "WHERE status='pre_started_cancelled'"
+    ).fetchone()
+    assert cost_estimate is None, (
+        "pre_started_cancelled rows must keep cost_estimate_usd=NULL — "
+        "the worker never ran, so any number would be misleading"
+    )
+    assert cost_actual == 0

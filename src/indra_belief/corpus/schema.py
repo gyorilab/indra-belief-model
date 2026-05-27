@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS score_run (
     finished_at        TIMESTAMP,
     n_stmts            INTEGER,
     status             VARCHAR NOT NULL,          -- running | succeeded | failed | canceled | pre_started_cancelled | crashed_at_startup
-    cost_estimate_usd  DOUBLE,
+    cost_estimate_usd  DOUBLE,                    -- NULL for pre_started_cancelled rows: the worker never ran, so no estimate was computed (A4 decision: keep NULL as the honest signal)
     cost_actual_usd    DOUBLE,
     reviewed_at        TIMESTAMP,
     reviewed_by        VARCHAR,
