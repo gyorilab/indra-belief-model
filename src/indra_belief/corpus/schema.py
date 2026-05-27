@@ -706,13 +706,29 @@ def _apply_additive_migrations(
              WHERE architecture IS NULL OR architecture = '' OR architecture = 'unknown'
             """
         )
+        # Only rewrite rows whose architecture is genuinely legacy-empty.
+        # The earlier WHERE included `OR architecture = 'decomposed'` so the
+        # migration would also catch rows the DEFAULT had already set to
+        # 'decomposed' — but on a fresh column that's *every* scorer_step
+        # row, and a 200k+ row UPDATE on a table with a primary key index
+        # triggers a DuckDB internal "duplicate key" assertion during the
+        # delete+insert rewrite (the PK index sees the still-indexed old
+        # key when re-appending the new). Tightening the WHERE makes the
+        # update a no-op on the (already-correct) DEFAULT rows.
+        # Also use a correlated subquery instead of UPDATE...FROM, which
+        # has a related bulk-rewrite issue under DuckDB's update path.
         con.execute(
             """
-            UPDATE scorer_step AS ss
-               SET architecture = COALESCE(NULLIF(sr.architecture, ''), 'decomposed')
-              FROM score_run AS sr
-             WHERE ss.run_id = sr.run_id
-               AND (ss.architecture IS NULL OR ss.architecture = '' OR ss.architecture = 'decomposed')
+            UPDATE scorer_step
+               SET architecture = COALESCE(
+                 NULLIF(
+                   (SELECT architecture FROM score_run
+                     WHERE score_run.run_id = scorer_step.run_id),
+                   ''
+                 ),
+                 'decomposed'
+               )
+             WHERE architecture IS NULL OR architecture = ''
             """
         )
         con.execute(
