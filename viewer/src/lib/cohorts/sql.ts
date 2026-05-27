@@ -131,9 +131,21 @@ export function traceStateCohortWhereClauses(
 	filters: RunCohortFilters,
 	snapshotStartedAt?: string | null
 ): string[] {
+	// D2 of deferred hypergraph: trace_state is validated by the contract
+	// layer ($lib/server/runCohortContract.ts:cohortFiltersFromSearchParams /
+	// :cohortFiltersFromRecord :validateRunCohortFilterValues). By the time
+	// filters reach a SQL builder, trace_state is either a known
+	// TraceFidelityState string or empty/undefined. cleanTraceStateFilter
+	// retains a defense-in-depth INVALID return for callers that bypass the
+	// contract (none in production), surfaced as a 5xx instead of silent
+	// empty results — the throw below is the safety net, not the canonical
+	// validation. See runCohortContract.ts:99-103 for the canonical check.
 	const traceState = cleanTraceStateFilter(filters.trace_state);
 	if (traceState === INVALID_TRACE_STATE) {
-		throw new Error(`invalid trace_state: ${filters.trace_state}`);
+		throw new Error(
+			`invalid trace_state reached SQL builder bypassing the contract ` +
+				`layer: ${filters.trace_state}`
+		);
 	}
 	if (!traceState) {
 		if (filters.probe_coverage !== 'present') {

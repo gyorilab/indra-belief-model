@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# D6 of deferred hypergraph: block git commit when source files of
+# tracked-types are present in the working tree but not staged. Several
+# cycles shipped broken on clean checkouts because new .ts / .svelte /
+# .py / .mjs files were added but never `git add`'d.
+#
+# Install:
+#   git config core.hooksPath .githooks
+# Bypass (use sparingly):
+#   git commit --no-verify
+
+set -euo pipefail
+
+# Directories under which an untracked source file is a likely mistake.
+SCAN_DIRS=(
+    "viewer/src"
+    "viewer/scripts"
+    "src/indra_belief"
+    "tests"
+    "scripts"
+)
+
+# Tracked file extensions worth blocking on. Add to taste.
+SOURCE_EXT_REGEX='\.(ts|tsx|svelte|py|mjs|json)$'
+
+# Excludes — files we know are runtime artifacts, snapshots, or
+# scratch. These belong outside the source-tree scan or are
+# explicitly disposable. Keep this list short; add only items
+# observed to legitimately stay untracked.
+EXCLUDE_REGEX='(__pycache__|\.pytest_cache|node_modules|\.svelte-kit|\.vite|build|dist|coverage|^viewer/static)'
+
+# Bash 3.x compatible: read into an array via a while loop instead of
+# `mapfile`, which only exists in bash 4+. macOS ships bash 3.2 by
+# default.
+problem_files=()
+while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    if [[ ! "$f" =~ $SOURCE_EXT_REGEX ]]; then continue; fi
+    if [[ "$f" =~ $EXCLUDE_REGEX ]]; then continue; fi
+    problem_files+=("$f")
+done < <(git ls-files --others --exclude-standard "${SCAN_DIRS[@]}" 2>/dev/null || true)
+
+if [[ ${#problem_files[@]} -gt 0 ]]; then
+    printf '\n'
+    printf '\033[31m✗ pre-commit blocked: %d untracked source file(s) under tracked dirs.\033[0m\n' "${#problem_files[@]}"
+    printf '\033[31m  These will be missing on a clean checkout. Run `git add <file>` for each,\033[0m\n'
+    printf '\033[31m  or add the path to .githooks/pre-commit EXCLUDE_REGEX if intentional.\033[0m\n\n'
+    for f in "${problem_files[@]}"; do
+        printf '    %s\n' "$f"
+    done
+    printf '\nBypass (risky): `git commit --no-verify`\n\n'
+    exit 1
+fi
+
+exit 0
