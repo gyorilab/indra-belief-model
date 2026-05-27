@@ -12,6 +12,7 @@
 		"test:repair-rerun-gc": "node scripts/test-repair-rerun-gc.mjs",
 		"test:repair-api-failure-paths": "node scripts/test-repair-api-failure-paths.mjs",
 		"test:ledger-chip-unknown-class": "node scripts/test-ledger-chip-unknown-class.mjs",
+		"test:request-local-materialization": "node scripts/test-request-local-materialization.mjs",
 		"test:cohort-contract": "node scripts/test-run-cohort-contract.mjs",
 		"test:cohort-diagnostics": "node scripts/test-run-cohort-diagnostics.mjs",
 		"test:child-process-lifecycle": "node scripts/test-child-process-lifecycle.mjs",
