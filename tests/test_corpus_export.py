@@ -83,6 +83,30 @@ def test_export_beliefs_replaces_indra_belief_with_our_score(tmp_path: Path):
     assert data[0]["position"] == "202"
 
 
+def test_export_beliefs_rejects_raw_json_table_denominator_drift(tmp_path: Path):
+    con = _con()
+    s, run_id = _seed(con, [0.95])
+    stmt_hash = con.execute("SELECT stmt_hash FROM statement").fetchone()[0]
+    con.execute(
+        """INSERT INTO evidence
+           (evidence_hash, source_api, text, raw_json)
+           VALUES ('extra_export_ev', 'reach', 'extra evidence row',
+                   '{"source_api":"reach","text":"extra evidence row"}'::JSON)"""
+    )
+    con.execute(
+        """INSERT INTO statement_evidence
+           (stmt_hash, evidence_hash, evidence_index)
+           VALUES (?, 'extra_export_ev', 1)""",
+        [stmt_hash],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=rf"denominator mismatch.*{stmt_hash}.*raw_json has 1.*normalized evidence rows have 2",
+    ):
+        export_beliefs(con, run_id, tmp_path / "drifted.json")
+
+
 def test_export_round_trips_through_indra(tmp_path: Path):
     con = _con()
     s, run_id = _seed(con, [0.95])
@@ -132,6 +156,9 @@ def test_model_card_includes_metrics_and_limitations(tmp_path: Path):
     assert card["n_stmts_scored"] == 1
     assert "metrics" in card
     assert "limitations" in card
+    assert card["evidence_denominator_validation"]["evidence_count_validated"] is True
+    assert card["evidence_denominator_validation"]["n_raw_json_evidences"] == 1
+    assert card["evidence_denominator_validation"]["n_table_evidences"] == 1
     assert len(card["limitations"]) >= 2
 
     # File written

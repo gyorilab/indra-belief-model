@@ -66,7 +66,10 @@ LOCAL_MODELS: dict[str, dict] = {
         "reasoning_in_content": False,
         "reasoning_effort": "medium",
         "typical_tokens": 400,
-        "max_tokens": 12000,
+        # Match the remote server's generation ceiling. Long monolithic
+        # reasoning can exceed 2500/12000 tokens before emitting verdict JSON;
+        # lower caller-side caps create artificial verdict=None rows.
+        "max_tokens": 32000,
         "num_ctx": 32768,
         # O-phase circuit breaker (was 600s): healthy parse_evidence /
         # grounding calls finish in <30s on this endpoint. 90s is
@@ -76,7 +79,10 @@ LOCAL_MODELS: dict[str, dict] = {
         # parse_evidence, max per-record cost on degradation is
         # ~3 × 90s (parse + 2 grounding) = ~5 min, vs the pre-O 50 min
         # observed during the killed N9 holdout (2026-04-29).
-        "timeout": 90,
+        # Monolithic runs now use the backend's 32k generation ceiling.
+        # Keep the wall-clock guard high enough that long-but-valid
+        # generations are not converted into artificial row errors.
+        "timeout": 600,
     },
     # Google AI Studio (Gemma 4) — hosted Gemma via the Gemini API's
     # OpenAI-compatibility endpoint. Same weights as the local gemma-moe /
@@ -346,6 +352,7 @@ class ModelClient:
                         "prompt_tokens": response.prompt_tokens,
                         "out_tokens": response.tokens,
                         "finish_reason": response.finish_reason,
+                        "max_tokens": mt,
                         # Layer B capture — persist raw LLM I/O for tracing.
                         # Lets the viewer reconstruct what the model saw and
                         # what it said. Cost: ~1-10KB per call (typical) up
@@ -377,7 +384,12 @@ class ModelClient:
                 "prompt_tokens": -1,
                 "out_tokens": 0,
                 "finish_reason": None,
+                "max_tokens": mt,
                 "error": type(e).__name__,
+                "error_detail": str(e),
+                "system": system,
+                "messages": messages,
+                "model_id": self.config.get("model_id"),
             })
             raise
 

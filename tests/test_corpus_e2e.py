@@ -166,6 +166,88 @@ def test_full_pipeline_e2e(tmp_path: Path):
     con.close()
 
 
+def test_full_pipeline_handles_shared_source_hash_across_statements(tmp_path: Path):
+    """Phase 1 gate: a source hash shared across two statements must survive
+    ingest → score → export → model_card with statement-context membership
+    intact, not "last writer wins" on a legacy evidence.stmt_hash column.
+    """
+    con = duckdb.connect(":memory:")
+    apply_schema(con)
+    map2k1 = Agent("MAP2K1", db_refs={"HGNC": "6840"})
+    mapk1 = Agent("MAPK1", db_refs={"HGNC": "6871"})
+    raf1 = Agent("RAF1", db_refs={"HGNC": "9829"})
+    shared_text = "shared reach evidence supports both relationships"
+    shared_ev = Evidence(source_api="reach", pmid="42", text=shared_text,
+                         epistemics={"direct": True, "curated": True})
+    stmts = [
+        Phosphorylation(map2k1, mapk1, residue="T", position="202",
+                        evidence=[shared_ev]),
+        Activation(raf1, map2k1, evidence=[shared_ev]),
+    ]
+
+    ingest_statements(con, stmts, source_dump_id="shared_e2e")
+
+    # Ingest invariants: one canonical evidence row, two membership rows.
+    n_evidence = con.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
+    n_membership = con.execute("SELECT COUNT(*) FROM statement_evidence").fetchone()[0]
+    distinct_stmts = con.execute(
+        "SELECT COUNT(DISTINCT stmt_hash) FROM statement_evidence"
+    ).fetchone()[0]
+    assert n_evidence == 1
+    assert n_membership == 2
+    assert distinct_stmts == 2
+
+    # The legacy `evidence.stmt_hash` column must be gone after apply_schema
+    # ran the drop migration; if it lingers, downstream consumers can join on
+    # it and silently lose one of the two contexts.
+    has_legacy_col = con.execute(
+        "SELECT COUNT(*) FROM information_schema.columns "
+        "WHERE table_name='evidence' AND column_name='stmt_hash'"
+    ).fetchone()[0]
+    assert has_legacy_col == 0
+
+    # Score: both statements must score even though their evidence shares a
+    # canonical payload row.
+    run_id = score_corpus(
+        con, stmts,
+        scorer_version="shared-e2e-test",
+        model_id_default="mock",
+        score_evidence=_mock_scorer,
+        decompose=True,
+        cost_threshold_usd=10.0,
+    )
+    assert run_id
+
+    n_scored_stmts = con.execute(
+        "SELECT COUNT(DISTINCT stmt_hash) FROM scorer_step WHERE run_id=?",
+        [run_id],
+    ).fetchone()[0]
+    assert n_scored_stmts == 2
+
+    # Export INDRA-native JSON: both statements must show up.
+    out_path = tmp_path / "shared.json"
+    export_beliefs(con, run_id, out_path)
+    exported = json.loads(out_path.read_text())
+    assert len(exported) == 2
+    types_seen = {stmt_dict["type"] for stmt_dict in exported}
+    assert types_seen == {"Phosphorylation", "Activation"}
+
+    # Model card: denominator validation must succeed under sharing.
+    card = model_card(con, run_id, out_path=tmp_path / "card.json")
+    assert card["status"] == "succeeded"
+    val = card.get("evidence_denominator_validation")
+    assert val is not None
+    assert val.get("evidence_count_validated") is True
+    # Both statements contributed one raw_json evidence; the shared payload
+    # row backs both, so the table denominator must match the raw_json
+    # denominator at 2 each (not 1 from "last writer wins").
+    assert val.get("n_raw_json_evidences") == 2
+    assert val.get("n_table_evidences") == 2
+    assert val.get("mismatches") == []
+
+    con.close()
+
+
 def test_full_pipeline_handles_empty_corpus(tmp_path: Path):
     """Pipeline should degrade gracefully on an empty corpus."""
     con = duckdb.connect(":memory:")

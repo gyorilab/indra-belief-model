@@ -22,6 +22,16 @@ import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { closeInstance, dbPath } from '$lib/db';
 import { assertPathUnderData } from '$lib/pathGuard';
+import {
+	activePairedWorkflowStates,
+	activeWriterLock,
+	acquireWriterLock,
+	clearWriterLockToken,
+	updateWriterLock,
+	writerLockConflictPayload
+} from '$lib/server/pairedState';
+import { WRITER_ACTION_CONFLICT } from '$lib/writerActionConflicts';
+import { terminateChildProcessWithEscalation } from '$lib/server/childProcess';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -55,6 +65,30 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (target_kind !== 'stmt' && target_kind !== 'evidence')
 		throw error(400, 'target_kind must be "stmt" or "evidence"');
 	if (!field) throw error(400, 'field required');
+	const activeLock = activeWriterLock();
+	if (activeLock?.kind === 'malformed') {
+		throw error(409, writerLockConflictPayload(activeLock));
+	}
+	const activePair = activePairedWorkflowStates()[0] ?? null;
+	if (activePair) {
+		throw error(409, {
+			code: WRITER_ACTION_CONFLICT.pairedWorkflowActive,
+			message: `paired workflow ${activePair.pair_id} is already ${activePair.status}; wait, cancel it, or inspect ${activePair.href}`
+		});
+	}
+	if (activeLock) {
+		throw error(409, writerLockConflictPayload(activeLock));
+	}
+	const writerLock = acquireWriterLock({
+		kind: 'truth_set',
+		label: 'truth-set registration',
+		dataset_path: safePath,
+		pid: null
+	});
+	if (!writerLock) {
+		const lock = activeWriterLock();
+		throw error(409, writerLockConflictPayload(lock));
+	}
 
 	const args = [
 		'-m', 'indra_belief.worker',
@@ -77,13 +111,51 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Release the viewer's cached READ_ONLY DuckDB instance so the worker can
 	// acquire the file lock. Next dashboard read will lazy-reopen.
-	closeInstance();
+	try {
+		closeInstance();
+	} catch (e) {
+		clearWriterLockToken(writerLock.token);
+		throw e;
+	}
 
-	const exitCode: number = await new Promise((resolveP) => {
+	const outcome: { exitCode: number; aborted: boolean } = await new Promise((resolveP) => {
+		let writerHeartbeat: ReturnType<typeof setInterval> | null = null;
+		let aborted = false;
+		let resolved = false;
+		const stopWriterHeartbeat = () => {
+			if (writerHeartbeat) clearInterval(writerHeartbeat);
+			writerHeartbeat = null;
+		};
 		const child = spawn(py, args, {
 			cwd: repoRoot(),
-			env: { ...process.env, PYTHONPATH: resolve(repoRoot(), 'src') }
+			env: {
+				...process.env,
+				PYTHONPATH: resolve(repoRoot(), 'src'),
+				INDRA_VIEWER_WRITER_LOCK_TOKEN: writerLock.token
+			}
 		});
+		if (child.pid != null) {
+			updateWriterLock(writerLock.token, { pid: child.pid });
+			writerHeartbeat = setInterval(() => {
+				updateWriterLock(writerLock.token, {});
+			}, 5000);
+			writerHeartbeat.unref?.();
+		}
+		const onAbort = () => {
+			if (aborted) return;
+			aborted = true;
+			terminateChildProcessWithEscalation(child);
+		};
+		const finish = (exitCode: number) => {
+			if (resolved) return;
+			resolved = true;
+			stopWriterHeartbeat();
+			request.signal.removeEventListener('abort', onAbort);
+			clearWriterLockToken(writerLock.token);
+			resolveP({ exitCode, aborted });
+		};
+		request.signal.addEventListener('abort', onAbort);
+		if (request.signal.aborted) onAbort();
 
 		// Parse stdout line-by-line for JSON events
 		let stdoutBuf = '';
@@ -105,18 +177,32 @@ export const POST: RequestHandler = async ({ request }) => {
 		child.stderr.on('data', (chunk: Buffer) => {
 			stderrBuf += chunk.toString('utf-8');
 		});
-		child.on('exit', (code) => resolveP(code ?? -1));
+		child.on('exit', (code) => {
+			finish(code ?? -1);
+		});
 		child.on('error', (err) => {
 			stderrBuf += `\nspawn error: ${err.message}`;
-			resolveP(-1);
+			finish(-1);
 		});
 	});
 
-	if (exitCode !== 0) {
+	if (outcome.aborted) {
 		return json(
 			{
 				ok: false,
-				exit_code: exitCode,
+				error: 'client_disconnected',
+				events,
+				stderr: stderrBuf.slice(0, 4096)
+			},
+			{ status: 499 }
+		);
+	}
+
+	if (outcome.exitCode !== 0) {
+		return json(
+			{
+				ok: false,
+				exit_code: outcome.exitCode,
 				events,
 				stderr: stderrBuf.slice(0, 4096)
 			},

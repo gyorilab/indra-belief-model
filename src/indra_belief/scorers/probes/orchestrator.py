@@ -14,8 +14,9 @@ Latency contract (doctrine §6):
 """
 from __future__ import annotations
 
+from dataclasses import asdict
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 
 from indra_belief.scorers.commitments import (
     Adjudication,
@@ -55,6 +56,13 @@ _PROBE_HANDLERS = {
     "scope": scope.answer,
 }
 
+_PROBE_ONLY_FALLBACK_ANSWERS = {
+    "subject_role": "absent",
+    "object_role": "absent",
+    "relation_axis": "abstain",
+    "scope": "abstain",
+}
+
 
 def _resolve_probe(
     routing: ProbeResponse | ProbeRequest, client: "ModelClient",
@@ -65,6 +73,16 @@ def _resolve_probe(
         return routing
     handler = _PROBE_HANDLERS[routing.kind]
     return handler(routing, client)
+
+
+def _abstain_probe(kind: str, rationale: str) -> ProbeResponse:
+    return ProbeResponse(
+        kind=kind,  # type: ignore[arg-type]
+        answer=_PROBE_ONLY_FALLBACK_ANSWERS[kind],
+        source="abstain",
+        confidence="low",
+        rationale=rationale[:200],
+    )
 
 
 def _resolve_claim_entities(claim: ClaimCommitment, evidence) -> list:
@@ -111,6 +129,14 @@ def _format_output(
     call_log: list[dict],
 ) -> dict:
     total_out = sum(int(c.get("out_tokens") or 0) for c in call_log)
+    probe_trace = None
+    if bundle is not None:
+        probe_trace = {
+            "subject_role": asdict(bundle.subject_role),
+            "object_role": asdict(bundle.object_role),
+            "relation_axis": asdict(bundle.relation_axis),
+            "scope": asdict(bundle.scope),
+        }
     return {
         "score": adjudication_to_score(adj),
         "verdict": adj.verdict,
@@ -122,8 +148,54 @@ def _format_output(
         "provenance_triggered": False,
         "reasons": list(adj.reasons),
         "rationale": adj.rationale,
+        "probe_trace": probe_trace,
         "call_log": call_log,
     }
+
+
+def _format_probe_only_output(
+    probes: dict[str, ProbeResponse],
+    call_log: list[dict],
+    rationale: str,
+) -> dict:
+    total_out = sum(int(c.get("out_tokens") or 0) for c in call_log)
+    return {
+        "score": None,
+        "verdict": "abstain",
+        "confidence": "low",
+        "raw_text": _render_probe_only_trace(probes, rationale),
+        "tokens": total_out,
+        "tier": "decomposed_probe_only",
+        "grounding_status": "not_run",
+        "provenance_triggered": False,
+        "reasons": ["probe_only_rescore"],
+        "rationale": rationale,
+        "probe_trace": {
+            kind: asdict(response)
+            for kind, response in probes.items()
+        },
+        "call_log": call_log,
+    }
+
+
+def _render_probe_only_trace(
+    probes: dict[str, ProbeResponse],
+    rationale: str,
+) -> str:
+    parts = [f"[S-PHASE probe-only] {rationale}"]
+    for kind, response in probes.items():
+        parts.append(
+            f"  {kind}={response.answer} ({response.source})"
+        )
+    return "\n".join(parts)
+
+
+def _normalize_probe_kinds(probe_kinds: Iterable[str]) -> tuple[str, ...]:
+    requested = {str(kind).strip() for kind in probe_kinds if str(kind).strip()}
+    unknown = requested.difference(_PROBE_HANDLERS)
+    if unknown:
+        raise ValueError(f"unknown probe kind(s): {', '.join(sorted(unknown))}")
+    return tuple(kind for kind in _PROBE_HANDLERS if kind in requested)
 
 
 def _groundings_to_status(
@@ -247,3 +319,67 @@ def score_via_probes(statement, evidence, client: "ModelClient") -> dict:
     adj = adjudicate(claim, bundle, groundings, ctx=ctx)
 
     return _format_output(adj, groundings, bundle, _pop())
+
+
+def score_selected_probes(
+    statement,
+    evidence,
+    client: "ModelClient",
+    probe_kinds: Iterable[str],
+) -> dict:
+    """Resolve only selected S-phase probes for repair reruns.
+
+    This intentionally does not run grounding verification or aggregate
+    adjudication. The caller can persist native probe rows at lower cost, then
+    later run a separate merge/adjudication pass when that workflow exists.
+    """
+    selected = _normalize_probe_kinds(probe_kinds)
+    if not selected:
+        raise ValueError("score_selected_probes requires at least one probe kind")
+
+    _pop = getattr(client, "pop_call_log", lambda: [])
+    _pop()
+    evidence_text = getattr(evidence, "text", "") or ""
+
+    def abstain_all(reason: str) -> dict:
+        probes = {kind: _abstain_probe(kind, reason) for kind in selected}
+        return _format_probe_only_output(probes, _pop(), reason)
+
+    if not evidence_text.strip():
+        return abstain_all("probe-only rerun skipped LLM probes because evidence text is empty")
+
+    try:
+        claim = parse_claim(statement)
+    except Exception as e:
+        log.warning("orchestrator probe-only: parse_claim failed: %s", e)
+        return abstain_all(f"parse_claim failed: {type(e).__name__}")
+
+    try:
+        ctx = EvidenceContext.from_statement_and_evidence(statement, evidence)
+    except Exception as e:
+        log.warning(
+            "orchestrator probe-only: build_context failed (%s: %s); "
+            "falling back to empty EvidenceContext",
+            type(e).__name__, e,
+        )
+        ctx = EvidenceContext()
+
+    try:
+        routings = router.substrate_route(claim, ctx, evidence_text)
+    except Exception as e:
+        log.warning("orchestrator probe-only: substrate_route failed: %s", e)
+        return abstain_all(f"substrate_route failed: {type(e).__name__}")
+
+    probes: dict[str, ProbeResponse] = {}
+    for kind in selected:
+        try:
+            probes[kind] = _resolve_probe(routings[kind], client)
+        except Exception as e:
+            log.warning("orchestrator probe-only: %s failed: %s", kind, e)
+            probes[kind] = _abstain_probe(kind, f"{kind} failed: {type(e).__name__}")
+
+    return _format_probe_only_output(
+        probes,
+        _pop(),
+        "selected probe slots only; aggregate adjudication and grounding were not run",
+    )

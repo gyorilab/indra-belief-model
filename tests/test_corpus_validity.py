@@ -47,6 +47,13 @@ def _scorer(score: float, verdict: str = "correct", confidence: str = "high"):
     return _fn
 
 
+def _evidence_hashes_by_text(con, texts: list[str]) -> list[str]:
+    rows = dict(con.execute(
+        "SELECT text, evidence_hash FROM evidence"
+    ).fetchall())
+    return [rows[text] for text in texts]
+
+
 def test_compute_validity_raises_on_unknown_run_id():
     """Aligned with export_beliefs + model_card: silently returning a
     hollow summary dict on a typo'd run_id was a foot-gun.
@@ -54,6 +61,23 @@ def test_compute_validity_raises_on_unknown_run_id():
     con = _con()
     with pytest.raises(ValueError, match="not found"):
         compute_validity(con, "nonexistent-run-id")
+
+
+def test_compute_validity_requires_succeeded_run():
+    con = _con()
+    run_id = "canceled-run"
+    con.execute(
+        """
+        INSERT INTO score_run
+          (run_id, scorer_version, indra_version, architecture, model_id_default,
+           started_at, finished_at, n_stmts, status, terminated_by, termination_reason)
+        VALUES (?, 't', 'unknown', 'monolithic', 'mock',
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'canceled', 'user', 'client_disconnected')
+        """,
+        [run_id],
+    )
+    with pytest.raises(ValueError, match="require status=succeeded"):
+        compute_validity(con, run_id)
 
 
 def test_compute_validity_is_idempotent():
@@ -160,9 +184,9 @@ def test_truth_present_metrics_compute_pr_f1_against_gold(tmp_path):
     # abstain≠correct (FN). Expect: precision 1/2=0.5, recall 1/2=0.5, f1=0.5
     register_truth_set(con, id="gold_test", name="test gold")
 
-    ev_hashes = [r[0] for r in con.execute(
-        "SELECT evidence_hash FROM evidence ORDER BY evidence_hash"
-    ).fetchall()]
+    ev_hashes = _evidence_hashes_by_text(
+        con, ["sentence 0", "sentence 1", "sentence 2"]
+    )
     gold_verdicts = ["correct", "incorrect", "correct"]
     labels = [
         {"target_kind": "evidence", "target_id": eh,
@@ -193,8 +217,156 @@ def test_truth_present_metrics_compute_pr_f1_against_gold(tmp_path):
     assert "truth_present.aggregate.f1" in metric_names
 
 
+def test_truth_present_metrics_accept_benchmark_tag_labels():
+    """Benchmark JSONL uses field='tag'. For P/R/F1, tag=correct is the
+    positive class and every other tag is a not-correct gold label.
+    """
+    from indra_belief.corpus import register_truth_set, load_truth_labels
+
+    con = _con()
+    s = _stmt(belief=0.5, n_ev=3)
+    ingest_statements(con, [s])
+
+    verdicts = iter(["correct", "correct", "abstain"])
+
+    def mock_v(statement, evidence, client):
+        v = next(verdicts)
+        return {"score": 0.8 if v == "correct" else 0.5,
+                "verdict": v, "confidence": "high",
+                "reasons": [], "call_log": []}
+
+    run_id = score_corpus(con, [s], scorer_version="t",
+                          score_evidence=mock_v, with_validity=False)
+
+    register_truth_set(con, id="tag_gold", name="tag gold")
+    ev_hashes = _evidence_hashes_by_text(
+        con, ["sentence 0", "sentence 1", "sentence 2"]
+    )
+    tags = ["correct", "wrong_relation", "correct"]
+    labels = [
+        {"target_kind": "evidence", "target_id": eh,
+         "field": "tag", "value_text": tag, "provenance": "test"}
+        for eh, tag in zip(ev_hashes, tags)
+    ]
+    load_truth_labels(con, "tag_gold", labels)
+
+    summary = compute_validity(con, run_id)
+
+    assert "tag_gold" in summary["truth_present_metrics"]
+    agg_metrics = summary["truth_present_metrics"]["tag_gold"]["aggregate"]
+    assert agg_metrics["n_compared"] == 3
+    assert agg_metrics["tp"] == 1
+    assert agg_metrics["fp"] == 1
+    assert agg_metrics["fn"] == 1
+    assert agg_metrics["gold_fields"] == ["tag"]
+    assert agg_metrics["precision"] == pytest.approx(0.5)
+    assert agg_metrics["recall"] == pytest.approx(0.5)
+    assert agg_metrics["f1"] == pytest.approx(0.5)
+
+    row = con.execute(
+        "SELECT slice_json::VARCHAR FROM metric "
+        "WHERE truth_set_id = 'tag_gold' "
+        "  AND metric_name = 'truth_present.aggregate.f1'"
+    ).fetchone()
+    assert row is not None
+    assert '"gold_fields": ["tag"]' in row[0]
+    assert '"tn": 0' in row[0]
+    assert "\"negative_gold_rule\": \"any value != 'correct'\"" in row[0]
+
+
+def test_truth_present_metrics_prefer_explicit_verdict_over_tag():
+    """If both fields exist for one evidence, the explicit verdict label is
+    the better mental model than the benchmark tag and must win deterministically.
+    """
+    from indra_belief.corpus import register_truth_set, load_truth_labels
+
+    con = _con()
+    s = _stmt(belief=0.5, n_ev=2)
+    ingest_statements(con, [s])
+    run_id = score_corpus(con, [s], scorer_version="t",
+                          score_evidence=_scorer(0.9, verdict="correct"),
+                          with_validity=False)
+    ev0, ev1 = _evidence_hashes_by_text(con, ["sentence 0", "sentence 1"])
+
+    register_truth_set(con, id="mixed_gold", name="mixed gold")
+    load_truth_labels(con, "mixed_gold", [
+        {"target_kind": "evidence", "target_id": ev0,
+         "field": "tag", "value_text": "correct", "provenance": "test"},
+        {"target_kind": "evidence", "target_id": ev0,
+         "field": "verdict", "value_text": "incorrect", "provenance": "test"},
+        {"target_kind": "evidence", "target_id": ev1,
+         "field": "tag", "value_text": "wrong_relation", "provenance": "test"},
+        {"target_kind": "evidence", "target_id": ev1,
+         "field": "verdict", "value_text": "correct", "provenance": "test"},
+    ])
+
+    summary = compute_validity(con, run_id)
+
+    agg_metrics = summary["truth_present_metrics"]["mixed_gold"]["aggregate"]
+    assert agg_metrics["n_compared"] == 2
+    assert agg_metrics["tp"] == 1
+    assert agg_metrics["fp"] == 1
+    assert agg_metrics["fn"] == 0
+    assert agg_metrics["gold_fields"] == ["verdict"]
+
+
+def test_truth_present_metrics_use_statement_context_for_shared_evidence_tags():
+    """The same evidence sentence can be curated differently for two statements.
+
+    Benchmark JSONL carries source_hash plus matches_hash; validity must not
+    collapse those labels to evidence_hash alone.
+    """
+    from indra_belief.corpus import register_truth_set, load_truth_labels
+
+    con = _con()
+    shared_text = "shared evidence supports different statements"
+    s1 = Phosphorylation(
+        Agent("MAP2K1", db_refs={"HGNC": "6840"}),
+        Agent("MAPK1", db_refs={"HGNC": "6871"}),
+        evidence=[Evidence(source_api="reach", text=shared_text)],
+    )
+    s2 = Activation(
+        Agent("RAF1", db_refs={"HGNC": "9829"}),
+        Agent("MAP2K1", db_refs={"HGNC": "6840"}),
+        evidence=[Evidence(source_api="reach", text=shared_text)],
+    )
+    s1.belief = 0.7
+    s2.belief = 0.7
+    ingest_statements(con, [s1, s2])
+    run_id = score_corpus(con, [s1, s2], scorer_version="t",
+                          score_evidence=_scorer(0.9, verdict="correct"),
+                          with_validity=False)
+    scored = con.execute(
+        "SELECT stmt_hash, evidence_hash FROM scorer_step "
+        "WHERE run_id=? AND step_kind='aggregate' ORDER BY stmt_hash",
+        [run_id],
+    ).fetchall()
+    assert len(scored) == 2
+    assert scored[0][1] == scored[1][1]
+    ev_hash = scored[0][1]
+
+    register_truth_set(con, id="context_gold", name="context gold")
+    load_truth_labels(con, "context_gold", [
+        {"target_kind": "evidence", "target_id": ev_hash,
+         "relation_target_id": scored[0][0],
+         "field": "tag", "value_text": "correct", "provenance": "test"},
+        {"target_kind": "evidence", "target_id": ev_hash,
+         "relation_target_id": scored[1][0],
+         "field": "tag", "value_text": "wrong_relation", "provenance": "test"},
+    ])
+
+    summary = compute_validity(con, run_id)
+
+    agg_metrics = summary["truth_present_metrics"]["context_gold"]["aggregate"]
+    assert agg_metrics["n_compared"] == 2
+    assert agg_metrics["tp"] == 1
+    assert agg_metrics["fp"] == 1
+    assert agg_metrics["fn"] == 0
+    assert agg_metrics["gold_fields"] == ["tag"]
+
+
 def test_truth_present_returns_empty_when_no_overlap():
-    """4a degrades gracefully — empty summary key when no gold overlap."""
+    """4a remains empty when no truth_set carries verdict/tag gold labels."""
     con = _con()
     s = _stmt(belief=0.5, n_ev=1)
     ingest_statements(con, [s])
@@ -204,6 +376,129 @@ def test_truth_present_returns_empty_when_no_overlap():
     summary = compute_validity(con, run_id)
     # No gold registered → empty truth_present_metrics
     assert summary["truth_present_metrics"] == {}
+
+
+def test_truth_present_writes_unavailable_row_when_truth_set_has_zero_overlap():
+    """Registered truth sets should not disappear when they miss the run."""
+    from indra_belief.corpus import register_truth_set, load_truth_labels
+
+    con = _con()
+    s = _stmt(belief=0.5, n_ev=1)
+    ingest_statements(con, [s])
+    run_id = score_corpus(con, [s], scorer_version="t",
+                          score_evidence=_scorer(0.8), with_validity=False)
+
+    register_truth_set(con, id="miss_gold", name="missing overlap gold")
+    load_truth_labels(con, "miss_gold", [
+        {"target_kind": "evidence", "target_id": "not-in-this-run",
+         "field": "tag", "value_text": "correct", "provenance": "test"},
+    ])
+
+    summary = compute_validity(con, run_id)
+
+    unavailable = summary["truth_present_metrics"]["miss_gold"]["aggregate"]
+    assert unavailable["n_compared"] == 0
+    assert unavailable["n_gold_labels"] == 1
+    assert unavailable["n_applicable_gold_labels"] == 0
+    assert unavailable["n_scored_evidences"] == 1
+    assert unavailable["gold_fields"] == ["tag"]
+    assert unavailable["unavailable_reason"] == (
+        "no scored aggregate evidence rows overlap this truth_set"
+    )
+
+    row = con.execute(
+        "SELECT value, slice_json::VARCHAR FROM metric "
+        "WHERE truth_set_id = 'miss_gold' "
+        "  AND metric_name = 'truth_present.aggregate.precision'"
+    ).fetchone()
+    assert row is not None
+    assert math.isnan(row[0])
+    assert '"n_gold_labels": 1' in row[1]
+    assert '"n_applicable_gold_labels": 0' in row[1]
+    assert "no scored aggregate evidence rows overlap this truth_set" in row[1]
+
+    names = {r[0] for r in con.execute(
+        "SELECT metric_name FROM metric WHERE truth_set_id = 'miss_gold'"
+    ).fetchall()}
+    assert "truth_present.aggregate.precision" in names
+    assert "truth_present.aggregate.recall" in names
+    assert "truth_present.aggregate.f1" in names
+    assert "truth_present.aggregate.unavailable" not in names
+
+
+def test_truth_present_measured_rows_carry_gold_coverage_denominators():
+    from indra_belief.corpus import register_truth_set, load_truth_labels
+
+    con = _con()
+    s = _stmt(belief=0.5, n_ev=2)
+    ingest_statements(con, [s])
+    run_id = score_corpus(con, [s], scorer_version="t",
+                          score_evidence=_scorer(0.8, verdict="correct"),
+                          with_validity=False)
+    ev0 = _evidence_hashes_by_text(con, ["sentence 0"])[0]
+
+    register_truth_set(con, id="partial_gold", name="partial overlap gold")
+    load_truth_labels(con, "partial_gold", [
+        {"target_kind": "evidence", "target_id": ev0,
+         "field": "tag", "value_text": "correct", "provenance": "test"},
+        {"target_kind": "evidence", "target_id": "not-in-this-run",
+         "field": "tag", "value_text": "correct", "provenance": "test"},
+    ])
+
+    summary = compute_validity(con, run_id)
+
+    aggregate = summary["truth_present_metrics"]["partial_gold"]["aggregate"]
+    assert aggregate["n_compared"] == 1
+    assert aggregate["n_gold_labels"] == 2
+    assert aggregate["n_applicable_gold_labels"] == 1
+    assert aggregate["n_scored_evidences"] == 2
+
+    row = con.execute(
+        "SELECT slice_json::VARCHAR FROM metric "
+        "WHERE truth_set_id = 'partial_gold' "
+        "  AND metric_name = 'truth_present.aggregate.precision'"
+    ).fetchone()
+    assert row is not None
+    assert '"n_gold_labels": 2' in row[0]
+    assert '"n_applicable_gold_labels": 1' in row[0]
+    assert '"n_scored_evidences": 2' in row[0]
+
+    names = {r[0] for r in con.execute(
+        "SELECT metric_name FROM metric WHERE truth_set_id = 'partial_gold'"
+    ).fetchall()}
+    assert "truth_present.aggregate.precision" in names
+    assert "truth_present.aggregate.unavailable" not in names
+
+
+def test_truth_present_unavailable_when_run_has_no_aggregate_verdicts():
+    from indra_belief.corpus import register_truth_set, load_truth_labels
+
+    con = _con()
+    s = _stmt(belief=0.5, n_ev=1)
+    ingest_statements(con, [s])
+
+    def no_verdict(statement, evidence, client):
+        return {"score": 0.8, "confidence": "high", "reasons": [], "call_log": []}
+
+    run_id = score_corpus(con, [s], scorer_version="t",
+                          score_evidence=no_verdict, with_validity=False)
+    ev0 = _evidence_hashes_by_text(con, ["sentence 0"])[0]
+    register_truth_set(con, id="no_verdict_gold", name="no verdict gold")
+    load_truth_labels(con, "no_verdict_gold", [
+        {"target_kind": "evidence", "target_id": ev0,
+         "field": "tag", "value_text": "correct", "provenance": "test"},
+    ])
+
+    summary = compute_validity(con, run_id)
+
+    unavailable = summary["truth_present_metrics"]["no_verdict_gold"]["aggregate"]
+    assert unavailable["n_compared"] == 0
+    assert unavailable["n_gold_labels"] == 1
+    assert unavailable["n_applicable_gold_labels"] == 0
+    assert unavailable["n_scored_evidences"] == 0
+    assert unavailable["unavailable_reason"] == (
+        "no scored aggregate evidence rows with verdicts in this run"
+    )
 
 
 def test_verdict_share_metrics_written():

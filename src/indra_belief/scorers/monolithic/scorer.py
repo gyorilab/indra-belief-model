@@ -23,6 +23,7 @@ Run:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -166,9 +167,33 @@ def _select_examples(stmt_type: str) -> list[dict]:
     return examples
 
 
-def _build_messages(record: ScoringRecord) -> list[dict]:
+def _example_id(ex: dict) -> str:
+    """Stable identifier for a static contrastive example."""
+    payload = json.dumps({
+        "claim": ex.get("claim"),
+        "evidence": ex.get("evidence"),
+        "verdict": ex.get("verdict"),
+        "confidence": ex.get("confidence"),
+    }, sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def _example_trace_rows(examples: list[dict]) -> list[dict]:
+    """Compact selected-example provenance for persisted trace output."""
+    return [
+        {
+            "id": _example_id(ex),
+            "claim": ex.get("claim"),
+            "verdict": ex.get("verdict"),
+            "confidence": ex.get("confidence"),
+        }
+        for ex in examples
+    ]
+
+
+def _build_messages(record: ScoringRecord, examples: list[dict] | None = None) -> list[dict]:
     """Build the contrastive-example + user-message conversation for a record."""
-    examples = _select_examples(record.stmt_type)
+    examples = examples if examples is not None else _select_examples(record.stmt_type)
     messages: list[dict] = []
     for ex in examples:
         u, a = _render_example(ex)
@@ -206,22 +231,27 @@ def _parse_verdict(response) -> tuple[str | None, str | None]:
 def _score_single(
     client: ModelClient,
     record: ScoringRecord,
-    max_tokens: int,
+    max_tokens: int | None,
     temperature: float = 0.1,
 ) -> dict:
     """Single LLM call for Tier 2. Returns result dict."""
+    examples = _select_examples(record.stmt_type)
     response = client.call(
         system=SYSTEM_PROMPT,
-        messages=_build_messages(record),
+        messages=_build_messages(record, examples),
         max_tokens=max_tokens,
         temperature=temperature,
+        kind="monolithic",
     )
     verdict, confidence = _parse_verdict(response)
+    selected_examples = _example_trace_rows(examples)
     return {
         "verdict": verdict,
         "confidence": confidence,
         "raw_text": response.raw_text,
         "tokens": response.tokens,
+        "selected_example_ids": [ex["id"] for ex in selected_examples],
+        "selected_examples": selected_examples,
     }
 
 
@@ -289,7 +319,7 @@ def _format_entity_lookups(record: ScoringRecord) -> str:
 def _score_with_tools(
     client: ModelClient,
     record: ScoringRecord,
-    max_tokens: int,
+    max_tokens: int | None,
 ) -> dict:
     """Tier 2 with pre-computed entity lookups. For records where grounding
     is flagged or entity symbols are short/ambiguous, gilda lookups are
@@ -298,7 +328,8 @@ def _score_with_tools(
     signal is always present.
     """
     lookup_ctx = _format_entity_lookups(record)
-    messages = _build_messages(record)
+    examples = _select_examples(record.stmt_type)
+    messages = _build_messages(record, examples)
     if lookup_ctx:
         # Augment the user message (last message) with the lookup block.
         augmented = messages[-1]["content"] + "\n\n" + lookup_ctx
@@ -309,20 +340,24 @@ def _score_with_tools(
         messages=messages,
         max_tokens=max_tokens,
         temperature=0.1,
+        kind="monolithic_tool_context",
     )
     verdict, confidence = _parse_verdict(response)
+    selected_examples = _example_trace_rows(examples)
     return {
         "verdict": verdict,
         "confidence": confidence,
         "raw_text": response.raw_text,
         "tokens": response.tokens,
+        "selected_example_ids": [ex["id"] for ex in selected_examples],
+        "selected_examples": selected_examples,
     }
 
 
 def score(
     client: ModelClient,
     record: ScoringRecord,
-    max_tokens: int = 12000,
+    max_tokens: int | None = None,
 ) -> dict:
     """Score a single extraction with a single deterministic LLM call.
 
@@ -334,9 +369,13 @@ def score(
     Returns dict with: score, verdict, confidence, raw_text, tokens,
     tier, grounding_status, provenance_triggered.
     """
+    _pop = getattr(client, "pop_call_log", lambda: [])
+    _pop()
+
     # --- Tier 1: Deterministic auto-reject ---
     reject = record.tier1_auto_reject()
     if reject:
+        reject["call_log"] = _pop()
         return reject
 
     # AMBIGUOUS entities go directly to Tier 2 — the intermediate AMBIGUOUS
@@ -375,6 +414,7 @@ def score(
         total_tokens = result["tokens"]
         raw = f"[TIER 2 LLM]\n{result['raw_text']}"
         tier = "llm_comprehension"
+    call_log = _pop()
 
     return {
         "score": verdict_to_score(verdict, confidence),
@@ -385,6 +425,9 @@ def score(
         "tier": tier,
         "grounding_status": grounding_status,
         "provenance_triggered": provenance_triggered,
+        "selected_example_ids": result.get("selected_example_ids", []),
+        "selected_examples": result.get("selected_examples", []),
+        "call_log": call_log,
     }
 
 
@@ -393,7 +436,7 @@ def score_statement(
     evidence,
     client: ModelClient,
     *,
-    max_tokens: int = 12000,
+    max_tokens: int | None = None,
 ) -> dict:
     """Score a single INDRA Statement + Evidence pair.
 

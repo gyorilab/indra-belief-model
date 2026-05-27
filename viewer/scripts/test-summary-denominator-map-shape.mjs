@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const source = readFileSync(new URL('../src/lib/components/Validity.svelte', import.meta.url), 'utf-8');
+
+assert.match(source, /type DenominatorCell = \{/);
+assert.match(source, /type DenominatorGroup = \{/);
+assert.match(source, /const denominatorGroups = \$derived\.by/);
+assert.match(source, /label: 'aggregate verdict evidence'/);
+assert.match(source, /label: 'truth-set overlap'/);
+assert.match(source, /label: 'INDRA belief anchors'/);
+assert.match(source, /label: 'confidence calibration buckets'/);
+assert.match(source, /label: 'statement structure'/);
+assert.match(source, /label: 'native \/ paired applicability'/);
+assert.match(source, /scope: 'overlapping INDRA-anchor aggregate evidence buckets; rows are not additive'/);
+assert.match(source, /taxonomyHref\('verdict distribution'\)/);
+assert.match(source, /probeTax\?\.cohort_href/);
+assert.match(source, /pairTax\?\.cohort_href/);
+assert.match(source, /goldLines\.map\(\(g\): DenominatorCell/);
+assert.match(source, /status: g\.unavailable_reason \? 'not_defined' : 'defined'/);
+assert.match(source, /href: g\.unavailable_reason \? g\.truth_href : g\.cohort_href/);
+assert.match(source, /opens overlap diagnostic/);
+assert.match(source, /v\.inter_evidence_consistency\.cohort_href/);
+assert.match(source, /confidenceRows\.map\(\(row\): DenominatorCell/);
+assert.match(source, /href: row\.cohort_href/);
+assert.match(source, /unit: row\.family === 'all' \? 'aggregate evidence bucket' : 'overlapping type slice'/);
+assert.match(source, /route opens aggregate evidence with native decomposed trace rows/);
+assert.match(source, /type DenominatorStatus = 'defined' \| 'not_defined' \| 'applicable'/);
+assert.match(source, /function cellGlyph\(status: DenominatorStatus\): string/);
+assert.match(source, /function cellStatusLabel\(status: DenominatorStatus\): string/);
+assert.match(source, /status: probeTax\?\.applicability === 'arch_conditioned' \? 'applicable' : 'not_defined'/);
+assert.match(source, /status: pairTax\?\.applicability === 'paired_only' \? 'applicable' : 'not_defined'/);
+assert.match(source, /aria-label="summary metric denominator contract"/);
+assert.match(source, /<details class="v-denominator-map"/);
+assert.match(source, /<summary>/);
+assert.match(source, /denominator contract/);
+assert.match(source, /class="v-denominator-summary-row"/);
+assert.match(source, /class="v-denominator-grid"/);
+assert.match(source, /class="v-denom-state"/);
+assert.match(source, /class="v-denom-glyph"/);
+assert.match(source, /\{cellStatusLabel\(cell\.status\)\}/);
+assert.match(source, /cell\.n == null \? 'n —' : `n=\$\{cell\.n\}`/);
+assert.match(source, /\{cell\.unit\}/);
+assert.match(source, /class="v-denom-cell v-link" href=\{cell\.href\}/);
+assert.match(source, /class="v-denom-row v-denom-\{cell\.status\}"/);
+assert.match(source, /\.v-denominator-map/);
+assert.match(source, /\.v-denominator-grid/);
+assert.match(source, /\.v-denom-applicable/);
+assert.match(source, /\.v-denom-group/);
+
+assert.doesNotMatch(source, /hasCompared/);
+assert.doesNotMatch(source, /class="v-taxonomy"/);
+assert.match(source, /\{#if g\.unavailable_reason\}[\s\S]*<a class="v-inline-link" href=\{g\.truth_href\}>overlap details<\/a>[\s\S]*\{:else if g\.cohort_href\}[\s\S]*<a class="v-inline-link" href=\{g\.cohort_href\}>cohort<\/a>/);
+
+console.log('summary denominator map source-shape tests passed');

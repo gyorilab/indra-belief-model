@@ -21,6 +21,10 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator, Iterable
 
+from indra_belief.corpus.denominators import (
+    raw_json_evidence_count,
+)
+
 if TYPE_CHECKING:
     import duckdb
     from indra.statements import Statement, Evidence, Agent
@@ -43,6 +47,17 @@ def _agent_hash(agent: "Agent") -> str:
     """Stable 16-hex hash of `Agent.matches_key()` — the canonical identity."""
     h = hashlib.sha256(agent.matches_key().encode("utf-8")).hexdigest()
     return h[:16]
+
+
+def _evidence_hash(ev: "Evidence") -> str:
+    try:
+        return _hex(ev.get_source_hash())
+    except Exception:
+        # Some Evidence objects may have None source_hash; fall back to a
+        # content-derived stable hash.
+        return hashlib.sha256(
+            f"{ev.source_api}|{ev.source_id}|{ev.pmid}|{ev.text}".encode("utf-8")
+        ).hexdigest()[:16]
 
 
 def _upsert_truth_label(
@@ -146,6 +161,33 @@ def ingest_statements(
         belief = float(getattr(stmt, "belief", 1.0) or 1.0)
         supports = list(getattr(stmt, "supports", []) or [])
         supported_by = list(getattr(stmt, "supported_by", []) or [])
+        evidences = list(getattr(stmt, "evidence", None) or [])
+        incoming_evidence_hashes = [_evidence_hash(ev) for ev in evidences]
+        if len(set(incoming_evidence_hashes)) != len(incoming_evidence_hashes):
+            raise ValueError(
+                f"statement {stmt_hash} has duplicate evidence hashes; "
+                "the corpus evidence table cannot preserve that denominator"
+            )
+        existing_evidence_hashes = {
+            str(row[0])
+            for row in con.execute(
+                "SELECT evidence_hash FROM statement_evidence WHERE stmt_hash = ?",
+                [stmt_hash],
+            ).fetchall()
+        }
+        if (
+            existing_evidence_hashes
+            and existing_evidence_hashes != set(incoming_evidence_hashes)
+        ):
+            raise ValueError(
+                "ingest evidence denominator conflict for statement "
+                f"{stmt_hash}: existing statement-evidence context has "
+                f"{len(existing_evidence_hashes)} row"
+                f"{'' if len(existing_evidence_hashes) == 1 else 's'}, "
+                f"incoming raw_json has {len(incoming_evidence_hashes)}. "
+                "Use a fresh DuckDB or an explicit corpus-merge migration "
+                "before scoring."
+            )
 
         # INDRA quirk: when supports/supported_by are UUID strings (the JSON-loaded
         # form), `Statement.to_json()` tries to assign a `.uuid` attribute to them
@@ -163,6 +205,13 @@ def ingest_statements(
         if supported_by:
             raw["supported_by"] = [str(u) for u in supported_by]
         raw_json = json.dumps(raw, default=str)
+        raw_evidence_count = raw_json_evidence_count(stmt_hash, raw_json)
+        if raw_evidence_count != len(incoming_evidence_hashes):
+            raise ValueError(
+                "ingest raw_json evidence denominator mismatch for statement "
+                f"{stmt_hash}: raw_json has {raw_evidence_count}, "
+                f"statement object has {len(incoming_evidence_hashes)}"
+            )
 
         con.execute(
             """INSERT OR REPLACE INTO statement
@@ -231,15 +280,9 @@ def ingest_statements(
                 counters["n_truth_labels"] += 1
 
         # Evidences
-        for ev in (getattr(stmt, "evidence", None) or []):
-            try:
-                evhash = _hex(ev.get_source_hash())
-            except Exception:
-                # Some Evidence objects may have None source_hash; fall back
-                # to a content-derived stable hash.
-                evhash = hashlib.sha256(
-                    f"{ev.source_api}|{ev.source_id}|{ev.pmid}|{ev.text}".encode("utf-8")
-                ).hexdigest()[:16]
+        for evidence_index, (ev, evhash) in enumerate(
+            zip(evidences, incoming_evidence_hashes, strict=True)
+        ):
             epistemics = dict(getattr(ev, "epistemics", {}) or {})
             annotations = dict(getattr(ev, "annotations", {}) or {})
             is_direct = epistemics.get("direct")
@@ -252,15 +295,21 @@ def ingest_statements(
             ev_raw = json.dumps(ev.to_json(), default=str)
             con.execute(
                 """INSERT OR REPLACE INTO evidence
-                   (evidence_hash, stmt_hash, source_api, source_id, pmid, text,
+                   (evidence_hash, source_api, source_id, pmid, text,
                     is_direct, is_negated, is_curated,
                     epistemics_json, annotations_json, raw_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                [evhash, stmt_hash, ev.source_api, ev.source_id, ev.pmid, ev.text,
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [evhash, ev.source_api, ev.source_id, ev.pmid, ev.text,
                  is_direct, is_negated, is_curated,
                  json.dumps(epistemics, default=str),
                  json.dumps(annotations, default=str),
                  ev_raw],
+            )
+            con.execute(
+                """INSERT OR REPLACE INTO statement_evidence
+                   (stmt_hash, evidence_hash, evidence_index, source_dump_id)
+                   VALUES (?, ?, ?, ?)""",
+                [stmt_hash, evhash, evidence_index, source_dump_id],
             )
             counters["n_evidences"] += 1
 
@@ -392,11 +441,12 @@ def load_truth_labels(
     Each label dict needs at least: target_kind, target_id, field, and one of
     value_text or value_json. Optional: relation_target_id, confidence, provenance.
 
-    Idempotent on the natural key (truth_set_id, target_kind, target_id, field):
-    re-loading the same labels does not duplicate rows. This matches the
-    schema-doc contract ("INSERT OR REPLACE on the upsert path") that DuckDB's
-    native ON CONFLICT can't express on a non-PK index, so we DELETE+INSERT
-    per label.
+    Idempotent on the natural key (truth_set_id, target_kind, target_id,
+    relation_target_id, field): re-loading the same labels does not duplicate
+    rows, while allowing one evidence label per statement context when a
+    benchmark row carries `matches_hash`. This matches the schema-doc contract
+    ("INSERT OR REPLACE on the upsert path") that DuckDB's native ON CONFLICT
+    can't express on a non-PK index, so we DELETE+INSERT per label.
 
     Raises `ValueError` if `truth_set_id` is not a registered truth_set.
     The schema documents this column as FK truth_set.id but DuckDB doesn't
@@ -419,8 +469,10 @@ def load_truth_labels(
         con.execute(
             """DELETE FROM truth_label
                WHERE truth_set_id = ? AND target_kind = ?
-                 AND target_id = ? AND field = ?""",
-            [truth_set_id, lbl["target_kind"], lbl["target_id"], lbl["field"]],
+                 AND target_id = ? AND field = ?
+                 AND COALESCE(relation_target_id, '') = COALESCE(?, '')""",
+            [truth_set_id, lbl["target_kind"], lbl["target_id"], lbl["field"],
+             lbl.get("relation_target_id")],
         )
         con.execute(
             """INSERT INTO truth_label

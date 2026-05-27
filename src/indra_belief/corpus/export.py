@@ -23,6 +23,8 @@ import statistics
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
+from indra_belief.corpus.denominators import validate_statement_evidence_denominators
+
 if TYPE_CHECKING:
     import duckdb
 
@@ -144,6 +146,7 @@ def export_beliefs(
             ORDER BY stmt_hash""",
         params,
     ).fetchall()
+    validate_statement_evidence_denominators(con, [stmt_hash for stmt_hash, _ in rows])
 
     out: list[dict] = []
     for stmt_hash, raw_json in rows:
@@ -176,13 +179,13 @@ def model_card(
     """
     _assert_run_exists(con, run_id)
     run = con.execute(
-        """SELECT scorer_version, indra_version, model_id_default,
+        """SELECT scorer_version, indra_version, model_id_default, architecture,
                   started_at::VARCHAR, finished_at::VARCHAR, status, n_stmts,
                   cost_estimate_usd, cost_actual_usd
            FROM score_run WHERE run_id = ?""",
         [run_id],
     ).fetchone()
-    (scorer_version, indra_version, model_id, started_at, finished_at,
+    (scorer_version, indra_version, model_id, architecture, started_at, finished_at,
      status, n_stmts, cost_est, cost_act) = run
 
     metrics = con.execute(
@@ -205,7 +208,7 @@ def model_card(
                        SELECT DISTINCT stmt_hash FROM scorer_step WHERE run_id = ?
                    ))
                 OR (tl.target_kind = 'evidence' AND tl.target_id IN (
-                       SELECT DISTINCT evidence_hash FROM evidence
+                       SELECT DISTINCT evidence_hash FROM statement_evidence
                        WHERE stmt_hash IN (SELECT DISTINCT stmt_hash FROM scorer_step WHERE run_id = ?)
                    ))
                 OR (tl.target_kind = 'agent' AND tl.target_id IN (
@@ -216,6 +219,17 @@ def model_card(
             [run_id, run_id, run_id],
         ).fetchall()
     )
+    scored_stmt_hashes = [
+        row[0]
+        for row in con.execute(
+            "SELECT DISTINCT stmt_hash FROM scorer_step WHERE run_id = ?",
+            [run_id],
+        ).fetchall()
+    ]
+    evidence_denominator_validation = validate_statement_evidence_denominators(
+        con,
+        scored_stmt_hashes,
+    )
 
     card = {
         # Card-format version: bump on any breaking change to this dict shape.
@@ -224,6 +238,7 @@ def model_card(
         "card_format_version": 2,
         "run_id": run_id,
         "scorer_version": scorer_version,
+        "architecture": architecture,
         "indra_version": indra_version,
         "model_id": model_id,
         "started_at": started_at,
@@ -247,6 +262,7 @@ def model_card(
             for name, value, slice_json, tset in metrics
         ],
         "truth_set_coverage": {tid: int(n) for tid, n in truth_label_counts.items()},
+        "evidence_denominator_validation": evidence_denominator_validation.to_dict(),
         "limitations": [
             "Belief is the mean of per-evidence scores. The aggregation rule "
             "is research-grade; alternatives (noisy-OR, epistemics-weighted) "

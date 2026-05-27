@@ -28,6 +28,10 @@ from indra_belief.corpus.export import (
     export_beliefs,
     model_card,
 )
+from indra_belief.corpus.denominators import (
+    EvidenceDenominatorValidation,
+    validate_statement_evidence_denominators,
+)
 from indra_belief.corpus.cost import estimate_cost, MODEL_PRICES_PER_M_TOKENS
 
 __all__ = [
@@ -42,6 +46,8 @@ __all__ = [
     "aggregate_beliefs",
     "export_beliefs",
     "model_card",
+    "EvidenceDenominatorValidation",
+    "validate_statement_evidence_denominators",
     "estimate_cost",
     "MODEL_PRICES_PER_M_TOKENS",
 ]

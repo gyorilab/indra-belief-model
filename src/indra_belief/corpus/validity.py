@@ -5,6 +5,10 @@ Branches on truth presence at runtime (D7):
   - **4a (truth-present)**: per-step precision/recall/F1, confusion matrices,
     score-level calibration vs gold. Requires `truth_label` rows for the
     relevant scorer_step / stmt / evidence target_kinds.
+    Evidence-level benchmark `tag` labels are interpreted only as a binary
+    correctness target for these P/R/F1 metrics: `correct` is positive, every
+    other tag is not-correct. Fine-grained tag taxonomy analysis is separate
+    future work.
 
   - **4b (no-truth)**: INDRA-belief calibration, inter-evidence consistency,
     gold-overlap subset, supports-graph plausibility. Always available so
@@ -157,7 +161,12 @@ def _stratified_calibration(
     elif by == "source_api":
         # Pick the lexicographically-first source_api per stmt (deterministic
         # tie-break; an auditor can drill down by hand for mixed-source stmts)
-        col = "(SELECT MIN(e.source_api) FROM evidence e WHERE e.stmt_hash = s.stmt_hash)"
+        col = (
+            "(SELECT MIN(e.source_api) "
+            "FROM statement_evidence se "
+            "JOIN evidence e ON e.evidence_hash = se.evidence_hash "
+            "WHERE se.stmt_hash = s.stmt_hash)"
+        )
         join = ""
     else:
         return []
@@ -198,13 +207,19 @@ def _truth_present_metrics(
     run_id: str,
     truth_set_id: str,
 ) -> dict:
-    """Phase 4a — per-step P/R/F1 when gold labels exist for this run's
+    """Phase 4a — aggregate-step P/R/F1 when gold labels exist for this run's
     scorer_step targets under the given truth_set.
 
     Compares `scorer_step.output_json -> $.verdict` (the load-bearing
     decision per S-phase doctrine) against `truth_label.value_text` where
-    `target_kind='evidence'` and `field='verdict'`. Per-step_kind precision,
-    recall, F1 are computed against `verdict='correct'` as the positive class.
+    `target_kind='evidence'` and `field='verdict'` or `field='tag'`.
+    If `truth_label.relation_target_id` is present, it is treated as the
+    statement context and must match `scorer_step.stmt_hash`; generic
+    evidence-only labels are used only when no contextual label wins.
+    Benchmark `tag` rows are interpreted as a binary correctness target:
+    `correct` is the positive class and all other tag values are not-correct.
+    Within the same context specificity, explicit `verdict` labels win over
+    `tag`.
 
     Returns `{step_kind: {n_compared, precision, recall, f1, tp, fp, fn}}`.
     Empty dict if no overlap exists between gold labels and scorer outputs
@@ -214,6 +229,7 @@ def _truth_present_metrics(
         """
         WITH scorer_verdicts AS (
             SELECT step_kind,
+                   stmt_hash,
                    evidence_hash,
                    replace(json_extract(output_json, '$.verdict')::VARCHAR, '"', '') AS our_verdict
             FROM scorer_step
@@ -222,17 +238,50 @@ def _truth_present_metrics(
               AND json_extract(output_json, '$.verdict') IS NOT NULL
               AND evidence_hash IS NOT NULL
         ),
-        gold AS (
+        gold_candidates AS (
             SELECT target_id AS evidence_hash,
-                   value_text AS gold_verdict
+                   relation_target_id,
+                   field AS gold_field,
+                   value_text AS gold_verdict,
+                   CASE WHEN field = 'verdict' THEN 0 ELSE 1 END AS field_rank
             FROM truth_label
             WHERE truth_set_id = ?
               AND target_kind = 'evidence'
-              AND field = 'verdict'
+              AND field IN ('verdict', 'tag')
+        ),
+        matched_gold AS (
+            SELECT step_kind, our_verdict, gold_verdict, gold_field
+            FROM (
+                SELECT sv.step_kind,
+                       sv.stmt_hash,
+                       sv.evidence_hash,
+                       sv.our_verdict,
+                       gc.gold_verdict,
+                       gc.gold_field,
+                       row_number() OVER (
+                           PARTITION BY sv.step_kind, sv.stmt_hash, sv.evidence_hash
+                           -- First prefer statement-contextual benchmark
+                           -- labels over generic evidence labels. Within the
+                           -- same context specificity, verdict rows are native
+                           -- gold and tag rows are a binary-correctness
+                           -- projection.
+                           ORDER BY
+                               CASE WHEN gc.relation_target_id IS NOT NULL THEN 0 ELSE 1 END,
+                               gc.field_rank,
+                               gc.gold_verdict
+                       ) AS rn
+                FROM scorer_verdicts sv
+                JOIN gold_candidates gc
+                  ON gc.evidence_hash = sv.evidence_hash
+                 AND (
+                     gc.relation_target_id IS NULL
+                     OR gc.relation_target_id = sv.stmt_hash
+                 )
+            )
+            WHERE rn = 1
         )
-        SELECT sv.step_kind, sv.our_verdict, g.gold_verdict
-        FROM scorer_verdicts sv
-        JOIN gold g USING (evidence_hash)
+        SELECT step_kind, our_verdict, gold_verdict, gold_field
+        FROM matched_gold
         """,
         [run_id, truth_set_id],
     ).fetchall()
@@ -241,11 +290,13 @@ def _truth_present_metrics(
         return {}
 
     by_step: dict[str, dict] = {}
-    for step_kind, our, gold in rows:
+    for step_kind, our, gold, gold_field in rows:
         d = by_step.setdefault(
-            step_kind, {"tp": 0, "fp": 0, "fn": 0, "tn": 0, "n": 0}
+            step_kind, {"tp": 0, "fp": 0, "fn": 0, "tn": 0, "n": 0,
+                        "gold_fields": set()}
         )
         d["n"] += 1
+        d["gold_fields"].add(gold_field)
         # 'correct' is the positive class
         our_pos = our == "correct"
         gold_pos = gold == "correct"
@@ -268,11 +319,62 @@ def _truth_present_metrics(
         out[step_kind] = {
             "n_compared": d["n"],
             "tp": tp, "fp": fp, "fn": fn, "tn": d["tn"],
+            "gold_fields": sorted(d["gold_fields"]),
             "precision": precision,
             "recall": recall,
             "f1": f1,
         }
     return out
+
+
+def _truth_label_summary(
+    con: "duckdb.DuckDBPyConnection",
+    run_id: str,
+    truth_set_id: str,
+) -> dict:
+    rows = con.execute(
+        """
+        SELECT field, COUNT(*) AS n
+        FROM truth_label
+        WHERE truth_set_id = ?
+          AND target_kind = 'evidence'
+          AND field IN ('verdict', 'tag')
+        GROUP BY field
+        ORDER BY field
+        """,
+        [truth_set_id],
+    ).fetchall()
+    n_applicable = int(con.execute(
+        """
+        WITH scorer_targets AS (
+            SELECT DISTINCT stmt_hash, evidence_hash
+            FROM scorer_step
+            WHERE run_id = ?
+              AND step_kind = 'aggregate'
+              AND json_extract(output_json, '$.verdict') IS NOT NULL
+              AND evidence_hash IS NOT NULL
+        )
+        SELECT COUNT(*)
+        FROM truth_label tl
+        WHERE tl.truth_set_id = ?
+          AND tl.target_kind = 'evidence'
+          AND tl.field IN ('verdict', 'tag')
+          AND EXISTS (
+              SELECT 1 FROM scorer_targets st
+              WHERE st.evidence_hash = tl.target_id
+                AND (
+                    tl.relation_target_id IS NULL
+                    OR tl.relation_target_id = st.stmt_hash
+                )
+          )
+        """,
+        [run_id, truth_set_id],
+    ).fetchone()[0])
+    return {
+        "n_gold_labels": sum(int(n) for _field, n in rows),
+        "n_applicable_gold_labels": n_applicable,
+        "gold_fields": [str(field) for field, _n in rows],
+    }
 
 
 def compute_validity(
@@ -293,10 +395,15 @@ def compute_validity(
     surfaces immediately rather than producing a hollow summary dict that
     looks "successful" with empty metrics.
     """
-    if not con.execute(
-        "SELECT 1 FROM score_run WHERE run_id = ? LIMIT 1", [run_id]
-    ).fetchone():
+    run_row = con.execute(
+        "SELECT status FROM score_run WHERE run_id = ? LIMIT 1", [run_id]
+    ).fetchone()
+    if not run_row:
         raise ValueError(f"score_run {run_id} not found")
+    if run_row[0] != "succeeded":
+        raise ValueError(
+            f"score_run {run_id} is {run_row[0]}; validity metrics require status=succeeded"
+        )
 
     summary: dict = {"run_id": run_id}
 
@@ -379,27 +486,85 @@ def compute_validity(
         }
 
     # 4a — truth-present P/R/F1 against any registered truth_set carrying
-    # `target_kind='evidence', field='verdict'` rows (e.g. project gold pool).
-    # When no gold overlap exists, returns {} and we skip writing rows.
+    # evidence-level verdict rows or benchmark tag rows. Benchmark `tag` is a
+    # binary correctness target here: tag=correct is positive; every other tag
+    # value is not-correct. When both fields exist for one evidence, explicit
+    # verdict wins.
+    # When no gold overlap exists, write an explicit unavailable row instead
+    # of letting the truth_set disappear from the UI.
     candidate_truth_sets = [
         r[0] for r in con.execute(
             """SELECT DISTINCT truth_set_id FROM truth_label
-               WHERE target_kind = 'evidence' AND field = 'verdict'"""
+               WHERE target_kind = 'evidence' AND field IN ('verdict', 'tag')
+               ORDER BY truth_set_id"""
         ).fetchall()
     ]
+    n_scored_evidences = int(con.execute(
+        """
+        SELECT COUNT(*)
+        FROM scorer_step
+        WHERE run_id = ?
+          AND step_kind = 'aggregate'
+          AND json_extract(output_json, '$.verdict') IS NOT NULL
+          AND evidence_hash IS NOT NULL
+        """,
+        [run_id],
+    ).fetchone()[0])
     summary["truth_present_metrics"] = {}
     for tset_id in candidate_truth_sets:
+        label_summary = _truth_label_summary(con, run_id, tset_id)
         per_step = _truth_present_metrics(con, run_id, tset_id)
         if not per_step:
+            reason = (
+                "no scored aggregate evidence rows with verdicts in this run"
+                if n_scored_evidences == 0
+                else "no scored aggregate evidence rows overlap this truth_set"
+            )
+            unavailable = {
+                "n_compared": 0,
+                "n_gold_labels": label_summary["n_gold_labels"],
+                "n_applicable_gold_labels": label_summary["n_applicable_gold_labels"],
+                "n_scored_evidences": n_scored_evidences,
+                "gold_fields": label_summary["gold_fields"],
+                "unavailable_reason": reason,
+            }
+            summary["truth_present_metrics"][tset_id] = {
+                "aggregate": unavailable
+            }
+            for metric_name in ("precision", "recall", "f1"):
+                _write_metric(
+                    con, run_id, f"truth_present.aggregate.{metric_name}",
+                    float("nan"), truth_set_id=tset_id,
+                    slice_={"step_kind": "aggregate",
+                            "n_compared": 0,
+                            "tp": 0, "fp": 0, "fn": 0, "tn": 0,
+                            "n_gold_labels": label_summary["n_gold_labels"],
+                            "n_applicable_gold_labels": label_summary["n_applicable_gold_labels"],
+                            "n_scored_evidences": n_scored_evidences,
+                            "gold_fields": label_summary["gold_fields"],
+                            "positive_gold_label": "correct",
+                            "negative_gold_rule": "any value != 'correct'",
+                            "unavailable_reason": reason},
+                )
             continue
         summary["truth_present_metrics"][tset_id] = per_step
         for step_kind, m in per_step.items():
+            m["n_gold_labels"] = label_summary["n_gold_labels"]
+            m["n_applicable_gold_labels"] = label_summary["n_applicable_gold_labels"]
+            m["n_scored_evidences"] = n_scored_evidences
             for metric_name in ("precision", "recall", "f1"):
                 _write_metric(
                     con, run_id, f"truth_present.{step_kind}.{metric_name}",
                     m[metric_name], truth_set_id=tset_id,
                     slice_={"step_kind": step_kind, "n_compared": m["n_compared"],
-                            "tp": m["tp"], "fp": m["fp"], "fn": m["fn"]},
+                            "tp": m["tp"], "fp": m["fp"], "fn": m["fn"],
+                            "tn": m["tn"],
+                            "n_gold_labels": m["n_gold_labels"],
+                            "n_applicable_gold_labels": m["n_applicable_gold_labels"],
+                            "n_scored_evidences": m["n_scored_evidences"],
+                            "gold_fields": m["gold_fields"],
+                            "positive_gold_label": "correct",
+                            "negative_gold_rule": "any value != 'correct'"},
                 )
 
     # 4a.4 / 4b stratified calibration (post-iter-31): break MAE/bias by

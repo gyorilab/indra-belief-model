@@ -36,6 +36,46 @@ def test_estimate_uses_actual_evidence_count():
     assert out["cost_usd"] == pytest.approx(round(expected, 4))
 
 
+def test_estimate_monolithic_defaults_to_one_call_per_evidence():
+    stmts = [_stmt(2), _stmt(3), _stmt(1)]
+    out = estimate_cost(stmts, model_id="claude-sonnet-4-6",
+                        architecture="monolithic")
+    assert out["n_evidences_est"] == 6
+    assert out["n_llm_calls_est"] == 6
+    assert out["assumptions"]["architecture"] == "monolithic"
+    assert out["assumptions"]["avg_llm_calls_per_evidence"] == 1.0
+
+
+def test_estimate_probe_only_uses_selected_probe_count():
+    stmts = [_stmt(2), _stmt(1)]
+    out = estimate_cost(
+        stmts,
+        model_id="claude-sonnet-4-6",
+        architecture="decomposed",
+        probe_only=True,
+        probe_step_filter=["object_role_probe", "scope_probe"],
+    )
+    assert out["n_evidences_est"] == 3
+    assert out["n_llm_calls_est"] == 6
+    assert out["assumptions"]["scoring_mode"] == "probe_only"
+    assert out["assumptions"]["probe_step_filter"] == [
+        "object_role_probe",
+        "scope_probe",
+    ]
+
+
+def test_estimate_probe_only_requires_decomposed_probe_filter():
+    with pytest.raises(ValueError, match="probe_step_filter"):
+        estimate_cost([_stmt(1)], architecture="decomposed", probe_only=True)
+    with pytest.raises(ValueError, match="decomposed"):
+        estimate_cost(
+            [_stmt(1)],
+            architecture="monolithic",
+            probe_only=True,
+            probe_step_filter=["scope_probe"],
+        )
+
+
 def test_estimate_unknown_model_warns_and_zeros():
     stmts = [_stmt(1)]
     out = estimate_cost(stmts, model_id="nonexistent-model-9000")
@@ -95,6 +135,8 @@ def test_viewer_cost_panel_in_sync_with_python():
     assert "TOKENS_PER_LLM_CALL_IN = 330" in src, "viewer in-tokens drifted"
     assert "TOKENS_PER_LLM_CALL_OUT = 70" in src, "viewer out-tokens drifted"
     assert "LLM_CALLS_PER_EVIDENCE = 5" in src, "viewer LLM-calls drifted"
+    assert "MONOLITHIC_LLM_CALLS_PER_EVIDENCE = 1" in src, \
+        "viewer monolithic LLM-calls drifted"
 
     # Per-model rates — only the 4 the dashboard surfaces; others in
     # MODEL_PRICES_PER_M_TOKENS aren't on the panel by intent.

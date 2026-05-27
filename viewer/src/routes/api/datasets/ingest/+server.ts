@@ -27,6 +27,16 @@ import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { closeInstance, dbPath } from '$lib/db';
 import { assertPathUnderData } from '$lib/pathGuard';
+import {
+	activePairedWorkflowStates,
+	activeWriterLock,
+	acquireWriterLock,
+	clearWriterLockToken,
+	updateWriterLock,
+	writerLockConflictPayload
+} from '$lib/server/pairedState';
+import { WRITER_ACTION_CONFLICT } from '$lib/writerActionConflicts';
+import { terminateChildProcessWithEscalation } from '$lib/server/childProcess';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -34,14 +44,14 @@ const SOURCE_DUMP_RE = /^[a-z][a-z0-9_-]{1,63}$/i;
 
 function pythonBin(): string {
 	if (process.env.PYTHON_BIN) return process.env.PYTHON_BIN;
-	const repoRoot = resolve(dbPath(), '..', '..');
+	const repoRoot = resolve(process.cwd(), '..');
 	const venv = resolve(repoRoot, '.venv', 'bin', 'python');
 	if (existsSync(venv)) return venv;
 	return 'python3';
 }
 
 function repoRoot(): string {
-	return resolve(dbPath(), '..', '..');
+	return resolve(process.cwd(), '..');
 }
 
 export const POST: RequestHandler = async (event) => {
@@ -53,6 +63,31 @@ export const POST: RequestHandler = async (event) => {
 	const safePath = assertPathUnderData(path);
 	if (!source_dump_id || !SOURCE_DUMP_RE.test(source_dump_id))
 		throw error(400, 'source_dump_id must match /^[a-z][a-z0-9_-]{1,63}$/i');
+	const activeLock = activeWriterLock();
+	if (activeLock?.kind === 'malformed') {
+		throw error(409, writerLockConflictPayload(activeLock));
+	}
+	const activePair = activePairedWorkflowStates()[0] ?? null;
+	if (activePair) {
+		throw error(409, {
+			code: WRITER_ACTION_CONFLICT.pairedWorkflowActive,
+			message: `paired workflow ${activePair.pair_id} is already ${activePair.status}; wait, cancel it, or inspect ${activePair.href}`
+		});
+	}
+	if (activeLock) {
+		throw error(409, writerLockConflictPayload(activeLock));
+	}
+	const writerLock = acquireWriterLock({
+		kind: 'ingest',
+		label: 'dataset ingest',
+		source_dump_id,
+		dataset_path: safePath,
+		pid: null
+	});
+	if (!writerLock) {
+		const lock = activeWriterLock();
+		throw error(409, writerLockConflictPayload(lock));
+	}
 
 	const args = [
 		'-m', 'indra_belief.worker',
@@ -65,19 +100,48 @@ export const POST: RequestHandler = async (event) => {
 
 	// Release the viewer's cached READ_ONLY DuckDB instance so the Python
 	// writer can acquire the file lock. Next dashboard read will lazy-reopen.
-	closeInstance();
+	try {
+		closeInstance();
+	} catch (e) {
+		clearWriterLockToken(writerLock.token);
+		throw e;
+	}
 
+	let cancelFromStream: (() => void) | null = null;
 	const stream = new ReadableStream<Uint8Array>({
 		start(controller) {
 			const encoder = new TextEncoder();
+			let streamClosed = false;
+			let aborted = false;
 			const writeEvent = (obj: unknown) => {
-				controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+				if (streamClosed) return;
+				try {
+					controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+				} catch {
+					streamClosed = true;
+				}
+			};
+			let writerHeartbeat: ReturnType<typeof setInterval> | null = null;
+			const stopWriterHeartbeat = () => {
+				if (writerHeartbeat) clearInterval(writerHeartbeat);
+				writerHeartbeat = null;
 			};
 
 			const child = spawn(py, args, {
 				cwd: repoRoot(),
-				env: { ...process.env, PYTHONPATH: resolve(repoRoot(), 'src') }
+				env: {
+					...process.env,
+					PYTHONPATH: resolve(repoRoot(), 'src'),
+					INDRA_VIEWER_WRITER_LOCK_TOKEN: writerLock.token
+				}
 			});
+			if (child.pid != null) {
+				updateWriterLock(writerLock.token, { pid: child.pid });
+				writerHeartbeat = setInterval(() => {
+					updateWriterLock(writerLock.token, {});
+				}, 5000);
+				writerHeartbeat.unref?.();
+			}
 
 			// Idempotent terminal cleanup. Both child.on('exit') and
 			// child.on('error') route here so the abort listener and stream
@@ -88,25 +152,22 @@ export const POST: RequestHandler = async (event) => {
 			const cleanup = () => {
 				if (terminated) return;
 				terminated = true;
+				streamClosed = true;
+				stopWriterHeartbeat();
 				event.request.signal.removeEventListener('abort', onAbort);
 				try { controller.close(); } catch { /* already closed */ }
 			};
 
 			const onAbort = () => {
-				try {
-					if (!child.killed) {
-						child.kill('SIGTERM');
-						setTimeout(() => {
-							if (!child.killed) child.kill('SIGKILL');
-						}, 2000);
-					}
-				} catch {
-					/* already dead */
-				}
+				if (aborted) return;
+				aborted = true;
+				terminateChildProcessWithEscalation(child);
 				writeEvent({ event: 'canceled', reason: 'client_disconnected' });
 				cleanup();
 			};
+			cancelFromStream = onAbort;
 			event.request.signal.addEventListener('abort', onAbort);
+			if (event.request.signal.aborted) onAbort();
 
 			let stdoutBuf = '';
 			let stderrBuf = '';
@@ -136,6 +197,8 @@ export const POST: RequestHandler = async (event) => {
 				}
 			});
 			child.on('exit', (code, signal) => {
+				stopWriterHeartbeat();
+				clearWriterLockToken(writerLock.token);
 				if (code !== 0 && signal !== 'SIGTERM' && signal !== 'SIGKILL') {
 					writeEvent({
 						event: 'error',
@@ -148,9 +211,14 @@ export const POST: RequestHandler = async (event) => {
 				cleanup();
 			});
 			child.on('error', (err) => {
+				stopWriterHeartbeat();
+				clearWriterLockToken(writerLock.token);
 				writeEvent({ event: 'spawn_error', error: err.message });
 				cleanup();
 			});
+		},
+		cancel() {
+			if (cancelFromStream) cancelFromStream();
 		}
 	});
 

@@ -17,7 +17,7 @@ per evidence). Override per project.
 from __future__ import annotations
 
 import logging
-from typing import Iterable, TYPE_CHECKING
+from typing import Iterable, Literal, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from indra.statements import Statement
@@ -44,13 +44,85 @@ MODEL_PRICES_PER_M_TOKENS: dict[str, tuple[float, float]] = {
     "gpt-4o-mini":        (0.15,  0.60),
 }
 
+ZERO_COST_MODEL_IDS = {"mock", "mock-model", "smoke-local", "unknown"}
+PROBE_STEP_KINDS = frozenset({
+    "subject_role_probe",
+    "object_role_probe",
+    "relation_axis_probe",
+    "scope_probe",
+})
+
+
+def _normalize_probe_step_filter(
+    probe_step_filter: Iterable[str] | None,
+) -> tuple[str, ...]:
+    if probe_step_filter is None:
+        return ()
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in probe_step_filter:
+        step_kind = str(raw).strip()
+        if not step_kind:
+            continue
+        if step_kind not in PROBE_STEP_KINDS:
+            raise ValueError(
+                "probe_step_filter only accepts decomposed probe step kinds; "
+                f"got {step_kind!r}"
+            )
+        if step_kind not in seen:
+            seen.add(step_kind)
+            out.append(step_kind)
+    return tuple(out)
+
+
+def model_has_known_cost(model_id: str) -> bool:
+    return model_id in MODEL_PRICES_PER_M_TOKENS or model_id in ZERO_COST_MODEL_IDS
+
+
+def _nonnegative_tokens(value: int | float | None) -> int | float:
+    if value is None:
+        return 0
+    return value if value > 0 else 0
+
+
+def token_cost_usd(
+    model_id: str,
+    prompt_tokens: int | float | None,
+    out_tokens: int | float | None,
+    *,
+    on_unknown: Literal["zero", "raise"] = "zero",
+) -> float:
+    """Compute observed USD from token counts and the local price table."""
+    if model_id in ZERO_COST_MODEL_IDS:
+        return 0.0
+    prices = MODEL_PRICES_PER_M_TOKENS.get(model_id)
+    if prices is None:
+        if on_unknown == "raise":
+            raise ValueError(
+                f"model_id {model_id!r} is missing from MODEL_PRICES_PER_M_TOKENS; "
+                "cannot enforce observed-spend cap"
+            )
+        log.warning(
+            "model_id %r unknown to MODEL_PRICES_PER_M_TOKENS; observed cost recorded as 0",
+            model_id,
+        )
+        return 0.0
+    in_price, out_price = prices
+    return (
+        _nonnegative_tokens(prompt_tokens) * in_price / 1_000_000
+        + _nonnegative_tokens(out_tokens) * out_price / 1_000_000
+    )
+
 
 def estimate_cost(
     stmts: Iterable["Statement"],
     *,
     model_id: str = "claude-sonnet-4-6",
+    architecture: str = "decomposed",
+    probe_step_filter: Iterable[str] | None = None,
+    probe_only: bool = False,
     avg_evidences_per_stmt: float | None = None,
-    avg_llm_calls_per_evidence: float = 5.0,
+    avg_llm_calls_per_evidence: float | None = None,
     avg_input_tokens_per_call: int = 330,
     avg_output_tokens_per_call: int = 70,
     in_price_per_m: float | None = None,
@@ -62,8 +134,13 @@ def estimate_cost(
         stmts: list/iterable of INDRA Statements (consumed once for counts).
         model_id: looked up in `MODEL_PRICES_PER_M_TOKENS` unless overridden.
         avg_evidences_per_stmt: if None, computed from the actual stmts.
-        avg_llm_calls_per_evidence: default 5 — 4 probes (substrate ≤2%
-            short-circuit per s_phase_ship.md) + 1 grounding.
+        architecture: scoring architecture. `decomposed` defaults to
+            about 5 LLM calls/evidence; `monolithic` defaults to 1.
+        probe_step_filter: selected decomposed probe rows for probe-only
+            repair runs.
+        probe_only: estimate only the selected decomposed probes, excluding
+            grounding and aggregate adjudication.
+        avg_llm_calls_per_evidence: if None, chosen from architecture.
         avg_input_tokens_per_call / avg_output_tokens_per_call: typical
             decomposed-probe call shape.
         in_price_per_m / out_price_per_m: override model's rate (e.g. for
@@ -76,6 +153,23 @@ def estimate_cost(
     """
     stmts = list(stmts)
     n_stmts = len(stmts)
+
+    if architecture not in {"decomposed", "monolithic"}:
+        raise ValueError(
+            "architecture must be 'decomposed' or 'monolithic', "
+            f"got {architecture!r}"
+        )
+    normalized_probe_filter = _normalize_probe_step_filter(probe_step_filter)
+    if probe_only:
+        if architecture != "decomposed":
+            raise ValueError("probe_only estimates are only valid for decomposed runs")
+        if not normalized_probe_filter:
+            raise ValueError("probe_only estimates require probe_step_filter")
+    if avg_llm_calls_per_evidence is None:
+        if probe_only:
+            avg_llm_calls_per_evidence = float(len(normalized_probe_filter))
+        else:
+            avg_llm_calls_per_evidence = 1.0 if architecture == "monolithic" else 5.0
 
     if avg_evidences_per_stmt is None:
         total_evidences = sum(len(getattr(s, "evidence", []) or []) for s in stmts)
@@ -117,6 +211,9 @@ def estimate_cost(
         "model_id": model_id,
         "assumptions": {
             "avg_evidences_per_stmt": round(avg_evidences_per_stmt, 2),
+            "architecture": architecture,
+            "scoring_mode": "probe_only" if probe_only else "aggregate",
+            "probe_step_filter": list(normalized_probe_filter),
             "avg_llm_calls_per_evidence": avg_llm_calls_per_evidence,
             "avg_input_tokens_per_call": avg_input_tokens_per_call,
             "avg_output_tokens_per_call": avg_output_tokens_per_call,

@@ -71,25 +71,210 @@ def test_score_corpus_writes_run_and_step_rows():
     )
 
     runs = con.execute(
-        "SELECT run_id, scorer_version, status, n_stmts FROM score_run"
+        "SELECT run_id, scorer_version, architecture, status, n_stmts FROM score_run"
     ).fetchall()
     assert len(runs) == 1
     assert runs[0][0] == run_id
     assert runs[0][1] == "test-v1"
-    assert runs[0][2] == "succeeded"
-    assert runs[0][3] == 1
+    assert runs[0][2] == "decomposed"
+    assert runs[0][3] == "succeeded"
+    assert runs[0][4] == 1
 
     steps = con.execute(
-        "SELECT step_kind, scorer_version, model_id, latency_ms IS NOT NULL,"
+        "SELECT step_kind, scorer_version, architecture, model_id, latency_ms IS NOT NULL,"
         "       prompt_tokens, out_tokens FROM scorer_step"
     ).fetchall()
     assert len(steps) == 1
     assert steps[0][0] == "aggregate"
     assert steps[0][1] == "test-v1"
-    assert steps[0][2] == "mock-model"
-    assert steps[0][3] is True  # latency_ms recorded
-    assert steps[0][4] == 450   # 200 + 250 from call_log
-    assert steps[0][5] == 45    # 20 + 25
+    assert steps[0][2] == "decomposed"
+    assert steps[0][3] == "mock-model"
+    assert steps[0][4] is True  # latency_ms recorded
+    assert steps[0][5] == 450   # 200 + 250 from call_log
+    assert steps[0][6] == 45    # 20 + 25
+
+
+def test_score_corpus_architecture_separates_step_hashes():
+    """Same evidence/scorer/model can be scored by both architectures
+    without INSERT OR REPLACE collisions."""
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    decomp_run = score_corpus(
+        con, [stmt],
+        scorer_version="same-v",
+        model_id_default="mock-model",
+        architecture="decomposed",
+        score_evidence=_mock_score(score=0.8),
+        with_validity=False,
+    )
+    mono_run = score_corpus(
+        con, [stmt],
+        scorer_version="same-v",
+        model_id_default="mock-model",
+        architecture="monolithic",
+        score_evidence=_mock_score(score=0.2),
+        with_validity=False,
+    )
+
+    rows = con.execute(
+        """SELECT run_id, architecture, step_hash,
+                  CAST(json_extract(output_json, '$.score') AS DOUBLE)
+           FROM scorer_step
+           WHERE step_kind='aggregate'
+           ORDER BY architecture"""
+    ).fetchall()
+    assert len(rows) == 2
+    assert {r[0] for r in rows} == {decomp_run, mono_run}
+    assert {r[1] for r in rows} == {"decomposed", "monolithic"}
+    assert len({r[2] for r in rows}) == 2
+    assert {r[3] for r in rows} == {0.8, 0.2}
+
+
+def test_score_corpus_same_version_rerun_is_append_only():
+    """Repeated same-version runs must not steal scorer_step rows."""
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    run1 = score_corpus(
+        con, [stmt],
+        scorer_version="same-v",
+        model_id_default="mock-model",
+        architecture="decomposed",
+        score_evidence=_mock_score(score=0.8),
+        with_validity=False,
+    )
+    run2 = score_corpus(
+        con, [stmt],
+        scorer_version="same-v",
+        model_id_default="mock-model",
+        architecture="decomposed",
+        score_evidence=_mock_score(score=0.2),
+        with_validity=False,
+    )
+
+    rows = con.execute(
+        """SELECT run_id, step_hash,
+                  CAST(json_extract(output_json, '$.score') AS DOUBLE)
+           FROM scorer_step
+           WHERE step_kind='aggregate'
+           ORDER BY run_id"""
+    ).fetchall()
+    assert len(rows) == 2
+    assert {r[0] for r in rows} == {run1, run2}
+    assert len({r[1] for r in rows}) == 2
+    assert {r[2] for r in rows} == {0.8, 0.2}
+
+
+def test_score_corpus_persists_pair_and_parent_ids():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    parent = score_corpus(
+        con, [stmt], scorer_version="parent",
+        score_evidence=_mock_score(), with_validity=False,
+    )
+    child = score_corpus(
+        con, [stmt],
+        scorer_version="child",
+        architecture="monolithic",
+        paired_run_group_id="pair_test",
+        parent_run_id=parent,
+        score_evidence=_mock_score(score=0.2),
+        with_validity=False,
+    )
+
+    row = con.execute(
+        """SELECT architecture, paired_run_group_id, parent_run_id
+           FROM score_run WHERE run_id=?""",
+        [child],
+    ).fetchone()
+    assert row == ("monolithic", "pair_test", parent)
+
+
+def test_score_corpus_dispatches_monolithic(monkeypatch):
+    """architecture='monolithic' must select the monolithic scorer path,
+    not merely label a decomposed run differently."""
+    import indra_belief.scorers.monolithic as mono
+
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    def fake_mono(statement, evidence, client):
+        return {
+            "score": 0.2,
+            "verdict": "incorrect",
+            "confidence": "medium",
+            "tier": "monolithic_test",
+            "grounding_status": "all_match",
+            "provenance_triggered": False,
+            "tokens": 12,
+            "raw_text": "mono trace",
+            "call_log": [],
+        }
+
+    monkeypatch.setattr(mono, "score_evidence", fake_mono)
+    score_corpus(
+        con, [stmt],
+        client=object(),
+        scorer_version="mono-dispatch",
+        architecture="monolithic",
+        with_validity=False,
+    )
+    out = json.loads(con.execute(
+        "SELECT output_json FROM scorer_step WHERE step_kind='aggregate'"
+    ).fetchone()[0])
+    assert out["tier"] == "monolithic_test"
+    assert out["score"] == 0.2
+
+
+def test_score_corpus_monolithic_default_persists_call_log_tokens():
+    """Native monolithic dispatch must carry prompt tokens for cost_actual."""
+    from scripts.run_paired_smoke import SmokeModelClient
+
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    score_corpus(
+        con, [stmt],
+        client=SmokeModelClient("claude-sonnet-4-6"),
+        scorer_version="mono-call-log",
+        architecture="monolithic",
+        model_id_default="claude-sonnet-4-6",
+        with_validity=False,
+    )
+    row = con.execute(
+        """SELECT prompt_tokens, out_tokens, output_json
+           FROM scorer_step WHERE step_kind='aggregate'"""
+    ).fetchone()
+    assert row[0] > 0
+    assert row[1] > 0
+    out = json.loads(row[2])
+    assert out["call_log"][0]["kind"] == "monolithic"
+    assert len(out["selected_example_ids"]) > 0
+    assert len(out["selected_example_ids"]) == len(out["selected_examples"])
+    assert all(isinstance(example_id, str) and len(example_id) == 12 for example_id in out["selected_example_ids"])
+    assert {"id", "claim", "verdict", "confidence"} <= set(out["selected_examples"][0])
+    assert out["selected_examples"][0]["id"] == out["selected_example_ids"][0]
+
+
+def test_score_corpus_rejects_decomposed_trace_for_monolithic():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    with pytest.raises(ValueError, match="decompose=True"):
+        score_corpus(
+            con, [stmt],
+            architecture="monolithic",
+            decompose=True,
+            score_evidence=_mock_score(),
+        )
 
 
 def test_score_corpus_preserves_full_dict_in_output_json():
@@ -186,6 +371,381 @@ def test_score_corpus_decompose_writes_per_step_rows():
     assert err_rows == []
 
 
+def test_score_corpus_decompose_persists_structured_probe_trace_rows():
+    """Decomposed aggregate output materializes named probe rows, including
+    LLM/abstain answers that are not available from substrate pre-routing."""
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    def scored_with_probe_trace(_statement, _evidence, _client):
+        return {
+            "score": 0.72,
+            "verdict": "correct",
+            "confidence": "medium",
+            "tier": "decomposed",
+            "grounding_status": "all_match",
+            "provenance_triggered": False,
+            "tokens": 11,
+            "raw_text": "structured probe trace",
+            "reasons": ["match"],
+            "rationale": "probe bundle",
+            "probe_trace": {
+                "subject_role": {
+                    "kind": "subject_role",
+                    "answer": "present_as_subject",
+                    "source": "substrate",
+                    "confidence": "high",
+                    "perturbation": None,
+                    "span": "MEK1",
+                    "rationale": "substrate route",
+                },
+                "object_role": {
+                    "kind": "object_role",
+                    "answer": "present_as_object",
+                    "source": "llm",
+                    "confidence": "medium",
+                    "perturbation": None,
+                    "span": "ERK",
+                    "rationale": "llm classified object role",
+                },
+                "relation_axis": {
+                    "kind": "relation_axis",
+                    "answer": "abstain",
+                    "source": "abstain",
+                    "confidence": "low",
+                    "perturbation": None,
+                    "span": None,
+                    "rationale": "underdetermined",
+                },
+                "scope": {
+                    "kind": "scope",
+                    "answer": "asserted",
+                    "source": "llm",
+                    "confidence": "medium",
+                    "perturbation": None,
+                    "span": "phosphorylates",
+                    "rationale": "asserted relation",
+                },
+            },
+            "call_log": [
+                {"kind": "probe_object_role", "duration_s": 0.2,
+                 "prompt_tokens": 101, "out_tokens": 9, "finish_reason": "stop"},
+                {"kind": "probe_scope", "duration_s": 0.3,
+                 "prompt_tokens": 103, "out_tokens": 7, "finish_reason": "stop"},
+            ],
+        }
+
+    score_corpus(
+        con,
+        [stmt],
+        scorer_version="trace-v1",
+        model_id_default="mock-model",
+        score_evidence=scored_with_probe_trace,
+        decompose=True,
+        with_validity=False,
+    )
+
+    probe_rows = con.execute(
+        """SELECT step_kind,
+                  json_extract_string(output_json, '$.source') AS source,
+                  prompt_tokens,
+                  out_tokens
+           FROM scorer_step
+           WHERE step_kind IN (
+             'subject_role_probe', 'object_role_probe',
+             'relation_axis_probe', 'scope_probe'
+           )
+           ORDER BY step_kind"""
+    ).fetchall()
+    assert {row[0] for row in probe_rows} == {
+        "subject_role_probe",
+        "object_role_probe",
+        "relation_axis_probe",
+        "scope_probe",
+    }
+    by_kind = {row[0]: row for row in probe_rows}
+    assert by_kind["object_role_probe"][1:] == ("llm", 101, 9)
+    assert by_kind["scope_probe"][1:] == ("llm", 103, 7)
+    assert by_kind["relation_axis_probe"][1] == "abstain"
+
+
+def test_score_corpus_probe_step_filter_materializes_only_selected_slots():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    def scored_with_probe_trace(_statement, _evidence, _client):
+        return {
+            "score": 0.72,
+            "verdict": "correct",
+            "confidence": "medium",
+            "probe_trace": {
+                "subject_role": {"kind": "subject_role", "answer": "present_as_subject", "source": "substrate", "confidence": "high"},
+                "object_role": {"kind": "object_role", "answer": "present_as_object", "source": "llm", "confidence": "medium"},
+                "relation_axis": {"kind": "relation_axis", "answer": "direct_sign_match", "source": "llm", "confidence": "medium"},
+                "scope": {"kind": "scope", "answer": "asserted", "source": "llm", "confidence": "medium"},
+            },
+            "call_log": [],
+        }
+
+    score_corpus(
+        con,
+        [stmt],
+        scorer_version="trace-v1",
+        model_id_default="mock-model",
+        score_evidence=scored_with_probe_trace,
+        decompose=True,
+        with_validity=False,
+        probe_step_filter=["object_role_probe", "scope_probe"],
+    )
+
+    probe_kinds = {
+        row[0] for row in con.execute(
+            """SELECT DISTINCT step_kind
+               FROM scorer_step
+               WHERE step_kind IN (
+                 'subject_role_probe', 'object_role_probe',
+                 'relation_axis_probe', 'scope_probe'
+               )"""
+        ).fetchall()
+    }
+    assert probe_kinds == {"object_role_probe", "scope_probe"}
+    assert con.execute(
+        "SELECT COUNT(*) FROM scorer_step WHERE step_kind='aggregate'"
+    ).fetchone()[0] == 1
+
+
+def test_score_corpus_probe_only_materializes_selected_slots_without_aggregate():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    def scored_with_probe_trace(_statement, _evidence, _client):
+        return {
+            "score": None,
+            "verdict": "abstain",
+            "confidence": "low",
+            "probe_trace": {
+                "object_role": {
+                    "kind": "object_role",
+                    "answer": "present_as_object",
+                    "source": "llm",
+                    "confidence": "medium",
+                },
+                "scope": {
+                    "kind": "scope",
+                    "answer": "asserted",
+                    "source": "llm",
+                    "confidence": "medium",
+                },
+            },
+            "call_log": [
+                {"kind": "probe_object_role", "prompt_tokens": 100, "out_tokens": 10},
+                {"kind": "probe_scope", "prompt_tokens": 80, "out_tokens": 8},
+            ],
+        }
+
+    run_id = score_corpus(
+        con,
+        [stmt],
+        scorer_version="trace-v1",
+        model_id_default="claude-sonnet-4-6",
+        score_evidence=scored_with_probe_trace,
+        decompose=True,
+        probe_step_filter=["object_role_probe", "scope_probe"],
+        probe_only=True,
+    )
+
+    rows = con.execute(
+        """SELECT step_kind, prompt_tokens, out_tokens
+           FROM scorer_step
+          WHERE run_id=?
+          ORDER BY step_kind""",
+        [run_id],
+    ).fetchall()
+    assert {row[0] for row in rows}.issuperset({
+        "parse_claim",
+        "build_context",
+        "substrate_route",
+        "object_role_probe",
+        "scope_probe",
+    })
+    assert "aggregate" not in {row[0] for row in rows}
+    probe_tokens = {
+        row[0]: (row[1], row[2])
+        for row in rows
+        if row[0] in {"object_role_probe", "scope_probe"}
+    }
+    assert probe_tokens == {
+        "object_role_probe": (100, 10),
+        "scope_probe": (80, 8),
+    }
+    status, actual = con.execute(
+        "SELECT status, cost_actual_usd FROM score_run WHERE run_id=?",
+        [run_id],
+    ).fetchone()
+    assert status == "succeeded"
+    assert actual > 0
+
+
+def test_score_corpus_probe_only_merges_parent_trace_into_aggregate():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    def parent_score(_statement, _evidence, _client):
+        return {
+            "score": 0.92,
+            "verdict": "correct",
+            "confidence": "high",
+            "tier": "decomposed",
+            "grounding_status": "all_match",
+            "provenance_triggered": False,
+            "tokens": 12,
+            "raw_text": "parent trace",
+            "reasons": ["match"],
+            "rationale": "parent aggregate",
+            "probe_trace": {
+                "subject_role": {
+                    "kind": "subject_role",
+                    "answer": "present_as_subject",
+                    "source": "llm",
+                    "confidence": "medium",
+                    "perturbation": None,
+                    "span": "MEK1",
+                    "rationale": "subject",
+                },
+                "object_role": {
+                    "kind": "object_role",
+                    "answer": "present_as_object",
+                    "source": "llm",
+                    "confidence": "medium",
+                    "perturbation": None,
+                    "span": "ERK",
+                    "rationale": "object",
+                },
+                "relation_axis": {
+                    "kind": "relation_axis",
+                    "answer": "direct_sign_match",
+                    "source": "llm",
+                    "confidence": "medium",
+                    "perturbation": None,
+                    "span": "phosphorylates",
+                    "rationale": "match",
+                },
+                "scope": {
+                    "kind": "scope",
+                    "answer": "asserted",
+                    "source": "llm",
+                    "confidence": "medium",
+                    "perturbation": None,
+                    "span": "phosphorylates",
+                    "rationale": "asserted",
+                },
+            },
+            "call_log": [],
+        }
+
+    parent_run = score_corpus(
+        con,
+        [stmt],
+        scorer_version="parent-v1",
+        model_id_default="mock-model",
+        score_evidence=parent_score,
+        decompose=True,
+        with_validity=False,
+    )
+
+    def repaired_relation(_statement, _evidence, _client):
+        return {
+            "score": None,
+            "verdict": "abstain",
+            "confidence": "low",
+            "tier": "decomposed_probe_only",
+            "grounding_status": "not_run",
+            "provenance_triggered": False,
+            "tokens": 4,
+            "raw_text": "child relation probe",
+            "reasons": ["probe_only_rescore"],
+            "rationale": "relation repaired",
+            "probe_trace": {
+                "relation_axis": {
+                    "kind": "relation_axis",
+                    "answer": "no_relation",
+                    "source": "llm",
+                    "confidence": "medium",
+                    "perturbation": None,
+                    "span": "phosphorylates",
+                    "rationale": "repaired as no relation",
+                },
+            },
+            "call_log": [
+                {"kind": "probe_relation_axis", "prompt_tokens": 70, "out_tokens": 4},
+            ],
+        }
+
+    child_run = score_corpus(
+        con,
+        [stmt],
+        scorer_version="child-v1",
+        model_id_default="mock-model",
+        parent_run_id=parent_run,
+        score_evidence=repaired_relation,
+        decompose=True,
+        probe_step_filter=["relation_axis_probe"],
+        probe_only=True,
+        with_validity=False,
+    )
+
+    aggregate_json = con.execute(
+        """SELECT output_json
+             FROM scorer_step
+            WHERE run_id=? AND step_kind='aggregate'""",
+        [child_run],
+    ).fetchone()[0]
+    aggregate = json.loads(aggregate_json)
+    assert aggregate["tier"] == "decomposed_probe_repair_merge"
+    assert aggregate["probe_trace"]["relation_axis"]["answer"] == "no_relation"
+    assert aggregate["probe_trace"]["object_role"]["answer"] == "present_as_object"
+    assert aggregate["repair_merge"]["aggregate_llm_call"] is False
+    assert aggregate["repair_merge"]["source_by_probe"] == {
+        "subject_role": "parent_trace",
+        "object_role": "parent_trace",
+        "relation_axis": "child_probe_only",
+        "scope": "parent_trace",
+    }
+    assert con.execute(
+        """SELECT prompt_tokens, out_tokens
+             FROM scorer_step
+            WHERE run_id=? AND step_kind='aggregate'""",
+        [child_run],
+    ).fetchone() == (None, None)
+
+
+def test_score_corpus_probe_only_requires_filter_and_decomposition():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    with pytest.raises(ValueError, match="probe_step_filter"):
+        score_corpus(
+            con,
+            [stmt],
+            score_evidence=_mock_score(),
+            decompose=True,
+            probe_only=True,
+        )
+    with pytest.raises(ValueError, match="decompose=True"):
+        score_corpus(
+            con,
+            [stmt],
+            score_evidence=_mock_score(),
+            probe_step_filter=["scope_probe"],
+            probe_only=True,
+        )
+
+
 def test_score_corpus_cost_threshold_aborts_above():
     """G3b stop-the-line: cost_threshold_usd raises before scoring starts."""
     con = _con()
@@ -214,6 +774,277 @@ def test_score_corpus_cost_threshold_passes_below():
                           cost_threshold_usd=1000.0)
     assert run_id
     assert con.execute("SELECT COUNT(*) FROM scorer_step").fetchone()[0] >= 1
+
+
+def test_score_corpus_actual_cost_threshold_aborts_mid_run():
+    """The cap is not just an upfront estimate gate; observed token spend
+    aborts the run after the evidence that crosses the cap."""
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    def costly_score(_statement, _evidence, _client):
+        return {
+            "score": 0.9,
+            "verdict": "correct",
+            "confidence": "high",
+            "call_log": [
+                {
+                    "kind": "expensive_call",
+                    "prompt_tokens": 10_000,
+                    "out_tokens": 100,
+                    "duration_s": 0.1,
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+
+    with pytest.raises(ValueError, match=r"actual cost .* exceeded cap"):
+        score_corpus(
+            con,
+            [stmt],
+            scorer_version="t",
+            model_id_default="claude-sonnet-4-6",
+            score_evidence=costly_score,
+            cost_threshold_usd=0.02,
+            with_validity=False,
+        )
+
+    status, terminated_by, reason, actual = con.execute(
+        "SELECT status, terminated_by, termination_reason, cost_actual_usd "
+        "FROM score_run"
+    ).fetchone()
+    assert status == "failed"
+    assert terminated_by == "system"
+    assert "exceeded cap" in reason
+    assert actual > 0.02
+    assert con.execute("SELECT COUNT(*) FROM scorer_step").fetchone()[0] == 1
+
+
+def test_score_corpus_progress_callback_gets_actual_cost_state():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+    seen: list[dict] = []
+
+    def on_evidence(_stmt_hash, _ev_hash, result):
+        seen.append({
+            "cost_so_far": result.get("_cost_so_far_usd"),
+            "cost_cap": result.get("_cost_cap_usd"),
+            "cost_increment": result.get("_cost_actual_increment_usd"),
+        })
+
+    score_corpus(
+        con,
+        [stmt],
+        scorer_version="t",
+        model_id_default="claude-sonnet-4-6",
+        score_evidence=_mock_score(),
+        cost_threshold_usd=1.0,
+        on_evidence=on_evidence,
+        with_validity=False,
+    )
+
+    assert len(seen) == 1
+    assert seen[0]["cost_cap"] == 1.0
+    assert seen[0]["cost_so_far"] == pytest.approx(0.002025)
+    assert seen[0]["cost_increment"] == pytest.approx(0.002025)
+
+
+def test_score_corpus_accepts_preallocated_run_id():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+    run_id = "0123456789abcdef0123456789abcdef"
+
+    got = score_corpus(
+        con,
+        [stmt],
+        run_id=run_id,
+        scorer_version="t",
+        score_evidence=_mock_score(),
+        with_validity=False,
+    )
+
+    assert got == run_id
+    assert con.execute(
+        "SELECT status FROM score_run WHERE run_id=?",
+        [run_id],
+    ).fetchone()[0] == "succeeded"
+
+
+def test_score_corpus_finalizer_preserves_external_canceled_status():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+    run_id = "22222222222222222222222222222222"
+
+    def cancel_after_first_evidence(_stmt_hash, _evhash, _result):
+        con.execute(
+            """UPDATE score_run
+               SET status='canceled',
+                   finished_at=CURRENT_TIMESTAMP,
+                   terminated_by='user',
+                   termination_reason='external tombstone'
+               WHERE run_id=?""",
+            [run_id],
+        )
+
+    got = score_corpus(
+        con,
+        [stmt],
+        run_id=run_id,
+        scorer_version="t",
+        score_evidence=_mock_score(),
+        on_evidence=cancel_after_first_evidence,
+        with_validity=False,
+    )
+
+    assert got == run_id
+    assert con.execute(
+        "SELECT status, terminated_by, termination_reason FROM score_run WHERE run_id=?",
+        [run_id],
+    ).fetchone() == ("canceled", "user", "external tombstone")
+
+
+def test_score_corpus_stops_when_run_is_externally_canceled():
+    con = _con()
+    stmt = _stmt()
+    stmt.evidence.append(
+        Evidence(
+            source_api="reach",
+            text="Second evidence should not be scored after cancel.",
+        )
+    )
+    ingest_statements(con, [stmt])
+    run_id = "33333333333333333333333333333333"
+
+    def cancel_after_first_evidence(_stmt_hash, _evhash, _result):
+        con.execute(
+            """UPDATE score_run
+               SET status='canceled',
+                   finished_at=CURRENT_TIMESTAMP,
+                   terminated_by='user',
+                   termination_reason='external tombstone'
+               WHERE run_id=?""",
+            [run_id],
+        )
+
+    with pytest.raises(RuntimeError, match="score_corpus canceled"):
+        score_corpus(
+            con,
+            [stmt],
+            run_id=run_id,
+            scorer_version="t",
+            score_evidence=_mock_score(),
+            on_evidence=cancel_after_first_evidence,
+            with_validity=False,
+        )
+
+    assert con.execute(
+        "SELECT status, terminated_by, termination_reason FROM score_run WHERE run_id=?",
+        [run_id],
+    ).fetchone() == ("canceled", "user", "external tombstone")
+    assert con.execute(
+        "SELECT COUNT(*) FROM scorer_step WHERE run_id=? AND step_kind='aggregate'",
+        [run_id],
+    ).fetchone()[0] == 1
+
+
+def test_score_corpus_ignores_negative_token_sentinels_for_actual_cost():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    def sentinel_score(_statement, _evidence, _client):
+        return {
+            "score": 0.7,
+            "verdict": "correct",
+            "confidence": "medium",
+            "call_log": [
+                {
+                    "kind": "nonreporting_backend",
+                    "prompt_tokens": -1,
+                    "out_tokens": 10,
+                    "duration_s": 0.1,
+                }
+            ],
+        }
+
+    run_id = score_corpus(
+        con,
+        [stmt],
+        scorer_version="t",
+        model_id_default="claude-sonnet-4-6",
+        score_evidence=sentinel_score,
+        with_validity=False,
+    )
+    prompt_tokens, out_tokens = con.execute(
+        "SELECT prompt_tokens, out_tokens FROM scorer_step WHERE run_id=?",
+        [run_id],
+    ).fetchone()
+    assert prompt_tokens is None
+    assert out_tokens == 10
+    actual = con.execute(
+        "SELECT cost_actual_usd FROM score_run WHERE run_id=?",
+        [run_id],
+    ).fetchone()[0]
+    assert actual == pytest.approx(10 * 15.0 / 1_000_000)
+
+
+def test_score_corpus_rejects_unknown_priced_model_when_cap_set():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    with pytest.raises(ValueError, match=r"missing from MODEL_PRICES"):
+        score_corpus(
+            con,
+            [stmt],
+            scorer_version="t",
+            model_id_default="new-provider-model",
+            score_evidence=_mock_score(),
+            cost_threshold_usd=1.0,
+            with_validity=False,
+        )
+
+    assert con.execute("SELECT COUNT(*) FROM score_run").fetchone()[0] == 0
+
+
+def test_score_corpus_actual_cost_uses_row_model_id_not_default():
+    con = _con()
+    stmt = _stmt()
+    ingest_statements(con, [stmt])
+
+    def override_model_score(_statement, _evidence, _client):
+        return {
+            "model_id": "claude-opus-4-7",
+            "score": 0.8,
+            "verdict": "correct",
+            "confidence": "high",
+            "call_log": [
+                {
+                    "kind": "override",
+                    "prompt_tokens": 1_000,
+                    "out_tokens": 0,
+                    "duration_s": 0.1,
+                }
+            ],
+        }
+
+    run_id = score_corpus(
+        con,
+        [stmt],
+        scorer_version="t",
+        model_id_default="claude-haiku-4-5",
+        score_evidence=override_model_score,
+        with_validity=False,
+    )
+    actual = con.execute(
+        "SELECT cost_actual_usd FROM score_run WHERE run_id=?",
+        [run_id],
+    ).fetchone()[0]
+    assert actual == pytest.approx(1_000 * 15.0 / 1_000_000)
 
 
 def test_score_corpus_cost_threshold_none_skips_check():

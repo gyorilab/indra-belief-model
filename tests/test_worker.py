@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import textwrap
 from pathlib import Path
 
@@ -30,7 +31,7 @@ from indra.statements import (
 )
 
 from indra_belief import worker as W
-from indra_belief.corpus import apply_schema, ingest_statements
+from indra_belief.corpus import apply_schema, ingest_statements, score_corpus
 
 
 # ---------- shared fixtures ---------------------------------------------------
@@ -157,6 +158,331 @@ def _find_event(events: list[dict], kind: str) -> dict:
     return matches[-1]
 
 
+def _writer_lock_path(db_path: str) -> Path:
+    return Path(db_path).resolve().parent / "viewer_state" / "writer_lock.json"
+
+
+def _write_writer_lock(
+    db_path: str,
+    *,
+    token: str = "held-token",
+    kind: str = "single_score",
+    pid: int | None = None,
+) -> Path:
+    path = _writer_lock_path(db_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "kind": kind,
+        "token": token,
+        "pid": os.getpid() if pid is None else pid,
+        "label": "test lock",
+        "source_dump_id": None,
+        "dataset_path": None,
+        "pair_id": None,
+        "architecture": None,
+        "model": None,
+        "started_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+    }))
+    return path
+
+
+def test_score_parser_accepts_arch_and_pair_id(monkeypatch):
+    """The viewer endpoint threads architecture through argv; argparse must
+    preserve it for do_score before any LLM-bearing work starts."""
+    seen: dict[str, object] = {}
+
+    def fake_do_score(args):
+        seen["arch"] = args.arch
+        seen["paired_run_group_id"] = args.paired_run_group_id
+        seen["parent_run_id"] = args.parent_run_id
+        seen["skip_ingest"] = args.skip_ingest
+        seen["probe_step_filter"] = args.probe_step_filter
+        seen["probe_only"] = args.probe_only
+        return 0
+
+    monkeypatch.setattr(W, "do_score", fake_do_score)
+    rc = W.main([
+        "score",
+        "--db", "corpus.duckdb",
+        "--path", "data/corpora/synthetic_demo.json",
+        "--source-dump-id", "synthetic_demo",
+        "--model", "mock-model",
+        "--scorer-version", "test",
+        "--arch", "monolithic",
+        "--paired-run-group-id", "pair_smoke",
+        "--parent-run-id", "0123456789abcdef0123456789abcdef",
+        "--skip-ingest",
+        "--probe-step-filter", "object_role_probe,scope_probe",
+        "--probe-only",
+    ])
+    assert rc == 0
+    assert seen == {
+        "arch": "monolithic",
+        "paired_run_group_id": "pair_smoke",
+        "parent_run_id": "0123456789abcdef0123456789abcdef",
+        "skip_ingest": True,
+        "probe_step_filter": "object_role_probe,scope_probe",
+        "probe_only": True,
+    }
+
+
+def test_score_progress_emits_actual_cost_state(
+    tmp_db: str,
+    tiny_indra_json: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The live-run UI depends on worker progress carrying observed spend,
+    not only final score_run accounting."""
+    import indra_belief.corpus as corpus
+    import indra_belief.model_client as model_client
+
+    def fake_score_corpus(_con, _stmts, *, on_evidence=None, **kwargs):
+        assert kwargs["parent_run_id"] == "parent123"
+        assert on_evidence is not None
+        on_evidence(
+            "stmt123456789abc",
+            "ev123456789abcde",
+            {
+                "_cost_so_far_usd": 0.0123,
+                "_cost_cap_usd": 0.02,
+                "_cost_actual_increment_usd": 0.0123,
+            },
+        )
+        return "run123"
+
+    monkeypatch.setattr(corpus, "score_corpus", fake_score_corpus)
+    monkeypatch.setattr(model_client, "ModelClient", lambda _model: object())
+
+    args = argparse.Namespace(
+        db=tmp_db,
+        path=tiny_indra_json,
+        source_dump_id="test_score_cost_progress",
+        model="claude-sonnet-4-6",
+        scorer_version="test",
+        arch="monolithic",
+        paired_run_group_id=None,
+        parent_run_id="parent123",
+        skip_ingest=True,
+        cost_threshold_usd=0.02,
+    )
+    assert W.do_score(args) == 0
+    events = _parse_events(capsys.readouterr().out)
+    started = _find_event(events, "started")
+    assert isinstance(started["run_id"], str)
+    assert len(started["run_id"]) == 32
+    assert _find_event(events, "ingest_skipped")["reason"] == "statements already exist in corpus"
+    done = _find_event(events, "done")
+    assert done["parent_run_id"] == "parent123"
+    progress = _find_event(events, "progress")
+    assert progress["cost_so_far_usd"] == 0.0123
+    assert progress["cost_cap_usd"] == 0.02
+    assert progress["cost_increment_usd"] == 0.0123
+
+
+def test_direct_worker_ingest_respects_existing_writer_lock(
+    tmp_db: str,
+    tiny_indra_json: str,
+    capsys: pytest.CaptureFixture[str],
+):
+    """Direct CLI workers must not write around the viewer's DuckDB lock."""
+    lock_path = _write_writer_lock(tmp_db, kind="single_score")
+    args = argparse.Namespace(
+        db=tmp_db, path=tiny_indra_json, source_dump_id="blocked_ingest"
+    )
+
+    with pytest.raises(RuntimeError, match="DuckDB writer is busy"):
+        W.do_ingest(args)
+
+    events = _parse_events(capsys.readouterr().out)
+    blocked = _find_event(events, "blocked")
+    assert blocked["code"] == "writer_lock_busy"
+    assert lock_path.exists()
+
+    con = duckdb.connect(tmp_db, read_only=True)
+    try:
+        n = con.execute(
+            "SELECT COUNT(*) FROM statement WHERE source_dump_id='blocked_ingest'"
+        ).fetchone()[0]
+        assert n == 0
+    finally:
+        con.close()
+
+
+def test_direct_worker_ingest_fails_closed_on_malformed_writer_lock(
+    tmp_db: str,
+    tiny_indra_json: str,
+    capsys: pytest.CaptureFixture[str],
+):
+    """A corrupt sidecar is unsafe writer state, not permission to write."""
+    lock_path = _writer_lock_path(tmp_db)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text("{not-json")
+    args = argparse.Namespace(
+        db=tmp_db, path=tiny_indra_json, source_dump_id="malformed_lock_ingest"
+    )
+
+    with pytest.raises(RuntimeError, match="writer_lock_malformed"):
+        W.do_ingest(args)
+
+    events = _parse_events(capsys.readouterr().out)
+    blocked = _find_event(events, "blocked")
+    assert blocked["code"] == "writer_lock_malformed"
+    assert "writer_lock_malformed" in blocked["message"]
+    assert lock_path.exists()
+
+    con = duckdb.connect(tmp_db, read_only=True)
+    try:
+        n = con.execute(
+            "SELECT COUNT(*) FROM statement WHERE source_dump_id='malformed_lock_ingest'"
+        ).fetchone()[0]
+        assert n == 0
+    finally:
+        con.close()
+
+
+def test_direct_worker_ingest_fails_closed_on_invalid_writer_lock_shape(
+    tmp_db: str,
+    tiny_indra_json: str,
+    capsys: pytest.CaptureFixture[str],
+):
+    """Valid JSON with invalid lock fields must not be stale-deleted."""
+    lock_path = _writer_lock_path(tmp_db)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(json.dumps({
+        "kind": "single_score",
+        "token": "invalid-time",
+        "started_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "not-a-time",
+    }))
+    args = argparse.Namespace(
+        db=tmp_db, path=tiny_indra_json, source_dump_id="invalid_lock_shape_ingest"
+    )
+
+    with pytest.raises(RuntimeError, match="writer_lock_malformed"):
+        W.do_ingest(args)
+
+    events = _parse_events(capsys.readouterr().out)
+    blocked = _find_event(events, "blocked")
+    assert blocked["code"] == "writer_lock_malformed"
+    assert "writer_lock_malformed" in blocked["message"]
+    assert lock_path.exists()
+
+    con = duckdb.connect(tmp_db, read_only=True)
+    try:
+        n = con.execute(
+            "SELECT COUNT(*) FROM statement WHERE source_dump_id='invalid_lock_shape_ingest'"
+        ).fetchone()[0]
+        assert n == 0
+    finally:
+        con.close()
+
+
+def test_direct_worker_ingest_fails_closed_on_non_string_writer_lock_fields(
+    tmp_db: str,
+    tiny_indra_json: str,
+    capsys: pytest.CaptureFixture[str],
+):
+    """Invalid JSON field types must become malformed state, not exceptions."""
+    lock_path = _writer_lock_path(tmp_db)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(json.dumps({
+        "kind": ["single_score"],
+        "token": "bad-kind",
+        "started_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": ["not-a-time"],
+    }))
+    args = argparse.Namespace(
+        db=tmp_db, path=tiny_indra_json, source_dump_id="bad_field_lock_ingest"
+    )
+
+    with pytest.raises(RuntimeError, match="writer_lock_malformed"):
+        W.do_ingest(args)
+
+    events = _parse_events(capsys.readouterr().out)
+    blocked = _find_event(events, "blocked")
+    assert blocked["code"] == "writer_lock_malformed"
+    assert "writer_lock_malformed" in blocked["message"]
+    assert lock_path.exists()
+
+    con = duckdb.connect(tmp_db, read_only=True)
+    try:
+        n = con.execute(
+            "SELECT COUNT(*) FROM statement WHERE source_dump_id='bad_field_lock_ingest'"
+        ).fetchone()[0]
+        assert n == 0
+    finally:
+        con.close()
+
+
+def test_viewer_spawned_worker_rejects_malformed_sentinel_token(
+    tmp_db: str,
+    tiny_indra_json: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The malformed sentinel token must not authorize inherited writers."""
+    lock_path = _writer_lock_path(tmp_db)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text("{not-json")
+    monkeypatch.setenv("INDRA_VIEWER_WRITER_LOCK_TOKEN", "__malformed_writer_lock__")
+    args = argparse.Namespace(
+        db=tmp_db, path=tiny_indra_json, source_dump_id="sentinel_bypass_ingest"
+    )
+
+    with pytest.raises(RuntimeError, match="writer_lock_malformed"):
+        W.do_ingest(args)
+
+    events = _parse_events(capsys.readouterr().out)
+    blocked = _find_event(events, "blocked")
+    assert blocked["code"] == "writer_lock_malformed"
+    assert lock_path.exists()
+
+    con = duckdb.connect(tmp_db, read_only=True)
+    try:
+        n = con.execute(
+            "SELECT COUNT(*) FROM statement WHERE source_dump_id='sentinel_bypass_ingest'"
+        ).fetchone()[0]
+        assert n == 0
+    finally:
+        con.close()
+
+
+def test_viewer_spawned_worker_accepts_lock_token_and_preserves_parent_lock(
+    tmp_db: str,
+    tiny_indra_json: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Viewer-owned locks are validated by token; the parent endpoint clears them."""
+    token = "viewer-token"
+    lock_path = _write_writer_lock(tmp_db, token=token, kind="ingest")
+    monkeypatch.setenv("INDRA_VIEWER_WRITER_LOCK_TOKEN", token)
+    args = argparse.Namespace(
+        db=tmp_db, path=tiny_indra_json, source_dump_id="viewer_owned_ingest"
+    )
+
+    assert W.do_ingest(args) == 0
+    events = _parse_events(capsys.readouterr().out)
+    assert _find_event(events, "done")["n_statements"] == 3
+    assert lock_path.exists()
+    assert json.loads(lock_path.read_text())["token"] == token
+
+
+def test_estimate_cost_does_not_require_writer_lock(
+    tmp_db: str,
+    tiny_indra_json: str,
+    capsys: pytest.CaptureFixture[str],
+):
+    """Spend preflight is read-only and must remain available during writes."""
+    _write_writer_lock(tmp_db, kind="ingest")
+
+    assert W.do_estimate_cost(argparse.Namespace(path=tiny_indra_json)) == 0
+    events = _parse_events(capsys.readouterr().out)
+    assert _find_event(events, "done")["n_statements"] == 3
+
+
 # ---------- estimate-cost -----------------------------------------------------
 
 
@@ -204,6 +530,46 @@ def test_estimate_cost_per_model_ordering_makes_sense(
     assert by_model["claude-opus-4-7"]["cost_usd"] > by_model["claude-sonnet-4-6"]["cost_usd"]
     assert by_model["claude-sonnet-4-6"]["cost_usd"] > by_model["claude-haiku-4-5"]["cost_usd"]
     assert by_model["gemini-2.5-pro"]["cost_usd"] > by_model["gemini-2.5-flash"]["cost_usd"]
+
+
+def test_estimate_cost_accepts_architecture(
+    tiny_indra_json: str, capsys: pytest.CaptureFixture[str]
+):
+    """The dashboard preflight must estimate the architecture it will run."""
+    rc = W.do_estimate_cost(
+        argparse.Namespace(path=tiny_indra_json, arch="monolithic")
+    )
+    assert rc == 0
+
+    events = _parse_events(capsys.readouterr().out)
+    done = _find_event(events, "done")
+    assert done["architecture"] == "monolithic"
+    for e in done["estimates"]:
+        assert e["architecture"] == "monolithic"
+        assert e["n_evidences_est"] == 3
+        assert e["n_llm_calls_est"] == 3
+
+
+def test_estimate_cost_accepts_probe_only_filter(
+    tiny_indra_json: str, capsys: pytest.CaptureFixture[str]
+):
+    rc = W.do_estimate_cost(
+        argparse.Namespace(
+            path=tiny_indra_json,
+            arch="decomposed",
+            probe_only=True,
+            probe_step_filter="object_role_probe,scope_probe",
+        )
+    )
+    assert rc == 0
+    events = _parse_events(capsys.readouterr().out)
+    done = _find_event(events, "done")
+    assert done["scoring_mode"] == "probe_only"
+    assert done["probe_step_filter"] == ["object_role_probe", "scope_probe"]
+    for e in done["estimates"]:
+        assert e["scoring_mode"] == "probe_only"
+        assert e["n_evidences_est"] == 3
+        assert e["n_llm_calls_est"] == 6
 
 
 # ---------- ingest ------------------------------------------------------------
@@ -411,10 +777,9 @@ def test_register_truth_set_distinct_targets_separate_from_n_loaded(
     tmp_db: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
     """When two JSONL rows share a source_hash (a real condition in
-    eval_set_v4 — 2/100 rows collapse), the DB ends up with FEWER labels
-    than the worker's loop counter. The done event must surface both so
-    the dashboard can render '100 → 98 (2 duplicates collapsed)' instead
-    of falsely claiming 100."""
+    eval_set_v4), they may still be distinct labels if they have different
+    matches_hash statement contexts. The done event must surface target count
+    and active label count separately."""
     records = [
         {"matches_hash": "1", "source_hash": "100", "tag": "correct"},
         {"matches_hash": "2", "source_hash": "200", "tag": "incorrect"},
@@ -438,16 +803,16 @@ def test_register_truth_set_distinct_targets_separate_from_n_loaded(
     done = _find_event(events, "done")
     assert done["n_loaded"] == 3
     assert done["n_unique_targets"] == 2
+    assert done["n_unique_labels"] == 3
 
     con = duckdb.connect(tmp_db, read_only=True)
     try:
         n = con.execute(
             "SELECT COUNT(*) FROM truth_label WHERE truth_set_id='test_dup'"
         ).fetchone()[0]
-        # DB count tracks n_unique_targets (natural-key idempotency), not
-        # n_loaded. If this assertion ever fires it means the worker is
-        # over-reporting and the dashboard would lie to the user.
-        assert n == done["n_unique_targets"]
+        # DB count tracks contextual active labels. Distinct evidence targets
+        # can be lower when one source_hash appears under multiple statements.
+        assert n == done["n_unique_labels"]
     finally:
         con.close()
 
@@ -477,6 +842,183 @@ def test_register_truth_set_is_idempotent(
             "SELECT COUNT(*) FROM truth_label WHERE truth_set_id='test_idem'"
         ).fetchone()[0]
         assert n == 3
+    finally:
+        con.close()
+
+
+def test_register_truth_set_replaces_previous_label_set(
+    tmp_db: str, tiny_jsonl: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    """Re-registering one truth_set id means "this file is the label set".
+
+    Without deleting stale labels for the truth_set first, a narrowed
+    benchmark file leaves old target ids behind and validity overstates gold
+    coverage.
+    """
+    base = dict(
+        db=tmp_db,
+        truth_set_id="test_replace",
+        truth_set_name="test replace",
+        target_kind="evidence",
+        field="tag",
+        target_hash_field=None,
+        recompute_latest_validity=False,
+    )
+    assert W.do_register_truth_set(argparse.Namespace(**base, path=tiny_jsonl)) == 0
+    capsys.readouterr()
+
+    replacement = tmp_path / "single_bench.jsonl"
+    replacement.write_text(json.dumps({
+        "matches_hash": "111111111111111111",
+        "source_hash": "-1000000000000000001",
+        "tag": "correct",
+    }) + "\n")
+    assert W.do_register_truth_set(argparse.Namespace(**base, path=str(replacement))) == 0
+
+    events = _parse_events(capsys.readouterr().out)
+    done = _find_event(events, "done")
+    assert done["n_loaded"] == 1
+    assert done["n_unique_targets"] == 1
+
+    con = duckdb.connect(tmp_db, read_only=True)
+    try:
+        rows = con.execute(
+            "SELECT target_id, value_text FROM truth_label "
+            "WHERE truth_set_id='test_replace'"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0][1] == "correct"
+    finally:
+        con.close()
+
+
+def test_register_truth_set_tag_labels_feed_truth_present_metrics(
+    tmp_db: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    """Worker JSONL registration and validity agree on benchmark tag semantics."""
+    a = Agent("MAP2K1", db_refs={"HGNC": "6840"})
+    b = Agent("MAPK1", db_refs={"HGNC": "6871"})
+    s = Phosphorylation(
+        a,
+        b,
+        evidence=[
+            Evidence(source_api="reach", text="positive evidence"),
+            Evidence(source_api="reach", text="negative evidence"),
+        ],
+    )
+    s.belief = 0.8
+
+    con = duckdb.connect(tmp_db)
+    try:
+        ingest_statements(con, [s])
+        run_id = score_corpus(
+            con,
+            [s],
+            scorer_version="worker-tag-validity",
+            score_evidence=lambda _statement, _evidence, _client: {
+                "score": 0.9,
+                "verdict": "correct",
+                "confidence": "high",
+                "reasons": [],
+                "call_log": [],
+            },
+            with_validity=False,
+        )
+        evidence_by_text = dict(con.execute(
+            "SELECT text, evidence_hash FROM evidence"
+        ).fetchall())
+        stmt_hash = con.execute(
+            "SELECT stmt_hash FROM statement LIMIT 1"
+        ).fetchone()[0]
+    finally:
+        con.close()
+
+    labels_path = tmp_path / "tag_gold.jsonl"
+    labels_path.write_text("\n".join(json.dumps(r) for r in [
+        {
+            "matches_hash": str(int(stmt_hash, 16)),
+            "source_hash": str(int(evidence_by_text["positive evidence"], 16)),
+            "tag": "correct",
+        },
+        {
+            "matches_hash": str(int(stmt_hash, 16)),
+            "source_hash": str(int(evidence_by_text["negative evidence"], 16)),
+            "tag": "wrong_relation",
+        },
+    ]) + "\n")
+
+    args = argparse.Namespace(
+        db=tmp_db,
+        path=str(labels_path),
+        truth_set_id="tag_roundtrip",
+        truth_set_name="tag roundtrip",
+        target_kind="evidence",
+        field="tag",
+        target_hash_field=None,
+        recompute_latest_validity=True,
+    )
+    assert W.do_register_truth_set(args) == 0
+
+    events = _parse_events(capsys.readouterr().out)
+    recomputed = _find_event(events, "validity_recomputed")
+    assert recomputed["run_id"] == run_id
+
+    def read_f1_slice() -> tuple[float, dict]:
+        con = duckdb.connect(tmp_db, read_only=True)
+        try:
+            rows = con.execute(
+                "SELECT metric_name, value, slice_json::VARCHAR FROM metric "
+                "WHERE run_id=? AND truth_set_id='tag_roundtrip' "
+                "ORDER BY metric_name",
+                [run_id],
+            ).fetchall()
+        finally:
+            con.close()
+        by_name = {name: (value, json.loads(slice_json)) for name, value, slice_json in rows}
+        return by_name["truth_present.aggregate.f1"]
+
+    f1, slice_ = read_f1_slice()
+    assert f1 == pytest.approx(2 / 3)
+    assert slice_["gold_fields"] == ["tag"]
+    assert slice_["n_compared"] == 2
+    assert slice_["tp"] == 1
+    assert slice_["fp"] == 1
+    assert slice_["fn"] == 0
+
+    replacement_path = tmp_path / "tag_gold_replacement.jsonl"
+    replacement_path.write_text(json.dumps({
+        "matches_hash": str(int(stmt_hash, 16)),
+        "source_hash": str(int(evidence_by_text["positive evidence"], 16)),
+        "tag": "correct",
+    }) + "\n")
+    args.path = str(replacement_path)
+    assert W.do_register_truth_set(args) == 0
+    events = _parse_events(capsys.readouterr().out)
+    replacement_done = _find_event(events, "done")
+    assert replacement_done["n_loaded"] == 1
+    assert replacement_done["n_unique_labels"] == 1
+    assert replacement_done["n_replaced_labels"] == 2
+
+    f1, slice_ = read_f1_slice()
+    assert f1 == pytest.approx(1.0)
+    assert slice_["n_compared"] == 1
+    assert slice_["tp"] == 1
+    assert slice_["fp"] == 0
+    assert slice_["fn"] == 0
+
+    con = duckdb.connect(tmp_db, read_only=True)
+    try:
+        db_count = con.execute(
+            "SELECT COUNT(*) FROM truth_label WHERE truth_set_id='tag_roundtrip'"
+        ).fetchone()[0]
+        assert db_count == 1
+        rows = con.execute(
+            "SELECT metric_name, value, slice_json::VARCHAR FROM metric "
+            "WHERE run_id=? AND truth_set_id='tag_roundtrip' "
+            "ORDER BY metric_name",
+            [run_id],
+        ).fetchall()
+        assert len(rows) == 3
     finally:
         con.close()
 

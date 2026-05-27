@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from indra_belief.scorers.probes.orchestrator import score_via_probes
+from indra_belief.scorers.probes.orchestrator import (
+    score_selected_probes,
+    score_via_probes,
+)
 from indra.statements import Activation, Agent, Evidence
 
 
@@ -62,9 +65,11 @@ def test_orchestrator_returns_expected_dict_shape() -> None:
     # Required keys
     for key in ("score", "verdict", "confidence", "raw_text", "tokens",
                 "tier", "grounding_status", "provenance_triggered",
-                "reasons", "rationale", "call_log"):
+                "reasons", "rationale", "probe_trace", "call_log"):
         assert key in result, f"missing key {key!r} in result"
     assert result["tier"] == "decomposed"
+    assert result["probe_trace"]["subject_role"]["kind"] == "subject_role"
+    assert result["probe_trace"]["scope"]["source"] in {"substrate", "llm", "abstain"}
     # Modification-on-activity-claim → axis_mismatch → incorrect
     assert result["verdict"] == "incorrect"
     assert "axis_mismatch" in result["reasons"]
@@ -81,6 +86,25 @@ def test_orchestrator_handles_parse_claim_failure() -> None:
     result = score_via_probes(bad_stmt, ev, client)
     # Result must be a valid dict; parse failure → abstain.
     assert "verdict" in result
+
+
+def test_orchestrator_score_selected_probes_skips_unselected_calls() -> None:
+    stmt = Activation(Agent("MAPK1"), Agent("JUN"))
+    ev = Evidence(source_api="reach",
+                  text="MAPK1 phosphorylates JUN at Ser63.")
+    client = _MockClient({
+        "probe_object_role":
+            '{"answer": "present_as_object", "rationale": "JUN target"}',
+        "probe_scope": '{"answer": "asserted", "rationale": "direct"}',
+    })
+
+    result = score_selected_probes(stmt, ev, client, ["object_role", "scope"])
+
+    assert result["tier"] == "decomposed_probe_only"
+    assert set(result["probe_trace"]) == {"object_role", "scope"}
+    called = {call["kind"] for call in client.calls}
+    assert called.issubset({"probe_object_role", "probe_scope"})
+    assert "probe_relation_axis" not in called
 
 
 def test_orchestrator_handles_llm_failure_gracefully() -> None:
