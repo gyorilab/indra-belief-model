@@ -31,20 +31,61 @@ log = logging.getLogger(__name__)
 # NOTE: viewer/src/routes/+page.svelte mirrors this table client-side for
 # the dashboard cost panel. When rates change, update both — there is no
 # build-time check that they match.
-MODEL_PRICES_PER_M_TOKENS: dict[str, tuple[float, float]] = {
-    # Anthropic
-    "claude-haiku-4-5":   (0.80,  4.00),
-    "claude-sonnet-4-6":  (3.00, 15.00),
-    "claude-opus-4-7":   (15.00, 75.00),
-    # Google (estimated; see Gemini pricing page for exact)
-    "gemini-2.5-flash":   (0.075, 0.30),
-    "gemini-2.5-pro":     (1.25,  5.00),
-    # OpenAI (estimated)
-    "gpt-4o":             (2.50, 10.00),
-    "gpt-4o-mini":        (0.15,  0.60),
-}
+def _load_pricing_table() -> tuple[dict[str, tuple[float, float]], set[str]]:
+    """Single source of truth for LLM input/output pricing.
 
-ZERO_COST_MODEL_IDS = {"mock", "mock-model", "smoke-local", "unknown"}
+    Reads `viewer/src/lib/modelPrices.json` (the same file the SvelteKit
+    viewer imports), so a rate change lands in Python, the DuckDB tombstone
+    CASE expression, and the UI display from one edit. Falls back to a
+    minimal hard-coded table if the file is unreadable so unit tests can
+    still run without the viewer tree on disk.
+    """
+    import json
+    import os
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidate_paths = [
+        os.path.normpath(os.path.join(here, "..", "..", "..", "viewer", "src", "lib", "modelPrices.json")),
+    ]
+    for path in candidate_paths:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            raw_prices = data.get("prices_per_million_tokens", {}) or {}
+            prices: dict[str, tuple[float, float]] = {}
+            for model_id, pair in raw_prices.items():
+                if (
+                    isinstance(pair, (list, tuple))
+                    and len(pair) == 2
+                    and all(isinstance(v, (int, float)) for v in pair)
+                ):
+                    prices[str(model_id)] = (float(pair[0]), float(pair[1]))
+            zero_raw = data.get("zero_cost_model_ids", []) or []
+            zero = {str(m) for m in zero_raw if isinstance(m, str)}
+            if prices:
+                return prices, zero
+        except (OSError, json.JSONDecodeError) as e:
+            log.warning(
+                "could not read pricing table from %s: %s; using fallback", path, e
+            )
+    # Hard-coded fallback so unit tests in isolated environments still work.
+    return (
+        {
+            "claude-haiku-4-5": (0.80, 4.00),
+            "claude-sonnet-4-6": (3.00, 15.00),
+            "claude-opus-4-7": (15.00, 75.00),
+            "gemini-2.5-flash": (0.075, 0.30),
+            "gemini-2.5-pro": (1.25, 5.00),
+            "gpt-4o": (2.50, 10.00),
+            "gpt-4o-mini": (0.15, 0.60),
+        },
+        {"mock", "mock-model", "smoke-local", "unknown"},
+    )
+
+
+MODEL_PRICES_PER_M_TOKENS, ZERO_COST_MODEL_IDS = _load_pricing_table()
 PROBE_STEP_KINDS = frozenset({
     "subject_role_probe",
     "object_role_probe",

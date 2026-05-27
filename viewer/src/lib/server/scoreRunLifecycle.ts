@@ -1,23 +1,11 @@
 import { DuckDBInstance } from '@duckdb/node-api';
 import { closeInstance, dbPath } from '$lib/db';
+import { buildObservedCostSql } from '$lib/modelPrices';
 
+// Single source of truth: pricing comes from $lib/modelPrices.json, which
+// Python's cost.py also reads at module-load time. Edit the JSON only.
 export const OBSERVED_COST_SQL = `
-	SELECT SUM(
-		CASE model_id
-			WHEN 'claude-haiku-4-5' THEN COALESCE(prompt_tokens, 0) * 0.80 / 1000000.0 + COALESCE(out_tokens, 0) * 4.00 / 1000000.0
-			WHEN 'claude-sonnet-4-6' THEN COALESCE(prompt_tokens, 0) * 3.00 / 1000000.0 + COALESCE(out_tokens, 0) * 15.00 / 1000000.0
-			WHEN 'claude-opus-4-7' THEN COALESCE(prompt_tokens, 0) * 15.00 / 1000000.0 + COALESCE(out_tokens, 0) * 75.00 / 1000000.0
-			WHEN 'gemini-2.5-flash' THEN COALESCE(prompt_tokens, 0) * 0.075 / 1000000.0 + COALESCE(out_tokens, 0) * 0.30 / 1000000.0
-			WHEN 'gemini-2.5-pro' THEN COALESCE(prompt_tokens, 0) * 1.25 / 1000000.0 + COALESCE(out_tokens, 0) * 5.00 / 1000000.0
-			WHEN 'gpt-4o' THEN COALESCE(prompt_tokens, 0) * 2.50 / 1000000.0 + COALESCE(out_tokens, 0) * 10.00 / 1000000.0
-			WHEN 'gpt-4o-mini' THEN COALESCE(prompt_tokens, 0) * 0.15 / 1000000.0 + COALESCE(out_tokens, 0) * 0.60 / 1000000.0
-			WHEN 'mock' THEN 0.0
-			WHEN 'mock-model' THEN 0.0
-			WHEN 'smoke-local' THEN 0.0
-			WHEN 'unknown' THEN 0.0
-			ELSE NULL
-		END
-	)
+	SELECT SUM(${buildObservedCostSql('prompt_tokens', 'out_tokens')})
 	  FROM scorer_step
 	 WHERE run_id=?
 	   AND step_kind='aggregate'
