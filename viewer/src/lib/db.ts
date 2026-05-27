@@ -115,8 +115,33 @@ let _activeReaderCount = 0;
 let _closePending = false;
 let _closeWaiters: Array<() => void> = [];
 
-const CLOSE_INSTANCE_DRAIN_TIMEOUT_MS = 5_000;
+// C2 of deferred hypergraph: drainer ceiling. The forced-close path
+// after this timeout can destroy in-flight reader handles. Operators
+// with slow-corpus reads can extend the timeout via the
+// `INDRA_VIEWER_CLOSE_DRAIN_MS` env var; otherwise the default 5 s
+// applies. After timeout the drainer logs a warning naming the leaked
+// reader count and proceeds with closeSync — readers will surface a
+// destroyed-handle error on their next read, which the wrapper below
+// re-throws as a typed `reader_lease_expired` for clean UI handling.
+const CLOSE_INSTANCE_DRAIN_TIMEOUT_MS = (() => {
+	const raw = process.env.INDRA_VIEWER_CLOSE_DRAIN_MS;
+	if (!raw) return 5_000;
+	const parsed = Number.parseInt(raw, 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : 5_000;
+})();
 const CLOSE_INSTANCE_POLL_MS = 25;
+
+/**
+ * Thrown by reads that fire against a DuckDB instance the connection
+ * manager force-closed. SSR routes should catch and surface as 503.
+ */
+export class ReaderLeaseExpiredError extends Error {
+	readonly code = 'reader_lease_expired';
+	constructor(originalMessage: string) {
+		super(`reader_lease_expired: ${originalMessage}`);
+		this.name = 'ReaderLeaseExpiredError';
+	}
+}
 
 function delay(ms: number): Promise<void> {
 	return new Promise((r) => setTimeout(r, ms));
@@ -1112,18 +1137,43 @@ export function safeRate(numerator: number | null | undefined, denominator: numb
 
 // Strict row helper: SQL/projection failures reject and should surface through
 // SvelteKit error handling when the UI would otherwise tell a false absence.
+// C2: if a forced-close happened during a long-running read, the
+// binding's error message typically contains one of the fragments
+// below. Detect and re-throw as ReaderLeaseExpiredError so SSR routes
+// can surface a typed 503 rather than the raw stack.
+const LEASE_EXPIRED_FRAGMENTS = [
+	'connection has been closed',
+	'connection is closed',
+	'instance is closed',
+	'connection was closed',
+	'Could not bind to closed connection'
+];
+
+function rethrowAsLeaseExpiredIfClosed(err: unknown): never {
+	const message = err instanceof Error ? err.message : String(err);
+	const lower = message.toLowerCase();
+	if (LEASE_EXPIRED_FRAGMENTS.some((frag) => lower.includes(frag.toLowerCase()))) {
+		throw new ReaderLeaseExpiredError(message);
+	}
+	throw err;
+}
+
 export async function readRows<T = Record<string, unknown>>(
 	con: DuckDBConnection,
 	sql: string
 ): Promise<T[]> {
-	const reader = await con.runAndReadAll(sql);
-	return reader.getRowObjects().map((row) => {
-		const out: Record<string, unknown> = {};
-		for (const [k, v] of Object.entries(row)) {
-			out[k] = normalizeDuckValue(v);
-		}
-		return out as T;
-	});
+	try {
+		const reader = await con.runAndReadAll(sql);
+		return reader.getRowObjects().map((row) => {
+			const out: Record<string, unknown> = {};
+			for (const [k, v] of Object.entries(row)) {
+				out[k] = normalizeDuckValue(v);
+			}
+			return out as T;
+		});
+	} catch (err) {
+		rethrowAsLeaseExpiredIfClosed(err);
+	}
 }
 
 export async function assertCoreOverviewSchema(con: DuckDBConnection): Promise<void> {
