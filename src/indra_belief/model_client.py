@@ -123,6 +123,45 @@ LOCAL_MODELS: dict[str, dict] = {
         "strict_openai_compat": True,
         "concurrency_hint": 2,
     },
+    # MedPsy-4B (Tether/QVAC) — Qwen3-based 4B fine-tuned for medical Q&A.
+    # In-process transformers + bf16, no HTTP server. The base chat template
+    # hard-codes a "You are MedPsy, a medical and healthcare AI assistant"
+    # persona; _setup_transformers_client swaps it for a task-specific
+    # adjudicator persona at load time so the scorer's SYSTEM_PROMPT carries
+    # the actual instructions instead of fighting the persona.
+    "medpsy-4b-local": {
+        "backend": "transformers_local",
+        "model_id": "qvac/MedPsy-4B",
+        "reasoning_in_content": False,
+        "enable_thinking": True,
+        "torch_dtype": "bfloat16",
+        "device": "mps",
+        "typical_tokens": 800,
+        "max_tokens": 4096,
+        "timeout": 300,
+        "persona": (
+            "You are a biomedical text-mining adjudicator. You judge whether "
+            "structured (subject)-(relation)-(object) statements extracted by an "
+            "NLP reader are supported by the source evidence sentence."
+        ),
+    },
+    # MedPsy-4B (Tether/QVAC) served on the ROCm box (noot-1) via the llm-gateway
+    # stack: LiteLLM gateway (:11434) -> llama.cpp HIP container (:8081) running
+    # medpsy-4b-q8_0.gguf on a Radeon RX 7900 XTX (gfx1100). Remote counterpart to
+    # medpsy-4b-local; replaces gemma-remote as the active remote model (the
+    # gateway serves one model at a time). llama-server runs with
+    # --reasoning-format deepseek, so Qwen3-thinking <think> traces arrive as a
+    # separate reasoning_content field (reasoning_in_content=False) — same response
+    # shape as gemma-remote. Thinking mode emits long CoT, so keep the generation
+    # ceiling high.
+    "medpsy-remote": {
+        "base_url": "http://100.97.101.59:11434/v1",
+        "model_id": "medpsy-4b",
+        "reasoning_in_content": False,
+        "max_tokens": 32000,
+        "num_ctx": 65536,
+        "timeout": 600,
+    },
 }
 
 
@@ -203,8 +242,15 @@ class ModelClient:
         self._tls = _threading.local()
         if model_name in LOCAL_MODELS:
             self.config = LOCAL_MODELS[model_name]
-            self.backend = "openai_compat"
-            self._setup_openai_client()
+            self.backend = self.config.get("backend", "openai_compat")
+            if self.backend == "openai_compat":
+                self._setup_openai_client()
+            elif self.backend == "transformers_local":
+                self._setup_transformers_client()
+            else:
+                raise ValueError(
+                    f"Unknown backend {self.backend!r} for model {model_name!r}"
+                )
         elif model_name.startswith("claude-"):
             self.config = {"model_id": model_name, "reasoning_in_content": False,
                            "max_tokens": 2000, "timeout": 120}
@@ -342,6 +388,11 @@ class ModelClient:
                         response = self._invoke_with_wall_timeout(
                             self._call_anthropic, timeout,
                             system, messages, mt, temperature, timeout,
+                        )
+                    elif self.backend == "transformers_local":
+                        response = self._invoke_with_wall_timeout(
+                            self._call_transformers, timeout,
+                            system, messages, mt, temperature,
                         )
                     else:
                         raise ValueError(f"Unknown backend: {self.backend}")
@@ -506,6 +557,100 @@ class ModelClient:
             raw_text=raw_text,
             finish_reason=response.stop_reason or "stop",
             prompt_tokens=getattr(response.usage, "input_tokens", -1),
+        )
+
+    _DEFAULT_MEDPSY_PERSONA = (
+        "You are MedPsy, a medical and healthcare AI assistant developed by QVAC."
+    )
+
+    def _setup_transformers_client(self):
+        """In-process transformers backend for local models served without HTTP.
+
+        Loads the tokenizer and model once at init. Replaces the chat
+        template's hard-coded persona with the task-specific persona from
+        the model config when one is provided — the alternative is for the
+        scorer's SYSTEM_PROMPT to share airtime with a clinical-assistant
+        framing the model was post-trained to obey.
+        """
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        model_id = self.config["model_id"]
+        dtype_str = self.config.get("torch_dtype", "bfloat16")
+        dtype = getattr(torch, dtype_str)
+        device = self.config.get("device", "cpu")
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        persona_override = self.config.get("persona")
+        if persona_override and tokenizer.chat_template:
+            tokenizer.chat_template = tokenizer.chat_template.replace(
+                self._DEFAULT_MEDPSY_PERSONA, persona_override
+            )
+        self._tokenizer = tokenizer
+        self._model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            dtype=dtype,
+            device_map=device,
+            low_cpu_mem_usage=True,
+        )
+        self._model.eval()
+        self._torch = torch
+
+    def _call_transformers(
+        self, system: str, messages: list[dict], mt: int, temp: float,
+    ) -> ModelResponse:
+        torch = self._torch
+        full_messages = [{"role": "system", "content": system}] + messages
+        prompt_ids = self._tokenizer.apply_chat_template(
+            full_messages,
+            return_tensors="pt",
+            add_generation_prompt=True,
+            enable_thinking=self.config.get("enable_thinking", True),
+        )
+        prompt_ids = prompt_ids.to(self._model.device)
+        prompt_len = prompt_ids.shape[-1]
+
+        eos_id = self._tokenizer.eos_token_id
+        pad_id = self._tokenizer.pad_token_id or eos_id
+        gen_kwargs = dict(
+            max_new_tokens=mt,
+            pad_token_id=pad_id,
+            eos_token_id=eos_id,
+        )
+        if temp and temp > 0:
+            gen_kwargs.update(do_sample=True, temperature=temp)
+        else:
+            gen_kwargs.update(do_sample=False)
+
+        with torch.no_grad():
+            output = self._model.generate(prompt_ids, **gen_kwargs)
+        gen_ids = output[0][prompt_len:]
+        completion_tokens = int(gen_ids.shape[-1])
+        finish_reason = "length" if completion_tokens >= mt else "stop"
+
+        # skip_special_tokens=False so we can see <think>/</think>; then
+        # strip the chat-template control tokens manually.
+        raw = self._tokenizer.decode(gen_ids, skip_special_tokens=False)
+        for tok in ("<|im_end|>", "<|endoftext|>"):
+            raw = raw.replace(tok, "")
+        raw = raw.strip()
+
+        if "</think>" in raw:
+            reasoning_part, _, content_part = raw.partition("</think>")
+            reasoning = reasoning_part.replace("<think>", "").strip()
+            content = content_part.strip()
+        else:
+            reasoning = ""
+            content = raw
+
+        raw_text = (reasoning + "\n" + content) if reasoning else content
+        return ModelResponse(
+            content=content,
+            reasoning=reasoning,
+            tokens=completion_tokens,
+            raw_text=raw_text,
+            finish_reason=finish_reason,
+            prompt_tokens=prompt_len,
         )
 
 

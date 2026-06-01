@@ -359,7 +359,7 @@ def test_scope_negation_too_far_escalates() -> None:
     routings = substrate_route(claim, ctx, text)
     r = routings["scope"]
     # Either negated (if JUN happens to be near) or escalates — both fine
-    # so long as the algorithm is honest about proximity.
+    # so long as the algorithm reports proximity correctly.
     assert isinstance(r, (ProbeRequest, ProbeResponse))
 
 

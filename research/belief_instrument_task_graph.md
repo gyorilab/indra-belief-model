@@ -140,7 +140,7 @@ A change to E0 propagates through H_belief; a change to E1 through H_findings; a
 - **P3 — Direct manipulation.** Click a probe → filter to where it disagreed. Click a stratum → drill in. Click a finding → swap focus. No hidden state, no modes.
 - **P4 — Data:ink ratio.** Every glyph load-bearing. Decorative borders, gradients, shadows, logos: forbidden.
 - **P5 — Delta primacy.** Every metric reports its delta vs the prior run. Lone scalars are forbidden — `MAE 0.187` becomes `MAE 0.187 ▲0.012 vs prev`.
-- **P6 — Honest empties.** No panel silently shows zeros. `—` plus a one-line `unavailable_reason` whenever a value is absent.
+- **P6 — Named empties.** No panel silently shows zeros. `—` plus a one-line `unavailable_reason` whenever a value is absent.
 - **P7 — Brutalist palette.** Existing 6 vars only: `--paper, --ink, --ink-muted, --ink-faint, --rule, --accent`. Plus one forest-green for verdict-correct (already in use).
 - **P8 — Type discipline.** Monospace for numbers and identifiers; serif for prose and biology text; sans never.
 

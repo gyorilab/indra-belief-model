@@ -549,7 +549,7 @@ def main():
         })
 
         r_save = {k: v for k, v in result.items() if k != "raw_text"}
-        r_save["raw_text_preview"] = result.get("raw_text", "")[:500]
+        r_save["raw_text_preview"] = result.get("raw_text", "")  # full output — no cap
         out_fh.write(json.dumps(r_save) + "\n")
         out_fh.flush()
 

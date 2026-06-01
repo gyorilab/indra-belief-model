@@ -250,15 +250,15 @@ def score_via_probes(statement, evidence, client: "ModelClient") -> dict:
     # X3.5: empty-text fast path. When the source provided no sentence
     # (curated databases like biogrid/biopax/tas emit Evidence with
     # source_hash + db_refs but no `text`), the LLM probes have no
-    # signal to consume. Honestly defer to INDRA's published belief —
-    # this is a COMMITMENT, not abstention: we trust the curated DB's
-    # provenance and adopt its parametric score as our own.
+    # signal to consume. Defer to INDRA's published belief — this is a
+    # COMMITMENT, not abstention: we trust the curated DB's provenance
+    # and adopt its parametric score as our own.
     if not evidence_text.strip():
         prior = float(getattr(statement, "belief", 0.5) or 0.5)
         verdict = "correct" if prior >= 0.5 else "incorrect"
         adj = Adjudication(
             verdict=verdict,
-            confidence="low",   # honest about uncertainty — no LLM signal
+            confidence="low",   # no LLM signal to elevate confidence
             reasons=("no_sentence_evidence",),
             rationale=(
                 f"no evidence text; deferred to INDRA published belief "

@@ -13,7 +13,7 @@ Failure handling: when any probe has source="abstain" (LLM call failed),
 the corresponding probe's answer falls through to the factor table; the
 factor for the failure-mode answer (typically "absent" or "abstain")
 combines with the other probes' factors. No more abstain commitment;
-the score honestly reflects the partial signal.
+the score reflects the partial signal.
 """
 from __future__ import annotations
 

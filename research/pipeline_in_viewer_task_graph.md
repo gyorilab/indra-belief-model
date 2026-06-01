@@ -29,7 +29,7 @@ Status: 2026-05-12. **Hypergraph complete.** All U1–U6 nodes shipped; G_U5 bru
 - `cost_threshold_usd = est × 1.25` now actually sent to worker as a hard cap
 - "Read-only for now" stale intro rewritten
 - Heuristic coverage leads with the sharp finding ("system invoked 1.00 of 4 probes per evidence") + inline pillbar legend + disambiguated denominators
-- `example_pairs.json` parse failure named honestly instead of empty `Statement()` placeholders
+- `example_pairs.json` parse failure named explicitly instead of empty `Statement()` placeholders
 
 **Pending (out of hypergraph scope):**
 - gzipped corpus action affordance for `indra_benchmark_corpus.json.gz` (438MB)
@@ -38,7 +38,7 @@ Status: 2026-05-12. **Hypergraph complete.** All U1–U6 nodes shipped; G_U5 bru
 
 **Acceptance criteria (all met):** A1 glanceable LLM share · A2 ingest+score from viewer · A3 register benchmark as truth_set <30s · A4 live runs in feed · A5 P/R/F1 auto-populates · A6 cost-triggering actions name spend in-frame.
 
-Successor to `belief_instrument_task_graph.md` (closed — T-phase complete + brutalist P0 fixes shipped + dishonest-attribution refactor shipped). The T-phase made the **results** of scoring legible. This U-phase makes the **act** of scoring legible: ingesting, registering truth sets, kicking off a run, watching heuristics, comparing runs — all without leaving the SvelteKit surface.
+Successor to `belief_instrument_task_graph.md` (closed — T-phase complete + brutalist P0 fixes shipped + misattribution refactor shipped). The T-phase made the **results** of scoring legible. This U-phase makes the **act** of scoring legible: ingesting, registering truth sets, kicking off a run, watching heuristics, comparing runs — all without leaving the SvelteKit surface.
 
 ## Frame
 
@@ -212,7 +212,7 @@ Used by: `[register as truth_set]` affordance, INDRA-benchmark wiring, custom-go
 - **H_python_call** = {U3, U4.2, U5.2, U5.5} — every place we cross the Node↔Python boundary
 - **H_streaming** = {U3.3, U5.3, U5.4, U5.5} — every place we show live worker state
 - **H_validity_growth** = {U1.3, U4.4} — every place the validity section grows new rows automatically
-- **H_persistence_honesty** = {U1, U2.4} — every place that surfaces what's already on disk vs what isn't
+- **H_persistence_visibility** = {U1, U2.4} — every place that surfaces what's already on disk vs what isn't
 
 A change to E0 (subprocess vs sidecar) propagates through H_python_call. A change to E2 event shape propagates through H_streaming. The hyperedges name the contracts that must stay consistent.
 
@@ -220,9 +220,9 @@ A change to E0 (subprocess vs sidecar) propagates through H_python_call. A chang
 
 ## Perceptual contracts (apply to every node, not relegated to T3)
 
-Same eight from `belief_instrument_task_graph.md` carry over — P1 hierarchy of attention, P2 glanceability, P3 direct manipulation, P4 data:ink ratio, P5 delta primacy, P6 honest empties, P7 brutalist palette, P8 type discipline — plus three U-phase-specific:
+Same eight from `belief_instrument_task_graph.md` carry over — P1 hierarchy of attention, P2 glanceability, P3 direct manipulation, P4 data:ink ratio, P5 delta primacy, P6 named empties, P7 brutalist palette, P8 type discipline — plus three U-phase-specific:
 
-- **P9 — Cost honesty.** Any UI element that triggers spend states the projected cost *before* the click, in the visual frame of the click. Buried fine print and post-hoc "actually it cost $X" are forbidden.
+- **P9 — Cost preview.** Any UI element that triggers spend states the projected cost *before* the click, in the visual frame of the click. Buried fine print and post-hoc "actually it cost $X" are forbidden.
 - **P10 — Live state ≥ static state.** A run in progress is more interesting than a run that finished an hour ago. The dashboard should naturally elevate in-flight runs without the user having to look for them.
 - **P11 — Reversibility legibility.** When an action is destructive or hard to undo (registering a truth_set wrong, kicking off a multi-hour scoring run), the irreversibility is named in the same visual element as the action. Cancel affordances are real, not decorative.
 

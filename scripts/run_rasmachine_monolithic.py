@@ -193,6 +193,321 @@ def _score_with_retries(
     raise last_error
 
 
+def _stmt_meta(stmt) -> dict[str, Any]:
+    """Per-statement fields shared by every evidence row of that statement."""
+    subj, obj = _statement_label(stmt)
+    return {
+        "stmt_hash": _stmt_hash(stmt),
+        "subject": subj,
+        "object": obj,
+        "stmt_type": type(stmt).__name__,
+        "belief": getattr(stmt, "belief", None),
+    }
+
+
+def _scored_row(run_id, stmt_i, ev_i, ev, sm, result, latency_s, call_summary) -> dict:
+    """Build a scored row. MUST stay byte-identical between serial and
+    concurrent paths so the resumable JSONL output has one schema."""
+    raw_text = result.get("raw_text") or ""
+    return {
+        "run_id": run_id,
+        "row_status": "scored",
+        "stmt_i": stmt_i,
+        "evidence_i": ev_i,
+        "source_hash": ev.get_source_hash(),
+        "stmt_hash": sm["stmt_hash"],
+        "evidence_hash": _evidence_hash(ev),
+        "stmt_type": sm["stmt_type"],
+        "subject": sm["subject"],
+        "object": sm["object"],
+        "source_api": ev.source_api or "",
+        "pmid": ev.pmid,
+        "belief": sm["belief"],
+        "text_len": len(ev.text or ""),
+        "verdict": result.get("verdict"),
+        "score": result.get("score"),
+        "confidence": result.get("confidence"),
+        "tier": result.get("tier"),
+        "grounding_status": result.get("grounding_status"),
+        "provenance_triggered": result.get("provenance_triggered"),
+        "latency_s": round(latency_s, 3),
+        "tokens": result.get("tokens"),
+        "call_log": call_summary,
+        "error": result.get("error"),
+        "raw_text_preview": raw_text,
+    }
+
+
+def _error_row(run_id, stmt_i, ev_i, ev, sm, error_text, elapsed, call_summary) -> dict:
+    """Build an error row. MUST stay byte-identical between serial and
+    concurrent paths."""
+    return {
+        "run_id": run_id,
+        "row_status": "error",
+        "stmt_i": stmt_i,
+        "evidence_i": ev_i,
+        "source_hash": ev.get_source_hash(),
+        "stmt_hash": sm["stmt_hash"],
+        "evidence_hash": _evidence_hash(ev),
+        "stmt_type": sm["stmt_type"],
+        "subject": sm["subject"],
+        "object": sm["object"],
+        "source_api": ev.source_api or "",
+        "pmid": ev.pmid,
+        "belief": sm["belief"],
+        "text_len": len(ev.text or ""),
+        "verdict": None,
+        "score": None,
+        "confidence": None,
+        "tier": "row_error",
+        "grounding_status": None,
+        "provenance_triggered": None,
+        "latency_s": round(elapsed, 3),
+        "tokens": None,
+        "call_log": call_summary,
+        "error": error_text,
+        "raw_text_preview": "",
+    }
+
+
+def _run_concurrent(
+    *,
+    stmts,
+    done_keys,
+    client,
+    args,
+    run_id,
+    meta,
+    meta_path,
+    out_fh,
+    prog_fh,
+    verdicts,
+    total_evidences,
+    recorded_row_errors_start,
+) -> int:
+    """Concurrent scoring path (args.workers > 1).
+
+    Design: only the LLM call runs on worker threads; ALL file I/O,
+    done_keys/verdict bookkeeping, error-policy decisions, and progress
+    emission stay single-threaded on this (main) thread. Rows are built
+    with the same `_scored_row`/`_error_row` helpers the serial path uses,
+    so the JSONL schema is identical and resume stays compatible.
+
+    Worker telemetry is captured inside the worker via `pop_call_log()`
+    because ModelClient's call log is thread-local — popping it on the
+    main thread would read an empty log. A bounded in-flight window
+    (workers * 4) caps memory and lets us stop/drain cleanly on signal.
+    """
+    import concurrent.futures as cf
+
+    def pending_items():
+        for stmt_i, stmt in enumerate(stmts):
+            evidences = list(getattr(stmt, "evidence", None) or [])
+            if not evidences:
+                continue
+            sm = _stmt_meta(stmt)  # one hash per statement, not per evidence
+            for ev_i, ev in enumerate(evidences):
+                if (stmt_i, ev_i) in done_keys:
+                    continue
+                yield (stmt_i, ev_i, ev, sm)
+
+    def work(item):
+        stmt_i, ev_i, ev, sm = item
+        # Resolve the live statement/evidence objects on the worker.
+        stmt = stmts[stmt_i]
+        t_row = time.time()
+        try:
+            result = _score_with_retries(
+                stmt, ev, client, args.max_tokens, args.retries, args.retry_sleep_s
+            )
+            latency_s = time.time() - t_row
+            # Scorer returns the drained call log under result["call_log"];
+            # popping the client again would read empty (see serial path).
+            call_summary = _preserve_call_log(result.get("call_log") or [])
+            return ("ok", stmt_i, ev_i, ev, sm, result, latency_s, call_summary)
+        except Exception as exc:  # noqa: BLE001 — recorded per row-error policy
+            elapsed = time.time() - t_row
+            # On exception the scorer never returned a dict; the partial log
+            # (if any) is still on the client's thread-local — pop it here.
+            call_summary = _preserve_call_log(client.pop_call_log())
+            return ("err", stmt_i, ev_i, ev, sm, exc, elapsed, call_summary)
+
+    recorded_row_errors = recorded_row_errors_start
+    completed_this_invocation = 0
+    t0 = time.time()
+    items = pending_items()
+    window = max(1, args.workers) * 4
+
+    with cf.ThreadPoolExecutor(
+        max_workers=args.workers, thread_name_prefix="score"
+    ) as ex:
+        inflight: set = set()
+
+        def submit_next() -> bool:
+            try:
+                item = next(items)
+            except StopIteration:
+                return False
+            inflight.add(ex.submit(work, item))
+            return True
+
+        for _ in range(window):
+            if not submit_next():
+                break
+
+        stopping = False
+        while inflight:
+            completed, _ = cf.wait(inflight, return_when=cf.FIRST_COMPLETED)
+            for fut in completed:
+                inflight.discard(fut)
+                kind, stmt_i, ev_i, ev, sm, payload, dur, call_summary = fut.result()
+                key = (stmt_i, ev_i)
+
+                if kind == "ok":
+                    row = _scored_row(
+                        run_id, stmt_i, ev_i, ev, sm, payload, dur, call_summary
+                    )
+                else:
+                    exc = payload
+                    error_text = f"{type(exc).__name__}: {exc}"
+                    cap_remaining = (
+                        args.max_recorded_errors is None
+                        or recorded_row_errors < args.max_recorded_errors
+                    )
+                    if args.row_error_policy == "record" and cap_remaining:
+                        recorded_row_errors += 1
+                        row = _error_row(
+                            run_id, stmt_i, ev_i, ev, sm, error_text, dur, call_summary
+                        )
+                        _progress(
+                            prog_fh,
+                            "row_error_recorded",
+                            run_id=run_id,
+                            stmt_i=stmt_i,
+                            evidence_i=ev_i,
+                            stmt_hash=sm["stmt_hash"],
+                            evidence_hash=_evidence_hash(ev),
+                            elapsed_s=round(dur, 3),
+                            recorded_row_errors=recorded_row_errors,
+                            error=_maybe_truncate(error_text, args.error_preview_chars),
+                        )
+                    else:
+                        limit_reason = (
+                            "recorded row error limit reached"
+                            if args.row_error_policy == "record"
+                            else "row error policy is fail"
+                        )
+                        if args.row_error_policy == "record":
+                            error_text = f"{error_text} ({limit_reason})"
+                        event_name = (
+                            "fatal_row_error_limit"
+                            if args.row_error_policy == "record"
+                            else "fatal_row_error"
+                        )
+                        _progress(
+                            prog_fh,
+                            event_name,
+                            run_id=run_id,
+                            stmt_i=stmt_i,
+                            evidence_i=ev_i,
+                            stmt_hash=sm["stmt_hash"],
+                            evidence_hash=_evidence_hash(ev),
+                            elapsed_s=round(dur, 3),
+                            recorded_row_errors=recorded_row_errors,
+                            error=_maybe_truncate(error_text, args.error_preview_chars),
+                        )
+                        meta.update({
+                            "status": "failed",
+                            "failed_at": _now(),
+                            "failed_key": {"stmt_i": stmt_i, "evidence_i": ev_i},
+                            "error": error_text,
+                            "completed_this_invocation": completed_this_invocation,
+                            "recorded_row_errors": recorded_row_errors,
+                        })
+                        _write_meta(meta_path, meta)
+                        # Abandon in-flight futures; their keys were never
+                        # written, so resume re-scores them next invocation.
+                        for f in inflight:
+                            f.cancel()
+                        return 2
+
+                out_fh.write(json.dumps(row, default=str) + "\n")
+                out_fh.flush()
+                done_keys.add(key)
+                completed_this_invocation += 1
+                verdicts[row.get("verdict") or "None"] += 1
+
+                if (
+                    completed_this_invocation == 1
+                    or completed_this_invocation % args.progress_every == 0
+                ):
+                    elapsed = time.time() - t0
+                    done_total = len(done_keys)
+                    rate = completed_this_invocation / elapsed if elapsed > 0 else 0.0
+                    remaining = total_evidences - done_total
+                    eta_s = remaining / rate if rate > 0 else None
+                    _progress(
+                        prog_fh,
+                        "progress",
+                        run_id=run_id,
+                        done_total=done_total,
+                        total_evidences=total_evidences,
+                        completed_this_invocation=completed_this_invocation,
+                        rate_ev_per_s=round(rate, 5),
+                        eta_s=round(eta_s, 1) if eta_s is not None else None,
+                        latest={"stmt_i": stmt_i, "evidence_i": ev_i},
+                        verdicts=dict(verdicts),
+                        recorded_row_errors=recorded_row_errors,
+                        workers=args.workers,
+                    )
+
+                # Refill the window unless we're stopping or drained.
+                if not STOP_REQUESTED and not stopping:
+                    submit_next()
+
+            if STOP_REQUESTED and not stopping:
+                stopping = True  # stop submitting; let in-flight drain
+
+        if STOP_REQUESTED:
+            meta.update({
+                "status": "stopped",
+                "stopped_at": _now(),
+                "completed_this_invocation": completed_this_invocation,
+                "recorded_row_errors": recorded_row_errors,
+            })
+            _write_meta(meta_path, meta)
+            _progress(
+                prog_fh,
+                "stopped",
+                run_id=run_id,
+                completed_this_invocation=completed_this_invocation,
+            )
+            return 130
+
+    elapsed = time.time() - t0
+    meta.update({
+        "status": "completed",
+        "completed_at": _now(),
+        "completed_total": len(done_keys),
+        "completed_this_invocation": completed_this_invocation,
+        "duration_this_invocation_s": round(elapsed, 3),
+        "verdicts": dict(verdicts),
+        "recorded_row_errors": recorded_row_errors,
+    })
+    _write_meta(meta_path, meta)
+    _progress(
+        prog_fh,
+        "done",
+        run_id=run_id,
+        completed_total=len(done_keys),
+        total_evidences=total_evidences,
+        duration_this_invocation_s=round(elapsed, 3),
+        verdicts=dict(verdicts),
+        recorded_row_errors=recorded_row_errors,
+    )
+    return 0
+
+
 def main() -> int:
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
@@ -218,10 +533,28 @@ def main() -> int:
     parser.add_argument("--retries", type=int, default=1)
     parser.add_argument("--retry-sleep-s", type=float, default=10.0)
     parser.add_argument("--row-error-policy", choices=("fail", "record"), default="fail")
-    parser.add_argument("--max-recorded-errors", type=int, default=100)
+    parser.add_argument(
+        "--max-recorded-errors",
+        type=_optional_positive_int,
+        default=None,
+        help="Optional cap on recorded row errors before aborting. Default: unlimited "
+        "(pass an integer to opt in; 'none' is equivalent to omitting).",
+    )
     parser.add_argument("--error-preview-chars", type=_optional_positive_int, default=None)
     parser.add_argument("--progress-every", type=int, default=5)
-    parser.add_argument("--raw-preview-chars", type=_optional_positive_int, default=None)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Concurrent scoring workers. 1 = serial (default, battle-tested). "
+        ">1 dispatches LLM calls through a thread pool while keeping all file "
+        "I/O and bookkeeping single-threaded on the main thread. Match the "
+        "serving backend's slot count (the llm-gateway llama container runs "
+        "-np 4, so --workers 4 saturates it).",
+    )
+    # NOTE: raw_text (the model's full reasoning) is recorded UNCAPPED. The former
+    # --raw-preview-chars flag was removed — clipping it silently discarded generated
+    # output and is no longer permitted.
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -323,6 +656,22 @@ def main() -> int:
             pid=os.getpid(),
         )
 
+        if args.workers > 1:
+            return _run_concurrent(
+                stmts=stmts,
+                done_keys=done_keys,
+                client=client,
+                args=args,
+                run_id=run_id,
+                meta=meta,
+                meta_path=meta_path,
+                out_fh=out_fh,
+                prog_fh=prog_fh,
+                verdicts=verdicts,
+                total_evidences=total_evidences,
+                recorded_row_errors_start=recorded_row_errors,
+            )
+
         for stmt_i, stmt in enumerate(stmts):
             evidences = list(getattr(stmt, "evidence", None) or [])
             if not evidences:
@@ -362,7 +711,10 @@ def main() -> int:
                         stmt, ev, client, args.max_tokens, args.retries, args.retry_sleep_s
                     )
                     latency_s = time.time() - t_row
-                    call_summary = _preserve_call_log(client.pop_call_log())
+                    # The monolithic scorer drains the thread-local call log
+                    # internally and returns it under result["call_log"]; a
+                    # separate client.pop_call_log() here would read empty.
+                    call_summary = _preserve_call_log(result.get("call_log") or [])
                     raw_text = result.get("raw_text") or ""
                     row = {
                         "run_id": run_id,
@@ -389,15 +741,17 @@ def main() -> int:
                         "tokens": result.get("tokens"),
                         "call_log": call_summary,
                         "error": result.get("error"),
-                        "raw_text_preview": _maybe_truncate(raw_text, args.raw_preview_chars),
+                        # Full model output — no cap. Field name kept for downstream compat.
+                        "raw_text_preview": raw_text,
                     }
                 except Exception as exc:
                     elapsed = time.time() - t_row
                     error_text = f"{type(exc).__name__}: {exc}"
-                    if (
-                        args.row_error_policy == "record"
-                        and recorded_row_errors < args.max_recorded_errors
-                    ):
+                    cap_remaining = (
+                        args.max_recorded_errors is None
+                        or recorded_row_errors < args.max_recorded_errors
+                    )
+                    if args.row_error_policy == "record" and cap_remaining:
                         recorded_row_errors += 1
                         call_summary = _preserve_call_log(client.pop_call_log())
                         row = {

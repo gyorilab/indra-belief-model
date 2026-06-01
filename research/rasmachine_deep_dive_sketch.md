@@ -210,7 +210,7 @@ u2_per_probe_gold          absent
 
 No grayed-out checkbox, no `—`, no `n/a`. The word `absent` is the grammar. Muted weight, same row height as a present row — the absence occupies the same space presence would, so spatial expectation is honored. **Tufte: never an annotation when a mark of difference suffices** — the difference here is typographic weight, nothing more.
 
-A view with **all** truth_sets absent (a pure no-truth corpus evidence) still renders the panel — just seven `absent` rows. The panel is never hidden. This matches G4's honest-failure clause.
+A view with **all** truth_sets absent (a pure no-truth corpus evidence) still renders the panel — just seven `absent` rows. The panel is never hidden. This matches G4's unavailable-reason clause.
 
 ---
 

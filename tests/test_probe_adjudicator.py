@@ -298,7 +298,7 @@ def test_via_mediator_partial_direct_claim_incorrect() -> None:
                      (), ctx=EvidenceContext())
     # Note: subject/object present_as_subject/object → Stage 2 mediator gate
     # doesn't fire (only ra=via_mediator_partial); Stage 3 base=0.55 → correct.
-    # This is honest: probes say entities placed correctly, relation partial.
+    # Probes say entities placed correctly, relation partial.
     assert adj.verdict in ("correct", "incorrect")
     assert "chain_extraction_gap" in adj.reasons
 
