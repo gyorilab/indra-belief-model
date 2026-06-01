@@ -1,31 +1,80 @@
+<script lang="ts" module>
+	/** One scored (statement, evidence) row — the monolithic Focus.evidences shape. */
+	export interface BeliefEvidence {
+		evidence_hash: string;
+		source_api: string | null;
+		text: string | null;
+		our_score?: number | null;
+		verdict?: string | null;
+		confidence?: string | null;
+		bucket?: string | null;
+		reasoning?: string | null;
+		tier?: string | null;
+		grounding_status?: string | null;
+	}
+
+	/**
+	 * Map a report-taxonomy bucket to reader-facing language. The monolithic
+	 * scorer emits one bucket per evidence (no probe reason-codes anymore).
+	 */
+	const BUCKET_LABEL: Record<string, string> = {
+		semantic_incorrect: 'contradicts the claim',
+		reader_hallucination: 'reader hallucination',
+		no_evidence: 'no evidence in sentence',
+		incomplete_claim: 'incomplete claim',
+		hedged_evidence: 'hedged',
+		semantic_correct: 'supports the claim',
+		placeholder_text: 'placeholder',
+		row_error: 'scoring error'
+	};
+
+	export function bucketLabel(bucket: string | null | undefined): string {
+		if (!bucket) return 'unclassified';
+		return BUCKET_LABEL[bucket] ?? bucket.replace(/_/g, ' ');
+	}
+
+	/** Verdict → which end of the doubt↔trust ruler the dot sits on. */
+	export function verdictTone(v: string | null | undefined): 'doubt' | 'trust' | 'abstain' {
+		if (v === 'incorrect') return 'doubt';
+		if (v === 'correct') return 'trust';
+		return 'abstain';
+	}
+
+	/**
+	 * Reasoning may carry a leading "[TIER 2 LLM]" marker line; split it off so
+	 * we can show the remaining chain-of-thought as the body.
+	 */
+	export function reasoningParts(reasoning: string | null | undefined): {
+		tag: string | null;
+		body: string;
+	} {
+		if (!reasoning) return { tag: null, body: '' };
+		const m = reasoning.match(/^\s*(\[[^\]]+\])[ \t]*\n?/);
+		if (m) return { tag: m[1], body: reasoning.slice(m[0].length).trimStart() };
+		return { tag: null, body: reasoning };
+	}
+</script>
+
 <script lang="ts">
-	import type { ProbeAttribution, ProbeKind } from '$lib/probeAttribution';
 	import {
 		beliefSemantic,
-		evidenceParts,
-		extractProbeCue,
 		fmtBelief,
 		fmtDelta,
-		pluralS,
-		sentenceFromStatement,
 		shortHash,
-		type SentenceAgent
+		verdictDisplay
 	} from '$lib/format';
 
 	export interface BeliefPrimitiveProps {
 		stmt: {
 			stmt_hash: string;
 			indra_type: string;
-			agents: SentenceAgent[];
+			subject: string;
+			object: string;
 		};
 		our_score: number | null;
 		indra_score: number | null;
-		probes?: ProbeAttribution[];
-		evidences?: Array<{
-			evidence_hash: string;
-			source_api: string | null;
-			text: string | null;
-		}>;
+		/** The statement's per-evidence rows (monolithic single-call rows). */
+		evidences?: BeliefEvidence[];
 		why_this_one?: string;
 		mode?: 'full' | 'compact';
 		/** When true, the card is clickable and behaves as <a href={href}>. */
@@ -45,7 +94,6 @@
 		stmt,
 		our_score,
 		indra_score,
-		probes = [],
 		evidences = [],
 		why_this_one,
 		mode = 'full',
@@ -53,91 +101,16 @@
 		level = 'h3'
 	}: BeliefPrimitiveProps = $props();
 
-	// Sub-heading (b-cause-h: "Why we doubt" / "How we read it" / "Evidence")
-	// tracks one level deeper than the main b-sentence so the document doesn't
-	// skip levels (e.g. h1 → h4 on the deep-dive page).
-	const subLevel = $derived(
-		level === 'h1' ? 'h2' : level === 'h2' ? 'h3' : 'h4'
-	);
+	// Sub-heading tracks one level deeper than the main sentence so the document
+	// doesn't skip levels (e.g. h1 → h4 on the deep-dive page).
+	const subLevel = $derived(level === 'h1' ? 'h2' : level === 'h2' ? 'h3' : 'h4');
 
-	const sentence = $derived(sentenceFromStatement(stmt.indra_type, stmt.agents));
+	// The biology sentence is rendered structurally as subject · type · object —
+	// matching the monolithic export, which carries subject/object as strings.
 	const delta = $derived(
 		our_score != null && indra_score != null ? our_score - indra_score : null
 	);
 	const semantic = $derived(beliefSemantic(our_score));
-	const probeOrder = $derived(
-		(['subject_role', 'object_role', 'relation_axis', 'scope'] as const).map((kind) =>
-			probes.find((p) => p.probe === kind) ?? null
-		)
-	);
-	const evShown = $derived(evidences.slice(0, 3));
-	const evMore = $derived(Math.max(0, evidences.length - evShown.length));
-
-	function probeLabel(kind: string): string {
-		return ({
-			subject_role: 'subj-role',
-			object_role: 'obj-role',
-			relation_axis: 'relation',
-			scope: 'scope'
-		})[kind] ?? kind;
-	}
-
-	function compactProbeCell(a: ProbeAttribution | null): string {
-		if (!a) return '·';
-		const c = a.contribution;
-		if (c > 0.6) return '█';
-		if (c > 0.2) return '▆';
-		if (c > -0.2) return '▃';
-		if (c > -0.6) return '▂';
-		return '▁';
-	}
-
-	/**
-	 * Probe answer → valence direction, qualitatively.
-	 * The scorer doesn't emit numerical weights per probe; it routes the
-	 * categorical answer through the adjudicator's decision table. Valence
-	 * here is just a *color cue* for the reader — green = the answer that
-	 * supports the claim's surface form; accent = the answer that pushes
-	 * against it. No magnitude implied.
-	 */
-	function valence(probe: ProbeKind, answer: string | null): 'pro' | 'con' | 'neutral' {
-		if (!answer || answer === 'abstain') return 'neutral';
-		if (probe === 'scope') {
-			if (answer === 'asserted') return 'pro';
-			if (answer === 'negated') return 'con';
-			return 'neutral';
-		}
-		if (probe === 'subject_role') {
-			if (answer === 'present_as_subject') return 'pro';
-			if (answer === 'present_as_object' || answer === 'absent' || answer === 'present_as_decoy') return 'con';
-			return 'neutral';
-		}
-		if (probe === 'object_role') {
-			if (answer === 'present_as_object') return 'pro';
-			if (answer === 'present_as_subject' || answer === 'absent' || answer === 'present_as_decoy') return 'con';
-			return 'neutral';
-		}
-		if (probe === 'relation_axis') {
-			if (answer === 'direct_sign_match' || answer === 'via_mediator') return 'pro';
-			if (
-				answer === 'direct_sign_mismatch' ||
-				answer === 'direct_axis_mismatch' ||
-				answer === 'direct_partner_mismatch' ||
-				answer === 'no_relation'
-			)
-				return 'con';
-			return 'neutral';
-		}
-		return 'neutral';
-	}
-
-	/**
-	 * The seven verdict-confidence buckets the scorer can emit, defined in
-	 * `src/indra_belief/scorers/commitments.py::_VERDICT_SCORE`. Showing
-	 * them as ladder ticks on the score axis surfaces that the score is
-	 * categorical, not continuous.
-	 */
-	const SCORE_BUCKETS = [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95];
 
 	function beliefPhrase(b: number | null): string {
 		if (b == null) return 'unscored';
@@ -175,31 +148,11 @@
 		return `We score this ${our_score.toFixed(2)} (${ourP}) · ${comparison}.`;
 	});
 
-	const invokedProbes = $derived(probes.filter((p) => p.answer != null && p.answer !== 'abstain'));
-	const notInvokedKinds = $derived(
-		(['subject_role', 'object_role', 'relation_axis', 'scope'] as const)
-			.filter((k) => !invokedProbes.some((p) => p.probe === k))
-			.map(probeLabel)
-	);
-
 	/**
-	 * Decisive criterion — kept honest now: when exactly one probe fires
-	 * (others didn't run or abstained), that single probe carries the entire
-	 * categorical signal so it deserves the visual emphasis. With ≥2 firing
-	 * probes we cannot say which was decisive from the persisted output
-	 * alone (the adjudicator's decision table would have to be re-evaluated
-	 * per row), so we don't claim.
+	 * The seven verdict-confidence buckets the scorer can emit. Showing them as
+	 * ladder ticks on the score axis surfaces that the score is categorical.
 	 */
-	const decisiveProbe = $derived(invokedProbes.length === 1 ? invokedProbes[0] : null);
-
-	/** Cue from the first invoked probe that has one — used to highlight inside the evidence text. */
-	const primaryCue = $derived.by(() => {
-		for (const p of invokedProbes) {
-			const c = extractProbeCue(p.rationale);
-			if (c) return c;
-		}
-		return null;
-	});
+	const SCORE_BUCKETS = [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95];
 
 	/** Score-axis geometry: viewBox 0..320 wide, ticks land at x = margin + score * track. */
 	const AXIS_W = 320;
@@ -210,12 +163,8 @@
 	}
 
 	/**
-	 * Adaptive label anchor: when a tick sits near an SVG edge, centered-text
-	 * would clip past the viewBox. Hug the edge instead.
-	 *  - tick > AXIS_W − labelHalf   → anchor: end at the tick (text extends leftward)
-	 *  - tick < labelHalf            → anchor: start at the tick (text extends rightward)
-	 *  - else                        → anchor: middle at the tick
-	 * labelHalf is a conservative pixel estimate at font-size 8 for "indra 1.00".
+	 * Adaptive label anchor for the simple two-marker axis: hug the edge when a
+	 * tick sits near the viewBox boundary so centered text doesn't clip.
 	 */
 	function labelAnchor(tx: number): { anchor: 'middle' | 'start' | 'end'; x: number } {
 		const labelHalf = 26;
@@ -223,11 +172,77 @@
 		if (tx - labelHalf < 0) return { anchor: 'start', x: tx };
 		return { anchor: 'middle', x: tx };
 	}
+
+	// ── Evidence-spectrum "why we doubt" (progressive disclosure) ───────────────
+	// Level 1: the spectrum (all evidences as dots on the same doubt↔trust ruler).
+	// Level 2: the reason tally (bucket distribution — the categorical "why").
+	// Level 3: open an evidence → sentence + verdict/confidence + reasoning + tier.
+	// (Monolithic has NO probes and NO per-probe LLM calls — the rationale IS the
+	//  single `reasoning` field.)
+	const hasSpectrum = $derived(
+		mode === 'full' && evidences.some((e) => e.our_score != null)
+	);
+
+	let openEv = $state<string | null>(null);
+	let showFullReasoning = $state<string | null>(null);
+
+	function toggleEv(hash: string) {
+		openEv = openEv === hash ? null : hash;
+		showFullReasoning = null;
+	}
+
+	const LANE_GAP = 11;
+	const DOT_BASE_Y = 14; // top lane baseline; lanes stack downward toward the axis
+	/** Greedy vertical stacking: dots whose x is within 13px share a column, so
+	 * near-identical scores fan out instead of overplotting. */
+	const spectrum = $derived.by(() => {
+		const scored = evidences.filter((e) => e.our_score != null);
+		const sorted = [...scored].sort((a, b) => a.our_score! - b.our_score!);
+		const dots: Array<{ e: BeliefEvidence; x: number; lane: number }> = [];
+		for (const e of sorted) {
+			const x = tickX(e.our_score!);
+			let lane = 0;
+			while (dots.some((d) => d.lane === lane && Math.abs(d.x - x) < 13)) lane++;
+			dots.push({ e, x, lane });
+		}
+		const maxLane = dots.reduce((m, d) => Math.max(m, d.lane), 0);
+		return { dots, maxLane };
+	});
+	const specAxisY = $derived(DOT_BASE_Y + spectrum.maxLane * LANE_GAP + 14);
+	const specH = $derived(specAxisY + 18);
+
+	/** L2 reason tally, built from each evidence's report-taxonomy bucket. */
+	const reasonTally = $derived.by(() => {
+		if (!hasSpectrum) return [] as Array<{ bucket: string; label: string; count: number }>;
+		const counts = new Map<string, number>();
+		for (const e of evidences) {
+			const b = e.bucket ?? 'unclassified';
+			counts.set(b, (counts.get(b) ?? 0) + 1);
+		}
+		return [...counts]
+			.map(([bucket, count]) => ({ bucket, label: bucketLabel(bucket), count }))
+			.sort((a, b) => b.count - a.count);
+	});
+
+	/** Clamp a long evidence paragraph to its head; "only text when needed". */
+	function clampText(text: string | null, max = 320): string {
+		if (!text) return '(no text)';
+		return text.length > max ? text.slice(0, max).trimEnd() + '…' : text;
+	}
+
+	const REASONING_CLAMP = 280;
+	function reasoningIsLong(reasoning: string | null | undefined): boolean {
+		return reasoningParts(reasoning).body.length > REASONING_CLAMP;
+	}
+	function reasoningClamped(reasoning: string | null | undefined): string {
+		const body = reasoningParts(reasoning).body;
+		return body.length > REASONING_CLAMP ? body.slice(0, REASONING_CLAMP).trimEnd() + '…' : body;
+	}
 </script>
 
 {#if mode === 'compact'}
 	{#snippet compactBody()}
-		<span class="b-sentence">{sentence}</span>
+		<span class="b-sentence">{stmt.subject} <span class="b-verb">{stmt.indra_type}</span> {stmt.object}</span>
 		<span class="b-num-pair" title={delta == null ? '' : `Δ ${fmtDelta(delta)} (we ${delta < 0 ? 'doubt' : delta > 0 ? 'support' : 'match'} more than INDRA)`}>
 			<span class="b-num-pair-label">we</span>
 			<span class="b-score-compact b-{semantic}">{fmtBelief(our_score)}</span>
@@ -247,14 +262,76 @@
 	{/if}
 {:else}
 	<article class="b-card b-card-full">
-		<svelte:element this={level} class="b-sentence b-sentence-full">{sentence}</svelte:element>
+		<svelte:element this={level} class="b-sentence b-sentence-full">{stmt.subject} <span class="b-verb">{stmt.indra_type}</span> {stmt.object}</svelte:element>
 		<p class="b-verdict-line">{verdictLine}</p>
 		<div class="b-meta">
 			<span class="b-type">{stmt.indra_type}</span>
 			<span class="b-hash">{shortHash(stmt.stmt_hash)}</span>
 		</div>
 
-		{#if our_score != null || indra_score != null}
+		{#if hasSpectrum}
+			<!-- Merged ruler: one 0→1 scale carrying the per-evidence distribution
+			     (dots above), our mean (caret), INDRA's prior (hollow), and the 7
+			     verdict×confidence buckets. The mean reads as the dots' centroid. -->
+			<div
+				class="ruler"
+				role="img"
+				aria-label={`${evidences.length} evidences on a 0-to-1 belief scale from doubt to trust; our mean ${fmtBelief(our_score)}, INDRA prior ${fmtBelief(indra_score)}`}
+			>
+				<svg viewBox="0 0 {AXIS_W} {specH}" class="ruler-svg" preserveAspectRatio="xMidYMid meet">
+					<line x1={AXIS_MARGIN} y1={specAxisY} x2={AXIS_W - AXIS_MARGIN} y2={specAxisY} stroke="var(--ink)" stroke-width="1" />
+					<line x1={AXIS_MARGIN} y1={specAxisY - 4} x2={AXIS_MARGIN} y2={specAxisY + 4} stroke="var(--ink-faint)" />
+					<line x1={AXIS_W - AXIS_MARGIN} y1={specAxisY - 4} x2={AXIS_W - AXIS_MARGIN} y2={specAxisY + 4} stroke="var(--ink-faint)" />
+					<!-- 7 verdict-bucket ticks (categorical rungs the prod scorer can hit) -->
+					{#each SCORE_BUCKETS as b}
+						<line x1={tickX(b)} y1={specAxisY - 3} x2={tickX(b)} y2={specAxisY + 3} stroke="var(--ink-faint)" stroke-width="0.6" opacity="0.65" />
+					{/each}
+					<!-- ours: dashed guide from the cluster down to a caret on the line -->
+					{#if our_score != null}
+						<line x1={tickX(our_score)} y1={DOT_BASE_Y - 6} x2={tickX(our_score)} y2={specAxisY} stroke="var(--accent)" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.55" />
+						<path d={`M ${tickX(our_score)} ${specAxisY + 2} l -4.5 7 l 9 0 z`} fill="var(--accent)" />
+					{/if}
+					<!-- INDRA prior: hollow circle on the line -->
+					{#if indra_score != null}
+						<circle cx={tickX(indra_score)} cy={specAxisY} r="4.5" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.4" />
+					{/if}
+					<!-- evidence dots above the line, stacked when scores collide -->
+					{#each spectrum.dots as d (d.e.evidence_hash)}
+						{@const cy = specAxisY - 11 - d.lane * LANE_GAP}
+						<line x1={d.x} y1={cy} x2={d.x} y2={specAxisY - 1} stroke="var(--rule)" stroke-width="0.8" />
+						<circle
+							class="dot tone-{verdictTone(d.e.verdict)}"
+							class:dot-open={openEv === d.e.evidence_hash}
+							cx={d.x}
+							cy={cy}
+							r="4"
+							role="button"
+							tabindex="0"
+							aria-label={`evidence ${shortHash(d.e.evidence_hash)}, score ${d.e.our_score?.toFixed(2)}, ${verdictDisplay(d.e.verdict)} — open`}
+							onclick={() => toggleEv(d.e.evidence_hash)}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									e.preventDefault();
+									toggleEv(d.e.evidence_hash);
+								}
+							}}
+						/>
+					{/each}
+				</svg>
+				<div class="ruler-ends">
+					<span>doubt</span>
+					<span class="ruler-legend">
+						<span class="lg lg-ev">●</span> evidence
+						<span class="lg lg-mean">▲</span> ours {fmtBelief(our_score)}
+						<span class="lg lg-indra">○</span> indra {fmtBelief(indra_score)}
+					</span>
+					<span>trust</span>
+				</div>
+				<p class="ruler-note">
+					each ● is one evidence on the same 0–1 scale; ours snaps to 7 verdict×confidence buckets, INDRA's prior is continuous
+				</p>
+			</div>
+		{:else if our_score != null || indra_score != null}
 			{@const anyNearZero = (our_score != null && our_score <= 0.05) || (indra_score != null && indra_score <= 0.05)}
 			{@const anyNearOne = (our_score != null && our_score >= 0.95) || (indra_score != null && indra_score >= 0.95)}
 			<div class="b-axis-wrap" role="img" aria-label="belief scale 0 to 1; ours above the axis, INDRA below">
@@ -296,49 +373,65 @@
 			</div>
 		{/if}
 
-		{#if invokedProbes.length > 0 || evidences.length > 0}
-			<div class="b-cause">
-				<svelte:element this={subLevel} class="b-cause-h">{decisiveProbe ? 'Why we doubt' : invokedProbes.length > 0 ? 'How we read it' : 'Evidence'}</svelte:element>
-				{#if invokedProbes.length > 0}
-					<p class="b-cause-legend">
-						probes produce categorical answers — the adjudicator combines them via a 7-bucket decision table, not by summing weights
-					</p>
-				{/if}
+		{#if hasSpectrum}
+			<section class="why">
+				<svelte:element this={subLevel} class="why-h">Why we doubt</svelte:element>
 
-				{#each evShown as e}
-					{@const parts = evidenceParts(e.text, primaryCue)}
-					<div class="b-cause-ev">
-						<div class="b-cause-ev-line">
-							<span class="b-ev-src">[{e.source_api ?? 'no source'}]</span>
-							<span class="b-ev-text">{#each parts as part}{#if part.highlight}<mark class="b-ev-cue">{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
-						</div>
-					</div>
-				{/each}
-				{#if evMore > 0}
-					<p class="b-cause-evmore">…and {evMore} more evidence{evMore === 1 ? '' : 's'}</p>
-				{/if}
+				<!-- L2 · reason tally: the categorical "why", sized by count -->
+				<ul class="reasons" aria-label="reasons across evidences">
+					{#each reasonTally as r (r.bucket)}
+						<li class="reason-tok"><span class="reason-n">{r.count}</span> {r.label}</li>
+					{/each}
+				</ul>
 
-				{#each invokedProbes as p}
-					{@const v = valence(p.probe, p.answer)}
-					<div class="b-probe-line" class:b-probe-decisive={p === decisiveProbe}>
-						<span class="b-probe-arrow">↳</span>
-						<span class="b-probe-name">{probeLabel(p.probe)}</span>
-						<span class="b-probe-answer b-probe-valence-{v}">{p.answer ?? '—'}</span>
-						<span class="b-probe-meta">·{p.confidence ?? '—'}{p.source === 'substrate' ? ' · substrate' : p.source === 'llm' ? ' · llm' : ''}</span>
-						{#if p.rationale}
-							<span class="b-probe-rationale">— {p.rationale}</span>
-						{/if}
-						{#if p === decisiveProbe}<span class="b-probe-decisive-tag">sole probe that fired</span>{/if}
-					</div>
-				{/each}
+				<!-- L3 · drill: evidence sentence → verdict/confidence → the model's reasoning -->
+				<ul class="ev-list">
+					{#each evidences as e (e.evidence_hash)}
+						{@const open = openEv === e.evidence_hash}
+						{@const rparts = reasoningParts(e.reasoning)}
+						<li class="ev" class:ev-open={open}>
+							<button class="ev-row" aria-expanded={open} onclick={() => toggleEv(e.evidence_hash)}>
+								<span class="ev-swatch tone-{verdictTone(e.verdict)}"></span>
+								<span class="ev-score">{e.our_score?.toFixed(2) ?? '—'}</span>
+								<span class="ev-verdict">{verdictDisplay(e.verdict)}{e.confidence ? ` · ${e.confidence}` : ''}</span>
+								<span class="ev-reason">{bucketLabel(e.bucket)}</span>
+								<span class="ev-src">[{e.source_api ?? 'no source'}]</span>
+								<span class="ev-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+							</button>
+							{#if open}
+								<div class="ev-body">
+									<p class="ev-sentence">{clampText(e.text)}</p>
 
-				{#if notInvokedKinds.length > 0 && invokedProbes.length > 0}
-					<p class="b-cause-footer">
-						<span class="b-cause-footer-label">other probes:</span>
-						{notInvokedKinds.join(', ')} <span class="muted">— did not run (short-circuit on this evidence)</span>
-					</p>
-				{/if}
-			</div>
+									<div class="ev-tags">
+										<span class="ev-tag">verdict <b class="tone-fg-{verdictTone(e.verdict)}">{verdictDisplay(e.verdict)}</b></span>
+										{#if e.confidence}<span class="ev-tag">confidence <b>{e.confidence}</b></span>{/if}
+										{#if e.bucket}<span class="ev-tag">bucket <b>{bucketLabel(e.bucket)}</b></span>{/if}
+										{#if e.tier}<span class="ev-tag">tier <b>{e.tier}</b></span>{/if}
+										{#if e.grounding_status}<span class="ev-tag">grounding <b>{e.grounding_status}</b></span>{/if}
+									</div>
+
+									{#if rparts.body}
+										<div class="reasoning">
+											<div class="reasoning-meta">
+												<span class="reasoning-lbl">reasoned</span>{#if rparts.tag}<span class="reasoning-tier">{rparts.tag}</span>{/if}
+											</div>
+											<p class="reasoning-body">{showFullReasoning === e.evidence_hash || !reasoningIsLong(e.reasoning) ? rparts.body : reasoningClamped(e.reasoning)}</p>
+											{#if reasoningIsLong(e.reasoning)}
+												<button
+													class="reasoning-toggle"
+													onclick={() => (showFullReasoning = showFullReasoning === e.evidence_hash ? null : e.evidence_hash)}
+												>{showFullReasoning === e.evidence_hash ? '− less' : '+ full reasoning'}</button>
+											{/if}
+										</div>
+									{:else}
+										<p class="reasoning-empty">no reasoning recorded for this evidence</p>
+									{/if}
+								</div>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			</section>
 		{/if}
 
 		{#if why_this_one}
@@ -377,6 +470,14 @@
 		font-style: italic;
 		color: var(--ink);
 	}
+	.b-verb {
+		font-style: normal;
+		font-family: var(--mono);
+		font-size: 0.82em;
+		color: var(--ink-muted);
+		text-transform: lowercase;
+		letter-spacing: 0.02em;
+	}
 	.b-sentence-full {
 		font-size: 1.25rem;
 		font-weight: 400;
@@ -408,10 +509,6 @@
 	.b-mid { color: var(--ink); }
 	.b-absent { color: var(--ink-faint); }
 
-	.b-delta-pos { color: #2a6f2a; }
-	.b-delta-neg { color: var(--accent); }
-	.b-delta-na { color: var(--ink-faint); }
-
 	/* Score axis — comparison as position */
 	.b-axis-wrap {
 		margin: 0.6rem 0 1.2rem;
@@ -442,124 +539,6 @@
 	}
 	:global(.b-axis-label-ours) { fill: var(--accent); font-weight: 500; }
 	:global(.b-axis-label-indra) { fill: var(--ink-muted); }
-
-	/* Cause section — what drove the score */
-	.b-cause {
-		margin-top: 0.4rem;
-	}
-	.b-cause-h {
-		font-family: var(--mono);
-		font-size: 0.72rem;
-		color: var(--ink-muted);
-		text-transform: lowercase;
-		letter-spacing: 0.04em;
-		margin: 0 0 0.4rem;
-		font-weight: 500;
-	}
-	.b-cause-legend {
-		font-family: var(--serif);
-		font-style: italic;
-		font-size: 0.84rem;
-		color: var(--ink-faint);
-		margin: 0 0 0.6rem;
-		line-height: 1.45;
-	}
-	.b-cause-ev {
-		margin: 0.2rem 0;
-	}
-	.b-cause-ev-line {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: 0.6rem;
-		align-items: baseline;
-	}
-	.b-ev-src {
-		font-family: var(--mono);
-		font-size: 0.72rem;
-		color: var(--ink-faint);
-	}
-	.b-ev-text {
-		font-family: var(--serif);
-		font-style: italic;
-		color: var(--ink);
-		font-size: 1rem;
-		line-height: 1.45;
-	}
-	.b-ev-cue {
-		background: var(--accent-wash);
-		color: var(--accent);
-		padding: 0 0.15em;
-		font-style: italic;
-		font-weight: 500;
-		border-bottom: 1px solid var(--accent);
-	}
-	.b-cause-evmore {
-		font-family: var(--mono);
-		font-size: 0.72rem;
-		color: var(--ink-faint);
-		margin: 0.2rem 0;
-		font-style: italic;
-	}
-
-	/* Probe lines (paired with evidence above) */
-	.b-probe-line {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		align-items: baseline;
-		margin: 0.2rem 0 0.2rem 1.4rem;
-		font-family: var(--mono);
-		font-size: 0.78rem;
-		padding-left: 0.4rem;
-		border-left: 2px solid var(--rule);
-	}
-	.b-probe-decisive {
-		border-left-color: var(--accent);
-	}
-	.b-probe-arrow {
-		color: var(--ink-faint);
-		margin-left: -1.2rem;
-		font-family: var(--mono);
-	}
-	.b-probe-name {
-		color: var(--ink-muted);
-		min-width: 5rem;
-	}
-	.b-probe-answer {
-		font-weight: 500;
-	}
-	.b-probe-valence-pro { color: var(--ok-green); }
-	.b-probe-valence-con { color: var(--accent); }
-	.b-probe-valence-neutral { color: var(--ink); }
-	.b-probe-meta {
-		color: var(--ink-faint);
-		font-size: 0.72rem;
-	}
-	.b-probe-rationale {
-		color: var(--ink-muted);
-		font-family: var(--serif);
-		font-style: italic;
-		font-size: 0.88rem;
-		flex-basis: 100%;
-		margin-left: 0.4rem;
-	}
-	.b-probe-decisive-tag {
-		color: var(--ink-faint);
-		font-family: var(--mono);
-		font-size: 0.7rem;
-		font-style: italic;
-	}
-
-	.b-cause-footer {
-		margin: 0.8rem 0 0;
-		font-family: var(--mono);
-		font-size: 0.72rem;
-		color: var(--ink-muted);
-	}
-	.b-cause-footer-label {
-		color: var(--ink-faint);
-		margin-right: 0.3rem;
-	}
 
 	.b-why {
 		margin-top: 1rem;
@@ -603,5 +582,285 @@
 		font-family: var(--mono);
 		font-size: 0.7rem;
 		color: var(--ink-faint);
+	}
+
+	/* ── Evidence-spectrum "why we doubt" ─────────────────────────────────── */
+	.why {
+		margin-top: 1.4rem;
+	}
+	.why-h {
+		font-family: var(--mono);
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: lowercase;
+		color: var(--ink-muted);
+		margin: 0 0 0.5rem;
+	}
+
+	/* Merged ruler: distribution + mean + prior + buckets on one scale */
+	.ruler {
+		max-width: 30rem;
+		margin: 1rem 0 1.1rem;
+	}
+	.ruler-svg {
+		display: block;
+		width: 100%;
+		height: auto;
+		overflow: visible;
+	}
+	.dot {
+		cursor: pointer;
+		transition:
+			r 120ms ease-out,
+			fill 120ms ease-out;
+	}
+	.dot:hover {
+		r: 5;
+	}
+	.dot:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+	.dot.tone-doubt {
+		fill: var(--accent);
+	}
+	.dot.tone-trust {
+		fill: var(--ink);
+	}
+	.dot.tone-abstain {
+		fill: var(--paper);
+		stroke: var(--ink-faint);
+		stroke-width: 1.2;
+	}
+	.dot.dot-open {
+		stroke: var(--ink);
+		stroke-width: 1.6;
+	}
+	.ruler-ends {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 0.75rem;
+		font-family: var(--mono);
+		font-size: 0.64rem;
+		letter-spacing: 0.04em;
+		color: var(--ink-faint);
+		margin-top: 0.15rem;
+	}
+	.ruler-legend {
+		color: var(--ink-muted);
+		display: inline-flex;
+		gap: 0.55rem;
+		flex-wrap: wrap;
+		justify-content: center;
+	}
+	.lg {
+		font-size: 0.72rem;
+		line-height: 1;
+	}
+	.lg-ev {
+		color: var(--accent);
+	}
+	.lg-mean {
+		color: var(--accent);
+	}
+	.lg-indra {
+		color: var(--ink);
+	}
+	.ruler-note {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.72rem;
+		line-height: 1.4;
+		color: var(--ink-faint);
+		margin: 0.4rem 0 0;
+		max-width: 30rem;
+	}
+
+	/* L2 · reason tally */
+	.reasons {
+		list-style: none;
+		margin: 0 0 1rem;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem 0.5rem;
+	}
+	.reason-tok {
+		font-family: var(--serif);
+		font-size: 0.82rem;
+		color: var(--ink-muted);
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.3rem;
+	}
+	.reason-tok + .reason-tok {
+		padding-left: 0.5rem;
+		border-left: 1px solid var(--rule);
+	}
+	.reason-n {
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--ink);
+	}
+
+	/* L3 · evidence list */
+	.ev-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		border-top: 1px solid var(--rule);
+	}
+	.ev {
+		border-bottom: 1px solid var(--rule);
+	}
+	.ev-row {
+		display: grid;
+		grid-template-columns: auto 3ch minmax(8rem, auto) 1fr auto auto;
+		align-items: baseline;
+		gap: 0.6rem;
+		width: 100%;
+		padding: 0.42rem 0.1rem;
+		background: none;
+		border: none;
+		text-align: left;
+		cursor: pointer;
+		font-family: var(--serif);
+		color: var(--ink);
+		transition: background 120ms ease-out;
+	}
+	.ev-row:hover {
+		background: var(--accent-wash);
+	}
+	.ev-swatch {
+		width: 0.6rem;
+		height: 0.6rem;
+		border-radius: 50%;
+		align-self: center;
+	}
+	.ev-swatch.tone-doubt {
+		background: var(--accent);
+	}
+	.ev-swatch.tone-trust {
+		background: var(--ink);
+	}
+	.ev-swatch.tone-abstain {
+		background: var(--paper);
+		box-shadow: inset 0 0 0 1.2px var(--ink-faint);
+	}
+	.ev-score {
+		font-family: var(--mono);
+		font-size: 0.82rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+	.ev-verdict {
+		font-size: 0.82rem;
+		color: var(--ink-muted);
+	}
+	.ev-reason {
+		font-size: 0.82rem;
+		color: var(--ink);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.ev-src {
+		font-family: var(--mono);
+		font-size: 0.66rem;
+		color: var(--ink-faint);
+	}
+	.ev-caret {
+		font-size: 0.7rem;
+		color: var(--ink-faint);
+	}
+
+	/* L3 · expanded body */
+	.ev-body {
+		padding: 0.2rem 0.1rem 0.9rem 1.2rem;
+		border-left: 2px solid var(--rule);
+		margin-left: 0.18rem;
+	}
+	.ev-sentence {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.92rem;
+		line-height: 1.5;
+		color: var(--ink-muted);
+		margin: 0.2rem 0 0.7rem;
+	}
+
+	/* verdict / confidence / bucket / tier / grounding tags */
+	.ev-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem 0.7rem;
+		font-family: var(--mono);
+		font-size: 0.7rem;
+		color: var(--ink-faint);
+		margin-bottom: 0.6rem;
+	}
+	.ev-tag b {
+		color: var(--ink);
+		font-weight: 600;
+		margin-left: 0.2rem;
+	}
+	.tone-fg-doubt { color: var(--accent); }
+	.tone-fg-trust { color: var(--ink); }
+	.tone-fg-abstain { color: var(--ink-faint); }
+
+	/* The single chain-of-thought reasoning field (replaces the probe call drill) */
+	.reasoning {
+		margin: 0.2rem 0 0.2rem;
+		padding: 0.55rem 0.7rem;
+		background: var(--accent-wash);
+		border-left: 2px solid var(--accent);
+		font-family: var(--mono);
+	}
+	.reasoning-meta {
+		display: flex;
+		gap: 0.5rem;
+		align-items: baseline;
+		font-size: 0.64rem;
+		color: var(--ink-faint);
+		margin-bottom: 0.35rem;
+	}
+	.reasoning-lbl {
+		text-transform: lowercase;
+		letter-spacing: 0.02em;
+	}
+	.reasoning-tier {
+		color: var(--accent);
+		font-weight: 600;
+		letter-spacing: 0.02em;
+	}
+	.reasoning-body {
+		font-size: 0.76rem;
+		line-height: 1.55;
+		color: var(--ink);
+		margin: 0;
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+	.reasoning-toggle {
+		margin-top: 0.4rem;
+		padding: 0;
+		background: none;
+		border: none;
+		font-family: var(--mono);
+		font-size: 0.66rem;
+		color: var(--ink-faint);
+		cursor: pointer;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.reasoning-empty {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.78rem;
+		color: var(--ink-faint);
+		margin: 0.2rem 0 0;
 	}
 </style>

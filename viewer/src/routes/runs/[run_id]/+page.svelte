@@ -1,138 +1,59 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import HeuristicCoverage from '$lib/components/HeuristicCoverage.svelte';
-	import TraceFidelity from '$lib/components/TraceFidelity.svelte';
 
 	let { data }: { data: PageData } = $props();
-	const m = $derived(data.meta);
-	const n = $derived(data.narrative);
-	const cov = $derived(data.coverage);
-	const fidelity = $derived(data.fidelity);
-	const allRuns = $derived(data.allRuns);
+	const run = $derived(data.run);
+	const v = $derived(data.validity);
+	const residual = $derived(data.residual);
 
-		type DenominatorRow = {
-			label: string;
-			n: number | null;
-			panel: string;
-			source: string;
-			meaning: string;
-			href?: string | null;
-		};
-
-	function fmtCost(c: number | null): string {
-		if (c == null) return '—';
-		if (c < 0.01) return '<$0.01';
-		if (c < 1) return '$' + c.toFixed(2);
-		if (c < 100) return '$' + c.toFixed(2);
-		return '$' + c.toFixed(0);
-	}
-
-	function actualCostLabel(status: string, c: number | null): string {
-		if (status === 'succeeded') return fmtCost(c);
-		if (c == null) return 'not finalized';
-		return `${fmtCost(c)} partial`;
-	}
-
-	function statementCountLabel(status: string, n: number | null): string {
-		if (n == null) return '—';
-		return status === 'succeeded' ? String(n) : `${n} target`;
-	}
-
-	function evidenceCountLabel(status: string, n: number | null): string {
-		if (n == null) return '—';
-		return status === 'succeeded' ? String(n) : `${n} persisted`;
-	}
-
-	function fmtCount(n: number | null): string {
+	function fmtCount(n: number | null | undefined): string {
 		return n == null ? '—' : n.toLocaleString('en-US');
 	}
 
-	function fmtSigned(n: number, digits = 3): string {
+	function fmt3(n: number | null | undefined): string {
+		return n == null ? '—' : n.toFixed(3);
+	}
+
+	function fmtSigned(n: number | null | undefined, digits = 3): string {
+		if (n == null) return '—';
 		const sign = n >= 0 ? '+' : '−';
 		return `${sign}${Math.abs(n).toFixed(digits)}`;
 	}
 
-	function archMark(architecture: string | null | undefined): string {
-		if (architecture === 'monolithic') return '[M]';
-		if (architecture === 'decomposed') return '[D]';
-		return '[?]';
+	// Verdict mix, ordered correct → incorrect → unscored → rest.
+	const VERDICT_ORDER: Record<string, number> = { correct: 0, incorrect: 1, unscored: 9 };
+	const verdicts = $derived(
+		[...v.verdicts].sort(
+			(a, b) => (VERDICT_ORDER[a.verdict] ?? 5) - (VERDICT_ORDER[b.verdict] ?? 5) || b.n - a.n
+		)
+	);
+	const verdictTotal = $derived(verdicts.reduce((s, x) => s + x.n, 0));
+
+	const bucketTotal = $derived(v.buckets.reduce((s, x) => s + x.n, 0));
+
+	// Residual histogram: 11 bins spanning [-1, +1]; tallest bar = 100% height.
+	const residualMax = $derived(residual ? Math.max(1, ...residual.bins) : 1);
+	function binLabel(i: number, n: number): string {
+		const lo = (-1 + (2 * i) / n).toFixed(2);
+		const hi = (-1 + (2 * (i + 1)) / n).toFixed(2);
+		return `${lo} … ${hi}`;
 	}
 
-	function comparisonBlockedIsArchitecture(reason: string | null): boolean {
-		return Boolean(reason?.includes('across architectures'));
+	function verdictClass(verdict: string): string {
+		if (verdict === 'correct') return 'v-correct';
+		if (verdict === 'incorrect') return 'v-incorrect';
+		return 'v-other';
 	}
+</script>
 
-	const compareOptions = $derived(
-		allRuns.filter((r) => r.run_id !== m.run_id && r.architecture === m.architecture)
-	);
-	const succeededWithoutScorerRows = $derived(
-		m.status === 'succeeded' &&
-		(m.n_stmts ?? 0) > 0 &&
-		(m.n_scorer_steps ?? 0) === 0
-	);
-	const denominatorRows = $derived.by((): DenominatorRow[] => {
-		const rows: DenominatorRow[] = [
-			{
-				label: 'target statements',
-				n: m.n_stmts,
-				panel: 'run scope and cost preflight',
-				source: 'score_run.n_stmts',
-				meaning: 'requested statement input; not proof that scoring output exists'
-			},
-			{
-				label: 'persisted scorer steps',
-				n: m.n_scorer_steps,
-				panel: 'storage plane',
-				source: 'scorer_step rows',
-				meaning: 'append-only rows written by the worker for this run'
-			}
-		];
-		if (fidelity) {
-			rows.push({
-				label: 'trace evidence states',
-				n: fidelity.n_evidences,
-				panel: 'trace fidelity rail and detail table',
-				source: 'trace-state CTE',
-				meaning: 'one evidence-level trace state for each evidence with persisted step evidence'
-			});
-		}
-		if (cov) {
-			rows.push(
-				{
-					label: 'aggregate verdict evidence',
-					n: cov.n_evidences,
-					panel: 'verdict, belief, cost, latency',
-					source: "scorer_step where step_kind='aggregate'",
-					meaning: 'completed aggregate rows; architecture-blind metric denominator',
-					href: `/runs/${m.run_id}/cohort`
-				},
-				{
-					label: 'probe coverage evidence',
-					n: cov.n_probe_evidences,
-					panel: 'four-probe substrate/LLM coverage',
-					source: 'substrate_route/probe rows',
-					meaning: 'decomposed rows with persisted probe slots; coverage rates use this denominator',
-					href: cov.n_probe_evidences > 0 ? `/runs/${m.run_id}/cohort?probe_coverage=present` : null
-				}
-			);
-		}
-		return rows;
-	});
-	const denominatorDiverges = $derived.by(() => {
-		const counts = new Set(denominatorRows.map((row) => row.n).filter((n): n is number => n != null));
-		return counts.size > 1;
-	});
-	</script>
-
-<svelte:head><title>{m.run_id.slice(0, 8)} · run · INDRA Belief</title></svelte:head>
+<svelte:head><title>{run.run_id.slice(0, 8)} · run · INDRA Belief</title></svelte:head>
 
 <header>
 	<div class="crumb">
-		<a href="/">corpus</a><span class="sep"> / </span><strong>run {m.run_id.slice(0, 8)}</strong>
+		<a href="/runs">runs</a><span class="sep"> / </span><strong>{run.run_id.slice(0, 8)}</strong>
 	</div>
 	<div class="meta">
-		<a href={`/runs/${m.run_id}/repairs`} class="nav-link">repair backlog</a>
-		<a href="/" class="nav-link">← dashboard</a>
+		<a class="nav-link" href="/statements">statements</a>
 	</div>
 </header>
 
@@ -140,162 +61,184 @@
 	<section class="run-meta">
 		<h1 class="run-h">
 			<span class="muted">run</span>
-			<code>{m.run_id.slice(0, 8)}</code>
-			<span class={`run-arch run-arch-${m.architecture}`} title={`architecture: ${m.architecture}`}>{archMark(m.architecture)}</span>
+			<code>{run.run_id.slice(0, 8)}</code>
 			<span class="muted">·</span>
-			<code class="run-version">{m.scorer_version}</code>
-			<span class="run-status run-status-{m.status}">{m.status}</span>
+			<span class="run-model">{run.model}</span>
+			{#if run.status}
+				<span class="run-status">{run.status}</span>
+			{/if}
 		</h1>
 		<dl class="run-fields">
-			<div><dt>started</dt><dd>{m.started_at}</dd></div>
-			<div><dt>architecture</dt><dd>{m.architecture}</dd></div>
-			{#if m.paired_run_group_id}
-				<div><dt>paired group</dt><dd><a href={`/pairs/${m.paired_run_group_id}`}>{m.paired_run_group_id}</a></dd></div>
-			{/if}
-			<div><dt>model</dt><dd>{m.model_id_default ?? '—'}</dd></div>
-			<div><dt>indra</dt><dd>{m.indra_version ?? '—'}</dd></div>
-			<div><dt>statements</dt><dd>{statementCountLabel(m.status, m.n_stmts)}</dd></div>
-			<div><dt>evidences</dt><dd>{evidenceCountLabel(m.status, m.n_evidences)}</dd></div>
-			<div><dt>est cost</dt><dd>{fmtCost(m.cost_estimate_usd)}</dd></div>
-			<div><dt>actual cost</dt><dd>{actualCostLabel(m.status, m.cost_actual_usd)}</dd></div>
-			{#if m.terminated_by || m.termination_reason}
-				<div><dt>termination</dt><dd>{m.terminated_by ?? 'unknown'}{#if m.termination_reason} · {m.termination_reason}{/if}</dd></div>
-			{/if}
+			<div><dt>model</dt><dd>{run.model}</dd></div>
+			<div><dt>generated</dt><dd>{run.generated_date ?? '—'}</dd></div>
+			<div><dt>statements</dt><dd>{fmtCount(run.n_statements)}</dd></div>
+			<div><dt>evidences</dt><dd>{fmtCount(run.n_evidences)}</dd></div>
+			<div><dt>scored evidence</dt><dd>{fmtCount(v.calibration.n)}</dd></div>
 		</dl>
-		{#if succeededWithoutScorerRows}
-			<div class="run-integrity-warning" role="note" aria-label="run output integrity warning">
-				<span>run output integrity</span>
-				<p>
-					This run is marked <strong>succeeded</strong> with {m.n_stmts} target statement{m.n_stmts === 1 ? '' : 's'}, but no persisted <code>scorer_step</code> rows. Trace, repair, and comparison panels are not evidence of completed scoring until the run is rerun or the database is repaired.
-				</p>
+	</section>
+
+	<section class="calibration">
+		<h2 class="sec-h">calibration vs INDRA belief</h2>
+		<p class="sec-sub">
+			Residual is our per-evidence score minus the published RasMachine belief, over the
+			{fmtCount(v.calibration.n)} evidence rows with a score, a belief, and a verdict.
+		</p>
+		<dl class="stat-row">
+			<div class="stat">
+				<dt>MAE</dt>
+				<dd>{fmt3(v.calibration.mae)}</dd>
+			</div>
+			<div class="stat">
+				<dt>bias</dt>
+				<dd>{fmtSigned(v.calibration.bias)}</dd>
+			</div>
+			<div class="stat">
+				<dt>mean residual</dt>
+				<dd>{fmtSigned(residual?.mean_residual)}</dd>
+			</div>
+		</dl>
+
+		{#if residual && residual.n_total > 0}
+			<div class="hist" role="img" aria-label="residual distribution histogram, 11 bins from −1 to +1">
+				{#each residual.bins as count, i}
+					<div class="hist-col" title={`${binLabel(i, residual.bins.length)} · ${fmtCount(count)}`}>
+						<div class="hist-bar" style={`height:${(count / residualMax) * 100}%`}></div>
+					</div>
+				{/each}
+			</div>
+			<div class="hist-axis">
+				<span>−1.0</span>
+				<span class="muted">residual (our − INDRA)</span>
+				<span>+1.0</span>
 			</div>
 		{/if}
-		</section>
+	</section>
 
-		<section class="run-narrative">
-		<h2 class="rn-h">how this run compares</h2>
-		{#if m.status !== 'succeeded'}
-			<p class="rn-sentence">
-				comparison not defined: this run is <strong>{m.status}</strong>, so before/after and predecessor deltas would mix incomplete evidence with completed runs.
-			</p>
-			{#if m.termination_reason}
-				<p class="hint">termination: {m.terminated_by ?? 'unknown'} · {m.termination_reason}</p>
-			{/if}
-		{:else if !n}
-			<p class="hint">no validity computed for this run · invoke <code>compute_validity(con, '{m.run_id.slice(0, 8)}…')</code> in Python</p>
-		{:else if n.comparison_blocked_reason}
-			<p class="rn-sentence">{n.summary_sentence}</p>
-			{#if comparisonBlockedIsArchitecture(n.comparison_blocked_reason)}
-				<p class="hint">
-					cross-architecture deltas require the paired workbench so overlap and non-comparable fields are visible first.
-					{#if m.paired_run_group_id}<a href={`/pairs/${m.paired_run_group_id}`}>open paired workbench</a>{/if}
-				</p>
-			{:else}
-				<p class="hint">trace fidelity must have finalized aggregate verdict rows before run deltas are meaningful.</p>
-			{/if}
-		{:else if !n.prev_run_id}
-			<p class="rn-sentence">{n.summary_sentence}</p>
-			<p class="hint">no prior run to compare against. After a second <code>score_corpus</code>, this section will surface deltas.</p>
-		{:else}
-			<p class="rn-sentence"><strong>vs <code>{n.prev_run_id.slice(0, 8)}</code>:</strong> {n.summary_sentence}</p>
-			<dl class="rn-deltas">
-				{#if n.mae_delta != null}
-					<div class="rn-delta">
-						<dt>MAE Δ</dt>
-						<dd class={n.mae_delta < 0 ? 'rn-good' : n.mae_delta > 0 ? 'rn-bad' : ''}>{fmtSigned(n.mae_delta)}</dd>
-					</div>
-				{/if}
-				{#if n.bias_delta != null}
-					<div class="rn-delta">
-						<dt>bias Δ</dt>
-						<dd>{fmtSigned(n.bias_delta)}</dd>
-					</div>
-				{/if}
-				<div class="rn-delta">
-					<dt>verdicts moved</dt>
-					<dd>{n.verdicts_moved_total} <span class="muted">({n.verdicts_moved_to_correct} → correct, {n.verdicts_moved_to_incorrect} → incorrect)</span></dd>
-				</div>
-			</dl>
-			{#if n.verdict_crossings.length > 0}
-				<details class="rn-crossings">
-					<summary>verdict-crossing statements ({n.verdict_crossings.length})</summary>
-					<ul class="rn-crossings-list">
-						{#each n.verdict_crossings.slice(0, 30) as c}
-							<li>
-								<a href={`/statements/${c.stmt_hash}?run_id=${m.run_id}`}><code>{c.stmt_hash.slice(0, 8)}</code></a>
-								<span class="muted">{c.prev_verdict} → </span>
-								<span class={`rn-cross-${c.curr_verdict}`}>{c.curr_verdict}</span>
-							</li>
-						{/each}
-					</ul>
-					{#if n.verdict_crossings.length > 30}
-						<p class="muted">…and {n.verdict_crossings.length - 30} more.</p>
-					{/if}
-				</details>
-			{/if}
-		{/if}
-		{#if m.status === 'succeeded' && compareOptions.length > 0}
-			<form class="rn-compare-form" method="get">
-				<label class="rn-compare-label">
-					compare against:
-					<select name="compare_to" onchange={(ev) => {
-						const v = (ev.target as HTMLSelectElement).value;
-						const url = v ? `?compare_to=${v}` : '';
-						window.location.href = window.location.pathname + url;
-					}}>
-						<option value="">(auto — most-recent earlier run)</option>
-						{#each compareOptions as r}
-							<option value={r.run_id} selected={data.compareToParam === r.run_id}>
-								{archMark(r.architecture)} {r.run_id.slice(0, 8)} · {r.scorer_version} · {r.started_at.replace(/\.\d+$/, '')}
-							</option>
-						{/each}
-					</select>
-				</label>
-			</form>
-			{/if}
-		</section>
+	<section class="verdicts">
+		<h2 class="sec-h">verdict distribution</h2>
+		<ul class="dist">
+			{#each verdicts as row}
+				<li class={`dist-row ${verdictClass(row.verdict)}`}>
+					<span class="dist-label">{row.verdict}</span>
+					<span class="dist-bar-wrap">
+						<span
+							class="dist-bar"
+							style={`width:${verdictTotal ? (row.n / verdictTotal) * 100 : 0}%`}
+						></span>
+					</span>
+					<span class="dist-n">{fmtCount(row.n)}</span>
+				</li>
+			{/each}
+		</ul>
+	</section>
 
-		<section class="run-denominators" aria-label="run denominator boundaries">
-			<h2 class="rd-h">denominator boundaries</h2>
-			<p class="rd-summary">
-				{#if denominatorDiverges}
-					These panels intentionally do not share one denominator; compare rows only inside the panel whose source matches the question.
-				{:else}
-					These panels currently share the same count, but each count still comes from a different evidence source.
-				{/if}
-			</p>
-			<div class="rd-table-wrap">
-				<table class="rd-table">
-					<thead>
+	<section class="buckets">
+		<h2 class="sec-h">bucket taxonomy</h2>
+		<p class="sec-sub">Report-taxonomy classification of every evidence row in this run.</p>
+		<ul class="dist">
+			{#each v.buckets as row}
+				<li class="dist-row">
+					<span class="dist-label">{row.bucket}</span>
+					<span class="dist-bar-wrap">
+						<span
+							class="dist-bar dist-bar-neutral"
+							style={`width:${bucketTotal ? (row.n / bucketTotal) * 100 : 0}%`}
+						></span>
+					</span>
+					<span class="dist-n">{fmtCount(row.n)}</span>
+				</li>
+			{/each}
+		</ul>
+	</section>
+
+	{#if v.confidenceCalibration.length > 0}
+		<section class="slice">
+			<h2 class="sec-h">calibration by stated confidence</h2>
+			<table class="slice-table">
+				<thead>
+					<tr>
+						<th>confidence</th>
+						<th class="num">n</th>
+						<th class="num">MAE</th>
+						<th class="num">bias</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each v.confidenceCalibration as c}
 						<tr>
-							<th>population</th>
-							<th class="num">n</th>
-							<th>panel</th>
-							<th>source</th>
-							<th>meaning</th>
+							<td>{c.confidence}</td>
+							<td class="num">{fmtCount(c.n)}</td>
+							<td class="num">{fmt3(c.mae)}</td>
+							<td class="num">{fmtSigned(c.bias)}</td>
 						</tr>
-					</thead>
-					<tbody>
-						{#each denominatorRows as row}
-							<tr>
-									<td>{#if row.href}<a href={row.href}>{row.label}</a>{:else}{row.label}{/if}</td>
-								<td class="num">{fmtCount(row.n)}</td>
-								<td>{row.panel}</td>
-								<td><code>{row.source}</code></td>
-								<td>{row.meaning}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+					{/each}
+				</tbody>
+			</table>
 		</section>
-
-		{#if fidelity}
-			<TraceFidelity {fidelity} runStatus={m.status} compareToParam={data.compareToParam} />
 	{/if}
 
-	{#if cov}
-		<HeuristicCoverage coverage={cov} runStatus={m.status} />
+	{#if v.byIndraType.length > 0}
+		<section class="slice">
+			<h2 class="sec-h">calibration by INDRA statement type</h2>
+			<p class="sec-sub">Sorted by mean absolute residual — worst-calibrated types first.</p>
+			<table class="slice-table">
+				<thead>
+					<tr>
+						<th>statement type</th>
+						<th class="num">n</th>
+						<th class="num">MAE</th>
+						<th class="num">bias</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each v.byIndraType as s}
+						<tr>
+							<td>{s.value}</td>
+							<td class="num">{fmtCount(s.n)}</td>
+							<td class="num">{fmt3(s.mae)}</td>
+							<td class="num">{fmtSigned(s.bias)}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</section>
+	{/if}
+
+	{#if v.bySourceApi.length > 0}
+		<section class="slice">
+			<h2 class="sec-h">calibration by source API</h2>
+			<table class="slice-table">
+				<thead>
+					<tr>
+						<th>source</th>
+						<th class="num">n</th>
+						<th class="num">MAE</th>
+						<th class="num">bias</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each v.bySourceApi as s}
+						<tr>
+							<td>{s.value}</td>
+							<td class="num">{fmtCount(s.n)}</td>
+							<td class="num">{fmt3(s.mae)}</td>
+							<td class="num">{fmtSigned(s.bias)}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</section>
+	{/if}
+
+	{#if v.unavailable.length > 0}
+		<section class="unavailable" aria-label="unavailable strata">
+			<h2 class="sec-h">not available from monolithic exports</h2>
+			<ul class="unavailable-list">
+				{#each v.unavailable as u}
+					<li>{u}</li>
+				{/each}
+			</ul>
+		</section>
 	{/if}
 </main>
 
@@ -330,10 +273,20 @@
 		font-size: 0.78rem;
 		color: var(--ink-muted);
 	}
-	.crumb a { color: var(--ink-muted); text-decoration: none; }
-	.crumb a:hover { color: var(--ink); }
-	.crumb strong { color: var(--ink); font-weight: 500; }
-	.crumb .sep { color: var(--ink-faint); }
+	.crumb a {
+		color: var(--ink-muted);
+		text-decoration: none;
+	}
+	.crumb a:hover {
+		color: var(--ink);
+	}
+	.crumb strong {
+		color: var(--ink);
+		font-weight: 500;
+	}
+	.crumb .sep {
+		color: var(--ink-faint);
+	}
 	.meta {
 		display: flex;
 		gap: 0.8rem;
@@ -343,10 +296,14 @@
 		color: var(--accent);
 		text-decoration: none;
 	}
-	.nav-link:hover { text-decoration: underline; }
-	.muted { color: var(--ink-faint); }
+	.nav-link:hover {
+		text-decoration: underline;
+	}
+	.muted {
+		color: var(--ink-faint);
+	}
 	main {
-		max-width: 1200px;
+		max-width: 1100px;
 		margin: 0 auto;
 		padding: 2rem 1.5rem 4rem;
 	}
@@ -361,26 +318,19 @@
 		align-items: baseline;
 		flex-wrap: wrap;
 	}
-	.run-version { font-family: var(--mono); font-size: 0.86rem; color: var(--ink); }
-	.run-arch {
+	.run-model {
 		font-family: var(--mono);
-		font-size: 0.86rem;
-		color: var(--ink);
+		font-size: 0.9rem;
+		color: var(--accent);
 	}
-	.run-arch-monolithic { color: var(--accent); }
-	.run-arch-decomposed { color: var(--ok-green); }
-	.run-arch-unknown { color: var(--ink-faint); }
 	.run-status {
 		font-family: var(--mono);
 		font-size: 0.74rem;
 		text-transform: lowercase;
 		letter-spacing: 0.04em;
+		color: var(--ok-green);
 		padding: 0 0.4rem;
 	}
-	.run-status-succeeded { color: var(--ok-green); }
-	.run-status-running { color: var(--ink); font-style: italic; }
-	.run-status-failed { color: var(--accent); font-weight: 500; }
-	.run-status-canceled { color: var(--accent); font-style: italic; }
 
 	.run-fields {
 		display: grid;
@@ -412,59 +362,31 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
-	.run-integrity-warning {
-		margin: -1.2rem 0 2.5rem;
-		border-left: 3px solid #9d4a1a;
-		background: rgba(157, 74, 26, 0.08);
-		padding: 0.75rem 0.9rem;
-		max-width: 760px;
-	}
-	.run-integrity-warning span {
-		display: block;
-		font-family: var(--mono);
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: #7d2a1a;
-		margin-bottom: 0.25rem;
-	}
-	.run-integrity-warning p {
-		margin: 0;
-		color: var(--ink);
-	}
 
-	.run-narrative {
-		margin-bottom: 2.5rem;
+	section {
+		margin: 0 0 2.5rem;
 	}
-	.rn-h {
+	.sec-h {
 		font-family: var(--serif);
 		font-size: 1.15rem;
 		font-weight: 400;
-		margin: 0 0 0.5rem;
+		margin: 0 0 0.4rem;
 	}
-	.rn-sentence {
-		font-family: var(--serif);
-		font-size: 1rem;
-		color: var(--ink);
+	.sec-sub {
+		max-width: 760px;
 		margin: 0 0 0.8rem;
-		line-height: 1.5;
-		font-variant-numeric: tabular-nums;
-	}
-	.hint {
-		font-family: var(--serif);
-		font-style: italic;
-		font-size: 0.9rem;
 		color: var(--ink-muted);
-		margin: 0 0 0.5rem;
+		font-size: 0.92rem;
+		line-height: 1.45;
 	}
 
-	.rn-deltas {
+	.stat-row {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 1.6rem;
-		margin: 0.5rem 0 1rem;
+		gap: 2rem;
+		margin: 0 0 1.2rem;
 	}
-	.rn-delta dt {
+	.stat dt {
 		font-family: var(--mono);
 		font-size: 0.7rem;
 		color: var(--ink-muted);
@@ -472,112 +394,134 @@
 		letter-spacing: 0.02em;
 		margin: 0;
 	}
-	.rn-delta dd {
+	.stat dd {
 		font-family: var(--mono);
-		font-size: 1.1rem;
+		font-size: 1.3rem;
 		font-variant-numeric: tabular-nums;
 		margin: 0.1rem 0 0;
+		color: var(--ink);
 	}
-	.rn-good { color: var(--ok-green); }
-	.rn-bad { color: var(--accent); }
 
-	.rn-crossings {
-		margin-top: 0.6rem;
+	.hist {
+		display: flex;
+		align-items: flex-end;
+		gap: 2px;
+		height: 110px;
+		border-bottom: 1px solid var(--rule);
+		margin-top: 0.5rem;
 	}
-	.rn-crossings summary {
+	.hist-col {
+		flex: 1 1 0;
+		display: flex;
+		align-items: flex-end;
+		height: 100%;
+	}
+	.hist-bar {
+		width: 100%;
+		background: var(--accent);
+		opacity: 0.78;
+		min-height: 1px;
+	}
+	.hist-axis {
+		display: flex;
+		justify-content: space-between;
 		font-family: var(--mono);
-		font-size: 0.78rem;
-		color: var(--ink-muted);
-		cursor: pointer;
+		font-size: 0.7rem;
+		color: var(--ink-faint);
+		margin-top: 0.3rem;
 	}
-	.rn-crossings-list {
+
+	.dist {
 		list-style: none;
-		padding: 0.5rem 0 0 1rem;
+		padding: 0;
 		margin: 0;
 		font-family: var(--mono);
 		font-size: 0.8rem;
 	}
-	.rn-crossings-list li {
-		padding: 0.15rem 0;
+	.dist-row {
+		display: grid;
+		grid-template-columns: 12rem 1fr 6ch;
+		gap: 0.8rem;
+		align-items: center;
+		padding: 0.2rem 0;
 	}
-	.rn-cross-correct { color: var(--ok-green); }
-	.rn-cross-incorrect { color: var(--accent); }
-	.rn-cross-abstain { color: var(--ink-muted); font-style: italic; }
+	.dist-label {
+		color: var(--ink);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.dist-bar-wrap {
+		background: var(--accent-wash);
+		height: 0.85rem;
+	}
+	.dist-bar {
+		display: block;
+		height: 100%;
+		background: var(--ink-muted);
+	}
+	.dist-bar-neutral {
+		background: var(--ink-muted);
+	}
+	.v-correct .dist-bar {
+		background: var(--ok-green);
+	}
+	.v-incorrect .dist-bar {
+		background: var(--accent);
+	}
+	.dist-n {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+		color: var(--ink);
+	}
 
-	.rn-compare-form {
-		margin-top: 1.2rem;
-		padding-top: 0.8rem;
-		border-top: 1px dotted var(--rule);
-	}
-	.rn-compare-label {
+	.slice-table {
+		width: 100%;
+		border-collapse: collapse;
 		font-family: var(--mono);
 		font-size: 0.78rem;
-		color: var(--ink-muted);
-		display: flex;
-		gap: 0.5rem;
-		align-items: baseline;
-		flex-wrap: wrap;
+		font-variant-numeric: tabular-nums;
 	}
-		.rn-compare-label select {
-			font-family: var(--mono);
-			font-size: 0.78rem;
-			padding: 0.2rem 0.4rem;
-			background: var(--paper);
-			color: var(--ink);
-			border: 1px solid var(--rule);
-		}
+	.slice-table th {
+		text-align: left;
+		font-weight: 500;
+		color: var(--ink-muted);
+		font-size: 0.7rem;
+		text-transform: lowercase;
+		letter-spacing: 0.02em;
+		padding: 0.3rem 0.65rem 0.3rem 0;
+		border-bottom: 1px dotted var(--rule);
+	}
+	.slice-table td {
+		padding: 0.32rem 0.65rem 0.32rem 0;
+		border-bottom: 1px dotted var(--rule);
+		color: var(--ink);
+	}
+	.slice-table tr:last-child td {
+		border-bottom: none;
+	}
+	.slice-table .num {
+		text-align: right;
+		white-space: nowrap;
+	}
 
-		.run-denominators {
-			margin: 0 0 2.5rem;
+	.unavailable {
+		border-left: 3px solid var(--rule);
+		padding-left: 0.9rem;
+	}
+	.unavailable-list {
+		margin: 0;
+		padding-left: 1.1rem;
+		color: var(--ink-muted);
+		font-size: 0.92rem;
+	}
+	.unavailable-list li {
+		padding: 0.12rem 0;
+	}
+
+	@media (max-width: 720px) {
+		.dist-row {
+			grid-template-columns: 8rem 1fr 6ch;
 		}
-		.rd-h {
-			font-family: var(--serif);
-			font-size: 1.15rem;
-			font-weight: 400;
-			margin: 0 0 0.4rem;
-		}
-		.rd-summary {
-			max-width: 760px;
-			margin: 0 0 0.65rem;
-			color: var(--ink-muted);
-			font-size: 0.92rem;
-			line-height: 1.45;
-		}
-		.rd-table {
-			width: 100%;
-			border-collapse: collapse;
-			font-family: var(--mono);
-			font-size: 0.78rem;
-			font-variant-numeric: tabular-nums;
-		}
-		.rd-table th {
-			text-align: left;
-			font-weight: 500;
-			color: var(--ink-muted);
-			font-size: 0.7rem;
-			text-transform: lowercase;
-			letter-spacing: 0.02em;
-			padding: 0.3rem 0.65rem 0.3rem 0;
-			border-bottom: 1px dotted var(--rule);
-		}
-		.rd-table td {
-			vertical-align: top;
-			padding: 0.42rem 0.65rem 0.42rem 0;
-			border-bottom: 1px dotted var(--rule);
-		}
-		.rd-table tr:last-child td {
-			border-bottom: none;
-		}
-		.rd-table .num {
-			text-align: right;
-			white-space: nowrap;
-			color: var(--ink);
-		}
-		.rd-table code {
-			font-size: 0.74rem;
-			white-space: nowrap;
-		}
-		.rd-table-wrap {
-			overflow-x: auto;
-		}
-	</style>
+	}
+</style>
