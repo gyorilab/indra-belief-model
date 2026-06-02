@@ -1,0 +1,59 @@
+{
+  "pass": "rough",
+  "seed": 20260602,
+  "run_id": "d004e3970856484689531396132ca055",
+  "model": "gemma-4-26b (remote)",
+  "export": "data/exports/rasmachine_belief",
+  "params": {
+    "n_per_bucket": 96,
+    "audit_n": 30,
+    "cap": 3,
+    "source_floor": 6,
+    "double_frac": 0.15,
+    "annotators": [
+      "ann1"
+    ],
+    "double_annotator": "ann2"
+  },
+  "population_bucket_counts": {
+    "semantic_incorrect": 7244,
+    "semantic_correct": 20438,
+    "reader_hallucination": 10879,
+    "hedged_evidence": 589,
+    "no_evidence": 6908,
+    "placeholder_text": 172,
+    "incomplete_claim": 995,
+    "row_error": 209
+  },
+  "ht_weights": {
+    "semantic_incorrect": 0.15271746004975334,
+    "semantic_correct": 0.43087237002993634,
+    "reader_hallucination": 0.22935025509128473,
+    "hedged_evidence": 0.012417253446894632,
+    "no_evidence": 0.14563393346544673,
+    "placeholder_text": 0.003626090989585529,
+    "incomplete_claim": 0.020976514736265127,
+    "row_error": 0.004406122190833579
+  },
+  "achieved_per_bucket": {
+    "semantic_correct": 96,
+    "semantic_incorrect": 96,
+    "hedged_evidence": 96,
+    "reader_hallucination": 96,
+    "no_evidence": 96,
+    "incomplete_claim": 96,
+    "row_error": 30,
+    "placeholder_text": 30
+  },
+  "achieved_supplemental_per_source": {
+    "isi": 4,
+    "trips": 5
+  },
+  "totals": {
+    "items": 645,
+    "distinct_statements": 397,
+    "max_items_per_statement": 3,
+    "double_labeled": 97
+  },
+  "estimand_note": "Agreement against a blinded human, NOT accuracy vs gold. Report semantic-only + raw-stream + input-quality separately; reweight per-bucket rates by ht_weights for a population estimate; bootstrap over stmt_hash for cluster-robust CIs."
+}
