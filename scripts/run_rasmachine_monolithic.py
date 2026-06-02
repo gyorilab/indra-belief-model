@@ -552,6 +552,13 @@ def main() -> int:
         "serving backend's slot count (the llm-gateway llama container runs "
         "-np 4, so --workers 4 saturates it).",
     )
+    parser.add_argument(
+        "--export",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="On successful completion, enrich the run into the viewer/collaborator "
+        "export (data/exports/<run_id>/) via indra_belief.results. --no-export to skip.",
+    )
     # NOTE: raw_text (the model's full reasoning) is recorded UNCAPPED. The former
     # --raw-preview-chars flag was removed — clipping it silently discarded generated
     # output and is no longer permitted.
@@ -880,6 +887,21 @@ def main() -> int:
             verdicts=dict(verdicts),
             recorded_row_errors=recorded_row_errors,
         )
+
+    if args.export and meta.get("status") == "completed":
+        # A completed run produces its own viewer/collaborator export — no
+        # separate script. Best-effort: a failed export must not fail the run.
+        try:
+            from indra_belief.results import write_run_export
+
+            ex = write_run_export(str(output_path))
+            print(
+                f"export: data/exports/{ex['run_id']}/ "
+                f"({ex['counts']['unique_evidence_rows']} evidence rows, "
+                f"{ex['counts']['statements']} statements)"
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"export skipped ({type(exc).__name__}): {exc}", file=sys.stderr)
 
     return 0
 
