@@ -4,6 +4,7 @@ import {
 	stratifyCell,
 	cohortForCell,
 	evidenceSideBySide,
+	goldPerformance,
 	type RunSummary,
 	type CompareAnatomy,
 	type CellStratification,
@@ -11,7 +12,9 @@ import {
 	type SideBySideEvidence,
 	type CompareCell,
 	type StratAxis,
-	type GoldFilter
+	type GoldFilter,
+	type GoldGranularity,
+	type GoldPerformance
 } from '$lib/data/queries';
 import type { PageServerLoad } from './$types';
 
@@ -47,14 +50,17 @@ export const load: PageServerLoad = async ({ url }) => {
 	const goldParam = q.get('gold');
 	const goldFilter: GoldFilter | null =
 		goldParam && GOLD_FILTERS.includes(goldParam as GoldFilter) ? (goldParam as GoldFilter) : null;
+	const granularity: GoldGranularity = q.get('gran') === 'statement' ? 'statement' : 'evidence';
 
 	let anatomy: CompareAnatomy | null = null;
 	let stratification: CellStratification | null = null;
 	let cohort: Cohort | null = null;
 	let sideBySide: SideBySideEvidence | null = null;
+	let goldPerf: GoldPerformance | null = null;
 
 	if (a && b && a !== b) {
 		anatomy = compareAnatomy(a, b);
+		if (goldMode) goldPerf = goldPerformance(a, b, granularity);
 
 		// L3: a specific evidence is selected → side-by-side reasoning.
 		if (ev) {
@@ -88,6 +94,8 @@ export const load: PageServerLoad = async ({ url }) => {
 		semanticOnly,
 		goldMode,
 		goldFilter,
+		granularity,
+		goldPerf,
 		cell,
 		axis,
 		axisValue,

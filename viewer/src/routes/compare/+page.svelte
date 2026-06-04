@@ -77,6 +77,12 @@
 	function setGoldFilter(g: string | null) {
 		nav({ gold: data.goldFilter === g ? null : g });
 	}
+	function setGran(g: 'evidence' | 'statement') {
+		nav({ gran: g === 'statement' ? 'statement' : null });
+	}
+
+	// gold-performance payload (error partition + CI recalls), gold mode only
+	const gp = $derived(data.goldPerf);
 
 	const haveTwo = $derived(runs.length >= 2);
 	const sameRun = $derived(data.selectedA != null && data.selectedA === data.selectedB);
@@ -283,41 +289,118 @@
 						{/if}
 					</div>
 
-					{#if data.goldMode && gold?.present}
-						{@const aS = gold.a_prf.supported}
-						{@const bS = gold.b_prf.supported}
-						{@const aE = gold.a_prf.error}
-						{@const bE = gold.b_prf.error}
-						<div class="prf">
-							<table class="prf-table">
-								<thead>
-									<tr>
-										<th class="prf-class">positive class</th>
-										<th colspan="3" class="prf-model mA">{aModel}</th>
-										<th colspan="3" class="prf-model mB">{bModel}</th>
-									</tr>
-									<tr><th></th><th>P</th><th>R</th><th>F1</th><th>P</th><th>R</th><th>F1</th></tr>
-								</thead>
-								<tbody>
-									<tr>
-										<td class="prf-class">supported <span class="hint">(n+={gold.n_gold_correct})</span></td>
-										<td class="mono">{aS.precision.toFixed(2)}</td><td class="mono">{aS.recall.toFixed(2)}</td><td class="mono">{aS.f1.toFixed(2)}</td>
-										<td class="mono">{bS.precision.toFixed(2)}</td><td class="mono">{bS.recall.toFixed(2)}</td><td class="mono">{bS.f1.toFixed(2)}</td>
-									</tr>
-									<tr class="prf-error">
-										<td class="prf-class">error-detection <span class="hint">(n+={gold.n_gold_incorrect})</span></td>
-										<td class="mono">{aE.precision.toFixed(2)}</td><td class="mono">{aE.recall.toFixed(2)}</td><td class="mono prf-f1">{aE.f1.toFixed(2)}</td>
-										<td class="mono">{bE.precision.toFixed(2)}</td><td class="mono">{bE.recall.toFixed(2)}</td><td class="mono prf-f1">{bE.f1.toFixed(2)}</td>
-									</tr>
-								</tbody>
-							</table>
-							<p class="prf-note hint">
-								the <strong>supported</strong> row is flattered by the {pct(gold.n_gold_correct / Math.max(1, gold.n_evaluable))}-positive gold;
-								<strong>error-detection</strong> (positive = a curator-flagged wrong extraction) is the decision-relevant task —
-								recall is the share of real errors the model catches.
-							</p>
-						</div>
-					{/if}
+						{#if data.goldMode && gp?.present}
+							{@const er = gp.error_partition}
+							{@const aR = gp.a_error_recall}
+							{@const bR = gp.b_error_recall}
+							<section class="goldperf">
+								<header class="gp-head">
+									<h3>vs human gold</h3>
+									<span class="gp-unit mono">{gp.n} {data.granularity === 'statement' ? 'statements' : 'evidences'} · {gp.n_supported} supported · {gp.n_error} errors</span>
+									<span class="gp-gran" role="group" aria-label="granularity">
+										<button class:active={data.granularity !== 'statement'} onclick={() => setGran('evidence')}>evidence</button>
+										<button class:active={data.granularity === 'statement'} onclick={() => setGran('statement')}>statement</button>
+									</span>
+								</header>
+
+								<div class="gp-task gp-supported">
+									<div class="gp-task-label">
+										supported claims <span class="gp-n mono">n={gp.n_supported}</span>
+										<span class="hint">— the easy {pct(gp.n_supported / Math.max(1, gp.n))} majority; both near-perfect</span>
+									</div>
+									<div class="gp-recallpair muted">
+										<span class="mA">{aModel.split(' ')[0]}</span> {(gp.supported_a_right / Math.max(1, gp.n_supported) * 100).toFixed(0)}%
+										· <span class="mB">{bModel.split(' ')[0]}</span> {(gp.supported_b_right / Math.max(1, gp.n_supported) * 100).toFixed(0)}%
+										<span class="hint">caught</span>
+									</div>
+								</div>
+
+								<div class="gp-task gp-errors">
+									<div class="gp-task-label">
+										<strong>catching errors</strong> <span class="gp-n mono">n={gp.n_error}</span>
+										<span class="hint">— the curator-flagged wrong extractions. each mark is one.</span>
+									</div>
+									<div class="gp-matrix">
+										<div class="gp-row">
+											<span class="gp-rowlabel mA">{aModel.split(' ')[0]}</span>
+											<span class="gp-dots">
+												{#each gp.errors as e}
+													<button class="gp-dot {e.a_verdict === 'incorrect' ? 'caught' : 'missed'}"
+														title={`${e.subject} [${e.stmt_type}] ${e.object} — ${aModel.split(' ')[0]} ${e.a_verdict === 'incorrect' ? 'CAUGHT' : 'missed'} · gold tags: ${e.tags.join(', ')}`}
+														onclick={() => e.evidence_hash && openEvidence(e.stmt_hash, e.evidence_hash)}
+														aria-label="error case"></button>
+												{/each}
+											</span>
+											<span class="gp-recall mono">{aR.k}/{aR.n}</span>
+										</div>
+										<div class="gp-row">
+											<span class="gp-rowlabel mB">{bModel.split(' ')[0]}</span>
+											<span class="gp-dots">
+												{#each gp.errors as e}
+													<button class="gp-dot {e.b_verdict === 'incorrect' ? 'caught' : 'missed'}"
+														title={`${e.subject} [${e.stmt_type}] ${e.object} — ${bModel.split(' ')[0]} ${e.b_verdict === 'incorrect' ? 'CAUGHT' : 'missed'} · gold tags: ${e.tags.join(', ')}`}
+														onclick={() => e.evidence_hash && openEvidence(e.stmt_hash, e.evidence_hash)}
+														aria-label="error case"></button>
+												{/each}
+											</span>
+											<span class="gp-recall mono">{bR.k}/{bR.n}</span>
+										</div>
+										<div class="gp-partition mono">
+											<span class="gp-seg both" style="flex:{er.both}" title="both models caught">{er.both ? `${er.both} both` : ''}</span>
+											<span class="gp-seg aonly" style="flex:{er.a_only}" title="A only">{er.a_only || ''}</span>
+											<span class="gp-seg bonly" style="flex:{er.b_only}" title="B only">{er.b_only || ''}</span>
+											<span class="gp-seg neither" style="flex:{er.neither}" title="MISSED by both">{er.neither ? `${er.neither} missed by both` : ''}</span>
+										</div>
+									</div>
+
+									<div class="gp-ci">
+										{#each [{m:aModel,r:aR,c:'mA'},{m:bModel,r:bR,c:'mB'}] as row}
+											<div class="gp-cirow">
+												<span class="gp-cilabel {row.c}">{row.m.split(' ')[0]}</span>
+												<span class="gp-citrack">
+													<span class="gp-ciband {row.c}b" style="left:{row.r.lo*100}%; right:{(1-row.r.hi)*100}%"></span>
+													<span class="gp-cipoint {row.c}p" style="left:{row.r.p*100}%"></span>
+												</span>
+												<span class="gp-cival mono">{(row.r.p*100).toFixed(0)}%</span>
+											</div>
+										{/each}
+										<p class="gp-ci-note hint">recall ± 95% CI. the bands overlap — at n={gp.n_error} the {aModel.split(' ')[0]}/{bModel.split(' ')[0]} gap is inside the noise. both miss <strong>{er.neither}</strong> errors entirely.</p>
+									</div>
+								</div>
+
+								<!-- raw 2x2 per model: area = count, so the imbalance is GEOMETRY not a footnote -->
+								<div class="gp-conf">
+									<div class="gp-conf-title hint">full 2×2 — cell area ∝ count (gold ↓ · model →)</div>
+									<div class="gp-conf-pair">
+										{#each [{m:aModel,c:gp.a_conf,k:'mA'},{m:bModel,c:gp.b_conf,k:'mB'}] as cm}
+											{@const tot = cm.c.n || 1}
+											{@const rc = (cm.c.gc_pc + cm.c.gc_pi)}
+											{@const ri = (cm.c.gi_pc + cm.c.gi_pi)}
+											<figure class="gp-mosaic">
+												<figcaption class="{cm.k}">{cm.m.split(' ')[0]}</figcaption>
+												<div class="mosaic" style="--rc:{rc}; --ri:{ri}">
+													<div class="mrow" style="flex:{rc}">
+														<div class="mcell agree" style="flex:{cm.c.gc_pc}" title="gold supported, model supported — {cm.c.gc_pc}"><span>{cm.c.gc_pc}</span></div>
+														<div class="mcell miss-fn" style="flex:{cm.c.gc_pi}" title="gold supported, model said error (over-reject) — {cm.c.gc_pi}"><span>{cm.c.gc_pi}</span></div>
+													</div>
+													<div class="mrow" style="flex:{ri}">
+														<div class="mcell miss-fp" style="flex:{cm.c.gi_pc}" title="gold ERROR, model said supported (over-accept, the dangerous miss) — {cm.c.gi_pc}"><span>{cm.c.gi_pc}</span></div>
+														<div class="mcell catch" style="flex:{cm.c.gi_pi}" title="gold error, model caught it — {cm.c.gi_pi}"><span>{cm.c.gi_pi}</span></div>
+													</div>
+												</div>
+											</figure>
+										{/each}
+									</div>
+									<div class="gp-conf-legend hint">
+										<span><span class="sw agree"></span> agree ✓</span>
+										<span><span class="sw catch"></span> error caught</span>
+										<span><span class="sw miss-fp"></span> error missed (said ✓)</span>
+										<span><span class="sw miss-fn"></span> supported rejected</span>
+									</div>
+								</div>
+
+							</section>
+						{/if}
 
 					<!-- confusion matrix -->
 					<div class="matrix-wrap">
@@ -1103,46 +1186,287 @@
 		color: var(--ink-faint);
 		margin: 0 0.2rem;
 	}
-	.prf {
-		margin: 0 0 1.6rem;
+	.goldperf {
+		margin: 0 0 1.8rem;
+		padding: 0.2rem 0 0;
 	}
-	.prf-table {
-		border-collapse: collapse;
-		font-size: 0.82rem;
+	.gp-head {
+		display: flex;
+		align-items: baseline;
+		gap: 0.7rem;
+		flex-wrap: wrap;
+		margin-bottom: 0.9rem;
 	}
-	.prf-table th,
-	.prf-table td {
-		padding: 0.3rem 0.7rem;
-		text-align: right;
+	.gp-head h3 {
+		font-family: var(--serif);
+		font-weight: 400;
+		font-size: 1.05rem;
+		margin: 0;
+		color: var(--gold-hue);
 	}
-	.prf-table thead th {
+	.gp-unit {
+		font-size: 0.72rem;
+		color: var(--ink-muted);
+	}
+	.gp-gran {
+		margin-left: auto;
+		display: inline-flex;
+		border: 1px solid var(--rule);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+	.gp-gran button {
 		font-family: var(--mono);
 		font-size: 0.68rem;
-		font-weight: 500;
+		padding: 0.2rem 0.6rem;
+		background: var(--paper);
+		border: none;
 		color: var(--ink-muted);
+		cursor: pointer;
+	}
+	.gp-gran button.active {
+		background: var(--gold-hue);
+		color: var(--paper);
+	}
+	.gp-task {
+		margin-bottom: 1.1rem;
+	}
+	.gp-task-label {
+		font-family: var(--serif);
+		font-size: 0.92rem;
+		margin-bottom: 0.5rem;
+	}
+	.gp-n {
+		font-size: 0.74rem;
+		color: var(--ink-muted);
+		margin-left: 0.2rem;
+	}
+	/* TASK 1 supported — visually quiet (the easy, flattering task) */
+	.gp-supported {
+		opacity: 0.62;
+		padding-bottom: 0.9rem;
 		border-bottom: 1px solid var(--rule);
 	}
-	.prf-table .prf-class {
-		text-align: left;
+	.gp-recallpair {
+		font-size: 0.82rem;
+	}
+	/* TASK 2 errors — the strong center */
+	.gp-matrix {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		margin: 0.2rem 0 0.9rem;
+	}
+	.gp-row {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.gp-rowlabel {
+		font-family: var(--mono);
+		font-size: 0.72rem;
+		width: 5.5rem;
+		text-align: right;
+		flex: none;
+	}
+	.gp-dots {
+		display: flex;
+		gap: 3px;
+		flex-wrap: wrap;
+		flex: 1;
+	}
+	.gp-dot {
+		width: 15px;
+		height: 15px;
+		border-radius: 3px;
+		border: 1px solid var(--rule);
+		padding: 0;
+		cursor: pointer;
+		background: var(--paper);
+		transition: transform 0.1s;
+	}
+	.gp-dot.caught {
+		background: var(--ok-green);
+		border-color: var(--ok-green);
+	}
+	.gp-dot.missed {
+		background: var(--paper);
+		border: 1px solid var(--accent);
+		box-shadow: inset 0 0 0 2px var(--paper), inset 0 0 0 3px color-mix(in srgb, var(--accent) 25%, var(--paper));
+	}
+	.gp-dot:hover {
+		transform: scale(1.25);
+		z-index: 1;
+	}
+	.gp-recall {
+		font-size: 0.78rem;
+		width: 3rem;
+		flex: none;
 		color: var(--ink);
 	}
-	.prf-model {
-		text-align: center !important;
+	/* partition bar under the dots: both | A-only | B-only | MISSED */
+	.gp-partition {
+		display: flex;
+		gap: 2px;
+		margin-left: 6.1rem;
+		margin-right: 3.6rem;
+		font-size: 0.6rem;
+		height: 1.1rem;
+		margin-top: 0.15rem;
 	}
-	.prf-error {
-		background: var(--gold-wash);
+	.gp-seg {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--paper);
+		white-space: nowrap;
+		overflow: hidden;
+		min-width: 0;
+		border-radius: 2px;
 	}
-	.prf-error .prf-class {
+	.gp-seg.both { background: var(--ok-green); }
+	.gp-seg.aonly { background: var(--a-hue); }
+	.gp-seg.bonly { background: var(--b-hue); }
+	.gp-seg.neither {
+		background: var(--accent);
 		font-weight: 600;
 	}
-	.prf-f1 {
-		font-weight: 600;
+	.gp-seg:empty { background: transparent; }
+	/* CI strip: overlap = the gap is noise */
+	.gp-ci {
+		margin-top: 0.6rem;
 	}
-	.prf-note {
-		margin: 0.5rem 0 0;
-		max-width: 72ch;
+	.gp-cirow {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		margin-bottom: 0.25rem;
+	}
+	.gp-cilabel {
+		font-family: var(--mono);
+		font-size: 0.72rem;
+		width: 5.5rem;
+		text-align: right;
+		flex: none;
+	}
+	.gp-citrack {
+		position: relative;
+		flex: 1;
+		height: 0.9rem;
+		background: linear-gradient(var(--rule), var(--rule)) center / 100% 1px no-repeat;
+	}
+	.gp-ciband {
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+		height: 0.5rem;
+		border-radius: 3px;
+		opacity: 0.3;
+	}
+	.gp-ciband.mAb { background: var(--a-hue); }
+	.gp-ciband.mBb { background: var(--b-hue); }
+	.gp-cipoint {
+		position: absolute;
+		top: 50%;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		transform: translate(-50%, -50%);
+	}
+	.gp-cipoint.mAp { background: var(--a-hue); }
+	.gp-cipoint.mBp { background: var(--b-hue); }
+	.gp-cival {
+		font-size: 0.74rem;
+		width: 3rem;
+		flex: none;
+	}
+	.gp-ci-note {
+		margin: 0.4rem 0 0;
+		max-width: 74ch;
 		line-height: 1.45;
 	}
+	/* mosaic confusion: cell area ∝ count — the imbalance is geometry */
+	.gp-conf {
+		margin-top: 1.2rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--rule);
+	}
+	.gp-conf-title {
+		margin-bottom: 0.6rem;
+		font-size: 0.72rem;
+	}
+	.gp-conf-pair {
+		display: flex;
+		gap: 1.6rem;
+		flex-wrap: wrap;
+	}
+	.gp-mosaic {
+		margin: 0;
+		flex: 1;
+		min-width: 14rem;
+	}
+	.gp-mosaic figcaption {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		margin-bottom: 0.3rem;
+	}
+	.gp-mosaic figcaption.mA { color: var(--a-hue); }
+	.gp-mosaic figcaption.mB { color: var(--b-hue); }
+	.mosaic {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		height: 8rem;
+	}
+	.mrow {
+		display: flex;
+		gap: 2px;
+		min-height: 0;
+	}
+	.mcell {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 0;
+		border-radius: 2px;
+		overflow: hidden;
+	}
+	.mcell span {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		color: var(--paper);
+		font-variant-numeric: tabular-nums;
+	}
+	/* small cells: drop the number rather than overflow */
+	.mcell[style*='flex:1'] span,
+	.mcell[style*='flex:2'] span,
+	.mcell[style*='flex:3'] span {
+		font-size: 0.6rem;
+	}
+	.mcell.agree { background: color-mix(in srgb, var(--ok-green) 78%, black); }
+	.mcell.catch { background: var(--ok-green); }
+	.mcell.miss-fp { background: var(--accent); }
+	.mcell.miss-fn { background: var(--blocked, #6f5a16); }
+	.mcell span { opacity: 0.95; }
+	.gp-conf-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem 1rem;
+		margin-top: 0.6rem;
+		font-size: 0.68rem;
+	}
+	.gp-conf-legend .sw {
+		display: inline-block;
+		width: 0.7rem;
+		height: 0.7rem;
+		border-radius: 2px;
+		vertical-align: -1px;
+		margin-right: 0.25rem;
+	}
+	.gp-conf-legend .sw.agree { background: color-mix(in srgb, var(--ok-green) 78%, black); }
+	.gp-conf-legend .sw.catch { background: var(--ok-green); }
+	.gp-conf-legend .sw.miss-fp { background: var(--accent); }
+	.gp-conf-legend .sw.miss-fn { background: var(--blocked, #6f5a16); }
 	.cell-gold {
 		display: block;
 		margin-top: 0.25rem;

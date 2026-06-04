@@ -731,6 +731,191 @@ export function compareAnatomy(runIdA: string, runIdB: string): CompareAnatomy |
 	};
 }
 
+// ── Gold performance: the per-error partition + CI-bearing P/R/F1 ────────────
+//
+// The flat P/R/F1 table hid the two facts a skeptic needs: (1) the sample is
+// TINY on the class that matters (gold-incorrect), and (2) the model gap is
+// inside the noise. This query returns the structure to SHOW that: each error
+// as a discrete unit with per-model caught flags + identity, and recall with
+// Wilson 95% CIs so the overlap is perceptible, not asserted.
+
+export type GoldGranularity = 'evidence' | 'statement';
+
+/** One gold-labelled item (evidence or rolled-up statement) with each model's
+ *  verdict, for the discrete error/positive units the viz renders. */
+export interface GoldItem {
+	stmt_hash: string;
+	evidence_hash: string | null; // null for statement-granularity rows
+	subject: string;
+	stmt_type: string;
+	object: string;
+	gold: 'correct' | 'incorrect';
+	a_verdict: 'correct' | 'incorrect';
+	b_verdict: 'correct' | 'incorrect';
+	tags: string[]; // curation tags (the "why" on errors)
+	n_ev: number; // evidences backing a statement row (1 for evidence granularity)
+}
+
+interface WilsonCI { p: number; lo: number; hi: number; k: number; n: number }
+
+function wilsonCI(k: number, n: number, z = 1.96): WilsonCI {
+	if (n === 0) return { p: 0, lo: 0, hi: 0, k, n };
+	const p = k / n;
+	const denom = 1 + (z * z) / n;
+	const centre = (p + (z * z) / (2 * n)) / denom;
+	const margin = (z / denom) * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n));
+	return { p, lo: Math.max(0, centre - margin), hi: Math.min(1, centre + margin), k, n };
+}
+
+/** A model's 2×2 vs gold. Rows = gold (correct/incorrect), cols = model verdict.
+ *  gcpc = gold-correct & pred-correct (TP for supported), etc. */
+export interface ConfMatrix {
+	gc_pc: number; // gold✓ pred✓
+	gc_pi: number; // gold✓ pred✗ (model over-rejected a supported claim)
+	gi_pc: number; // gold✗ pred✓ (model over-accepted an error — the dangerous one)
+	gi_pi: number; // gold✗ pred✗ (caught the error)
+	n: number;
+}
+
+export interface GoldPerformance {
+	run_a: RunSummary;
+	run_b: RunSummary;
+	granularity: GoldGranularity;
+	present: boolean;
+	n: number; // total gold items
+	n_supported: number; // gold-correct
+	n_error: number; // gold-incorrect (the decisive, small class)
+	a_conf: ConfMatrix;
+	b_conf: ConfMatrix;
+	/** the gold-incorrect items, ordered: both-caught, A-only, B-only, missed-by-both. */
+	errors: GoldItem[];
+	error_partition: { both: number; a_only: number; b_only: number; neither: number };
+	/** the gold-correct items (for the supported strip; usually large). */
+	supported_total: number;
+	supported_a_right: number;
+	supported_b_right: number;
+	/** recall on each class, per model, WITH Wilson CIs (the honesty layer). */
+	a_error_recall: WilsonCI;
+	b_error_recall: WilsonCI;
+	a_supported_recall: WilsonCI;
+	b_supported_recall: WilsonCI;
+}
+
+function _v2(v: V): 'correct' | 'incorrect' | null {
+	return v === 'correct' || v === 'incorrect' ? v : null;
+}
+
+export function goldPerformance(
+	runIdA: string,
+	runIdB: string,
+	granularity: GoldGranularity = 'evidence'
+): GoldPerformance | null {
+	const j = joinEvidence(runIdA, runIdB);
+	if (!j) return null;
+	const { a, b, joined } = j;
+
+	// units: each evidence, OR each statement (majority-vote rollup of its evidences)
+	type Unit = { stmt_hash: string; evidence_hash: string | null; subject: string; stmt_type: string;
+		object: string; gold: 'correct' | 'incorrect'; av: 'correct' | 'incorrect'; bv: 'correct' | 'incorrect';
+		tags: string[]; n_ev: number };
+	const units: Unit[] = [];
+
+	if (granularity === 'evidence') {
+		for (const e of joined) {
+			if (!e.gold) continue;
+			const av = _v2(e.a_verdict), bv = _v2(e.b_verdict);
+			if (!av || !bv) continue; // both must be scored
+			units.push({ stmt_hash: e.stmt_hash, evidence_hash: e.evidence_hash, subject: e.subject,
+				stmt_type: e.stmt_type, object: e.object, gold: e.gold.verdict, av, bv, tags: e.gold.tags, n_ev: 1 });
+		}
+	} else {
+		// roll up evidences per statement; majority-vote each of gold/A/B
+		const byStmt = new Map<string, JoinedEvidence[]>();
+		for (const e of joined) {
+			if (!e.gold) continue;
+			if (!_v2(e.a_verdict) || !_v2(e.b_verdict)) continue;
+			let arr = byStmt.get(e.stmt_hash);
+			if (!arr) byStmt.set(e.stmt_hash, (arr = []));
+			arr.push(e);
+		}
+		const maj = (es: JoinedEvidence[], pick: (e: JoinedEvidence) => string): 'correct' | 'incorrect' => {
+			const c = es.filter((e) => pick(e) === 'correct').length;
+			return c > es.length / 2 ? 'correct' : 'incorrect';
+		};
+		for (const [sh, es] of byStmt) {
+			const e0 = es[0];
+			units.push({ stmt_hash: sh, evidence_hash: null, subject: e0.subject, stmt_type: e0.stmt_type,
+				object: e0.object,
+				gold: maj(es, (e) => e.gold!.verdict),
+				av: maj(es, (e) => e.a_verdict), bv: maj(es, (e) => e.b_verdict),
+				tags: [...new Set(es.flatMap((e) => e.gold!.tags))], n_ev: es.length });
+		}
+	}
+
+	const toItem = (u: Unit): GoldItem => ({ stmt_hash: u.stmt_hash, evidence_hash: u.evidence_hash,
+		subject: u.subject, stmt_type: u.stmt_type, object: u.object, gold: u.gold,
+		a_verdict: u.av, b_verdict: u.bv, tags: u.tags, n_ev: u.n_ev });
+
+	const errs = units.filter((u) => u.gold === 'incorrect');
+	const sups = units.filter((u) => u.gold === 'correct');
+	// catching an error = saying 'incorrect'
+	const aErr = errs.filter((u) => u.av === 'incorrect').length;
+	const bErr = errs.filter((u) => u.bv === 'incorrect').length;
+	let both = 0, aOnly = 0, bOnly = 0, neither = 0;
+	for (const u of errs) {
+		const ac = u.av === 'incorrect', bc = u.bv === 'incorrect';
+		if (ac && bc) both++;
+		else if (ac) aOnly++;
+		else if (bc) bOnly++;
+		else neither++;
+	}
+	// order errors: both-caught, A-only, B-only, missed-by-both (reads left→worst-right)
+	const rank = (u: Unit) => {
+		const ac = u.av === 'incorrect', bc = u.bv === 'incorrect';
+		if (ac && bc) return 0;
+		if (ac) return 1;
+		if (bc) return 2;
+		return 3;
+	};
+	const orderedErrors = [...errs].sort((x, y) => rank(x) - rank(y)).map(toItem);
+
+	const aSupRight = sups.filter((u) => u.av === 'correct').length;
+	const bSupRight = sups.filter((u) => u.bv === 'correct').length;
+
+	const conf = (pick: (u: Unit) => 'correct' | 'incorrect'): ConfMatrix => {
+		let gc_pc = 0, gc_pi = 0, gi_pc = 0, gi_pi = 0;
+		for (const u of units) {
+			const pv = pick(u);
+			if (u.gold === 'correct' && pv === 'correct') gc_pc++;
+			else if (u.gold === 'correct') gc_pi++;
+			else if (pv === 'correct') gi_pc++;
+			else gi_pi++;
+		}
+		return { gc_pc, gc_pi, gi_pc, gi_pi, n: units.length };
+	};
+
+	return {
+		run_a: runSummary(a),
+		run_b: runSummary(b),
+		granularity,
+		present: units.length > 0,
+		n: units.length,
+		n_supported: sups.length,
+		n_error: errs.length,
+		a_conf: conf((u) => u.av),
+		b_conf: conf((u) => u.bv),
+		errors: orderedErrors,
+		error_partition: { both, a_only: aOnly, b_only: bOnly, neither },
+		supported_total: sups.length,
+		supported_a_right: aSupRight,
+		supported_b_right: bSupRight,
+		a_error_recall: wilsonCI(aErr, errs.length),
+		b_error_recall: wilsonCI(bErr, errs.length),
+		a_supported_recall: wilsonCI(aSupRight, sups.length),
+		b_supported_recall: wilsonCI(bSupRight, sups.length)
+	};
+}
+
 // ── L1: stratify one confusion cell across an axis ──────────────────────────
 
 export type CompareCell = 'acbc' | 'acbi' | 'aibc' | 'aibi';
