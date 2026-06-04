@@ -22,6 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
+from indra_belief.curation import is_gold_correct
 from indra_belief.noise_model import (
     INDRA_PRIORS,
     RECALIBRATED_PRIORS,
@@ -38,7 +39,8 @@ def load_benchmark(path: str) -> list[dict]:
 
 
 def is_correct(record: dict) -> bool:
-    return record["tag"] == "correct"
+    # the gold atom — a benchmark record's curation tag is correct iff "correct"
+    return is_gold_correct(record.get("tag"))
 
 
 def compute_auprc(y_true: np.ndarray, y_score: np.ndarray) -> float:

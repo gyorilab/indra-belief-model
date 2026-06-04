@@ -23,11 +23,15 @@ from __future__ import annotations
 import json
 import math
 import statistics
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Iterable
 
 ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from indra_belief.curation import is_gold_correct  # noqa: E402
 
 
 def load_jsonl(p: Path) -> dict:
@@ -37,7 +41,7 @@ def load_jsonl(p: Path) -> dict:
 def confusion(run: dict, shared: list, src: dict) -> dict:
     tp = fp = fn = tn = 0
     for h in shared:
-        gold = src[h]["tag"] == "correct"
+        gold = is_gold_correct(src[h]["tag"])
         pred = run[h]["verdict"] == "correct"
         if pred and gold:
             tp += 1
@@ -90,7 +94,7 @@ def ece(rows: Iterable[dict], src: dict) -> float:
         mean_pred = statistics.mean(r.get("score") or 0.5 for r in bin_rows)
         empirical = sum(
             1 for r in bin_rows
-            if src[r["source_hash"]]["tag"] == "correct"
+            if is_gold_correct(src[r["source_hash"]]["tag"])
         ) / len(bin_rows)
         tot += abs(mean_pred - empirical) * len(bin_rows) / n_all
     return tot
@@ -127,7 +131,7 @@ def main() -> None:
     both_correct = 0
     both_wrong = 0
     for h in shared:
-        gold = src[h]["tag"] == "correct"
+        gold = is_gold_correct(src[h]["tag"])
         aa_match = (aa[h]["verdict"] == "correct") == gold
         cc_match = (cc[h]["verdict"] == "correct") == gold
         if aa_match and cc_match:
@@ -203,7 +207,7 @@ def main() -> None:
             def rate(run_by):
                 n = sum(
                     1 for h in tag_hashes
-                    if (run_by[h]["verdict"] == "correct") == (tag == "correct")
+                    if (run_by[h]["verdict"] == "correct") == (is_gold_correct(tag))
                 )
                 return f"{n}/{n_total} = {n/n_total:.0%}"
 
@@ -220,7 +224,7 @@ def main() -> None:
             def rate(run_by):
                 n = sum(
                     1 for h in stype_hashes
-                    if (run_by[h]["verdict"] == "correct") == (src[h]["tag"] == "correct")
+                    if (run_by[h]["verdict"] == "correct") == (is_gold_correct(src[h]["tag"]))
                 )
                 return f"{n}/{n_total} = {n/n_total:.0%}"
 
@@ -237,7 +241,7 @@ def main() -> None:
             def rate(run_by):
                 n = sum(
                     1 for h in sa_hashes
-                    if (run_by[h]["verdict"] == "correct") == (src[h]["tag"] == "correct")
+                    if (run_by[h]["verdict"] == "correct") == (is_gold_correct(src[h]["tag"]))
                 )
                 return f"{n}/{n_total} = {n/n_total:.0%}"
 

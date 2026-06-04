@@ -18,10 +18,14 @@ from __future__ import annotations
 import json
 import re
 import statistics
+import sys
 from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from indra_belief.curation import is_gold_correct  # noqa: E402
 
 
 def load_source(name: str) -> dict:
@@ -49,7 +53,7 @@ def parse_probes(rec: dict) -> dict[str, tuple[str, str]]:
 def binary_confusion(rows: list[dict]) -> dict:
     tp = fp = tn = fn = 0
     for r in rows:
-        gp = r["tag"] == "correct"
+        gp = is_gold_correct(r["tag"])
         pp = r["verdict"] == "correct"
         if pp and gp:
             tp += 1
@@ -102,7 +106,7 @@ def is_class_a_fp(rec: dict, gold_tag: str) -> bool:
                  scope=asserted.
     Predicted correct; gold says incorrect.
     """
-    if rec["verdict"] != "correct" or gold_tag == "correct":
+    if rec["verdict"] != "correct" or is_gold_correct(gold_tag):
         return False
     p = parse_probes(rec)
     return (
@@ -120,7 +124,7 @@ def is_class_b_fp(rec: dict, gold_tag: str) -> bool:
     marker that Y2 flips to effective match. Predicted correct; gold
     says incorrect.
     """
-    if rec["verdict"] != "correct" or gold_tag == "correct":
+    if rec["verdict"] != "correct" or is_gold_correct(gold_tag):
         return False
     p = parse_probes(rec)
     # Class B requires the relation_axis ANSWER was direct_sign_mismatch
@@ -233,7 +237,7 @@ def main():
             h for h in shared
             if x_by[h]["verdict"] != "correct"
             and y_by[h]["verdict"] == "correct"
-            and src[h]["tag"] == "correct"
+            and is_gold_correct(src[h]["tag"])
         ]
         y_rescued_kept = [h for h in y_rescued if z_by[h]["verdict"] == "correct"]
         kept_rate = len(y_rescued_kept) / (len(y_rescued) or 1)
@@ -247,8 +251,8 @@ def main():
         emit_section(out, "Y→Z regressions")
         regressions = [
             h for h in shared
-            if (y_by[h]["verdict"] == "correct") == (src[h]["tag"] == "correct")
-            and (z_by[h]["verdict"] == "correct") != (src[h]["tag"] == "correct")
+            if (y_by[h]["verdict"] == "correct") == (is_gold_correct(src[h]["tag"]))
+            and (z_by[h]["verdict"] == "correct") != (is_gold_correct(src[h]["tag"]))
         ]
         out.write(f"- Y-correct cases now Z-incorrect: **{len(regressions)}**\n\n")
         if regressions:
@@ -273,7 +277,7 @@ def main():
             def rate(runs_by: dict[str, dict]) -> str:
                 n = sum(
                     1 for h in tag_hashes
-                    if (runs_by[h]["verdict"] == "correct") == (tag == "correct")
+                    if (runs_by[h]["verdict"] == "correct") == (is_gold_correct(tag))
                 )
                 return f"{n}/{n_total} = {n/n_total:.0%}"
 
@@ -296,7 +300,7 @@ def main():
                 if not bin_rows:
                     continue
                 mean_pred = statistics.mean(r.get("score") or 0.5 for r in bin_rows)
-                empirical = sum(1 for r in bin_rows if r["tag"] == "correct") / len(bin_rows)
+                empirical = sum(1 for r in bin_rows if is_gold_correct(r["tag"])) / len(bin_rows)
                 tot += abs(mean_pred - empirical) * len(bin_rows) / n_all
             return tot
 

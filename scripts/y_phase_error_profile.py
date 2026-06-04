@@ -21,10 +21,14 @@ from __future__ import annotations
 import json
 import re
 import statistics
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from indra_belief.curation import is_gold_correct  # noqa: E402
 
 # Source records for evidence_text + curator_note + tag
 def load_source(name: str) -> dict:
@@ -52,7 +56,7 @@ def parse_probes(rec: dict) -> dict[str, tuple[str, str]]:
 def binary_confusion(rows: list[dict]) -> dict:
     tp = fp = tn = fn = 0
     for r in rows:
-        gp = r["tag"] == "correct"; pp = r["verdict"] == "correct"
+        gp = is_gold_correct(r["tag"]); pp = r["verdict"] == "correct"
         if pp and gp: tp += 1
         elif pp: fp += 1
         elif gp: fn += 1
@@ -140,9 +144,9 @@ def main():
                          and x_by[h]["verdict"] == "correct")
             y_corr = sum(1 for h in shared if src["eval_set_v4"][h]["tag"] == tag
                          and y_by[h]["verdict"] == "correct")
-            target = "correct" if tag == "correct" else "incorrect"
-            x_right = x_corr if tag == "correct" else (n_total - x_corr)
-            y_right = y_corr if tag == "correct" else (n_total - y_corr)
+            target = "correct" if is_gold_correct(tag) else "incorrect"
+            x_right = x_corr if is_gold_correct(tag) else (n_total - x_corr)
+            y_right = y_corr if is_gold_correct(tag) else (n_total - y_corr)
             per_tag.append([
                 tag, n_total,
                 f"{x_right}/{n_total} = {x_right/n_total:.0%}",
@@ -157,12 +161,12 @@ def main():
         per_type: list[list[str]] = []
         for stype, n_total in types.most_common(10):
             n_gold_pos = sum(1 for h in shared if src["eval_set_v4"][h]["stmt_type"] == stype
-                             and src["eval_set_v4"][h]["tag"] == "correct")
+                             and is_gold_correct(src["eval_set_v4"][h]["tag"]))
             x_recall = sum(1 for h in shared if src["eval_set_v4"][h]["stmt_type"] == stype
-                           and src["eval_set_v4"][h]["tag"] == "correct"
+                           and is_gold_correct(src["eval_set_v4"][h]["tag"])
                            and x_by[h]["verdict"] == "correct")
             y_recall = sum(1 for h in shared if src["eval_set_v4"][h]["stmt_type"] == stype
-                           and src["eval_set_v4"][h]["tag"] == "correct"
+                           and is_gold_correct(src["eval_set_v4"][h]["tag"])
                            and y_by[h]["verdict"] == "correct")
             if n_gold_pos == 0:
                 per_type.append([stype, n_total, n_gold_pos, "—", "—", "—"])
@@ -181,9 +185,9 @@ def main():
         per_src: list[list[str]] = []
         for sa, n_total in srcs.most_common():
             x_correct = sum(1 for h in shared if src["eval_set_v4"][h]["source_api"] == sa
-                            and (x_by[h]["verdict"] == "correct") == (src["eval_set_v4"][h]["tag"] == "correct"))
+                            and (x_by[h]["verdict"] == "correct") == (is_gold_correct(src["eval_set_v4"][h]["tag"])))
             y_correct = sum(1 for h in shared if src["eval_set_v4"][h]["source_api"] == sa
-                            and (y_by[h]["verdict"] == "correct") == (src["eval_set_v4"][h]["tag"] == "correct"))
+                            and (y_by[h]["verdict"] == "correct") == (is_gold_correct(src["eval_set_v4"][h]["tag"])))
             per_src.append([sa, n_total,
                             f"{x_correct}/{n_total} = {x_correct/n_total:.0%}",
                             f"{y_correct}/{n_total} = {y_correct/n_total:.0%}",
@@ -200,8 +204,8 @@ def main():
         for lo, hi, lbl in bins:
             x_in = [r for r in x if lo <= (r.get("score") or 0.5) < hi]
             y_in = [r for r in y if lo <= (r.get("score") or 0.5) < hi]
-            x_pos = sum(1 for r in x_in if src["eval_set_v4"][r["source_hash"]]["tag"] == "correct")
-            y_pos = sum(1 for r in y_in if src["eval_set_v4"][r["source_hash"]]["tag"] == "correct")
+            x_pos = sum(1 for r in x_in if is_gold_correct(src["eval_set_v4"][r["source_hash"]]["tag"]))
+            y_pos = sum(1 for r in y_in if is_gold_correct(src["eval_set_v4"][r["source_hash"]]["tag"]))
             calib_rows.append([
                 lbl,
                 f"{len(x_in)}",
@@ -220,7 +224,7 @@ def main():
                 if not bin_rows: continue
                 mean_pred = statistics.mean(r.get("score") or 0.5 for r in bin_rows)
                 empirical = sum(1 for r in bin_rows
-                                if src["eval_set_v4"][r["source_hash"]]["tag"] == "correct") / len(bin_rows)
+                                if is_gold_correct(src["eval_set_v4"][r["source_hash"]]["tag"])) / len(bin_rows)
                 tot += abs(mean_pred - empirical) * len(bin_rows) / n_all
             return tot
         out.write(f"**Expected Calibration Error**: X = {ece(x):.3f}, Y = {ece(y):.3f}\n\n")
@@ -230,7 +234,7 @@ def main():
         x_errors: Counter = Counter()
         y_errors: Counter = Counter()
         for h in shared:
-            gold = src["eval_set_v4"][h]["tag"] == "correct"
+            gold = is_gold_correct(src["eval_set_v4"][h]["tag"])
             x_pred = x_by[h]["verdict"] == "correct"
             y_pred = y_by[h]["verdict"] == "correct"
             if x_pred != gold:

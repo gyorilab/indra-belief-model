@@ -23,6 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from indra_belief.curation import is_gold_correct
 from indra_belief.data.corpus import CorpusIndex
 from indra_belief.model_client import ModelClient, concurrency_hint
 from indra_belief.scorers.scorer import score_evidence
@@ -36,7 +37,7 @@ def _score_one(rec, client) -> dict:
     """Score one record via the S-phase pipeline. Returns the
     flattened-row dict in the same shape m13_analyze.py / s11_ship
     expect."""
-    target = "correct" if rec.tag == "correct" else "incorrect"
+    target = "correct" if is_gold_correct(rec.tag) else "incorrect"
     try:
         result = score_evidence(rec.statement, rec.evidence, client)
     except Exception as e:

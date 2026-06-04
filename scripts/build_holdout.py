@@ -15,10 +15,15 @@ from __future__ import annotations
 
 import json
 import random
+import sys
 from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from indra_belief.curation import is_gold_correct  # noqa: E402
+
 DATA = ROOT / "data" / "benchmark"
 
 # Explicit set of source_hashes used as contrastive examples in v6/v7 prompts
@@ -121,8 +126,8 @@ def main(seed: int = 42, n_correct: int = 100, n_incorrect: int = 100):
         seen.add(r["source_hash"])
         dedup.append(r)
 
-    correct = [r for r in dedup if r["tag"] == "correct"]
-    incorrect = [r for r in dedup if r["tag"] != "correct"]
+    correct = [r for r in dedup if is_gold_correct(r["tag"])]
+    incorrect = [r for r in dedup if not is_gold_correct(r["tag"])]
     print(f"After dedup: {len(correct)} correct, {len(incorrect)} incorrect")
 
     random.shuffle(correct)
