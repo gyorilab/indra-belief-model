@@ -15,6 +15,7 @@
 		<li><a href="/statements" class:active={isActive('/statements')}>statements</a></li>
 		<li><a href="/runs" class:active={isActive('/runs')}>runs</a></li>
 		<li><a href="/compare" class:active={isActive('/compare')}>compare</a></li>
+		<li><a href="/adjudicate" class:active={isActive('/adjudicate')}>adjudicate</a></li>
 		<li><a href="/review" class:active={isActive('/review')}>review</a></li>
 	</ul>
 </nav>

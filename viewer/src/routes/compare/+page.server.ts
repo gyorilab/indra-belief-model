@@ -1,7 +1,25 @@
-import { compareRuns, getRuns, type Comparison, type RunSummary } from '$lib/data/queries';
+import {
+	getRuns,
+	compareAnatomy,
+	stratifyCell,
+	cohortForCell,
+	evidenceSideBySide,
+	type RunSummary,
+	type CompareAnatomy,
+	type CellStratification,
+	type Cohort,
+	type SideBySideEvidence,
+	type CompareCell,
+	type StratAxis,
+	type GoldFilter
+} from '$lib/data/queries';
 import type { PageServerLoad } from './$types';
 
 const RUN_ID_RE = /^[a-f0-9]{32}$/i;
+const HASH_RE = /^[a-f0-9]{1,32}$/i;
+const CELLS: CompareCell[] = ['acbc', 'acbi', 'aibc', 'aibi'];
+const AXES: StratAxis[] = ['source_api', 'stmt_type', 'grounding_status', 'bucket_a', 'bucket_b'];
+const GOLD_FILTERS: GoldFilter[] = ['any', 'match', 'fp', 'fn', 'disagree'];
 
 function pickRun(runs: RunSummary[], requested: string | null): string | null {
 	if (requested && RUN_ID_RE.test(requested) && runs.some((r) => r.run_id === requested)) {
@@ -12,18 +30,71 @@ function pickRun(runs: RunSummary[], requested: string | null): string | null {
 
 export const load: PageServerLoad = async ({ url }) => {
 	const runs = getRuns();
+	const q = url.searchParams;
 
 	// Default a/b to the two newest runs (getRuns returns newest-first).
-	const defaultA = runs[0]?.run_id ?? null;
-	const defaultB = runs[1]?.run_id ?? null;
+	const a = pickRun(runs, q.get('a')) ?? runs[0]?.run_id ?? null;
+	const b = pickRun(runs, q.get('b')) ?? runs[1]?.run_id ?? null;
 
-	const a = pickRun(runs, url.searchParams.get('a')) ?? defaultA;
-	const b = pickRun(runs, url.searchParams.get('b')) ?? defaultB;
+	const semanticOnly = q.get('sem') === '1';
+	const cellParam = q.get('cell');
+	const cell: CompareCell | null = cellParam && CELLS.includes(cellParam as CompareCell) ? (cellParam as CompareCell) : null;
+	const axisParam = q.get('axis');
+	const axis: StratAxis | null = axisParam && AXES.includes(axisParam as StratAxis) ? (axisParam as StratAxis) : null;
+	const axisValue = q.get('val');
+	const ev = q.get('ev'); // "<stmt_hash>.<evidence_hash>"
+	const goldMode = q.get('mode') === 'gold';
+	const goldParam = q.get('gold');
+	const goldFilter: GoldFilter | null =
+		goldParam && GOLD_FILTERS.includes(goldParam as GoldFilter) ? (goldParam as GoldFilter) : null;
 
-	let comparison: Comparison | null = null;
+	let anatomy: CompareAnatomy | null = null;
+	let stratification: CellStratification | null = null;
+	let cohort: Cohort | null = null;
+	let sideBySide: SideBySideEvidence | null = null;
+
 	if (a && b && a !== b) {
-		comparison = compareRuns(a, b);
+		anatomy = compareAnatomy(a, b);
+
+		// L3: a specific evidence is selected → side-by-side reasoning.
+		if (ev) {
+			const dot = ev.indexOf('.');
+			if (dot > 0) {
+				const sh = ev.slice(0, dot);
+				const eh = ev.slice(dot + 1);
+				if (HASH_RE.test(sh) && HASH_RE.test(eh)) {
+					sideBySide = evidenceSideBySide(a, b, sh, eh);
+				}
+			}
+		}
+
+		// L1 + L2: a cell is selected → stratify (default axis source_api) + cohort.
+		if (cell) {
+			const stratAxis: StratAxis = axis ?? 'source_api';
+			stratification = stratifyCell(a, b, cell, stratAxis, semanticOnly);
+			cohort = cohortForCell(a, b, cell, {
+				axis: axis,
+				axisValue: axis ? axisValue : null,
+				semanticOnly,
+				goldFilter
+			});
+		}
 	}
 
-	return { runs, comparison, selectedA: a, selectedB: b };
+	return {
+		runs,
+		selectedA: a,
+		selectedB: b,
+		semanticOnly,
+		goldMode,
+		goldFilter,
+		cell,
+		axis,
+		axisValue,
+		ev,
+		anatomy,
+		stratification,
+		cohort,
+		sideBySide
+	};
 };

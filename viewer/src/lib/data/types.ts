@@ -87,3 +87,40 @@ export interface EvidenceRow {
 	latency_s?: number | null;
 	tokens?: number | null;
 }
+
+/**
+ * One INDRA curation, from data/benchmark/rasmachine_curations.jsonl (pulled
+ * from db.indra.bio/curation/list/<matches_hash>). A human correctness label
+ * on a specific (statement, evidence). NOTE the native-int hashes: these are
+ * the INDRA keys, distinct from the viewer's internal hex stmt_hash/evidence_hash.
+ */
+export interface CurationRow {
+	/** INDRA statement matches_hash (== pa_hash). int. */
+	_matches_hash: number;
+	pa_hash: number;
+	/** INDRA evidence source_hash. int. Joins to EvidenceRow.source_hash. */
+	source_hash: number;
+	/** correct | no_relation | wrong_relation | grounding | polarity |
+	 *  act_vs_amt | hypothesis | negative_result | entity_boundaries |
+	 *  mod_site | other */
+	tag: string;
+	curator: string;
+	date: string;
+	/** free-text curator note (often empty). */
+	text: string;
+}
+
+/** The derived gold verdict for one (matches_hash, source_hash), aggregated
+ *  over possibly-multiple curations with the any-incorrect-wins rule. */
+export interface GoldVerdict {
+	/** 'correct' iff every curation tag == 'correct'; else 'incorrect'. */
+	verdict: 'correct' | 'incorrect';
+	/** number of curations backing this verdict. */
+	n: number;
+	/** every tag seen (correct, wrong_relation, …) — the "why". */
+	tags: string[];
+	/** distinct curator identities. */
+	curators: string[];
+	/** non-empty free-text notes. */
+	notes: string[];
+}

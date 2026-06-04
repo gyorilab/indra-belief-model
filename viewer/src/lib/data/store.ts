@@ -8,7 +8,19 @@
  */
 import { readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { RunMeta, StatementRollup, EvidenceRow } from './types';
+import { DATA_DIR } from './runs';
+import {
+	buildCurationIndex,
+	EMPTY_CURATION_INDEX,
+	curationKey,
+	goldForRow,
+	type CurationIndex
+} from './curation';
+import type { RunMeta, StatementRollup, EvidenceRow, CurationRow } from './types';
+
+// Re-export the curation domain surface so existing call sites can keep importing
+// from './store' (the IO entry point) without reaching into ./curation directly.
+export { curationKey, goldForRow, type CurationIndex };
 
 export interface RunData {
 	meta: RunMeta;
@@ -84,4 +96,42 @@ export function getEvidenceIndex(meta: RunMeta): EvidenceIndex {
 /** Evidence rows for one statement (ordered as in the export). */
 export function evidenceForStatement(meta: RunMeta, stmtHash: string): EvidenceRow[] {
 	return getEvidenceIndex(meta).byStmt.get(stmtHash) ?? [];
+}
+
+// ── Curation gold index (corpus-scoped, not per-run) ────────────────────────
+//
+// INDRA curations are human correctness labels keyed on INDRA (matches_hash,
+// source_hash) ints — the SAME for every scoring run (gold belongs to the
+// corpus, not a pass). store.ts owns ONLY the IO + mtime cache here; the domain
+// (gold rule, join key, index reduction, evidence->gold lookup) lives in
+// ./curation, the cross-language twin of src/indra_belief/curation.py.
+
+const CURATIONS_PATH = join(DATA_DIR, 'benchmark', 'rasmachine_curations.jsonl');
+
+let _curCache: { mtime: number; index: CurationIndex } | null = null;
+
+/** Load (and cache) the global curation index. Returns the empty index
+ *  (present=false) when the file has not been pulled — never throws, so gold
+ *  surfaces can render an honest "no curations pulled" state. Pure domain
+ *  (parse->index, gold rule) is delegated to buildCurationIndex. */
+export function getCurationIndex(): CurationIndex {
+	if (!existsSync(CURATIONS_PATH)) {
+		_curCache = null;
+		return EMPTY_CURATION_INDEX;
+	}
+	const mtime = statSync(CURATIONS_PATH).mtimeMs;
+	if (_curCache && _curCache.mtime === mtime) return _curCache.index;
+
+	const rows: CurationRow[] = [];
+	for (const line of readFileSync(CURATIONS_PATH, 'utf8').split('\n')) {
+		if (!line.trim()) continue;
+		try {
+			rows.push(JSON.parse(line) as CurationRow);
+		} catch {
+			/* skip malformed line */
+		}
+	}
+	const index = buildCurationIndex(rows);
+	_curCache = { mtime, index };
+	return index;
 }
