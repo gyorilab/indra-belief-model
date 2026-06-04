@@ -31,12 +31,21 @@ Usage (rough pass)::
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import os
 import random
+import sys
 from collections import Counter, defaultdict
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from indra_belief.sampling import (  # noqa: E402
+    item_id as _make_item_id,
+    two_stage_sample,
+    wilson_halfwidth as _wilson_halfwidth,
+)
 
 # 6 substantive buckets get equal allocation; the 2 telemetry/stub buckets get a
 # small fixed audit-n (we want to confirm routing, not a tight rate).
@@ -56,44 +65,7 @@ def _load_export(export_dir: str):
 
 
 def _item_id(run_id: str, stmt_hash: str, evidence_hash: str) -> str:
-    h = hashlib.sha1(f"{run_id}|{stmt_hash}|{evidence_hash}".encode()).hexdigest()
-    return h[:12]
-
-
-def _wilson_halfwidth(n: int, p: float = 0.5, z: float = 1.96) -> float:
-    """Wilson 95% interval half-width at the given p (worst case p=0.5)."""
-    if n <= 0:
-        return float("nan")
-    denom = 1 + z * z / n
-    centre = (p + z * z / (2 * n)) / denom
-    margin = (z / denom) * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
-    # report the (slightly asymmetric) interval's larger half-width
-    return max(centre - (centre - margin), (centre + margin) - centre, margin)
-
-
-def two_stage_sample(rows, target, cap, taken_per_stmt, rng):
-    """Draw up to `target` rows: shuffle statements (PSUs), take <= remaining-cap
-    rows each (rows shuffled), respecting the GLOBAL per-statement cap so a single
-    statement never contributes more than `cap` items to the whole queue."""
-    by_stmt = defaultdict(list)
-    for r in rows:
-        by_stmt[r["stmt_hash"]].append(r)
-    stmts = list(by_stmt.keys())
-    rng.shuffle(stmts)
-    picked = []
-    for h in stmts:
-        if len(picked) >= target:
-            break
-        remaining_cap = cap - taken_per_stmt.get(h, 0)
-        if remaining_cap <= 0:
-            continue
-        srows = by_stmt[h][:]
-        rng.shuffle(srows)
-        take = min(remaining_cap, len(srows), target - len(picked))
-        for r in srows[:take]:
-            picked.append(r)
-            taken_per_stmt[h] += 1
-    return picked
+    return _make_item_id(run_id, stmt_hash, evidence_hash)
 
 
 def build_queue(args) -> tuple[list[dict], dict]:
