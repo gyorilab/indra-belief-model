@@ -29,6 +29,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.curation import is_gold_correct  # noqa: E402
+from indra_belief.metrics import confusion_metrics  # noqa: E402
 
 # Source records for evidence_text + curator_note + tag
 def load_source(name: str) -> dict:
@@ -54,22 +55,8 @@ def parse_probes(rec: dict) -> dict[str, tuple[str, str]]:
 
 
 def binary_confusion(rows: list[dict]) -> dict:
-    tp = fp = tn = fn = 0
-    for r in rows:
-        gp = is_gold_correct(r["tag"]); pp = r["verdict"] == "correct"
-        if pp and gp: tp += 1
-        elif pp: fp += 1
-        elif gp: fn += 1
-        else: tn += 1
-    n = len(rows)
-    prec = tp/(tp+fp) if (tp+fp) else 0
-    rec = tp/(tp+fn) if (tp+fn) else 0
-    f1 = 2*prec*rec/(prec+rec) if (prec+rec) else 0
-    return {
-        "n": n, "tp": tp, "fp": fp, "fn": fn, "tn": tn,
-        "accuracy": (tp+tn)/n, "precision": prec,
-        "recall": rec, "f1": f1,
-    }
+    # gold = curation tag; pred = model verdict. The confusion math is library-owned.
+    return confusion_metrics((is_gold_correct(r["tag"]), r["verdict"] == "correct") for r in rows)
 
 
 def emit_section(out, title: str) -> None:

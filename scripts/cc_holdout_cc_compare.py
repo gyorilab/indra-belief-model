@@ -32,6 +32,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.curation import is_gold_correct  # noqa: E402
+from indra_belief.metrics import confusion_pr  # noqa: E402
 
 
 def load_jsonl(p: Path) -> dict:
@@ -39,25 +40,10 @@ def load_jsonl(p: Path) -> dict:
 
 
 def confusion(run: dict, shared: list, src: dict) -> dict:
-    tp = fp = fn = tn = 0
-    for h in shared:
-        gold = is_gold_correct(src[h]["tag"])
-        pred = run[h]["verdict"] == "correct"
-        if pred and gold:
-            tp += 1
-        elif pred:
-            fp += 1
-        elif gold:
-            fn += 1
-        else:
-            tn += 1
-    n = tp + fp + fn + tn
-    p = tp / (tp + fp) if (tp + fp) else 0
-    r = tp / (tp + fn) if (tp + fn) else 0
-    f1 = 2 * p * r / (p + r) if (p + r) else 0
-    return dict(tp=tp, fp=fp, fn=fn, tn=tn, p=p, r=r, f1=f1,
-                acc=(tp + tn) / n if n else 0)
-
+    # gold = curation tag; pred = model verdict. Confusion math is library-owned.
+    return confusion_pr(
+        (is_gold_correct(src[h]["tag"]), run[h]["verdict"] == "correct") for h in shared
+    )
 
 def mcnemar_exact_pvalue(b: int, c: int) -> float:
     """Exact (mid-p) McNemar test on discordant pairs.
