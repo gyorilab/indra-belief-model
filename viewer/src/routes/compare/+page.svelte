@@ -283,6 +283,42 @@
 						{/if}
 					</div>
 
+					{#if data.goldMode && gold?.present}
+						{@const aS = gold.a_prf.supported}
+						{@const bS = gold.b_prf.supported}
+						{@const aE = gold.a_prf.error}
+						{@const bE = gold.b_prf.error}
+						<div class="prf">
+							<table class="prf-table">
+								<thead>
+									<tr>
+										<th class="prf-class">positive class</th>
+										<th colspan="3" class="prf-model mA">{aModel}</th>
+										<th colspan="3" class="prf-model mB">{bModel}</th>
+									</tr>
+									<tr><th></th><th>P</th><th>R</th><th>F1</th><th>P</th><th>R</th><th>F1</th></tr>
+								</thead>
+								<tbody>
+									<tr>
+										<td class="prf-class">supported <span class="hint">(n+={gold.n_gold_correct})</span></td>
+										<td class="mono">{aS.precision.toFixed(2)}</td><td class="mono">{aS.recall.toFixed(2)}</td><td class="mono">{aS.f1.toFixed(2)}</td>
+										<td class="mono">{bS.precision.toFixed(2)}</td><td class="mono">{bS.recall.toFixed(2)}</td><td class="mono">{bS.f1.toFixed(2)}</td>
+									</tr>
+									<tr class="prf-error">
+										<td class="prf-class">error-detection <span class="hint">(n+={gold.n_gold_incorrect})</span></td>
+										<td class="mono">{aE.precision.toFixed(2)}</td><td class="mono">{aE.recall.toFixed(2)}</td><td class="mono prf-f1">{aE.f1.toFixed(2)}</td>
+										<td class="mono">{bE.precision.toFixed(2)}</td><td class="mono">{bE.recall.toFixed(2)}</td><td class="mono prf-f1">{bE.f1.toFixed(2)}</td>
+									</tr>
+								</tbody>
+							</table>
+							<p class="prf-note hint">
+								the <strong>supported</strong> row is flattered by the {pct(gold.n_gold_correct / Math.max(1, gold.n_evaluable))}-positive gold;
+								<strong>error-detection</strong> (positive = a curator-flagged wrong extraction) is the decision-relevant task —
+								recall is the share of real errors the model catches.
+							</p>
+						</div>
+					{/if}
+
 					<!-- confusion matrix -->
 					<div class="matrix-wrap">
 						<table class="matrix">
@@ -1066,6 +1102,46 @@
 	.gold-scalar .sep {
 		color: var(--ink-faint);
 		margin: 0 0.2rem;
+	}
+	.prf {
+		margin: 0 0 1.6rem;
+	}
+	.prf-table {
+		border-collapse: collapse;
+		font-size: 0.82rem;
+	}
+	.prf-table th,
+	.prf-table td {
+		padding: 0.3rem 0.7rem;
+		text-align: right;
+	}
+	.prf-table thead th {
+		font-family: var(--mono);
+		font-size: 0.68rem;
+		font-weight: 500;
+		color: var(--ink-muted);
+		border-bottom: 1px solid var(--rule);
+	}
+	.prf-table .prf-class {
+		text-align: left;
+		color: var(--ink);
+	}
+	.prf-model {
+		text-align: center !important;
+	}
+	.prf-error {
+		background: var(--gold-wash);
+	}
+	.prf-error .prf-class {
+		font-weight: 600;
+	}
+	.prf-f1 {
+		font-weight: 600;
+	}
+	.prf-note {
+		margin: 0.5rem 0 0;
+		max-width: 72ch;
+		line-height: 1.45;
 	}
 	.cell-gold {
 		display: block;

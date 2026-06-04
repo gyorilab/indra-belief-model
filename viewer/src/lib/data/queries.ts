@@ -587,6 +587,12 @@ export interface GoldCoverage {
 	/** per-model accuracy on the evaluable subset. */
 	a_accuracy: { right: number; n: number };
 	b_accuracy: { right: number; n: number };
+	/** per-model precision/recall/F1, BOTH positive classes. The 'supported'
+	 *  view is flattered by the ~92%-positive gold; the 'error' view (positive =
+	 *  incorrect) is the decision-relevant one — how well the model catches the
+	 *  extractions a curator flagged wrong. */
+	a_prf: GoldPRF;
+	b_prf: GoldPRF;
 	/** per confusion cell. */
 	cells: {
 		acbc: GoldCellTally;
@@ -594,6 +600,30 @@ export interface GoldCoverage {
 		aibc: GoldCellTally;
 		aibi: GoldCellTally;
 	};
+}
+
+/** Precision/recall/F1 for a model vs gold, for each positive class. */
+export interface GoldPRF {
+	/** positive class = 'correct' (supported-detection). */
+	supported: { precision: number; recall: number; f1: number; tp: number; fp: number; fn: number; tn: number };
+	/** positive class = 'incorrect' (error-detection — the hard, useful task). */
+	error: { precision: number; recall: number; f1: number; tp: number; fp: number; fn: number; tn: number };
+}
+
+/** Confusion P/R/F1 over (goldPositive, predPositive) booleans — the TS twin of
+ *  indra_belief.metrics.confusion_metrics, kept tiny + local to the gold query. */
+function prf(pairs: Array<[boolean, boolean]>): { precision: number; recall: number; f1: number; tp: number; fp: number; fn: number; tn: number } {
+	let tp = 0, fp = 0, fn = 0, tn = 0;
+	for (const [gold, pred] of pairs) {
+		if (pred && gold) tp++;
+		else if (pred) fp++;
+		else if (gold) fn++;
+		else tn++;
+	}
+	const p = tp + fp ? tp / (tp + fp) : 0;
+	const r = tp + fn ? tp / (tp + fn) : 0;
+	const f1 = p + r ? (2 * p * r) / (p + r) : 0;
+	return { precision: p, recall: r, f1, tp, fp, fn, tn };
 }
 
 function emptyTally(): GoldCellTally {
@@ -610,6 +640,9 @@ export function compareAnatomy(runIdA: string, runIdB: string): CompareAnatomy |
 	// gold accumulators
 	const gCells = { acbc: emptyTally(), acbi: emptyTally(), aibc: emptyTally(), aibi: emptyTally() };
 	let gPresent = false, gEval = 0, gCorrect = 0, gIncorrect = 0, gARight = 0, gBRight = 0;
+	// (goldPositive, predPositive) pairs per model, for both positive classes
+	const aSup: Array<[boolean, boolean]> = [], bSup: Array<[boolean, boolean]> = [];
+	const aErr: Array<[boolean, boolean]> = [], bErr: Array<[boolean, boolean]> = [];
 	for (const e of joined) {
 		const an = e.a_verdict === 'none';
 		const bn = e.b_verdict === 'none';
@@ -639,6 +672,12 @@ export function compareAnatomy(runIdA: string, runIdB: string): CompareAnatomy |
 			const bRight = e.b_verdict === g;
 			if (aRight) gARight++;
 			if (bRight) gBRight++;
+			// supported-detection: positive = 'correct'
+			aSup.push([g === 'correct', e.a_verdict === 'correct']);
+			bSup.push([g === 'correct', e.b_verdict === 'correct']);
+			// error-detection: positive = 'incorrect'
+			aErr.push([g === 'incorrect', e.a_verdict === 'incorrect']);
+			bErr.push([g === 'incorrect', e.b_verdict === 'incorrect']);
 			const t = gCells[cellKey];
 			t.n_covered++;
 			if (aRight) t.a_right++;
@@ -659,6 +698,8 @@ export function compareAnatomy(runIdA: string, runIdB: string): CompareAnatomy |
 		n_both_scored: bothScored,
 		a_accuracy: { right: gARight, n: gEval },
 		b_accuracy: { right: gBRight, n: gEval },
+		a_prf: { supported: prf(aSup), error: prf(aErr) },
+		b_prf: { supported: prf(bSup), error: prf(bErr) },
 		cells: gCells
 	};
 	return {
