@@ -303,16 +303,40 @@
 									</span>
 								</header>
 
-								<div class="gp-task gp-supported">
-									<div class="gp-task-label">
-										supported claims <span class="gp-n mono">n={gp.n_supported}</span>
-										<span class="hint">— the easy {pct(gp.n_supported / Math.max(1, gp.n))} majority; both near-perfect</span>
+								<!-- THE CLIFF: both classes on ONE recall axis. the gap = positive-vs-negative -->
+								<div class="gp-cliff">
+									<div class="gp-cliff-axis">
+										<span class="gp-axend left">catching errors <span class="mono">n={gp.n_error}</span></span>
+										<span class="gp-axmid mono">recall →</span>
+										<span class="gp-axend right">confirming supported <span class="mono">n={gp.n_supported}</span></span>
 									</div>
-									<div class="gp-recallpair muted">
-										<span class="mA">{aModel.split(' ')[0]}</span> {(gp.supported_a_right / Math.max(1, gp.n_supported) * 100).toFixed(0)}%
-										· <span class="mB">{bModel.split(' ')[0]}</span> {(gp.supported_b_right / Math.max(1, gp.n_supported) * 100).toFixed(0)}%
-										<span class="hint">caught</span>
+									<div class="gp-cliff-plot">
+										<span class="gp-tick" style="left:0%"></span>
+										<span class="gp-tick" style="left:25%"></span>
+										<span class="gp-tick mid" style="left:50%"></span>
+										<span class="gp-tick" style="left:75%"></span>
+										<span class="gp-tick" style="left:100%"></span>
+										{#each [{m:aModel,e:gp.a_error_recall,su:gp.a_supported_recall,c:'mA'},{m:bModel,e:gp.b_error_recall,su:gp.b_supported_recall,c:'mB'}] as row}
+											<div class="gp-slope">
+												<span class="gp-slope-label {row.c}">{row.m.split(' ')[0]}</span>
+												<span class="gp-slope-track">
+													<!-- the span between error-recall and supported-recall = the cliff -->
+													<span class="gp-gap {row.c}g" style="left:{row.e.p*100}%; right:{(1-row.su.p)*100}%"></span>
+													<!-- error CI whisker + dot (the uncertain, decisive end) -->
+													<span class="gp-eband {row.c}b" style="left:{row.e.lo*100}%; right:{(1-row.e.hi)*100}%"></span>
+													<span class="gp-pt err {row.c}p" style="left:{row.e.p*100}%" title="error recall {(row.e.p*100).toFixed(0)}% [{(row.e.lo*100).toFixed(0)}-{(row.e.hi*100).toFixed(0)}], n={row.e.n}"></span>
+													<span class="gp-pt sup {row.c}p" style="left:{row.su.p*100}%" title="supported recall {(row.su.p*100).toFixed(0)}%, n={row.su.n}"></span>
+													<span class="gp-lab err" style="left:{row.e.p*100}%">{(row.e.p*100).toFixed(0)}%</span>
+													<span class="gp-lab sup" style="left:{row.su.p*100}%">{(row.su.p*100).toFixed(0)}%</span>
+												</span>
+											</div>
+										{/each}
 									</div>
+									<p class="gp-cliff-note hint">
+										each line is one model's drop from the easy task (supported, right) to the hard one (errors, left).
+										both fall off a cliff: ~95% → {Math.round(Math.min(gp.a_error_recall.p,gp.b_error_recall.p)*100)}–{Math.round(Math.max(gp.a_error_recall.p,gp.b_error_recall.p)*100)}%.
+										the error-end whiskers (95% CI) overlap, so the {aModel.split(' ')[0]}/{bModel.split(' ')[0]} difference there is inside the noise.
+									</p>
 								</div>
 
 								<div class="gp-task gp-errors">
@@ -353,19 +377,6 @@
 										</div>
 									</div>
 
-									<div class="gp-ci">
-										{#each [{m:aModel,r:aR,c:'mA'},{m:bModel,r:bR,c:'mB'}] as row}
-											<div class="gp-cirow">
-												<span class="gp-cilabel {row.c}">{row.m.split(' ')[0]}</span>
-												<span class="gp-citrack">
-													<span class="gp-ciband {row.c}b" style="left:{row.r.lo*100}%; right:{(1-row.r.hi)*100}%"></span>
-													<span class="gp-cipoint {row.c}p" style="left:{row.r.p*100}%"></span>
-												</span>
-												<span class="gp-cival mono">{(row.r.p*100).toFixed(0)}%</span>
-											</div>
-										{/each}
-										<p class="gp-ci-note hint">recall ± 95% CI. the bands overlap — at n={gp.n_error} the {aModel.split(' ')[0]}/{bModel.split(' ')[0]} gap is inside the noise. both miss <strong>{er.neither}</strong> errors entirely.</p>
-									</div>
 								</div>
 
 								<!-- raw 2x2 per model: area = count, so the imbalance is GEOMETRY not a footnote -->
@@ -1241,16 +1252,123 @@
 		color: var(--ink-muted);
 		margin-left: 0.2rem;
 	}
-	/* TASK 1 supported — visually quiet (the easy, flattering task) */
-	.gp-supported {
-		opacity: 0.62;
-		padding-bottom: 0.9rem;
-		border-bottom: 1px solid var(--rule);
+	/* THE CLIFF — both classes on one recall axis; the slope IS the contrast */
+	.gp-cliff {
+		margin: 0.2rem 0 1.4rem;
 	}
-	.gp-recallpair {
-		font-size: 0.82rem;
+	.gp-cliff-axis {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		font-size: 0.76rem;
+		color: var(--ink-muted);
+		margin-bottom: 0.5rem;
 	}
-	/* TASK 2 errors — the strong center */
+	.gp-cliff-axis .gp-axend.left {
+		color: var(--accent);
+		font-weight: 600;
+	}
+	.gp-cliff-axis .gp-axend.right {
+		color: var(--ok-green);
+	}
+	.gp-axmid {
+		font-size: 0.66rem;
+		color: var(--ink-faint);
+	}
+	.gp-cliff-plot {
+		position: relative;
+		padding: 0.6rem 0 0.3rem;
+	}
+	.gp-tick {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 1px;
+		background: var(--rule);
+	}
+	.gp-tick.mid {
+		background: color-mix(in srgb, var(--ink-faint) 40%, transparent);
+	}
+	.gp-slope {
+		position: relative;
+		display: flex;
+		align-items: center;
+		height: 2.4rem;
+		gap: 0.6rem;
+	}
+	.gp-slope-label {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		width: 5.5rem;
+		text-align: right;
+		flex: none;
+		z-index: 2;
+	}
+	.gp-slope-track {
+		position: relative;
+		flex: 1;
+		height: 100%;
+	}
+	/* the gap line: spans error-recall → supported-recall. its LENGTH = the cliff */
+	.gp-gap {
+		position: absolute;
+		top: 50%;
+		height: 3px;
+		transform: translateY(-50%);
+		border-radius: 2px;
+		opacity: 0.45;
+	}
+	.gp-gap.mAg { background: var(--a-hue); }
+	.gp-gap.mBg { background: var(--b-hue); }
+	/* error-end CI whisker (the uncertain, decisive end) */
+	.gp-eband {
+		position: absolute;
+		top: 50%;
+		height: 0.55rem;
+		transform: translateY(-50%);
+		border-radius: 3px;
+		opacity: 0.28;
+	}
+	.gp-eband.mAb { background: var(--a-hue); }
+	.gp-eband.mBb { background: var(--b-hue); }
+	.gp-pt {
+		position: absolute;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		border-radius: 50%;
+		z-index: 2;
+	}
+	.gp-pt.sup {
+		width: 11px;
+		height: 11px;
+	}
+	.gp-pt.err {
+		width: 11px;
+		height: 11px;
+		background: var(--paper) !important;
+		border: 2px solid;
+	}
+	.gp-pt.mAp { background: var(--a-hue); border-color: var(--a-hue); }
+	.gp-pt.mBp { background: var(--b-hue); border-color: var(--b-hue); }
+	.gp-lab {
+		position: absolute;
+		top: calc(50% + 0.7rem);
+		transform: translateX(-50%);
+		font-family: var(--mono);
+		font-size: 0.64rem;
+		color: var(--ink-muted);
+		white-space: nowrap;
+	}
+	.gp-lab.err {
+		color: var(--accent);
+		font-weight: 600;
+	}
+	.gp-cliff-note {
+		margin: 0.5rem 0 0;
+		max-width: 76ch;
+		line-height: 1.45;
+	}
+	/* errors detail — the dot matrix (drill-down under the cliff) */
 	.gp-matrix {
 		display: flex;
 		flex-direction: column;
