@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import re
-import statistics
 import sys
 from collections import Counter
 from pathlib import Path
@@ -26,7 +25,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.curation import is_gold_correct  # noqa: E402
-from indra_belief.metrics import confusion_metrics  # noqa: E402
+from indra_belief.metrics import confusion_metrics, ece as _ece  # noqa: E402
 
 
 def load_source(name: str) -> dict:
@@ -271,20 +270,9 @@ def main():
 
         # ===== Dim 5: ECE =====
         emit_section(out, "Dim 5 — Expected Calibration Error")
-        bins = [(0, 0.05), (0.05, 0.20), (0.20, 0.35), (0.35, 0.50),
-                (0.50, 0.65), (0.65, 0.80), (0.80, 0.95), (0.95, 1.001)]
 
         def ece(rows_run: list[dict]) -> float:
-            tot = 0.0
-            n_all = len(rows_run)
-            for lo, hi in bins:
-                bin_rows = [r for r in rows_run if lo <= (r.get("score") or 0.5) < hi]
-                if not bin_rows:
-                    continue
-                mean_pred = statistics.mean(r.get("score") or 0.5 for r in bin_rows)
-                empirical = sum(1 for r in bin_rows if is_gold_correct(r["tag"])) / len(bin_rows)
-                tot += abs(mean_pred - empirical) * len(bin_rows) / n_all
-            return tot
+            return _ece((r.get("score") or 0.5, is_gold_correct(r["tag"])) for r in rows_run)
 
         out.write(f"- X = {ece(x_s):.3f}\n")
         out.write(f"- Y = {ece(y_s):.3f}\n")

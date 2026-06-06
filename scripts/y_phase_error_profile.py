@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import re
-import statistics
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -29,7 +28,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.curation import is_gold_correct  # noqa: E402
-from indra_belief.metrics import confusion_metrics  # noqa: E402
+from indra_belief.metrics import confusion_metrics, ece as _ece  # noqa: E402
 
 # Source records for evidence_text + curator_note + tag
 def load_source(name: str) -> dict:
@@ -204,16 +203,8 @@ def main():
 
         # Expected Calibration Error (binary)
         def ece(rows: list[dict]) -> float:
-            tot = 0.0
-            n_all = len(rows)
-            for lo, hi, _ in bins:
-                bin_rows = [r for r in rows if lo <= (r.get("score") or 0.5) < hi]
-                if not bin_rows: continue
-                mean_pred = statistics.mean(r.get("score") or 0.5 for r in bin_rows)
-                empirical = sum(1 for r in bin_rows
-                                if is_gold_correct(src["eval_set_v4"][r["source_hash"]]["tag"])) / len(bin_rows)
-                tot += abs(mean_pred - empirical) * len(bin_rows) / n_all
-            return tot
+            return _ece((r.get("score") or 0.5,
+                         is_gold_correct(src["eval_set_v4"][r["source_hash"]]["tag"])) for r in rows)
         out.write(f"**Expected Calibration Error**: X = {ece(x):.3f}, Y = {ece(y):.3f}\n\n")
 
         # ===== Dim 6: error-mode taxonomy =====

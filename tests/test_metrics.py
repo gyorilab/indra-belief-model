@@ -5,7 +5,7 @@ short-key from aa/cc/three_way confusion). The behavioral guarantee that the
 five eval scripts reproduce their committed .md reports byte-exactly is the
 real extraction proof; these lock the unit contract.
 """
-from indra_belief.metrics import confusion_counts, confusion_metrics, confusion_pr
+from indra_belief.metrics import BINS_8, confusion_counts, confusion_metrics, confusion_pr, ece
 
 
 def test_confusion_counts_quadrants():
@@ -56,3 +56,46 @@ def test_perfect_classifier():
     pairs = [(True, True), (False, False), (True, True)]
     m = confusion_metrics(pairs)
     assert m["precision"] == 1 and m["recall"] == 1 and m["f1"] == 1 and m["accuracy"] == 1
+
+
+# ---- ECE ------------------------------------------------------------------
+# `ece` takes (score, is_correct) pairs the caller has already resolved (the
+# five profile scripts each kept a one-line adapter that applies the
+# `(x.get("score") or 0.5)` fallback + the gold predicate). These lock the
+# 8-bin math; the real proof is the five scripts' .md reports reproducing
+# byte-exactly through this function.
+
+
+def test_ece_empty_is_zero_not_nan():
+    assert ece([]) == 0.0
+
+
+def test_ece_hand_computed_two_bins():
+    # bin (0.05,0.20): two 0.1 scores, 1 correct → |0.1 - 0.5| * 2/4 = 0.2
+    # bin (0.80,0.95): two 0.9 scores, 1 correct → |0.9 - 0.5| * 2/4 = 0.2
+    items = [(0.9, True), (0.9, False), (0.1, False), (0.1, True)]
+    assert ece(items) == 0.4
+
+
+def test_ece_perfect_calibration_is_zero():
+    # all scores 0.9, empirical correct-rate also 0.9 → bin gap 0
+    items = [(0.9, True)] * 9 + [(0.9, False)]
+    assert ece(items) == 0.0
+
+
+def test_ece_bins_are_half_open_low_inclusive():
+    # 0.05 lands in (0.05,0.20) NOT (0,0.05); 0.95 and 1.0 both in (0.95,1.001).
+    # one item per occupied bin → each bin gap weighted by 1/3, summed.
+    items = [(0.05, True), (0.95, False), (1.0, False)]
+    # (0.05,0.20): mean 0.05, emp 1.0, gap 0.95, w 1/3
+    # (0.95,1.001): two items, mean 0.975, emp 0.0, gap 0.975, w 2/3
+    expected = 0.95 * (1 / 3) + 0.975 * (2 / 3)
+    assert abs(ece(items) - expected) < 1e-12
+
+
+def test_ece_default_bins_are_the_8_bin_scheme():
+    assert BINS_8 == [
+        (0.0, 0.05), (0.05, 0.20), (0.20, 0.35), (0.35, 0.50),
+        (0.50, 0.65), (0.65, 0.80), (0.80, 0.95), (0.95, 1.001),
+    ]
+    assert len(BINS_8) == 8

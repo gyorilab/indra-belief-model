@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import math
-import statistics
 import sys
 from collections import Counter
 from itertools import combinations
@@ -21,7 +20,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.curation import is_gold_correct  # noqa: E402
-from indra_belief.metrics import confusion_pr  # noqa: E402
+from indra_belief.metrics import confusion_pr, ece as _ece  # noqa: E402
 
 
 def load(p: Path) -> dict:
@@ -65,24 +64,8 @@ def pairwise_mcnemar(run_a: dict, run_b: dict, shared: list, src: dict) -> dict:
 
 
 def ece(rows, src) -> float:
-    bins = [(0, 0.05), (0.05, 0.20), (0.20, 0.35), (0.35, 0.50),
-            (0.50, 0.65), (0.65, 0.80), (0.80, 0.95), (0.95, 1.001)]
-    rows_list = list(rows)
-    n_all = len(rows_list)
-    if not n_all:
-        return 0.0
-    tot = 0.0
-    for lo, hi in bins:
-        bin_rows = [r for r in rows_list if lo <= (r.get("score") or 0.5) < hi]
-        if not bin_rows:
-            continue
-        mean_pred = statistics.mean(r.get("score") or 0.5 for r in bin_rows)
-        empirical = sum(
-            1 for r in bin_rows
-            if src[r["source_hash"]]["tag"] == "correct"
-        ) / len(bin_rows)
-        tot += abs(mean_pred - empirical) * len(bin_rows) / n_all
-    return tot
+    return _ece((r.get("score") or 0.5, is_gold_correct(src[r["source_hash"]]["tag"]))
+                for r in rows)
 
 
 def emit_table(out, header: list, rows: list) -> None:

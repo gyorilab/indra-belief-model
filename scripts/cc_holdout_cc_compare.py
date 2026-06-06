@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import math
-import statistics
 import sys
 from collections import Counter
 from pathlib import Path
@@ -32,7 +31,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.curation import is_gold_correct  # noqa: E402
-from indra_belief.metrics import confusion_pr  # noqa: E402
+from indra_belief.metrics import confusion_pr, ece as _ece  # noqa: E402
 
 
 def load_jsonl(p: Path) -> dict:
@@ -63,27 +62,8 @@ def mcnemar_exact_pvalue(b: int, c: int) -> float:
 
 def ece(rows: Iterable[dict], src: dict) -> float:
     """Expected Calibration Error on the standard 8-bin scheme."""
-    bins = [(0, 0.05), (0.05, 0.20), (0.20, 0.35), (0.35, 0.50),
-            (0.50, 0.65), (0.65, 0.80), (0.80, 0.95), (0.95, 1.001)]
-    rows_list = list(rows)
-    n_all = len(rows_list)
-    if n_all == 0:
-        return 0.0
-    tot = 0.0
-    for lo, hi in bins:
-        bin_rows = [
-            r for r in rows_list
-            if lo <= (r.get("score") or 0.5) < hi
-        ]
-        if not bin_rows:
-            continue
-        mean_pred = statistics.mean(r.get("score") or 0.5 for r in bin_rows)
-        empirical = sum(
-            1 for r in bin_rows
-            if is_gold_correct(src[r["source_hash"]]["tag"])
-        ) / len(bin_rows)
-        tot += abs(mean_pred - empirical) * len(bin_rows) / n_all
-    return tot
+    return _ece((r.get("score") or 0.5, is_gold_correct(src[r["source_hash"]]["tag"]))
+                for r in rows)
 
 
 def emit_table(out, header: list[str], rows: list[list]) -> None:

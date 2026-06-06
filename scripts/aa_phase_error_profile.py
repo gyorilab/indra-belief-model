@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import re
-import statistics
 import sys
 from collections import Counter
 from pathlib import Path
@@ -22,7 +21,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.curation import is_gold_correct  # noqa: E402
-from indra_belief.metrics import confusion_pr  # noqa: E402
+from indra_belief.metrics import confusion_pr, ece as _ece  # noqa: E402
 
 PROBE_RE = re.compile(r"(subject_role|object_role|relation_axis|scope)=(\S+) \((\w+)\)")
 
@@ -171,22 +170,10 @@ def main():
 
         # ===== Calibration =====
         out.write("## ECE\n\n")
-        bins = [(0, 0.05), (0.05, 0.20), (0.20, 0.35), (0.35, 0.50),
-                (0.50, 0.65), (0.65, 0.80), (0.80, 0.95), (0.95, 1.001)]
 
         def ece(run):
-            tot = 0.0
-            n_all = len(shared)
-            for lo, hi in bins:
-                bin_rows = [run[h] for h in shared if lo <= (run[h].get("score") or 0.5) < hi]
-                if not bin_rows:
-                    continue
-                mean_pred = statistics.mean(r.get("score") or 0.5 for r in bin_rows)
-                empirical = sum(
-                    1 for r in bin_rows if src[r["source_hash"]]["tag"] == "correct"
-                ) / len(bin_rows)
-                tot += abs(mean_pred - empirical) * len(bin_rows) / n_all
-            return tot
+            return _ece((run[h].get("score") or 0.5,
+                         is_gold_correct(src[run[h]["source_hash"]]["tag"])) for h in shared)
 
         out.write(f"- X = {ece(x):.3f}\n")
         out.write(f"- Y = {ece(y):.3f}\n")
