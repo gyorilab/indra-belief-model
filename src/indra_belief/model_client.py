@@ -62,7 +62,10 @@ LOCAL_MODELS: dict[str, dict] = {
     },
     "gemma-remote": {
         "base_url": "http://100.97.101.59:11434/v1",
-        "model_id": "gemma-4-26b",
+        # Gateway serves gemma via ollama under this exact id; the prior
+        # "gemma-4-26b" now 400s ("Invalid model name"). Caught 2026-06-07
+        # when a curation-eval run logged 1557/1606 BadRequestErrors.
+        "model_id": "gemma-4-26b-ollama",
         "reasoning_in_content": False,
         "reasoning_effort": "medium",
         "typical_tokens": 400,
