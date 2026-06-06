@@ -1,0 +1,43 @@
+{
+  "seed": 20260607,
+  "source": "data/benchmark/belief_benchmark.jsonl",
+  "output": "data/benchmark/eval_curation_v1.jsonl",
+  "n": 1606,
+  "n_incorrect": 803,
+  "n_correct": 803,
+  "fresh_pool_size": 2093,
+  "leakage_pairs_excluded": 3515,
+  "leakage_per_file": {
+    "holdout.jsonl": 200,
+    "holdout_cc.jsonl": 454,
+    "holdout_large.jsonl": 3368,
+    "holdout_v15_sample.jsonl": 482,
+    "holdout_v5.jsonl": 96,
+    "holdout_v7_original.jsonl": 200,
+    "eval_set_v4.jsonl": 98,
+    "fewshot_pool.jsonl": 19,
+    "fewshot_pool_v4.jsonl": 20
+  },
+  "stratification": {
+    "types_used": 8,
+    "types_dropped": [
+      "Deacetylation",
+      "Deubiquitination",
+      "Methylation",
+      "Ubiquitination"
+    ],
+    "per_type_pairs_each_class": {
+      "Complex": 468,
+      "Activation": 185,
+      "Phosphorylation": 60,
+      "Inhibition": 45,
+      "IncreaseAmount": 26,
+      "DecreaseAmount": 15,
+      "Dephosphorylation": 3,
+      "Acetylation": 1
+    }
+  },
+  "balance": "1:1 forced",
+  "matching": "stratified 1:1 by stmt_type; source_api matched within type",
+  "gold_rule": "any-incorrect-wins (curation.aggregate_gold)"
+}
