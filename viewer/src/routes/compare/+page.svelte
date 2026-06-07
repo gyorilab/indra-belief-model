@@ -251,7 +251,11 @@
 							<span class="gc-val mono">{gold.n_evaluable.toLocaleString()}</span>
 							of {gold.n_both_scored.toLocaleString()} evidences curated
 							<span class="gc-pct mono">({pct(gold.n_evaluable / Math.max(1, gold.n_both_scored))})</span>
-							<span class="gc-caveat">— spot-check only, not corpus-wide</span>
+							{#if gold.n_evaluable / Math.max(1, gold.n_both_scored) < 0.9}
+								<span class="gc-caveat">— spot-check only, not corpus-wide</span>
+							{:else}
+								<span class="gc-caveat">— gold on (nearly) every compared evidence</span>
+							{/if}
 						</div>
 					{/if}
 

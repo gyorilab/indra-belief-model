@@ -97,6 +97,11 @@ export function buildCurationIndex(rows: Iterable<CurationRow>): CurationIndex {
  *  queries.ts (joinEvidence, evidenceSideBySide) and adjudicate.ts (goldFor). */
 export function goldForRow(index: CurationIndex, row: EvidenceRow | null | undefined): GoldVerdict | null {
 	if (!row) return null;
+	// Per-run baked gold travels with the run and switches when you switch runs.
+	// A baked run sets `gold` on every row (object = curated, null = uncurated);
+	// only a legacy run leaves it `undefined`, and only then do we consult the
+	// global index. This is what makes gold follow the selected run.
+	if (row.gold !== undefined) return row.gold;
 	const key = curationKey(row.indra_matches_hash, row.source_hash);
 	if (key == null) return null;
 	return index.goldByKey.get(key) ?? null;

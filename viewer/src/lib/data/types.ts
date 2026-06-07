@@ -86,6 +86,10 @@ export interface EvidenceRow {
 	error: string | null;
 	latency_s?: number | null;
 	tokens?: number | null;
+	/** Per-run gold baked in at export time (the run's OWN curation source).
+	 *  Present (verdict object OR null=uncurated) on baked runs; ABSENT on legacy
+	 *  runs, which fall back to the global curation index. See goldForRow. */
+	gold?: GoldVerdict | null;
 }
 
 /**

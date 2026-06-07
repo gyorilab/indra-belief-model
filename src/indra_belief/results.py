@@ -33,6 +33,8 @@ import re
 from collections import Counter, defaultdict
 from typing import Any
 
+from indra_belief.curation import aggregate_gold
+
 DEFAULT_CORPUS = "data/corpora/latest_statements_rasmachine.json"
 
 # ── bucket taxonomy ─────────────────────────────────────────────────────────
@@ -154,12 +156,72 @@ def _read_run_meta(run_path: str) -> dict[str, Any]:
     return {}
 
 
+_HASH_MASK = (1 << 64) - 1
+
+
+def _ukey(x) -> int | None:
+    """Unsigned 64-bit int key — the source_hash join used everywhere (run rows,
+    eval gold, curation.ts curationKey all resolve to the same integer)."""
+    try:
+        return int(x) & _HASH_MASK
+    except (ValueError, TypeError):
+        return None
+
+
+def load_gold_map(gold_path: str) -> dict[int, dict]:
+    """Build ``source_hash -> GoldVerdict`` from a curation JSONL so an export can
+    BAKE its own gold in (gold then travels with the run and switches when you
+    switch runs — no global hardcoded curations file).
+
+    Keyed on SOURCE_HASH, not the (matches_hash, source_hash) pair: a run row's
+    source_hash is authoritative (it IS the scored evidence), whereas the export's
+    matches_hash can be a CorpusIndex fallback statement when subject/object
+    didn't uniquely resolve — joining on the pair silently drops those rows.
+
+    Accepts any curation row with ``source_hash`` + ``tag`` (and optional
+    ``all_tags``/``curator``/``curator_note``/``text``): eval_curation_v1,
+    belief_benchmark, rasmachine_curations all fit. Rows sharing a source_hash
+    aggregate any-incorrect-wins (curation.aggregate_gold). Emits the viewer's
+    GoldVerdict shape so goldForRow returns it verbatim."""
+    groups: dict[int, list[dict]] = defaultdict(list)
+    with open(gold_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            r = json.loads(line)
+            sh = _ukey(r.get("source_hash"))
+            if sh is None:
+                continue
+            groups[sh].append(r)
+
+    gold: dict[int, dict] = {}
+    for sh, rs in groups.items():
+        tags: list[str] = []
+        for x in rs:
+            tags += x.get("all_tags") or ([x["tag"]] if x.get("tag") else [])
+        verdict = aggregate_gold(tags)
+        if verdict is None:
+            continue
+        notes = [n for x in rs
+                 for n in [(x.get("curator_note") or x.get("text") or "").strip()] if n]
+        gold[sh] = {
+            "verdict": verdict,
+            "n": len(rs),
+            "tags": sorted(set(tags)),
+            "curators": sorted({x.get("curator") for x in rs if x.get("curator")}),
+            "notes": notes,
+        }
+    return gold
+
+
 def build_run_export(
     run_path: str,
     corpus_path: str = DEFAULT_CORPUS,
     *,
     run_id: str | None = None,
     model: str | None = None,
+    gold_path: str | None = None,
 ) -> tuple[list[dict], list[dict], dict]:
     """Enrich a raw run into ``(per_evidence, per_statement, meta)``.
 
@@ -174,6 +236,11 @@ def build_run_export(
 
     with open(corpus_path) as f:
         corpus = json.load(f)
+
+    # Per-run gold: baked in at export time from the run's OWN curation source,
+    # so the viewer reads gold straight off the run (switches per run, nothing
+    # global). None → no gold key written, viewer falls back to its legacy index.
+    gold_map = load_gold_map(gold_path) if gold_path else None
 
     rows: dict[tuple[int, int], dict] = {}
     n_lines = 0
@@ -225,7 +292,7 @@ def build_run_export(
         rchars = len(d.get("raw_text_preview") or "")
         reasoning_truncated = (fin == "length") or bool(out_tok and out_tok * 3.5 > rchars + 200)
 
-        per_ev.append({
+        ev_row = {
             "stmt_hash": d.get("stmt_hash"),
             "evidence_hash": d.get("evidence_hash"),
             "source_hash": d.get("source_hash"),
@@ -256,7 +323,15 @@ def build_run_export(
             "gen_out_tokens": out_tok,
             "bucket": bucket,
             "bucket_group": GROUP_NAME[META[bucket][0]],
-        })
+        }
+        # Bake gold (GoldVerdict | null) when a gold source is given. Every row
+        # gets the key in a baked run (null = uncurated) so the viewer can tell
+        # "baked + uncurated" from "legacy run, look in the index". Join on
+        # source_hash (the run's authoritative evidence id).
+        if gold_map is not None:
+            gk = _ukey(d.get("source_hash"))
+            ev_row["gold"] = gold_map.get(gk) if gk is not None else None
+        per_ev.append(ev_row)
 
         a = stmt_agg[d.get("stmt_hash")]
         v = d.get("verdict")
@@ -325,8 +400,13 @@ def build_run_export(
         "generated_date": datetime.date.today().isoformat(),
         "run_id": run_id,
         "model": model,
-        "generated_from": {"run": run_path, "corpus": corpus_path},
+        "generated_from": {"run": run_path, "corpus": corpus_path, "gold": gold_path},
         "companion_report": "reports/rasmachine_belief_comparison.html",
+        "gold": ({
+            "source": gold_path,
+            "covered": sum(1 for r in per_ev if r.get("gold")),
+            "total": len(per_ev),
+        } if gold_map is not None else None),
         "counts": {
             "run_lines": n_lines, "unique_evidence_rows": len(per_ev),
             "statements": len(per_stmt),
@@ -360,13 +440,16 @@ def write_run_export(
     *,
     run_id: str | None = None,
     model: str | None = None,
+    gold_path: str | None = None,
 ) -> dict:
     """Build + write the export for ``run_path``. Returns the meta dict.
 
     ``out_dir`` defaults to ``data/exports/<run_id>/`` so each run gets its own
     self-describing export the viewer discovers by globbing ``export_meta.json``.
+    ``gold_path`` (optional) bakes per-run gold from that curation source.
     """
-    per_ev, per_stmt, meta = build_run_export(run_path, corpus_path, run_id=run_id, model=model)
+    per_ev, per_stmt, meta = build_run_export(
+        run_path, corpus_path, run_id=run_id, model=model, gold_path=gold_path)
     out_dir = out_dir or os.path.join("data", "exports", str(meta["run_id"]))
     os.makedirs(out_dir, exist_ok=True)
 
@@ -387,11 +470,16 @@ def _main() -> int:
     ap.add_argument("--out", default=None, help="export dir (default: data/exports/<run_id>/)")
     ap.add_argument("--run-id", default=None)
     ap.add_argument("--model", default=None)
+    ap.add_argument("--gold", default=None,
+                    help="curation JSONL to bake per-run gold from (pa_hash/source_hash/tag)")
     args = ap.parse_args()
-    meta = write_run_export(args.run, args.corpus, args.out, run_id=args.run_id, model=args.model)
+    meta = write_run_export(args.run, args.corpus, args.out,
+                            run_id=args.run_id, model=args.model, gold_path=args.gold)
     out = args.out or os.path.join("data", "exports", str(meta["run_id"]))
     c = meta["counts"]
     print(f"wrote {out}/  ·  {c['unique_evidence_rows']} evidence · {c['statements']} statements")
+    if meta.get("gold"):
+        print(f"  gold baked: {meta['gold']['covered']}/{meta['gold']['total']} evidences curated")
     for b in ORDER:
         print(f"  {b:<22} {meta['bucket_counts'][b]:>7}")
     return 0
