@@ -44,6 +44,23 @@ from indra_belief.scorers.monolithic._prompts import (
     verdict_to_score,
 )
 
+# Arm A ablation: MONO_VARIANT=disconfirm swaps in the commit-first prompt +
+# structured parse + decision backstop. Default (unset) keeps baseline behavior
+# byte-for-byte so the A/B comparison is clean.
+import os as _os  # noqa: E402
+
+_VARIANT = _os.environ.get("MONO_VARIANT", "").strip().lower()
+if _VARIANT == "disconfirm":
+    from indra_belief.scorers.monolithic._prompts_disconfirm import (
+        DISCONFIRM_SYSTEM_PROMPT,
+        render_example as _variant_render,
+        parse_structured as _variant_parse,
+        derive_verdict as _variant_derive,
+    )
+    ACTIVE_SYSTEM_PROMPT = DISCONFIRM_SYSTEM_PROMPT
+else:
+    ACTIVE_SYSTEM_PROMPT = SYSTEM_PROMPT
+
 ROOT = Path(__file__).resolve().parents[4]
 
 # Note: provenance is injected only when grounding is flagged. Full-
@@ -194,9 +211,10 @@ def _example_trace_rows(examples: list[dict]) -> list[dict]:
 def _build_messages(record: ScoringRecord, examples: list[dict] | None = None) -> list[dict]:
     """Build the contrastive-example + user-message conversation for a record."""
     examples = examples if examples is not None else _select_examples(record.stmt_type)
+    _render = _variant_render if _VARIANT == "disconfirm" else _render_example
     messages: list[dict] = []
     for ex in examples:
-        u, a = _render_example(ex)
+        u, a = _render(ex)
         messages.append({"role": "user", "content": u})
         messages.append({"role": "assistant", "content": a})
     messages.append({"role": "user", "content": record.format_user_message()})
@@ -220,6 +238,16 @@ def _parse_verdict(response) -> tuple[str | None, str | None]:
     the JSON verdict. Without the fallback, such records silently
     collapse to (None, None) → score 0.5.
     """
+    if _VARIANT == "disconfirm":
+        # Structured parse + decision backstop (Arm A). Try content then raw_text.
+        for text in (response.content, response.raw_text):
+            if not text:
+                continue
+            parsed = _variant_parse(text)
+            if parsed.get("verdict") is not None:
+                v, c, _rule = _variant_derive(parsed)
+                return v, c
+        return None, None
     if response.content:
         verdict, confidence = extract_verdict(response.content)
         if verdict is not None:
@@ -237,7 +265,7 @@ def _score_single(
     """Single LLM call for Tier 2. Returns result dict."""
     examples = _select_examples(record.stmt_type)
     response = client.call(
-        system=SYSTEM_PROMPT,
+        system=ACTIVE_SYSTEM_PROMPT,
         messages=_build_messages(record, examples),
         max_tokens=max_tokens,
         temperature=temperature,
@@ -336,7 +364,7 @@ def _score_with_tools(
         messages[-1] = {"role": "user", "content": augmented}
 
     response = client.call(
-        system=SYSTEM_PROMPT + _LOOKUP_GUIDANCE,
+        system=ACTIVE_SYSTEM_PROMPT + _LOOKUP_GUIDANCE,
         messages=messages,
         max_tokens=max_tokens,
         temperature=0.1,
