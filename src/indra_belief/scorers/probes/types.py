@@ -1,8 +1,8 @@
-"""Typed probe-request and probe-response shapes for the S-phase pipeline.
+"""Typed probe-request and probe-response shapes for the probe pipeline.
 
 Each probe is one question with a closed answer set. The architectural
 commitment is single-decision-per-call: the parser commits ONE value
-from ONE small enum, not a multi-slot extraction. See doctrine §2 + §5
+from ONE small enum, not a multi-slot extraction.
 for the four probe definitions and the adjudicator decision table.
 
 Substrate is a question-router. Where it can answer deterministically
@@ -63,7 +63,7 @@ ScopeAnswer = Literal[
 # Detected via M9 entity-first regex: LOF (knockdown / KO / siRNA / inhibitor /
 # null mutant / dominant-negative / depletion); GOF (overexpression /
 # constitutively-active / forced expression). Never set by an LLM — the
-# adjudicator's §5.1 sign-propagation rule consumes it deterministically.
+# adjudicator's sign-propagation rule consumes it deterministically.
 PerturbationMarker = Literal["none", "LOF", "GOF"]
 
 # Provenance: did substrate answer or did LLM (or did the probe abstain)?
@@ -170,7 +170,7 @@ class ProbeBundle:
     """The four probe responses for a single (claim, evidence) pair.
 
     The adjudicator consumes a ProbeBundle (plus the EvidenceContext for
-    the §5.4 final-arm substrate-fallback) and returns an Adjudication.
+    the final-arm substrate-fallback) and returns an Adjudication.
 
     Field-to-kind alignment is enforced: subject_role field must hold a
     kind='subject_role' response, etc. This catches assembly-side bugs

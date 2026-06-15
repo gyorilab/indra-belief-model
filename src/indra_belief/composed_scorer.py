@@ -11,12 +11,12 @@ Two entry points:
     scorer = ComposedBeliefScorer(priors=RECALIBRATED_PRIORS)
     result = scorer.score_edge(evidence_with_verdicts)
 
-  Statement-native (J6):
+  Statement-native:
     score = score_statement_belief(statement, client)
     # internally: score_statement → list[dict] per Evidence,
     #             folded into EvidenceRecords → score_edge
 
-The statement-native form addresses the v1 holdout's truth-vs-scoring
+The statement-native form addresses a truth-vs-scoring granularity
 mismatch: INDRA tags reflect aggregate-across-N-evidences truth, but
 score_evidence runs per-sentence. score_statement_belief aggregates
 per-sentence verdicts into one statement-level belief, matching the
@@ -159,7 +159,7 @@ class ComposedBeliefScorer:
         )
 
     def score_statement(self, statement, client) -> ComposedScore:
-        """J6: Score an INDRA Statement, aggregating per-Evidence verdicts.
+        """Score an INDRA Statement, aggregating per-Evidence verdicts.
 
         Calls `indra_belief.score_statement(stmt, client)` which yields a
         per-Evidence dict (verdict, confidence, source_api). Folds those

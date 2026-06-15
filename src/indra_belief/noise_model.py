@@ -45,8 +45,8 @@ INDRA_PRIORS: dict[str, tuple[float, float]] = {
 _DEFAULT_PRIOR = (0.30, 0.10)
 
 
-# Recalibrated priors from 9,342-record INDRA assembly curation benchmark
-# (April 2026). Derived as rand = 1 - accuracy - syst per source.
+# Recalibrated priors from the INDRA assembly curation benchmark (n=9,342).
+# Derived as rand = 1 - accuracy - syst per source.
 # Only sources with n >= 100 are recalibrated; others keep INDRA defaults.
 # Sources not in benchmark keep INDRA defaults via fallback.
 RECALIBRATED_PRIORS: dict[str, tuple[float, float]] = {

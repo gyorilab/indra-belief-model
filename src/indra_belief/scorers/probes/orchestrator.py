@@ -1,16 +1,15 @@
-"""S-phase orchestrator: parse_claim → context → substrate_route →
+"""Orchestrator: parse_claim → context → substrate_route →
 LLM probes (where escalated) → ProbeBundle → adjudicate → output dict.
 
-Replaces the M/N/Q/R-phase decomposed.py orchestration. The output dict
-preserves the same keys monolithic + decomposed callers consumed
-(score, verdict, confidence, raw_text, tokens, tier, grounding_status,
-provenance_triggered, reasons, rationale, call_log) so downstream
-composed_scorer code requires no change.
+The output dict preserves the same keys monolithic + decomposed callers
+consumed (score, verdict, confidence, raw_text, tokens, tier,
+grounding_status, provenance_triggered, reasons, rationale, call_log) so
+downstream composed_scorer code requires no change.
 
-Latency contract (doctrine §6):
+Latency contract:
   - Substrate-resolved probes never call the LLM
-  - LLM probes run sequentially (parallelization deferred to S8 if needed)
-  - Median wall ≤ 15s when 50%+ records resolve via substrate alone
+  - LLM probes run sequentially (parallelization can be added if needed)
+  - Median wall stays low when most records resolve via substrate alone
 """
 from __future__ import annotations
 
@@ -109,17 +108,7 @@ def _resolve_claim_entities(claim: ClaimCommitment, evidence) -> list:
     return resolved
 
 
-def _raw_text_for(name: str, evidence) -> str | None:
-    try:
-        agents = evidence.annotations.get("agents", {})
-    except AttributeError:
-        return None
-    names = agents.get("agent_list") or []
-    raws = agents.get("raw_text") or []
-    for n, rt in zip(names, raws):
-        if n == name and rt:
-            return rt
-    return None
+from indra_belief.scorers._shared import raw_text_for as _raw_text_for
 
 
 def _format_output(
@@ -247,7 +236,7 @@ def score_via_probes(statement, evidence, client: "ModelClient") -> dict:
     _pop()
     evidence_text = getattr(evidence, "text", "") or ""
 
-    # X3.5: empty-text fast path. When the source provided no sentence
+    # Empty-text fast path. When the source provided no sentence
     # (curated databases like biogrid/biopax/tas emit Evidence with
     # source_hash + db_refs but no `text`), the LLM probes have no
     # signal to consume. Defer to INDRA's published belief — this is a
@@ -295,8 +284,8 @@ def score_via_probes(statement, evidence, client: "ModelClient") -> dict:
     #    where possible; LLM requests otherwise).
     routings = router.substrate_route(claim, ctx, evidence_text)
 
-    # 4. Dispatch LLM probes for any ProbeRequest. Sequential for v1;
-    #    parallel dispatch is a S8 optimization if latency demands it.
+    # 4. Dispatch LLM probes for any ProbeRequest. Dispatch is sequential;
+    #    parallel dispatch is an optimization if latency demands it.
     bundle = ProbeBundle(
         subject_role=_resolve_probe(routings["subject_role"], client),
         object_role=_resolve_probe(routings["object_role"], client),
@@ -327,7 +316,7 @@ def score_selected_probes(
     client: "ModelClient",
     probe_kinds: Iterable[str],
 ) -> dict:
-    """Resolve only selected S-phase probes for repair reruns.
+    """Resolve only selected probes for repair reruns.
 
     This intentionally does not run grounding verification or aggregate
     adjudication. The caller can persist native probe rows at lower cost, then

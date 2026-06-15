@@ -9,13 +9,12 @@ legacy `relation_axis` LLM probe was conflating:
 Stage 2 is deterministic Python: axis taxonomy + alias resolution +
 sign reconciliation → one of the 8 RelationAxisAnswer values.
 
-The CC-phase rationale: at 27B-Gemma scale, asking an LLM to
-simultaneously extract and classify produces brittle decisions that
-cluster around adversarial vs counter-example prompt phrasings.
-Splitting the question and resolving the comparison in Python
-eliminates the prompt-saturation problem (where 3 adversarial
-few-shots dominate 1 positive shot via attention competition) and
-makes the answer-set semantics auditable.
+Asking an LLM to simultaneously extract and classify produces
+brittle decisions that cluster around adversarial vs counter-example
+prompt phrasings. Splitting the question and resolving the comparison
+in Python eliminates the prompt-saturation problem (where multiple
+adversarial few-shots dominate a positive shot via attention
+competition) and makes the answer-set semantics auditable.
 """
 from __future__ import annotations
 
@@ -173,26 +172,8 @@ _PARTNER_TYPE_VALUES = frozenset({
 # Greek letter normalization — words and unicode glyphs both map to
 # Latin shortform. Mirrors context_builder._GREEK_TO_LATIN to keep
 # alias-matching consistent across substrate and bind-check layers.
-_GREEK_GLYPHS: dict[str, str] = {
-    "α": "a", "β": "b", "γ": "g", "δ": "d", "ε": "e",
-    "ζ": "z", "η": "h", "θ": "q", "ι": "i", "κ": "k",
-    "λ": "l", "μ": "m", "ν": "n", "ξ": "x", "ο": "o",
-    "π": "p", "ρ": "r", "σ": "s", "τ": "t", "υ": "u",
-    "φ": "f", "χ": "c", "ψ": "y", "ω": "w",
-    "Α": "a", "Β": "b", "Γ": "g", "Δ": "d", "Ε": "e",
-    "Ζ": "z", "Η": "h", "Θ": "q", "Ι": "i", "Κ": "k",
-    "Λ": "l", "Μ": "m", "Ν": "n", "Ξ": "x", "Ο": "o",
-    "Π": "p", "Ρ": "r", "Σ": "s", "Τ": "t", "Υ": "u",
-    "Φ": "f", "Χ": "c", "Ψ": "y", "Ω": "w",
-}
-_GREEK_WORDS: dict[str, str] = {
-    "alpha": "a", "beta": "b", "gamma": "g", "delta": "d",
-    "epsilon": "e", "zeta": "z", "eta": "h", "theta": "q",
-    "iota": "i", "kappa": "k", "lambda": "l", "mu": "m",
-    "nu": "n", "xi": "x", "omicron": "o", "pi": "p",
-    "rho": "r", "sigma": "s", "tau": "t", "upsilon": "u",
-    "phi": "f", "chi": "c", "psi": "y", "omega": "w",
-}
+from indra_belief.scorers._shared import (
+    GREEK_GLYPHS as _GREEK_GLYPHS, GREEK_WORDS as _GREEK_WORDS)
 
 # Common biological suffix-qualifiers the LLM may include after an
 # entity name (e.g., "NF-κB response", "p53 activity", "EGFR levels").
@@ -350,7 +331,7 @@ def bind_check(
     # Role-swap handling.
     # For NON-BINDING axes, claim subject as target → no_relation.
     # For BINDING axis, role-swap is symmetric (Complex(X,Y) ≡ Complex(Y,X)
-    # per doctrine §5.3): if the OTHER side of the binding event alias-
+    #): if the OTHER side of the binding event alias-
     # matches the claim object, accept.
     if sao == "is_target":
         if claim_axis != "binding":
@@ -404,7 +385,7 @@ def bind_check(
 
     # Stage C: chain handling
     if sao == "via_named_chain":
-        # Causal claims accept indirect chains per §5.6; direct claims
+        # Causal claims accept indirect chains; direct claims
         # (Complex, Phosphorylation, Translocation) require contact.
         stmt_type = claim_meta.get("stmt_type", "")
         if stmt_type in {"Activation", "Inhibition",

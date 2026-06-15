@@ -30,18 +30,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from indra_belief.curation import is_gold_correct  # noqa: E402
 from indra_belief.metrics import confusion_metrics, ece as _ece  # noqa: E402
 
-# Source records for evidence_text + curator_note + tag
-def load_source(name: str) -> dict:
-    src: dict = {}
-    p = ROOT / "data" / "benchmark" / f"{name}.jsonl"
-    for line in open(p):
-        r = json.loads(line)
-        src[r["source_hash"]] = r
-    return src
-
-
-def load_run(path: Path) -> list[dict]:
-    return [json.loads(l) for l in open(path) if l.strip()]
+# Source records, run loaders, and markdown emitters are shared (R4).
+from _util import emit_section, emit_table, load_run, load_source  # noqa: E402, F401
 
 
 PROBE_RE = re.compile(r"(subject_role|object_role|relation_axis|scope)=(\S+) \((\w+)\)")
@@ -56,18 +46,6 @@ def parse_probes(rec: dict) -> dict[str, tuple[str, str]]:
 def binary_confusion(rows: list[dict]) -> dict:
     # gold = curation tag; pred = model verdict. The confusion math is library-owned.
     return confusion_metrics((is_gold_correct(r["tag"]), r["verdict"] == "correct") for r in rows)
-
-
-def emit_section(out, title: str) -> None:
-    out.write(f"\n## {title}\n\n")
-
-
-def emit_table(out, header: list[str], rows: list[list[str]]) -> None:
-    out.write("| " + " | ".join(header) + " |\n")
-    out.write("|" + "|".join(["---"]*len(header)) + "|\n")
-    for row in rows:
-        out.write("| " + " | ".join(str(c) for c in row) + " |\n")
-    out.write("\n")
 
 
 def main():

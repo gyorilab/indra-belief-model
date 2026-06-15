@@ -1,7 +1,7 @@
 """relation_axis probe — does the evidence describe a relation between
 the claim's subject and object on the claim's axis with claim's sign?
 
-Closed answer set (8 values; see doctrine §2.3):
+Closed answer set (8 values):
   direct_sign_match, direct_sign_mismatch, direct_axis_mismatch,
   direct_partner_mismatch, via_mediator, via_mediator_partial,
   no_relation, abstain.
@@ -172,7 +172,7 @@ _FEW_SHOTS: list[tuple[str, str]] = [
     (
         # Tangential mention: subject acts on a DIFFERENT downstream
         # entity; claim object only appears as background. (LPA/JNK
-        # pattern from eval_set_v4 walk.)
+        # pattern from an eval walk.)
         "CLAIM: subject=LPA, object=JNK, axis=activity, sign=positive\n"
         "EVIDENCE: LPA induces p38 activation in prostate cancer cells "
         "and suggests a potential involvement of ERK and p38 in LPA-"
@@ -184,7 +184,7 @@ _FEW_SHOTS: list[tuple[str, str]] = [
     (
         # Co-occurrence via third party: subject and object each bind a
         # third entity, not each other. (MED12/MED13 pattern from
-        # eval_set_v4 walk.)
+        # eval walk.)
         "CLAIM: subject=MED12, object=MED13, axis=binding, sign=neutral\n"
         "EVIDENCE: Mediator Middle module subunits are primarily "
         "responsible for interactions with Med13 (strong) and Med12 "
@@ -195,7 +195,7 @@ _FEW_SHOTS: list[tuple[str, str]] = [
     (
         # Co-listed effect: subject and object are co-listed downstream
         # of a third cause; no direct edge between them. (CAT/AP-1
-        # pattern from eval_set_v4 walk.)
+        # pattern from an eval walk.)
         "CLAIM: subject=CAT, object=AP1, axis=activity, sign=positive\n"
         "EVIDENCE: Gamma-irradiation-induced intercellular adhesion "
         "molecule-1 expression is associated with catalase: activation "

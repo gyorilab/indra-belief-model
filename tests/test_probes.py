@@ -13,22 +13,12 @@ hint when present).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from indra_belief.scorers.probes import (
     object_role, relation_axis, scope, subject_role,
 )
 from indra_belief.scorers.probes.types import ProbeRequest
 
-
-@dataclass
-class _MockResponse:
-    content: str
-    raw_text: str = ""
-    tokens: int = 10
-    finish_reason: str = "stop"
-    reasoning: str = ""
-    prompt_tokens: int = 100
+from conftest import _MockResponse
 
 
 class _MockClient:

@@ -19,7 +19,10 @@ Selected via env MONO_VARIANT=disconfirm in the scorer.
 from __future__ import annotations
 
 import json
+import logging
 import re
+
+log = logging.getLogger(__name__)
 
 from indra_belief.scorers.monolithic._prompts import (
     CONTRASTIVE_EXAMPLES,  # noqa: F401 — kept importable for parity
@@ -113,7 +116,8 @@ def parse_structured(text: str) -> dict:
     for m in reversed(list(re.finditer(r"\{[^{}]*\"verdict\"[^{}]*\}", text, re.DOTALL))):
         try:
             obj = json.loads(m.group(0))
-        except Exception:
+        except json.JSONDecodeError:
+            log.debug("parse_structured: skipping unparseable verdict-like span: %r", m.group(0), exc_info=True)
             continue
         out["support"] = _norm_field(obj.get("support"))
         out["objection"] = _norm_field(obj.get("objection"))

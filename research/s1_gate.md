@@ -1,10 +1,5 @@
 # S1 brutalist gate — doctrine review
 
-Status: PASS (after amendments applied)
-Date: 2026-05-02
-Reviewer: adversarial self-review
-Doctrine: research/s_phase_doctrine.md
-
 ## Method
 
 (1) Enumerate every reason code R-phase emits on the 482-record holdout, verify each maps to a probe-tuple → verdict rule.

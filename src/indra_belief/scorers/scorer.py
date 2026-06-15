@@ -23,6 +23,7 @@ Run:
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Callable, Literal
@@ -30,6 +31,8 @@ from typing import Callable, Literal
 from indra_belief.model_client import ModelClient
 from indra_belief.scorers.probes.orchestrator import score_via_probes
 
+
+log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -65,9 +68,9 @@ def score_evidence(statement, evidence, client: ModelClient) -> dict:
         score                float in [0, 1]
         verdict              "correct" | "incorrect" | "abstain"
         confidence           "high" | "medium" | "low"
-        tier                 "decomposed" (S-phase always emits this)
+        tier                 "decomposed" (always emitted by this path)
         grounding_status     "all_match" | "flagged"
-        provenance_triggered bool (always False in S-phase)
+        provenance_triggered bool (always False here)
         tokens               completion tokens consumed
         raw_text             decision trace
         reasons              list[ReasonCode]
@@ -107,7 +110,7 @@ def main():
                              "few-shots. Empirically dominant on holdout_cc "
                              "(F1 0.751 vs decomposed 0.657, McNemar p<10^-4). "
                              "decomposed = four-probe + adjudicator (sibling "
-                             "implementation, retained for ablation).")
+                             "implementation, retained as a comparison baseline).")
     parser.add_argument("--holdout",
                         default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
     parser.add_argument("--output",
@@ -129,12 +132,16 @@ def main():
         resume_path = Path(args.resume)
         if resume_path.exists():
             with open(resume_path) as f:
-                for line in f:
+                for lineno, line in enumerate(f, start=1):
                     try:
                         r = json.loads(line)
                         scored_hashes.add(r.get("source_hash"))
                     except json.JSONDecodeError:
-                        pass
+                        # Skip corrupt NDJSON line; surface it for data-integrity visibility.
+                        log.warning(
+                            "resume: skipping corrupt JSON line %d in %s: %r",
+                            lineno, resume_path, line.rstrip("\n")[:200],
+                        )
             print(f"Resuming: {len(scored_hashes)} records already scored")
 
     print(f"\nScorer (arch={args.arch}): {len(records)} records, model={args.model}")

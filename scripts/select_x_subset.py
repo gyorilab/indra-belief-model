@@ -41,8 +41,10 @@ def classify(aggregate_out: dict) -> str | None:
     """Bucket an aggregate-row's joint probe state into a stratum."""
     rt = aggregate_out.get("raw_text", "")
     probes = {m[0]: m[1] for m in PROBE_RE.findall(rt)}
-    sr = probes.get("subject_role"); or_ = probes.get("object_role")
-    ra = probes.get("relation_axis"); sc = probes.get("scope")
+    sr = probes.get("subject_role")
+    or_ = probes.get("object_role")
+    ra = probes.get("relation_axis")
+    sc = probes.get("scope")
     v = aggregate_out.get("verdict")
     s = aggregate_out.get("score") or 0.0
     reasons = aggregate_out.get("reasons") or []

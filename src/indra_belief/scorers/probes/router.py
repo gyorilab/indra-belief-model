@@ -1,7 +1,7 @@
 """Substrate-as-router: route each probe to a deterministic answer
 or to an LLM escalation request.
 
-Per doctrine §4, substrate is a function `(claim, ctx) → routings` where
+Substrate is a function `(claim, ctx) → routings` where
 each probe kind maps to either:
   - ProbeResponse (substrate-answered, high-confidence, no LLM)
   - ProbeRequest (LLM-bound, optional substrate_hint to narrow the question)
@@ -17,7 +17,7 @@ chain signals, alias maps) — substrate detection logic itself is not
 duplicated here; this module is the routing layer above it.
 
 No SUBSTRATE PRIORS prompt block is produced anywhere in this module.
-The output of substrate_route is consumed by the orchestrator (S6),
+The output of substrate_route is consumed by the orchestrator,
 NOT by an LLM prompt.
 """
 from __future__ import annotations
@@ -35,13 +35,12 @@ from indra_belief.scorers.probes.types import (
 
 # Maximum characters between a claim-entity mention and a hedge/negation
 # anchor for substrate to attribute the marker to that entity. Mirrors
-# the M10 explicit_hedge_marker scope rule.
+# the explicit_hedge_marker scope rule.
 _LOCAL_WINDOW_CHARS = 50
 
-# Negation cues — verb-negators only. Earlier draft included broad
-# lexical cues (no, never, none, neither, nor, absent, lacks) but the
-# S4 gate trace showed those firing on adjacent propositions and
-# wrongly negating the claim's relation. Tightened to explicit
+# Negation cues — verb-negators only. Broad lexical cues (no, never,
+# none, neither, nor, absent, lacks) fire on adjacent propositions and
+# wrongly negate the claim's relation, so this is restricted to explicit
 # verb-negators; the LLM scope probe handles softer cues.
 _NEGATION_RE = re.compile(
     r"\b(?:not|cannot|did\s+not|does\s+not|do\s+not|"
@@ -78,15 +77,13 @@ def _find_alias_positions(text: str, alias_set: frozenset[str]) -> list[int]:
     return sorted(positions)
 
 
-# X1: substrate-to-LLM alias bridge ---------------------------------------
+# Substrate-to-LLM alias bridge -------------------------------------------
 #
-# Pre-X1, the substrate computed `ctx.aliases` via Gilda but threw the
-# alias set away when escalating to LLM — the prompt showed only the
-# canonical name. Result: 13,506 absent-answer LLM responses on the
-# 2026-05-14d rasmachine run came from the model not knowing
-# RPS6KA3==RSK2, STK4==MST1, etc. The substrate already knew.
-#
-# These helpers preserve and forward the substrate's alias work.
+# The substrate computes `ctx.aliases` via Gilda. When escalating to the
+# LLM, forward the alias set rather than only the canonical name, so the
+# model does not produce absent answers simply because it doesn't know an
+# alternate symbol (e.g. RPS6KA3==RSK2, STK4==MST1). The substrate already
+# resolved these; these helpers preserve and forward that alias work.
 
 _ALIAS_ROSTER_CAP = 8       # max aliases rendered into claim_component
 _MATCHED_FORMS_CAP = 5      # max matched surface forms in substrate_hint
@@ -245,7 +242,7 @@ def _route_subject_role(
         )
 
     # Mediator candidate: claim has chain signal AND subject sits in
-    # chain_intermediate_candidates (an L1 pre-collected list).
+    # chain_intermediate_candidates (a pre-collected list).
     if ctx.has_chain_signal and claim.subject in ctx.chain_intermediate_candidates:
         return ProbeResponse(
             kind="subject_role",
@@ -258,7 +255,7 @@ def _route_subject_role(
 
     # Substrate sees the entity but can't disambiguate role — escalate.
     # Name the matched surface forms so the LLM doesn't waste attention
-    # re-deriving them (the central X1 fix).
+    # re-deriving them.
     matched = _matched_surface_forms(evidence_text, aliases)
     hint_parts = [f"matched surface forms: {matched}"] if matched else \
                  [f"{claim.subject!r} mentioned in evidence "
@@ -289,8 +286,8 @@ def _route_object_role(
     """Substrate fast-path for the object_role probe.
 
     Mirror of _route_subject_role with target/agent inversion.
-    Operates on claim.objects[0] (binary statement). Multi-member
-    Complex (>2 members) is deferred to v2.
+    Operates on claim.objects[0] (binary statement); multi-member
+    Complex (>2 members) is not handled here.
     """
     if not claim.objects:
         # Self-modification (Autophos) or single-agent claim. Object
@@ -431,12 +428,12 @@ def _route_relation_axis(
     aligned, swapped = _detected_relations_for_pair(ctx, claim.subject, obj)
 
     # Symmetric binding: for binding axis, swapped is treated as aligned
-    # (Complex(X,Y) ≡ Complex(Y,X) per doctrine §5.3).
+    # (Complex(X,Y) ≡ Complex(Y,X)).
     if claim.axis == "binding" and swapped:
         aligned = aligned + swapped
 
     # Effective claim sign accounts for perturbation propagation. The
-    # adjudicator's §5.1 rule does this; substrate honors it here so the
+    # adjudicator's rule does this; substrate honors it here so the
     # match check is consistent.
     effective_sign = claim.sign
     if ctx.subject_perturbation_marker == "loss_of_function":
@@ -447,10 +444,10 @@ def _route_relation_axis(
         if dr_axis == claim.axis:
             if dr.sign == effective_sign:
                 # Binding-axis must additionally check partner type. The
-                # M3 builder already alias-validates and binds CATALOG
+                # context builder already alias-validates and binds CATALOG
                 # entries to claim entities; binding_admissible gates the
                 # partner type, but DetectedRelation does not carry the
-                # partner-type field directly. The adjudicator's §5.4
+                # partner-type field directly. The adjudicator's
                 # final-arm rule does the actual partner check; here
                 # substrate confirms the axis match conservatively.
                 return ProbeResponse(
@@ -490,12 +487,12 @@ def _route_relation_axis(
 
     # No CATALOG-aligned answer — substrate hands off to LLM.
     #
-    # Earlier draft committed via_mediator/via_mediator_partial from
-    # chain signals alone; the S4 gate trace showed L1 chain markers
-    # firing on nominalizations like "regulates ... via the activation
-    # of X" where the relation is direct, not chained. Substrate's
-    # CATALOG signals are high-precision; chain signals are not. Only
-    # CATALOG-derived answers are emitted; chain signals become hints.
+    # Chain signals alone are not enough to commit via_mediator /
+    # via_mediator_partial: chain markers fire on nominalizations like
+    # "regulates ... via the activation of X" where the relation is
+    # direct, not chained. Substrate's CATALOG signals are high-precision;
+    # chain signals are not. Only CATALOG-derived answers are emitted;
+    # chain signals become hints.
     hint_parts = []
     if aligned:
         hint_parts.append(
@@ -523,7 +520,7 @@ def _route_relation_axis(
         hint_parts.append(
             f"nominalized hints: {list(ctx.nominalized_relations)[:3]}"
         )
-    # X1: name matched surface forms for both endpoints so the LLM
+    # Name the matched surface forms for both endpoints so the LLM
     # doesn't waste attention on alias resolution.
     s_matched = _matched_surface_forms(evidence_text, subj_aliases)
     o_matched = _matched_surface_forms(evidence_text, obj_aliases)
@@ -562,7 +559,7 @@ def _route_scope(
 
     Confidence rules (conservative):
       - Negation cue within _LOCAL_WINDOW_CHARS of claim entity → negated
-      - explicit_hedge_marker present → hedged (M10 already vets scope)
+      - explicit_hedge_marker present → hedged (already scope-vetted)
       - Otherwise → ProbeRequest with available cues as hint
     """
     obj = claim.objects[0] if claim.objects else claim.subject
@@ -579,14 +576,14 @@ def _route_scope(
     subj_positions = _find_alias_positions(evidence_text, subj_aliases)
     obj_positions = _find_alias_positions(evidence_text, obj_aliases)
 
-    # Y1 — Negation detection PROPOSES, never commits. The regex was
-    # over-firing on contrastive controls ("but not GST alone"),
-    # excluded substrates ("not TCRζ ITAMs"), and other-clause negations
-    # ("did not impair OTHER pathways"). 6 of 13 eval_set_v4 FN cases
-    # were substrate scope=negated false-positives. Escalate to LLM
-    # whenever any negation cue is in the (subj, obj) span; the hint
-    # names the cue position so the LLM can decide whether it governs
-    # the claim relation or a contrastive clause.
+    # Negation detection PROPOSES, never commits. The regex over-fires on
+    # contrastive controls ("but not GST alone"), excluded substrates
+    # ("not TCRζ ITAMs"), and other-clause negations ("did not impair
+    # OTHER pathways"), so committing scope=negated from the regex alone
+    # produces false-positives. Escalate to the LLM whenever any negation
+    # cue falls in the (subj, obj) span; the hint names the cue position
+    # so the LLM can decide whether it governs the claim relation or a
+    # contrastive clause.
     if subj_positions and obj_positions:
         span_lo = min(min(subj_positions), min(obj_positions))
         span_hi = max(max(subj_positions), max(obj_positions))
@@ -616,7 +613,7 @@ def _route_scope(
                     substrate_hint=neg_hint,
                 )
 
-    # M10 explicit hedge markers — already scope-anchored at detection time.
+    # Explicit hedge markers — already scope-anchored at detection time.
     if ctx.explicit_hedge_markers:
         return ProbeResponse(
             kind="scope",
@@ -657,8 +654,8 @@ def substrate_route(
     answered, ProbeRequest where the LLM must answer (with optional
     substrate_hint to narrow the question).
 
-    Doctrine §4: substrate is a question-router, not a candidate-prefiller.
-    The output is consumed by the orchestrator (S6), never by an LLM prompt.
+    Substrate is a question-router, not a candidate-prefiller.
+    The output is consumed by the orchestrator, never by an LLM prompt.
     """
     return {
         "subject_role": _route_subject_role(claim, ctx, evidence_text),

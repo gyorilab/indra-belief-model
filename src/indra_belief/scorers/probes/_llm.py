@@ -118,22 +118,62 @@ def _failure_fallback(
 def _extract_json(text: str) -> dict | None:
     """Extract a JSON object from a model response.
 
-    Tries strict json.loads first; falls back to finding the outermost
-    {...} block. Returns None on failure.
+    Robust to thinking models, whose `content` is reasoning + a `</think>`
+    delimiter + the final JSON, and whose reasoning often DRAFTS brace blocks
+    mid-thought. The old "first { to last }" heuristic grabbed the span from a
+    reasoning-draft `{` to the final `}` (prose in between -> invalid JSON ->
+    silent None), which masqueraded as model leniency. Strategy:
+      1) drop everything up to and including the last </think> (the answer
+         always follows the reasoning),
+      2) strict json.loads on the tail,
+      3) otherwise scan for ALL brace-balanced (string/escape-aware) objects
+         and return the LAST one that parses as a dict — the final answer is
+         emitted last, not first.
+    Returns None only when no balanced JSON object parses anywhere.
     """
     text = text.strip()
+    lower = text.lower()
+    cut = lower.rfind("</think>")
+    if cut != -1:
+        text = text[cut + len("</think>"):].strip()
+
     try:
         result = json.loads(text)
-        return result if isinstance(result, dict) else None
+        if isinstance(result, dict):
+            return result
     except json.JSONDecodeError:
         pass
-    # Find first { and last } and try again
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end > start:
-        try:
-            result = json.loads(text[start : end + 1])
-            return result if isinstance(result, dict) else None
-        except json.JSONDecodeError:
-            pass
-    return None
+
+    # Scan for brace-balanced objects, string/escape aware; keep the last dict.
+    last: dict | None = None
+    depth = 0
+    start = -1
+    in_str = False
+    esc = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    try:
+                        obj = json.loads(text[start : i + 1])
+                        if isinstance(obj, dict):
+                            last = obj
+                    except json.JSONDecodeError:
+                        pass
+                    start = -1
+    return last

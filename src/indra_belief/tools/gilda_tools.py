@@ -8,7 +8,11 @@ ignored tool results after committing a verdict in its first pass.
 """
 from __future__ import annotations
 
+import logging
+
 import gilda
+
+log = logging.getLogger(__name__)
 
 
 def execute_lookup_gene(args: dict) -> dict:
@@ -50,7 +54,11 @@ def execute_lookup_gene(args: dict) -> dict:
                 entry["query_is_alias"] = name in all_names
                 entry["alias_count"] = len([n for n in all_names if len(n) < 12])
             except Exception:
-                pass
+                log.debug(
+                    "gilda HGNC alias-enrichment failed for %r (HGNC:%s); "
+                    "skipping enrichment for this candidate",
+                    name, r.term.id, exc_info=True,
+                )
 
         candidates.append(entry)
 
@@ -113,6 +121,10 @@ def entity_grounding(name: str) -> dict | None:
     try:
         results = gilda.ground(name)
     except Exception:
+        log.warning(
+            "gilda.ground failed for entity %r; treating as ungrounded",
+            name, exc_info=True,
+        )
         return None
     if not results:
         return None
@@ -122,6 +134,11 @@ def entity_grounding(name: str) -> dict | None:
         try:
             names = gilda.get_names("HGNC", str(t.id)) or []
         except Exception:
+            log.debug(
+                "gilda HGNC get_names failed for %r (HGNC:%s); "
+                "proceeding with empty alias list",
+                name, t.id, exc_info=True,
+            )
             names = []
     # dedup, primary name first; all unique aliases kept (caller caps the list)
     aliases = [a for a in dict.fromkeys([t.entry_name] + list(names)) if a]

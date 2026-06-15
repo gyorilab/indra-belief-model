@@ -274,14 +274,7 @@ def extract_verdict(text: str) -> tuple[str | None, str | None]:
     return verdict, confidence
 
 
-_SCORE_GRID = {
-    ("correct", "high"): 0.95,
-    ("correct", "medium"): 0.80,
-    ("correct", "low"): 0.65,
-    ("incorrect", "low"): 0.35,
-    ("incorrect", "medium"): 0.20,
-    ("incorrect", "high"): 0.05,
-}
+from indra_belief.scorers._shared import VERDICT_SCORE_GRID as _SCORE_GRID
 
 
 def verdict_to_score(verdict: str | None, confidence: str | None) -> float:

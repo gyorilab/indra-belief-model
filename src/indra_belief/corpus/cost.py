@@ -1,12 +1,12 @@
-"""LLM-call cost estimation — Phase 0.1 made into a helper.
+"""LLM-call cost estimation helper.
 
 `estimate_cost(stmts, model_id)` projects how many LLM calls + tokens +
 USD a `score_corpus` run will consume. The auditor's natural pre-run
 "what will this cost?" check before clicking Go.
 
-Empirical anchor (per memory: substrate-vs-LLM lever):
-  - S-phase substrate-resolves only ~1.2% of records to zero LLM calls
-    (target was 50%). 68.5% use all 4 LLM probes per evidence.
+Empirical anchor:
+  - The deterministic substrate resolves only ~1.2% of records to zero
+    LLM calls; ~68.5% use all four LLM probes per evidence.
   - Plus ~1 LLM call per evidence for grounding verification.
   - Avg ~400 tokens per LLM call (~330 in + ~70 out → 5:1 ratio).
 
@@ -25,8 +25,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-# Cost per million tokens (USD), as of 2026-05-09 published rates.
-# Public list pricing — adjust for your contracted rates.
+# Cost per million tokens (USD), public list pricing.
+# Verify pricing is current before deployment; adjust for your contracted rates.
 #
 # NOTE: viewer/src/routes/+page.svelte mirrors this table client-side for
 # the dashboard cost panel. When rates change, update both — there is no

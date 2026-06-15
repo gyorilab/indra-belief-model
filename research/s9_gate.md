@@ -1,7 +1,5 @@
 # S9 brutalist gate — probe GO/NO-GO
 
-Status: PROCEED-WITH-CAVEAT (stratum targets missed, but architecture sound)
-Date: 2026-05-02
 Method: 30-record stratified probe in 2.4min on gemma-remote (real LLM)
 
 ## Stratum results vs targets

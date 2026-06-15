@@ -1,7 +1,5 @@
 # S7 brutalist gate — implementation review
 
-Status: PASS-WITH-CAVEAT (few-shot coverage gap identified; addressed before S8)
-Date: 2026-05-02
 Method: substrate-only trace on the 13 R-phase records used in S4 + smoke test on real INDRA inputs
 
 ## Substrate-only trace (no LLM) — 13 records
@@ -48,7 +46,7 @@ All 13 R-phase reason codes have probe-tuple → reason mappings. Deferred codes
 - `parse_evidence.py`, `_prompts.py`, `decomposed.py`, `adjudicate.py` deleted
 - `EvidenceCommitment`, `EvidenceAssertion`, deferred ReasonCodes deleted from commitments.py
 - `use_decomposed` flag removed; `score_evidence(stmt, ev, client)` signature is cleaner
-- 16 R-phase / N-phase / Q-phase scripts archived to `scripts/archive/r_phase/`
+- 16 R-phase / N-phase / Q-phase scripts removed in the S-phase migration
 - 16 deprecated test files deleted; 90 new probe-pipeline tests added covering equivalent surface
 - `_norm_alias` inlined in context_builder.py (was in deleted adjudicate.py)
 - Test suite: 447 passing, 1 skipped — green

@@ -6,8 +6,11 @@ identity information through the scoring pipeline.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from functools import lru_cache
+
+log = logging.getLogger(__name__)
 
 
 # Gilda score threshold below which a text→entity mapping is treated as
@@ -324,6 +327,7 @@ def _cached_ground(name: str):
     try:
         return gilda.ground(name) or []
     except Exception:
+        log.debug("gilda.ground failed for %r; treating as no grounding", name, exc_info=True)
         return []
 
 
@@ -333,6 +337,7 @@ def _cached_get_names(db: str, db_id: str) -> list[str]:
     try:
         return gilda.get_names(db, db_id)
     except Exception:
+        log.debug("gilda.get_names failed for (%s, %s); treating as no names", db, db_id, exc_info=True)
         return []
 
 
@@ -356,11 +361,13 @@ def _filter_aliases(aliases: list[str], entity_name: str, canonical: str) -> lis
         "AF-1", "AF1", "AF-2", "AF2", "CD", "PI", "HR", "NR", "AD",
         "BD", "KD", "TF", "Receptor", "Receptors", "Protein", "Ligand",
     }
+    # Single-character aliases carry no disambiguating signal; drop them.
+    _MIN_ALIAS_LEN = 1
     candidates = []
     for a in aliases:
         if a == canonical or a == entity_name:
             continue
-        if a in _AMBIGUOUS or len(a) <= 1:
+        if a in _AMBIGUOUS or len(a) <= _MIN_ALIAS_LEN:
             continue
         a_lower = a.lower()
         if a_lower in ("antigen", "protein", "receptor", "ligand", "factor",
@@ -386,6 +393,8 @@ def _get_fplx_members(fplx_id: str) -> list[str]:
                 names.append(name)
         return sorted(names)
     except Exception:
+        log.warning("bio_ontology lookup failed for FPLX %s; returning no members",
+                    fplx_id, exc_info=True)
         return []
 
 
@@ -412,7 +421,11 @@ def _is_descendant(child_db: str | None, child_id: str | None,
             if pdb == parent_db and str(pid) == str(parent_id):
                 return True
     except Exception:
-        pass
+        log.warning(
+            "bio_ontology descendant check failed for child=(%s, %s) parent=(%s, %s); "
+            "treating as not-descendant",
+            child_db, child_id, parent_db, parent_id, exc_info=True,
+        )
     return False
 
 

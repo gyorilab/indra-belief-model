@@ -1,12 +1,11 @@
 """Characterization + extraction guard for the shared two-stage cluster sampler.
 
-`two_stage_sample` was byte-identical across build_review_queue and
-build_disagreement_queue until the curated-first edit diverged the latter. This
-test pins the OBSERVABLE behavior of both builders at a frozen seed BEFORE the
-sampler is lifted into indra_belief.sampling, then proves the lift is
-behavior-preserving (same queues, same item_ids) AFTER. It also locks the two
-invariants the sampler exists to enforce: the global per-statement cap, and that
-the curated-first path is a strict generalization (no-op when nothing is curated).
+`two_stage_sample` is shared by build_review_queue and build_disagreement_queue.
+This test pins the OBSERVABLE behavior of both builders at a fixed seed and
+proves the sampler in indra_belief.sampling is behavior-preserving (same queues,
+same item_ids). It also locks the two invariants the sampler exists to enforce:
+the global per-statement cap, and that the curated-first path is a strict
+generalization (no-op when nothing is curated).
 """
 import argparse
 import json
@@ -21,6 +20,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import build_disagreement_queue as bdq  # noqa: E402
 import build_review_queue as brq  # noqa: E402
+
+# Fixed RNG seed for the RNG-identity test: the reference draw and the extracted
+# sampler must consume the same Random stream, so both sides use this one seed.
+# The exact value is arbitrary — only its sameness across both calls matters.
+RNG_IDENTITY_SEED = 20260602
 
 
 # ── shared synthetic exports ────────────────────────────────────────────────
@@ -96,14 +100,14 @@ def test_review_queue_still_passes_its_own_invariants(tmp_path):
     assert max(Counter(it["stmt_hash"] for it in queue).values()) <= 3
 
 
-# ── the extracted sampler (skips cleanly until indra_belief.sampling exists) ─
+# ── the shared sampler ──────────────────────────────────────────────────────
 
 
 def _plain_two_stage_reference(rows, target, cap, taken_per_stmt, rng):
-    """The pre-extraction plain draw, verbatim from build_review_queue@HEAD. The
-    shared sampler's no-priority path MUST consume RNG identically to this — a
+    """Reference implementation of the plain (no-priority) draw. The shared
+    sampler's no-priority path MUST consume RNG identically to this — a
     statement skipped for being capped must NOT shuffle its rows, or every later
-    draw desyncs (this is what diverged the frozen rough queue mid-refactor)."""
+    draw desyncs, which would silently change every queue."""
     from collections import defaultdict
     by_stmt = defaultdict(list)
     for r in rows:
@@ -138,8 +142,8 @@ def test_extracted_sampler_rng_identical_to_plain_reference():
     rows = [{"stmt_hash": f"S{s}", "evidence_hash": f"S{s}e{i}"}
             for s in range(8) for i in range(5)]
     from collections import defaultdict
-    ref = _plain_two_stage_reference(rows, target=12, cap=2, taken_per_stmt=defaultdict(int), rng=random.Random(20260602))
-    got = sampling.two_stage_sample(rows, target=12, cap=2, taken_per_stmt={}, rng=random.Random(20260602))
+    ref = _plain_two_stage_reference(rows, target=12, cap=2, taken_per_stmt=defaultdict(int), rng=random.Random(RNG_IDENTITY_SEED))
+    got = sampling.two_stage_sample(rows, target=12, cap=2, taken_per_stmt={}, rng=random.Random(RNG_IDENTITY_SEED))
     assert [r["evidence_hash"] for r in got] == [r["evidence_hash"] for r in ref]
     assert max(Counter(r["stmt_hash"] for r in got).values()) <= 2
 

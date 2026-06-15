@@ -1,9 +1,9 @@
-"""Tests for the S-phase adjudicator (probes/adjudicator.py).
+"""Tests for the adjudicator (probes/adjudicator.py).
 
-Each rule in the §5.2 canonical decision table is exercised. Plus:
-  - §5.1 perturbation-marker propagation
-  - §5.3 symmetric-binding handling
-  - §5.4 final-arm substrate-fallback rescue
+Each rule in the canonical decision table is exercised. Plus:
+  - perturbation-marker propagation
+  - symmetric-binding handling
+  - final-arm substrate-fallback rescue
   - confidence policy (uncertain grounding downgrade)
   - probe-failure handling (source=abstain forces abstain unless rescued)
 """
@@ -61,7 +61,7 @@ def _bundle(
     )
 
 
-# --- §5.2 canonical decision table -----------------------------------------
+# --- canonical decision table ----------------------------------------------
 
 def test_match_direct_sign_match_asserted_correct() -> None:
     adj = adjudicate(_claim(), _bundle(), (), ctx=EvidenceContext())
@@ -71,7 +71,7 @@ def test_match_direct_sign_match_asserted_correct() -> None:
 
 
 def test_hedged_relation_lifts_to_correct_low() -> None:
-    """§5.7: hedged + matched relation → correct/low, not abstain.
+    """Hedged + matched relation → correct/low, not abstain.
     The relation IS asserted; hedging modulates confidence, not verdict."""
     adj = adjudicate(_claim(), _bundle(scope="hedged"),
                      (), ctx=EvidenceContext())
@@ -95,14 +95,13 @@ def test_sign_mismatch_incorrect() -> None:
     assert "sign_mismatch" in adj.reasons
 
 
-# --- AA-T1.A: negated + non-match-axis must not flip to correct ---
+# --- negated + non-match-axis must not flip to correct ---
 
 def test_aa_negated_sign_mismatch_stays_incorrect() -> None:
-    """AA-T1.A: scope=negated + relation_axis=direct_sign_mismatch must
-    NOT flip to correct/high via `1 - 0.10 = 0.90`. This was the
-    Y-phase Class-B FP pattern (#9, #10, #11): evidence like 'neither X
-    nor Y interacted' double-encodes the negation across both probes
-    and the legacy `_apply_scope` flip double-counted it."""
+    """scope=negated + relation_axis=direct_sign_mismatch must NOT flip
+    to correct/high via `1 - 0.10 = 0.90`. Evidence like 'neither X nor
+    Y interacted' double-encodes the negation across both probes, so a
+    scope flip on a non-match axis would double-count it."""
     adj = adjudicate(
         _claim(),
         _bundle(relation="direct_sign_mismatch", scope="negated"),
@@ -113,8 +112,8 @@ def test_aa_negated_sign_mismatch_stays_incorrect() -> None:
 
 
 def test_aa_negated_no_relation_stays_incorrect() -> None:
-    """AA-T1.A: negated + no_relation must stay incorrect.
-    Without the fix, 1 - 0.08 = 0.92 → false positive."""
+    """negated + no_relation must stay incorrect.
+    A scope flip here would yield 1 - 0.08 = 0.92 → false positive."""
     adj = adjudicate(
         _claim(),
         _bundle(relation="no_relation", scope="negated"),
@@ -125,7 +124,7 @@ def test_aa_negated_no_relation_stays_incorrect() -> None:
 
 
 def test_aa_negated_axis_mismatch_stays_incorrect() -> None:
-    """AA-T1.A: negated + axis_mismatch must stay incorrect."""
+    """negated + axis_mismatch must stay incorrect."""
     adj = adjudicate(
         _claim(),
         _bundle(relation="direct_axis_mismatch", scope="negated"),
@@ -136,9 +135,8 @@ def test_aa_negated_axis_mismatch_stays_incorrect() -> None:
 
 
 def test_aa_negated_direct_sign_match_still_flips() -> None:
-    """AA-T1.A: the genuine flip case still works: scope=negated on a
-    direct_sign_match should land at 1 - 0.92 = 0.08 → incorrect/high.
-    This is the original Y1-era semantics; we did not break it."""
+    """The genuine flip case still works: scope=negated on a
+    direct_sign_match should land at 1 - 0.92 = 0.08 → incorrect/high."""
     adj = adjudicate(
         _claim(),
         _bundle(relation="direct_sign_match", scope="negated"),
@@ -149,10 +147,10 @@ def test_aa_negated_direct_sign_match_still_flips() -> None:
 
 
 def test_aa_lof_plus_negated_observed_match_clamps_low() -> None:
-    """AA-T1.A: LOF + observed direct_sign_match + scope=negated.
+    """LOF + observed direct_sign_match + scope=negated.
     LOF swaps ra_effective → direct_sign_mismatch (base 0.10). Negation
-    on non-match axis no longer flips, so score stays at 0.10. Without
-    the fix, the legacy flip turned this into 0.90 → false positive.
+    on a non-match axis does not flip, so score stays at 0.10; a flip
+    here would turn this into 0.90 → false positive.
     """
     adj = adjudicate(
         _claim(),
@@ -168,7 +166,7 @@ def test_aa_lof_plus_negated_observed_match_clamps_low() -> None:
 
 
 def test_aa_lof_plus_negated_observed_mismatch_flips() -> None:
-    """AA-T1.A symmetric: LOF + observed direct_sign_mismatch + negated.
+    """Symmetric: LOF + observed direct_sign_mismatch + negated.
     LOF swaps ra_effective → direct_sign_match (0.92). Negation flips
     → 0.08. This is the post-LOF case where the relation is genuinely
     asserted in the claim direction and then negated by scope."""
@@ -186,7 +184,7 @@ def test_aa_lof_plus_negated_observed_mismatch_flips() -> None:
 
 
 def test_lof_perturbation_flips_sign_mismatch_to_match() -> None:
-    """Y2: when subject is observed under LOF perturbation (knockout,
+    """When subject is observed under LOF perturbation (knockout,
     knockdown, inhibitor, mutant), the relation_axis probe sees the
     INVERTED relationship. Example: 'AGER blockade reduced MMP-2 activity'
     ⇒ relation_axis observes 'direct_sign_mismatch' (LOF caused decrease)
@@ -215,7 +213,7 @@ def test_lof_perturbation_flips_sign_match_to_mismatch() -> None:
 
 
 def test_no_perturbation_preserves_relation_interpretation() -> None:
-    """Y2: control case — without LOF marker, relation_axis is
+    """Control case — without LOF marker, relation_axis is
     interpreted as-is."""
     adj_normal = adjudicate(
         _claim(),
@@ -258,7 +256,7 @@ def test_no_relation_incorrect() -> None:
 
 
 def test_via_mediator_causal_claim_accepts_chain() -> None:
-    """§5.6: causal claims (Activation/Inhibition/Inc/DecAmount) accept
+    """Causal claims (Activation/Inhibition/Inc/DecAmount) accept
     indirect chains — INDRA pathway-level semantics."""
     adj = adjudicate(_claim(stmt_type="Activation"),
                      _bundle(relation="via_mediator"),
@@ -268,7 +266,7 @@ def test_via_mediator_causal_claim_accepts_chain() -> None:
 
 
 def test_via_mediator_direct_claim_incorrect() -> None:
-    """X3: Direct claims (Phosphorylation/Complex) require direct contact;
+    """Direct claims (Phosphorylation/Complex) require direct contact;
     via_mediator pulls score below 0.5 → incorrect with indirect_chain tag."""
     claim = _claim(axis="modification", sign="positive",
                    stmt_type="Phosphorylation")
@@ -290,7 +288,7 @@ def test_via_mediator_partial_causal_claim_low_confidence() -> None:
 
 
 def test_via_mediator_partial_direct_claim_incorrect() -> None:
-    """X3: Direct claim with partial chain → incorrect, chain_extraction_gap tag."""
+    """Direct claim with partial chain → incorrect, chain_extraction_gap tag."""
     claim = _claim(axis="modification", sign="positive",
                    stmt_type="Phosphorylation")
     adj = adjudicate(claim,
@@ -304,7 +302,7 @@ def test_via_mediator_partial_direct_claim_incorrect() -> None:
 
 
 def test_relation_abstain_lean_correct() -> None:
-    """X3: when entities are placed correctly but relation_axis is
+    """When entities are placed correctly but relation_axis is
     underdetermined, score=0.55 (lean correct, low confidence)."""
     adj = adjudicate(_claim(),
                      _bundle(relation="abstain"),
@@ -314,7 +312,7 @@ def test_relation_abstain_lean_correct() -> None:
 
 
 def test_grounding_gap_subject_absent_incorrect() -> None:
-    """X3: subject absent → score 0.15 → incorrect, grounding_gap tag."""
+    """Subject absent → score 0.15 → incorrect, grounding_gap tag."""
     adj = adjudicate(_claim(),
                      _bundle(subj="absent"),
                      (), ctx=EvidenceContext())
@@ -324,7 +322,7 @@ def test_grounding_gap_subject_absent_incorrect() -> None:
 
 
 def test_grounding_gap_object_absent_incorrect() -> None:
-    """X3: object absent → score 0.15 → incorrect, grounding_gap tag."""
+    """Object absent → score 0.15 → incorrect, grounding_gap tag."""
     adj = adjudicate(_claim(),
                      _bundle(obj="absent"),
                      (), ctx=EvidenceContext())
@@ -342,8 +340,8 @@ def test_decoy_treated_as_no_relation() -> None:
 
 
 def test_mediator_on_causal_claim_correct() -> None:
-    """X3: mediator on causal claim (Activation/Inhibition/Inc/Dec) is
-    allowed per §5.6 — score reflects normal relation_axis match."""
+    """Mediator on causal claim (Activation/Inhibition/Inc/Dec) is
+    allowed — score reflects normal relation_axis match."""
     adj = adjudicate(_claim(),  # default Activation = causal
                      _bundle(subj="present_as_mediator"),
                      (), ctx=EvidenceContext())
@@ -351,7 +349,7 @@ def test_mediator_on_causal_claim_correct() -> None:
     assert "indirect_chain" in adj.reasons
 
 
-# --- §5.2 role_swap (non-binding) ------------------------------------------
+# --- role_swap (non-binding) -----------------------------------------------
 
 def test_role_swap_non_binding_axis_incorrect() -> None:
     adj = adjudicate(
@@ -363,7 +361,7 @@ def test_role_swap_non_binding_axis_incorrect() -> None:
     assert "role_swap" in adj.reasons
 
 
-# --- §5.3 symmetric-binding ------------------------------------------------
+# --- symmetric-binding -----------------------------------------------------
 
 def test_binding_axis_swapped_roles_treated_as_match() -> None:
     """Complex(X,Y) ≡ Complex(Y,X) — swapped roles are not role_swap."""
@@ -379,7 +377,7 @@ def test_binding_axis_swapped_roles_treated_as_match() -> None:
     assert adj.reasons != ("role_swap",)
 
 
-# --- §5.4 final-arm substrate-fallback rescue ------------------------------
+# --- final-arm substrate-fallback rescue -----------------------------------
 
 def test_final_arm_rescues_abstain_via_catalog() -> None:
     """When probes abstain but ctx has CATALOG-aligned match, rescue."""
@@ -451,7 +449,7 @@ def test_final_arm_binding_symmetric_match_rescues() -> None:
         ),
     )
     # Claim is Complex(FOS, JUN); CATALOG has (JUN, FOS) — symmetric.
-    # Use a low-pre-rescue bundle (subject absent) to trigger §5.4 rescue.
+    # Use a low-pre-rescue bundle (subject absent) to trigger the rescue.
     claim = _claim(subject="FOS", objects=("JUN",), axis="binding",
                    sign="neutral", stmt_type="Complex")
     adj = adjudicate(claim,
@@ -464,7 +462,7 @@ def test_final_arm_binding_symmetric_match_rescues() -> None:
 # --- probe failure handling (source=abstain → answer=absent fallback) ------
 
 def test_subject_role_failure_falls_back_to_absent_vetoes() -> None:
-    """X3: when subject_role LLM call fails, probe module sets
+    """When subject_role LLM call fails, probe module sets
     answer='absent'. Stage 1 veto then forces score ≤ 0.15 → incorrect."""
     bundle = _bundle(subj="absent", subj_source="abstain")
     adj = adjudicate(_claim(), bundle, (), ctx=EvidenceContext())
@@ -473,7 +471,7 @@ def test_subject_role_failure_falls_back_to_absent_vetoes() -> None:
 
 
 def test_relation_axis_failure_leans_correct() -> None:
-    """X3: when relation_axis LLM call fails, probe sets answer='abstain'.
+    """When relation_axis LLM call fails, probe sets answer='abstain'.
     Entities placed correctly + relation ambiguous → score=0.55 (lean correct)."""
     bundle = _bundle(relation="abstain", relation_source="abstain")
     adj = adjudicate(_claim(), bundle, (), ctx=EvidenceContext())
@@ -482,7 +480,7 @@ def test_relation_axis_failure_leans_correct() -> None:
 
 
 def test_probe_failure_can_be_rescued_by_substrate_fallback() -> None:
-    """Even when LLM probes fail (answer=absent), CATALOG match rescues via §5.4."""
+    """Even when LLM probes fail (answer=absent), a CATALOG match rescues."""
     ctx = EvidenceContext(
         detected_relations=(
             DetectedRelation(
@@ -493,7 +491,7 @@ def test_probe_failure_can_be_rescued_by_substrate_fallback() -> None:
             ),
         ),
     )
-    # Subject absent (probe-failure fallback) → pre-rescue 0.15 → §5.4 fires.
+    # Subject absent (probe-failure fallback) → pre-rescue 0.15 → rescue fires.
     bundle = _bundle(subj="absent", subj_source="abstain")
     adj = adjudicate(_claim(), bundle, (), ctx=ctx)
     assert adj.verdict == "correct"
@@ -527,7 +525,7 @@ def test_incorrect_high_confidence() -> None:
 
 
 def test_relation_abstain_score_near_neutral() -> None:
-    """X3: when relation_axis is genuinely abstain, score lands ≈ 0.55
+    """When relation_axis is genuinely abstain, score lands ≈ 0.55
     (entities placed correctly; only the relation is ambiguous).
     Verdict commits 'correct' with low confidence — no abstain anywhere."""
     adj = adjudicate(_claim(),

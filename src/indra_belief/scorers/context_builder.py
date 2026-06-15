@@ -111,19 +111,7 @@ def _agent_names(stmt) -> list[str]:
     return names
 
 
-def _raw_text_for(name: str, evidence) -> str | None:
-    """Pull the evidence-side raw_text for a claim entity (same logic
-    as decomposed.py:_raw_text_for; duplicated to avoid a cycle)."""
-    try:
-        agents = evidence.annotations.get("agents", {})
-    except AttributeError:
-        return None
-    names = agents.get("agent_list") or []
-    raws = agents.get("raw_text") or []
-    for n, rt in zip(names, raws):
-        if n == name and rt:
-            return rt
-    return None
+from indra_belief.scorers._shared import raw_text_for as _raw_text_for
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +289,10 @@ def _expand_synonyms(grounded_entity) -> frozenset[str]:
 # analysis, not per-sentence.
 _MAX_CLAUSES = 4
 
+# Minimum length (chars) for a split part to count as a real clause.
+# Shorter parts are usually citation markers ("[ ].", "(Smith, 2020).").
+_MIN_CLAUSE_CHARS = 12
+
 
 def _split_into_clauses(text: str) -> tuple[str, ...]:
     """Deterministic sentence-level split. Returns the trimmed clause
@@ -313,13 +305,13 @@ def _split_into_clauses(text: str) -> tuple[str, ...]:
     # We don't split on '.' alone because abbreviations ('et al.',
     # 'i.e.') would over-fire. Requiring the trailing space scopes the
     # heuristic to actual sentence ends in evidence text.
-    import re
+    # (Module already imports `re` at top; no local re-import needed.)
     parts = re.split(r"(?<=[.?!])\s+(?=[A-Z(])", text.strip())
     parts = [p.strip() for p in parts if p and p.strip()]
 
-    # Filter trivial parts (< 12 chars) — these are usually citation
-    # markers ("[ ].", "(Smith, 2020).") that aren't real clauses.
-    parts = [p for p in parts if len(p) >= 12]
+    # Filter trivial parts (< _MIN_CLAUSE_CHARS) — these are usually
+    # citation markers ("[ ].", "(Smith, 2020).") that aren't real clauses.
+    parts = [p for p in parts if len(p) >= _MIN_CLAUSE_CHARS]
 
     if len(parts) < 2:
         return (text,)
@@ -663,6 +655,14 @@ _SITE_MOD_ANCHORS = re.compile(
     re.IGNORECASE,
 )
 
+# Character-window sizes used while validating letter-form site matches
+# in _detect_sites. Backward window for figure/table negative anchors,
+# forward window for the entity-name following-token reject, and the
+# symmetric window (either direction) for the modification anchor.
+_SITE_NEG_PREFIX_CHARS = 20
+_SITE_FOLLOW_SUFFIX_CHARS = 30
+_SITE_MOD_ANCHOR_CHARS = 50
+
 
 def _normalize_site(letter_or_word: str, position: str) -> str | None:
     """Canonical form: 'S102', 'T461', 'Y732'."""
@@ -702,7 +702,7 @@ def _detect_sites(text: str) -> frozenset[str]:
         if not normalized:
             continue
         # Check preceding context for figure/table negative anchors.
-        start = max(0, m.start() - 20)
+        start = max(0, m.start() - _SITE_NEG_PREFIX_CHARS)
         prefix = text[start:m.start()]
         if _SITE_NEGATIVE_PRECEDERS.search(prefix):
             continue
@@ -711,15 +711,15 @@ def _detect_sites(text: str) -> frozenset[str]:
             continue
         # Following-token reject: "S100 protein", "T7 phage", "Y2 receptor"
         end = m.end()
-        suffix = text[end:end + 30]
+        suffix = text[end:end + _SITE_FOLLOW_SUFFIX_CHARS]
         if _SITE_FOLLOWS_REJECT.match(suffix):
             continue
         # Letter-form requires a modification anchor within ~50 chars
         # in either direction. The anchor can precede ("phosphorylation
         # at S102") or follow ("S102 phosphorylation by SRC"). Without
         # this, "S100 was elevated" matches as site S100.
-        anchor_start = max(0, m.start() - 50)
-        anchor_end = min(len(text), m.end() + 50)
+        anchor_start = max(0, m.start() - _SITE_MOD_ANCHOR_CHARS)
+        anchor_end = min(len(text), m.end() + _SITE_MOD_ANCHOR_CHARS)
         anchor_window = text[anchor_start:m.start()] + " " + text[m.end():anchor_end]
         if not _SITE_MOD_ANCHORS.search(anchor_window):
             continue
@@ -739,7 +739,7 @@ def _detect_sites(text: str) -> frozenset[str]:
 # ---------------------------------------------------------------------------
 # M10: explicit hedge-marker detection
 # ---------------------------------------------------------------------------
-# Diagnosis FP: CCR7→AKT — "CCR7 may activate Akt" is a hypothesis-level
+# CCR7→AKT — "CCR7 may activate Akt" is a hypothesis-level
 # claim, not asserted. The parser emitted claim_status='asserted' under
 # attention pressure; the substrate detects 'may' anchored to CCR7 and
 # downgrades to 'hedged' at the adjudicator.
@@ -762,7 +762,7 @@ _HEDGE_PROXIMITY_CHARS = 60  # window around entity name to count as anchored
 # N2: clause-break punctuation. When ANY of these sits between a hedge
 # marker and an entity mention, the proximity check rejects — the
 # marker is in a different clause and shouldn't anchor to the entity.
-# Diagnosis: M13 surfaced 9 hedging_hypothesis regressions where the
+# hedging_hypothesis regressions where the
 # 60-char window crossed semicolons, sentence boundaries, or em-dash
 # inserts. Strong separators only: `;`, `:`, em-dash, `--`, sentence-end
 # period (`. ` followed by capital). Commas are intentionally excluded
@@ -850,7 +850,7 @@ def _detect_hedge_markers(
 _LOF_PATTERNS = (
     # "<X> inhibitor", "<X> blocker", "<X> antagonist", "<X> blockade"
     # Optionally allow a parenthetical acronym/expansion between entity
-    # and marker: "histone deacetylase (HDAC) inhibitors". Z2 added
+    # and marker: "histone deacetylase (HDAC) inhibitors". extended
     # "blockade" to the entity-first alternation; previously only
     # "blockade of X" was captured.
     r"\b(?P<X>{name})(?:\s*\([^)]*\))?\s+"
@@ -870,9 +870,9 @@ _LOF_PATTERNS = (
     # regression VHL-VIM ("VHL silencing increased vimentin") missed
     # the perturbation flag because entity-first "silencing" wasn't
     # in the alternation; only verb-first "silencing of X" was.
-    # Z2: extended with "mutant" — perturbation comparator. INDRA
+    # extended with "mutant" — perturbation comparator. INDRA
     # evidence treats "<X> mutant" as a deliberate variant, not
-    # natural occurrence. Z2 also adds "dominant-negative/dominant
+    # natural occurrence. also adds "dominant-negative/dominant
     # negative" as a perturbation form (separate pattern below).
     r"\b(?P<X>{name})\s+(?:knockdown|knock[\- ]?down|knockout|KO|"
     r"siRNA|shRNA|silencing|null|deficient|deficiency|depletion|"
@@ -883,7 +883,7 @@ _LOF_PATTERNS = (
     r"inhibiting|blocking|disruption)\s+of\s+(?P<X>{name})\b",
     # "inhibiting <X>", "blocking <X>" (without "of")
     r"\b(?:inhibiting|blocking|antagonizing|abrogating)\s+(?P<X>{name})\b",
-    # Z2: "dominant-negative <X>", "dominant negative <X>",
+    # "dominant-negative <X>", "dominant negative <X>",
     # "mutant <X>" — verb-first / adjective-first LOF surface forms.
     # "Dominant-negative" is always a deliberate perturbation in INDRA
     # evidence; "mutant <X>" pairs with the entity-first form above
@@ -1056,30 +1056,9 @@ def _bind_to_claim_canonical(token: str,
 # Greek letter forms (lowercase + capitalized) → Latin shortform.
 # Used by _norm_alias to normalize "p38α" / "PI3Kbeta" / "alpha-actinin"
 # variants to a single canonical form for substrate alias matching.
-_GREEK_TO_LATIN = {
-    "alpha": "a", "α": "a", "Α": "a",
-    "beta": "b", "β": "b", "Β": "b",
-    "gamma": "g", "γ": "g", "Γ": "g",
-    "delta": "d", "δ": "d", "Δ": "d",
-    "epsilon": "e", "ε": "e", "Ε": "e",
-    "zeta": "z", "ζ": "z", "Ζ": "z",
-    "eta": "h", "η": "h", "Η": "h",
-    "theta": "q", "θ": "q", "Θ": "q",
-    "iota": "i", "ι": "i", "Ι": "i",
-    "kappa": "k", "κ": "k", "Κ": "k",
-    "lambda": "l", "λ": "l", "Λ": "l",
-    "mu": "m", "μ": "m", "Μ": "m",
-    "nu": "n", "ν": "n", "Ν": "n",
-    "omicron": "o", "ο": "o", "Ο": "o",
-    "pi": "p", "π": "p", "Π": "p",
-    "rho": "r", "ρ": "r", "Ρ": "r",
-    "sigma": "s", "σ": "s", "Σ": "s",
-    "tau": "t", "τ": "t", "Τ": "t",
-    "phi": "f", "φ": "f", "Φ": "f",
-    "chi": "c", "χ": "c", "Χ": "c",
-    "psi": "y", "ψ": "y", "Ψ": "y",
-    "omega": "w", "ω": "w", "Ω": "w",
-}
+from indra_belief.scorers._shared import GREEK_GLYPHS as _G_GLYPHS, GREEK_WORDS as _G_WORDS
+# words + lowercase glyphs (caller lowercases input before matching)
+_GREEK_TO_LATIN = {**_G_WORDS, **{g.lower(): l for g, l in _G_GLYPHS.items()}}
 
 
 def _norm_alias(s: str | None) -> str | None:

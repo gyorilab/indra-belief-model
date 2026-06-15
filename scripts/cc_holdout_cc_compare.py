@@ -21,7 +21,6 @@ Output: data/results/cc_holdout_cc_profile.md
 from __future__ import annotations
 
 import json
-import math
 import sys
 from collections import Counter
 from pathlib import Path
@@ -32,6 +31,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.curation import is_gold_correct  # noqa: E402
 from indra_belief.metrics import confusion_pr, ece as _ece  # noqa: E402
+
+# McNemar test + markdown table emitter are shared (R4).
+from _util import emit_table, mcnemar_exact_pvalue  # noqa: E402, F401
 
 
 def load_jsonl(p: Path) -> dict:
@@ -44,34 +46,10 @@ def confusion(run: dict, shared: list, src: dict) -> dict:
         (is_gold_correct(src[h]["tag"]), run[h]["verdict"] == "correct") for h in shared
     )
 
-def mcnemar_exact_pvalue(b: int, c: int) -> float:
-    """Exact (mid-p) McNemar test on discordant pairs.
-
-    H_0: P(AA-correct, CC-wrong) = P(AA-wrong, CC-correct).
-    Two-sided p-value: 2 × P(X ≥ max(b,c)) under Binomial(b+c, 0.5).
-    Returns 1.0 when b == c == 0.
-    """
-    n = b + c
-    if n == 0:
-        return 1.0
-    k = max(b, c)
-    # Right-tail probability under Binom(n, 0.5)
-    tail = sum(math.comb(n, i) for i in range(k, n + 1)) / (2 ** n)
-    return min(2 * tail, 1.0)
-
-
 def ece(rows: Iterable[dict], src: dict) -> float:
     """Expected Calibration Error on the standard 8-bin scheme."""
     return _ece((r.get("score") or 0.5, is_gold_correct(src[r["source_hash"]]["tag"]))
                 for r in rows)
-
-
-def emit_table(out, header: list[str], rows: list[list]) -> None:
-    out.write("| " + " | ".join(str(c) for c in header) + " |\n")
-    out.write("|" + "|".join(["---"] * len(header)) + "|\n")
-    for row in rows:
-        out.write("| " + " | ".join(str(c) for c in row) + " |\n")
-    out.write("\n")
 
 
 def main() -> None:

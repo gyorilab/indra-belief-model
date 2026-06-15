@@ -1,7 +1,7 @@
-"""X-phase audit (X6) — compare prod-rasmachine-x against the categorical
-baseline (prod-rasmachine-2026-05-14d) on the same 120-statement subset.
+"""Audit a candidate scoring run against a categorical baseline run on the
+same statement subset.
 
-Emits each of G1–G5 with a numeric value + pass/fail flag.
+Emits each acceptance gate with a numeric value + pass/fail flag.
 """
 from __future__ import annotations
 
@@ -16,14 +16,14 @@ import duckdb
 
 ROOT = Path(__file__).parent.parent
 DB = ROOT / "data" / "corpus.duckdb"
-NEW_RUN = "d026e3ec941e4adfab6aff87d02812ca"   # prod-rasmachine-x
-OLD_RUN = "b05ddc85e43147d09ebc99ff7a164cf0"   # prod-rasmachine-2026-05-14d (baseline)
+NEW_RUN = "d026e3ec941e4adfab6aff87d02812ca"   # candidate run
+OLD_RUN = "b05ddc85e43147d09ebc99ff7a164cf0"   # categorical baseline run
 
 STRATA_FILE = ROOT / "data" / "corpora" / "rasmachine_subset_strata.jsonl"
 
 PROBE_RE = re.compile(r"(subject_role|object_role|relation_axis|scope)=(\S+) \((\w+)\)")
 
-random.seed(20260518)
+random.seed(20260518)  # fixed seed for a reproducible hand-audit sample
 
 
 def load_strata() -> dict[str, str]:
@@ -65,7 +65,7 @@ def main():
         print(f"shared (stmt, ev) pairs: {len(shared)}")
         print()
 
-        # ===== G2: abstain count in new run =====
+        # ===== Gate: abstain count in new run (should be zero) =====
         n_abstain_new = sum(
             1 for d in new_agg.values() if d.get("verdict") == "abstain"
         )
@@ -85,7 +85,7 @@ def main():
                 n = confusion.get((ov, nv), 0)
                 print(f"  old={ov:10s} → new={nv:10s}  {n:5d}")
 
-        # ===== G1: alias rescue rate on absent_absent stratum =====
+        # ===== Gate: alias rescue rate on absent_absent stratum =====
         # Rescued = was abstain w/ grounding_gap in old, is correct in new.
         absent_absent_hashes = [
             sh for sh, stratum in strata.items() if stratum == "absent_absent"
@@ -117,7 +117,7 @@ def main():
         print(f"      rescue rate:                 {g1_rate:.2%}   "
               f"[{'PASS' if g1_pass else 'FAIL'} ≥ 40%]")
 
-        # ===== G3: regression rate on correct_high stratum =====
+        # ===== Gate: regression rate on correct_high stratum =====
         ch_hashes = {sh for sh, st in strata.items() if st == "correct_high"}
         ch_pairs = [k for k in shared if k[0] in ch_hashes]
         flips = sum(
@@ -137,7 +137,7 @@ def main():
         print(f"      flip rate:                   {g3_rate:.2%}   "
               f"[{'PASS' if g3_pass else 'FAIL'} ≤ 10%]")
 
-        # ===== G4: MAE vs INDRA published belief =====
+        # ===== Gate: MAE vs INDRA published belief =====
         indra_priors = dict(con.execute("""
             SELECT target_id, CAST(value_text AS DOUBLE) FROM truth_label
             WHERE truth_set_id = 'indra_published_belief' AND target_kind = 'stmt'
@@ -167,7 +167,7 @@ def main():
         else:
             new_mae = new_bias = new_rmse = 0.0
         old_mae = statistics.mean(abs(x) for x in old_deltas) if old_deltas else 0.0
-        g4_pass = new_mae <= 0.45  # baseline 0.398; allow 12% slack
+        g4_pass = new_mae <= 0.45  # threshold allows modest slack over baseline MAE
         print()
         print(f"G4  calibration vs INDRA prior (proxy, not gold):")
         print(f"      MAE (new):                   {new_mae:.3f}   (old: {old_mae:.3f})")
@@ -202,7 +202,7 @@ def main():
             bar = "█" * int(50 * n / sum(new_score_buckets.values()))
             print(f"  {b:11s} {n:5d}  {bar}")
 
-        # ===== G5: hand-audit pool =====
+        # ===== Gate: hand-audit pool =====
         rescued_pool = [
             k for k in aa_evidences
             if old_agg[k]["verdict"] == "abstain"

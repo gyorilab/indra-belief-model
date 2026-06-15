@@ -1,4 +1,4 @@
-"""S-phase probe pipeline.
+"""Probe pipeline.
 
 Replaces the monolithic parse_evidence with four narrow probes
 (subject_role, object_role, relation_axis, scope) routed through a

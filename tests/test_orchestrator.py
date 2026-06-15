@@ -6,23 +6,13 @@ work without LLM calls.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from indra_belief.scorers.probes.orchestrator import (
     score_selected_probes,
     score_via_probes,
 )
 from indra.statements import Activation, Agent, Evidence
 
-
-@dataclass
-class _MockResponse:
-    content: str
-    raw_text: str = ""
-    tokens: int = 10
-    finish_reason: str = "stop"
-    reasoning: str = ""
-    prompt_tokens: int = 100
+from conftest import _MockResponse
 
 
 class _MockClient:

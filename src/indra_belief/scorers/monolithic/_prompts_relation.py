@@ -63,6 +63,7 @@ def _gilda():
         from indra_belief.tools import gilda_tools as gt
         return gt
     except Exception:
+        log.debug("gilda unavailable; relation aliases skipped", exc_info=True)
         return None
 
 
@@ -105,8 +106,12 @@ def resolve_relation_nature(subj: str, obj: str, stmt_type: str, text: str, clie
             kind="relation_nature",
         )
     except Exception:
+        log.warning(
+            "relation_nature: client.call failed for (%r, %r); leaving holistic verdict untouched",
+            subj, obj, exc_info=True,
+        )
         return ""
-    content = ((getattr(resp, "content", "") or "") or (getattr(resp, "raw_text", "") or "")).strip()
+    content = (getattr(resp, "content", None) or getattr(resp, "raw_text", None) or "").strip()
     o = _extract_json(content)
     if not isinstance(o, dict):
         return ""

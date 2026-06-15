@@ -1,6 +1,6 @@
-"""X-phase log-odds adjudicator over ProbeBundle.
+"""Log-odds adjudicator over ProbeBundle.
 
-X3 (no-abstain doctrine): the FINAL verdict is binary {correct, incorrect}.
+No-abstain doctrine: the FINAL verdict is binary {correct, incorrect}.
 Score is the continuous output of a log-odds combiner over per-probe
 factor tables; verdict is `score >= 0.5`.
 
@@ -28,7 +28,7 @@ from indra_belief.scorers.context import EvidenceContext
 from indra_belief.scorers.probes.types import ProbeBundle, ProbeResponse
 
 
-# X3 — conjunctive probe combiner with scope modulator.
+# Conjunctive probe combiner with scope modulator.
 #
 # Why not log-odds sum: the four probes check INDEPENDENT NECESSARY
 # CONDITIONS, not independent evidence for a single conclusion. A claim
@@ -61,6 +61,36 @@ SCOPE_RETAIN = {
     "abstain":  0.65,
 }
 
+# Tuned / calibration constants — DO NOT change values without re-running
+# the holdout eval. Named here only for readability; each replaces a former
+# inline literal at the call site.
+
+# Stage 1 grounding-veto floors (subject/object absent from evidence).
+SCORE_BOTH_ABSENT = 0.05   # both entities absent → hard floor
+SCORE_ONE_ABSENT = 0.15    # one entity absent → near floor
+
+# Stage 2 role-consistency floors.
+SCORE_ROLE_SWAP = 0.10     # subject/object roles swapped (non-binding axis)
+SCORE_DECOY = 0.10         # entity present only as control/bystander
+
+# Mediator on a direct (non-causal) claim — indirect chain penalty.
+SCORE_DIRECT_CLAIM_MEDIATOR = 0.30
+
+# Default relation-strength when the effective answer is unmapped.
+SCORE_RELATION_DEFAULT = 0.50
+
+# _apply_scope: non-match relation under scope=negated clamps to this floor
+# (confirm low rather than flip).
+SCORE_NEGATED_NONMATCH_CLAMP = 0.10
+
+# _confidence_from_score: distance-from-neutral bucket thresholds.
+CONFIDENCE_HIGH_THRESHOLD = 0.40
+CONFIDENCE_MEDIUM_THRESHOLD = 0.20
+
+# adjudicate: final-arm substrate-match rescue and grounding-uncertain shrink.
+SCORE_SUBSTRATE_RESCUE = 0.65       # lift incorrect-leaning probe score to here
+GROUNDING_UNCERTAIN_SHRINK = 0.85   # log-odds shrink factor toward neutral
+
 
 def _apply_scope(
     joint_score: float,
@@ -74,13 +104,12 @@ def _apply_scope(
     - negated → handled below; semantics depend on ra_effective
     - abstain → mild pull toward 0.5
 
-    AA-T1.A: when scope=negated, only flip when ra_effective was a
-    `direct_sign_match` (post-LOF). For any other ra_effective the score
-    already encodes "relation not asserted" (low base for sign_mismatch,
+    When scope=negated, flip the score only when ra_effective was a
+    `direct_sign_match`. For any other ra_effective the score already
+    encodes "relation not asserted" (low base for sign_mismatch,
     axis_mismatch, no_relation, partner_mismatch); applying `1 - x` there
-    DOUBLE-COUNTS the negation and turns a 0.10 floor into a 0.90
-    false-positive (the Y-phase Class-B FPs: #9 MICA→B2M, #10 P2RX4→IL1B,
-    #11 VHL→RALBP1, all "neither X nor Y interacted"-style evidence).
+    DOUBLE-COUNTS the negation and turns a low floor into a high
+    false-positive (e.g. "neither X nor Y interacted"-style evidence).
     Negation on a non-match axis is the SECOND signal that the relation
     isn't being asserted — confirm low rather than flipping.
     """
@@ -91,13 +120,13 @@ def _apply_scope(
             return 1.0 - joint_score
         # Any non-match ra under negated: confirm the relation isn't
         # asserted. Clamp to the existing floor without flipping.
-        return min(joint_score, 0.10)
+        return min(joint_score, SCORE_NEGATED_NONMATCH_CLAMP)
     retain = SCOPE_RETAIN.get(scope_answer or "direct", 1.0)
     return 0.5 + retain * (joint_score - 0.5)
 
 
 def _effective_relation_axis(bundle: ProbeBundle) -> str:
-    """Apply Y2 LOF perturbation propagation to the relation_axis answer.
+    """Apply LOF perturbation propagation to the relation_axis answer.
 
     Returns the answer interpreted under the subject's perturbation state:
     - LOF on subject inverts direct_sign_{match,mismatch}
@@ -117,9 +146,9 @@ def _effective_relation_axis(bundle: ProbeBundle) -> str:
 def _confidence_from_score(score: float) -> str:
     """Map a continuous score to one of three confidence buckets."""
     distance_from_neutral = abs(score - 0.5)
-    if distance_from_neutral >= 0.40:
+    if distance_from_neutral >= CONFIDENCE_HIGH_THRESHOLD:
         return "high"
-    if distance_from_neutral >= 0.20:
+    if distance_from_neutral >= CONFIDENCE_MEDIUM_THRESHOLD:
         return "medium"
     return "low"
 
@@ -152,11 +181,11 @@ def _is_causal_claim(stmt_type: str) -> bool:
 def _final_arm_substrate_match(
     claim: ClaimCommitment, ctx: EvidenceContext,
 ) -> bool:
-    """§5.4: return True iff ctx.detected_relations contains an aligned
+    """Return True iff ctx.detected_relations contains an aligned
     CATALOG match for (claim.subject, claim.objects[0], claim.axis)
     with the claim sign (or symmetric-binding equivalent).
 
-    Mirrors the M3 substrate-fallback hoist preserved through R8.
+    Substrate-fallback hoist: an aligned CATALOG match rescues under-informed probe rows.
     """
     if not claim.objects:
         return False
@@ -236,7 +265,7 @@ def _decide(
             "claim entity is a chain mediator, not endpoint"
 
     # Role-swap: subject in object slot AND object in subject slot.
-    # Only fires for non-binding axes (binding is symmetric §5.3).
+    # Only fires for non-binding axes (binding is symmetric).
     if (sr == "present_as_object" and or_ == "present_as_subject"
             and claim.axis != "binding"):
         return "incorrect", "role_swap", \
@@ -262,7 +291,7 @@ def _decide(
             "relation present but opposite sign"
 
     if ra == "via_mediator":
-        # §5.6: INDRA semantics. Causal claims (Activation, Inhibition,
+        # INDRA semantics. Causal claims (Activation, Inhibition,
         # IncreaseAmount, DecreaseAmount) accept indirect chains —
         # "X activates Y via Z" is valid Activation(X, Y) at the
         # pathway level. Direct claims (Phosphorylation, Complex,
@@ -298,7 +327,7 @@ def _decide(
     if sc == "asserted":
         return "correct", "match", "asserted relation matches claim"
     if sc == "hedged":
-        # §5.7: hedged + matched relation → correct/low rather than
+        # hedged + matched relation → correct/low rather than
         # abstain. The relation IS asserted; the hedging modulates
         # confidence, not the verdict. Composed scorer can weight
         # low-confidence correct < high-confidence correct.
@@ -308,7 +337,7 @@ def _decide(
         return "incorrect", "contradicted", \
             "relation explicitly negated"
     if sc == "abstain":
-        # §5.7 corollary: if relation matches direct + sign and scope
+        # corollary: if relation matches direct + sign and scope
         # is genuinely underdetermined, the most informative verdict
         # is correct/low — the relation evidence is there even if the
         # scope framing is unclear.
@@ -331,24 +360,24 @@ def _claim_score(bundle: ProbeBundle, claim: ClaimCommitment) -> float:
 
     # Stage 1: grounding veto. Claim entity absent from evidence → wrong.
     if sr == "absent" and or_ == "absent":
-        return 0.05
+        return SCORE_BOTH_ABSENT
     if sr == "absent" or or_ == "absent":
-        return 0.15
+        return SCORE_ONE_ABSENT
 
     # Stage 2: role consistency.
     # Role swap (non-binding axis): subject in object slot AND vice versa.
     if (sr == "present_as_object" and or_ == "present_as_subject"
             and claim.axis != "binding"):
-        return 0.10
+        return SCORE_ROLE_SWAP
 
     # Decoy: entity present only as control / bystander.
     if sr == "present_as_decoy" or or_ == "present_as_decoy":
-        return 0.10
+        return SCORE_DECOY
 
     # Mediator: indirect chain. Direct-relation claims (Phosphorylation,
     # Complex, Translocation, …) require direct contact; causal claims
     # (Activation, Inhibition, IncreaseAmount, DecreaseAmount) accept
-    # chains per §5.6. Mediator can be signaled by EITHER role probe
+    # chains. Mediator can be signaled by EITHER role probe
     # OR by relation_axis.
     has_mediator = (
         sr in ("present_as_mediator", "via_mediator")
@@ -356,9 +385,9 @@ def _claim_score(bundle: ProbeBundle, claim: ClaimCommitment) -> float:
         or ra in ("via_mediator", "via_mediator_partial")
     )
     if has_mediator and not _is_causal_claim(claim.stmt_type):
-        return 0.30
+        return SCORE_DIRECT_CLAIM_MEDIATOR
 
-    # Y2 — Stage 3a: perturbation propagation.
+    # Stage 3a: perturbation propagation.
     # When the subject is observed under loss-of-function (knockout,
     # knockdown, inhibitor, mutant), the sentence describes the
     # INVERTED relationship. Example: 'AGER blockade reduced MMP-2'
@@ -369,7 +398,7 @@ def _claim_score(bundle: ProbeBundle, claim: ClaimCommitment) -> float:
     ra_effective = _effective_relation_axis(bundle)
 
     # Stage 3b: relation strength under effective answer.
-    return RELATION_AXIS_BASE.get(ra_effective, 0.50)
+    return RELATION_AXIS_BASE.get(ra_effective, SCORE_RELATION_DEFAULT)
 
 
 def _collect_reasons(
@@ -407,8 +436,8 @@ def _collect_reasons(
         if "indirect_chain" not in reasons:
             reasons.append("indirect_chain")
 
-    # Strip the legacy "abstain"-specific informational rationale; X3 never
-    # emits abstain. The rationale string is informational only.
+    # Strip the legacy "abstain"-specific informational rationale; the
+    # adjudicator never emits abstain. The rationale string is informational only.
     return tuple(reasons), rationale
 
 
@@ -421,7 +450,7 @@ def adjudicate(
 ) -> Adjudication:
     """Probe-product log-odds combiner over ProbeBundle.
 
-    X3 no-abstain doctrine: every (claim, bundle) commits to {correct, incorrect}.
+    No-abstain doctrine: every (claim, bundle) commits to {correct, incorrect}.
     Score = sigmoid(Σ log-odds(per-probe factor)).
     Verdict = score >= 0.5.
 
@@ -429,17 +458,17 @@ def adjudicate(
     legacy decision tree, plus additional tags it dropped) — they describe
     WHY the score landed where it did, but they don't decide it.
 
-    §5.4 final-arm substrate rescue: when the per-probe score is low AND
+    Final-arm substrate rescue: when the per-probe score is low AND
     a CATALOG-aligned regex pattern matches the (subject, object, axis,
     sign) tuple, lift the score to 0.65 (correct, low confidence). This
-    preserves the M3 hoist for cases where probes were under-informed but
+    rescues cases where probes were under-informed but
     substrate has a confident regex match.
 
     Grounding-uncertain rows get their score blended toward 0.5 (one
     log-odds unit toward neutral) so uncertain calls don't get the same
     confidence as fully-grounded ones.
     """
-    # §5.1 — perturbation is already propagated upstream via
+    # perturbation is already propagated upstream via
     # router._route_relation_axis (effective_sign computation).
     _ = _effective_claim_sign(
         claim.sign, bundle.subject_role.perturbation,
@@ -452,11 +481,11 @@ def adjudicate(
 
     reasons, rationale = _collect_reasons(bundle, claim)
 
-    # §5.4 final-arm substrate rescue — lift low scores when CATALOG
+    # final-arm substrate rescue — lift low scores when CATALOG
     # has an aligned regex match. Threshold: rescue only when the
     # probe-derived score is below 0.5 (i.e., we'd commit to incorrect).
     if score < 0.5 and _final_arm_substrate_match(claim, ctx):
-        score = 0.65
+        score = SCORE_SUBSTRATE_RESCUE
         if "regex_substrate_match" not in reasons:
             reasons = reasons + ("regex_substrate_match",)
         rationale = f"final-arm substrate match (probe-score was {score:.2f})"
@@ -468,7 +497,7 @@ def adjudicate(
         eps = 1e-3
         x = max(min(score, 1.0 - eps), eps)
         L = math.log(x / (1.0 - x))
-        L *= 0.85  # shrink toward 0 (= 0.5 in probability space)
+        L *= GROUNDING_UNCERTAIN_SHRINK  # shrink toward 0 (= 0.5 in probability space)
         score = 1.0 / (1.0 + math.exp(-L))
 
     verdict = "correct" if score >= 0.5 else "incorrect"

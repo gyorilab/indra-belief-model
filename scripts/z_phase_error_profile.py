@@ -27,18 +27,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from indra_belief.curation import is_gold_correct  # noqa: E402
 from indra_belief.metrics import confusion_metrics, ece as _ece  # noqa: E402
 
-
-def load_source(name: str) -> dict:
-    src: dict = {}
-    p = ROOT / "data" / "benchmark" / f"{name}.jsonl"
-    for line in open(p):
-        r = json.loads(line)
-        src[r["source_hash"]] = r
-    return src
-
-
-def load_run(path: Path) -> list[dict]:
-    return [json.loads(l) for l in open(path) if l.strip()]
+# Source records, run loaders, and markdown emitters are shared (R4).
+from _util import emit_section, emit_table, load_run, load_source  # noqa: E402, F401
 
 
 PROBE_RE = re.compile(r"(subject_role|object_role|relation_axis|scope)=(\S+) \((\w+)\)")
@@ -64,18 +54,6 @@ def join_run_with_gold(run: list[dict], src: dict) -> list[dict]:
             continue
         joined.append({**r, "tag": src[h]["tag"]})
     return joined
-
-
-def emit_section(out, title: str) -> None:
-    out.write(f"\n## {title}\n\n")
-
-
-def emit_table(out, header: list[str], rows: list[list[str]]) -> None:
-    out.write("| " + " | ".join(header) + " |\n")
-    out.write("|" + "|".join(["---"] * len(header)) + "|\n")
-    for row in rows:
-        out.write("| " + " | ".join(str(c) for c in row) + " |\n")
-    out.write("\n")
 
 
 def is_class_a_fp(rec: dict, gold_tag: str) -> bool:

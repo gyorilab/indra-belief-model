@@ -35,6 +35,21 @@ from indra_belief.scorers.monolithic.scorer import (  # noqa: E402
     score_statement as score_evidence_monolithic,
 )
 
+# Architecture dispatch (set in main() from --arch). Default monolithic keeps
+# this runner's long-proven behavior byte-for-byte; "decomposed" routes each
+# (stmt, ev) through the four-probe orchestrator instead (same return dict).
+_ARCH = "monolithic"
+
+
+def _score_one(stmt, ev, client, max_tokens):
+    if _ARCH == "panel":
+        from indra_belief.scorers.panel import score_via_panel
+        return score_via_panel(stmt, ev, client)  # objection panel; no max_tokens
+    if _ARCH == "decomposed":
+        from indra_belief.scorers.probes.orchestrator import score_via_probes
+        return score_via_probes(stmt, ev, client)  # no max_tokens in the probe API
+    return score_evidence_monolithic(stmt, ev, client, max_tokens=max_tokens)
+
 
 DEFAULT_INPUT = ROOT / "data" / "corpora" / "latest_statements_rasmachine.json"
 DEFAULT_OUTPUT = ROOT / "data" / "results" / "rasmachine_mono_gemma_remote_direct.jsonl"
@@ -184,7 +199,7 @@ def _score_with_retries(
     last_error: Exception | None = None
     for attempt in range(retries + 1):
         try:
-            return score_evidence_monolithic(stmt, ev, client, max_tokens=max_tokens)
+            return _score_one(stmt, ev, client, max_tokens)
         except Exception as exc:
             last_error = exc
             if attempt < retries:
@@ -516,6 +531,8 @@ def main() -> int:
     parser.add_argument("--input", default=str(DEFAULT_INPUT))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--model", default="gemma-remote")
+    parser.add_argument("--arch", choices=("monolithic", "decomposed", "panel"), default="monolithic",
+                        help="scoring architecture; decomposed = four-probe orchestrator")
     parser.add_argument(
         "--max-tokens",
         type=_optional_positive_int,
@@ -563,6 +580,8 @@ def main() -> int:
     # --raw-preview-chars flag was removed — clipping it silently discarded generated
     # output and is no longer permitted.
     args = parser.parse_args()
+    global _ARCH
+    _ARCH = args.arch
 
     input_path = Path(args.input)
     output_path = Path(args.output)
@@ -616,6 +635,7 @@ def main() -> int:
         "run_id": run_id,
         "status": "running",
         "model": args.model,
+        "arch": args.arch,
         "max_tokens": args.max_tokens,
         "input": str(input_path),
         "output": str(output_path),

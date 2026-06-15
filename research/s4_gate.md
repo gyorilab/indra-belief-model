@@ -1,10 +1,5 @@
 # S4 brutalist gate — substrate routing review
 
-Status: PASS (after Issue 1 + Issue 2 fixes verified by re-trace)
-Date: 2026-05-02
-Reviewer: adversarial trace of 13 R-phase records (5 Bucket A + 5 Bucket B + 3 substrate-fallback gains)
-Scripts: scripted trace via substrate_route on real holdout records
-
 ## Method
 
 Built INDRA Statements from holdout_v15_sample.jsonl, called

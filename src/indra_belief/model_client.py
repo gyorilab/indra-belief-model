@@ -62,9 +62,8 @@ LOCAL_MODELS: dict[str, dict] = {
     },
     "gemma-remote": {
         "base_url": "http://100.97.101.59:11434/v1",
-        # Gateway serves gemma via ollama under this exact id; the prior
-        # "gemma-4-26b" now 400s ("Invalid model name"). Caught 2026-06-07
-        # when a curation-eval run logged 1557/1606 BadRequestErrors.
+        # Gateway serves gemma via ollama under this exact id; other id
+        # spellings return 400 ("Invalid model name"). Match it exactly.
         "model_id": "gemma-4-26b-ollama",
         "reasoning_in_content": False,
         "reasoning_effort": "medium",
@@ -74,17 +73,13 @@ LOCAL_MODELS: dict[str, dict] = {
         # lower caller-side caps create artificial verdict=None rows.
         "max_tokens": 32000,
         "num_ctx": 32768,
-        # O-phase circuit breaker (was 600s): healthy parse_evidence /
-        # grounding calls finish in <30s on this endpoint. 90s is
-        # ~3× the healthy median — long enough to catch a slow but
-        # working response, short enough to fail fast under endpoint
-        # degradation. Combined with O-phase retry removal in
-        # parse_evidence, max per-record cost on degradation is
-        # ~3 × 90s (parse + 2 grounding) = ~5 min, vs the pre-O 50 min
-        # observed during the killed N9 holdout (2026-04-29).
-        # Monolithic runs now use the backend's 32k generation ceiling.
-        # Keep the wall-clock guard high enough that long-but-valid
+        # Wall-clock guard for monolithic runs at the backend's 32k
+        # generation ceiling: keep it high enough that long-but-valid
         # generations are not converted into artificial row errors.
+        # Short-form sub-calls (parse_evidence / grounding) finish well
+        # under this; the guard exists to fail fast only under genuine
+        # endpoint degradation, with retries disabled so a slow record
+        # cannot multiply into a runaway per-record cost.
         "timeout": 600,
     },
     # Google AI Studio (Gemma 4) — hosted Gemma via the Gemini API's
@@ -104,9 +99,9 @@ LOCAL_MODELS: dict[str, dict] = {
         # Google's OpenAI-compat endpoint strictly rejects unknown
         # extra_body keys (400 INVALID_ARGUMENT on chat_template_kwargs,
         # format, num_ctx — see model_client.call() for the field list).
-        # Surfaced 2026-05-14 by a 10h rasmachine score that completed
-        # 21k/47k evidences with every LLM call 400-failing; deterministic
-        # substrate-only fallback was masking it from the progress stream.
+        # Without this flag every LLM call 400-fails silently: the
+        # deterministic substrate-only fallback masks it from the progress
+        # stream, so a whole run can complete substrate-only and look healthy.
         "strict_openai_compat": True,
         # PaidTier3 quota: 16k input tokens/min for Gemma. With ~3k input
         # tokens per parse_evidence call, true sustainable throughput is
@@ -221,11 +216,11 @@ class ModelClient:
     cleanly with ThreadPoolExecutor — each worker accumulates its own
     record's calls without cross-contamination.
 
-    Wall-time guard (Q3): each call is dispatched on a class-level
+    Wall-time guard: each call is dispatched on a class-level
     ThreadPoolExecutor and `result(timeout=N)` enforces a hard wall-time
     cap. The OpenAI SDK's `timeout` field is a per-chunk / connection
     timeout — for streaming generations it does not bound total wall
-    time. The Q3 wrapper raises TimeoutError after `timeout` seconds
+    time. This wrapper raises TimeoutError after `timeout` seconds
     regardless of underlying transport behavior. The in-flight urllib3
     request continues until the SDK's transport timeout reaps it (a
     transient thread leak; documented and accepted).
@@ -283,11 +278,10 @@ class ModelClient:
         bounded — at most one zombie thread per timeout incident, and
         the pool's max_workers=8 caps total concurrent leaks.
 
-        Q3 fix (2026-05-01): the OpenAI SDK's `timeout` field is per-
-        connection / per-chunk and does NOT bound total wall time on
-        streaming generations. CXCL14 holdout record observed: 255s call
-        wall time despite `timeout=90` in the model config. This wrapper
-        is the actual circuit breaker.
+        The OpenAI SDK's `timeout` field is per-connection / per-chunk and
+        does NOT bound total wall time on streaming generations: a call can
+        run far past the configured `timeout` while individual chunks keep
+        arriving. This wrapper is the actual circuit breaker.
         """
         future = self._WALL_POOL.submit(fn, *args, **kwargs)
         try:
@@ -336,13 +330,13 @@ class ModelClient:
 
         Returns ModelResponse with unified fields regardless of backend.
 
-        Retry doctrine (P-phase): the only retry-on-error is for 429 rate
+        Retry doctrine: the only retry-on-error is for 429 rate
         limits, which respect the server-requested delay. Timeouts and
         connection errors raise on the first occurrence — callers
         (parse_evidence, verify_grounding) abstain via their existing
-        TimeoutError handlers. Pre-P holdouts saw retries amplify
-        endpoint degradation: a slow record cost 3 × 600s = 30 min
-        before failing.
+        TimeoutError handlers. Retrying other errors only amplifies
+        endpoint degradation: it multiplies an already-slow record's
+        cost by the retry count before failing anyway.
 
         `response_format` constrains the output. Pass
         `{"type": "json_object"}` to force JSON-only output on backends that
@@ -352,11 +346,11 @@ class ModelClient:
 
         `reasoning_effort` (when set) overrides the per-model config's
         reasoning_effort. Pass "none" on sub-calls that are pure extraction
-        (parse_evidence, verify_grounding) — with the config default of
-        "medium", gemma-remote burns 12000+ tokens on reasoning_content
-        before emitting JSON, causing silent truncation on the 3000-token
-        per-call budget. "none" keeps the reasoning brief (~60 tokens on
-        a simple test) and lets content populate.
+        (parse_evidence, verify_grounding) — at the config default of
+        "medium", a thinking model can burn its whole token budget on
+        reasoning_content before emitting JSON, causing silent truncation
+        on the per-call budget. "none" keeps the reasoning brief and lets
+        content populate.
 
         `kind` is a free-form telemetry label. Sub-callers pass
         "parse_evidence" / "verify_grounding" / "monolithic" so post-hoc
@@ -373,7 +367,7 @@ class ModelClient:
         )
 
         # 429 quota retries are bounded by this counter; everything else
-        # raises on first occurrence (P-phase doctrine).
+        # raises on first occurrence (see retry doctrine above).
         rate_limit_retries = 5
         t_start = _time.time()
 
@@ -474,10 +468,10 @@ class ModelClient:
         #     mechanism Ollama-served Gemma honors. `reasoning_effort="none"`
         #     is silently dropped by Ollama, leaving thinking ON at the
         #     model's default. We send BOTH; whichever the backend understands
-        #     wins. Q1 fix (2026-05-01) — earlier P-phase code only sent
-        #     reasoning_effort, which is why parse_evidence calls were
-        #     emitting 2400+ tokens of reasoning_content despite the
-        #     "reasoning_effort=none" doctrine.
+        #     wins. Sending only reasoning_effort is insufficient: Ollama
+        #     ignores it, so extraction calls still emit large
+        #     reasoning_content blocks despite the "reasoning_effort=none"
+        #     intent.
         extra_body = {}
         # Backend strictness: Google's OpenAI-compat endpoint
         # (generativelanguage.googleapis.com/v1beta/openai/) rejects unknown

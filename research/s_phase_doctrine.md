@@ -1,9 +1,5 @@
 # S-phase doctrine — surface-shrinkage architecture
 
-Status: DRAFT for S1 brutalist gate
-Date: 2026-05-02
-Predecessor: R-phase shipped at 72.86% on holdout_v15_sample (M12: 74.95%, Q-phase: 70.21%)
-
 ## 1. Unified principle
 
 > Each LLM call should have an information surface and an action surface small enough that its commitments can be reasoned about explicitly. Schema commits are bets; the schema is a place to lose, not a place to win.
@@ -210,7 +206,6 @@ Test files:
 - All other adjudicate/grounding/parse_claim tests → kept but updated to match new probe-tuple inputs to adjudicator
 
 Scripts:
-- `scripts/r*_*.py` → archived under `scripts/archive/r_phase/`
 - `scripts/run_n9_holdout.py` → adapted to S-pipeline as `scripts/run_s_holdout.py`
 
 The end state has exactly one scoring path. No flags, no fallbacks to the old extractor, no commented-out code referencing EvidenceAssertion. CI runs against the single path.

@@ -1,12 +1,11 @@
-"""Typed intermediate commitments for the S-phase scorer.
+"""Typed intermediate commitments for the scorer.
 
 Each sub-call produces or consumes one of these:
   parse_claim       → ClaimCommitment
   grounding_verify  → GroundingVerdict (per claim entity)
   adjudicate        → Adjudication
 
-The S-phase deleted EvidenceCommitment / EvidenceAssertion (per doctrine
-§7 migration discipline) — the parser no longer extracts a multi-slot
+EvidenceCommitment / EvidenceAssertion — the parser no longer extracts a multi-slot
 schema; the four probes (subject_role, object_role, relation_axis,
 scope) commit single-decision answers in their closed sets, and the
 adjudicator combines those via a flat decision table.
@@ -52,7 +51,7 @@ GroundingStatus = Literal[
     "uncertain",     # evidence insufficient to decide
 ]
 
-# S-phase reason codes (per doctrine §5.5; deferred codes removed).
+# Reason codes (deferred codes removed).
 ReasonCode = Literal[
     "match",                  # asserted relation matches claim
     "axis_mismatch",          # claim and evidence describe different kinds of change
@@ -69,7 +68,7 @@ ReasonCode = Literal[
     "no_sentence_evidence",   # evidence.text is empty; deferred to INDRA prior
 ]
 
-# X3 (no-abstain doctrine): the FINAL verdict is binary. Probe-level
+# No-abstain doctrine: the FINAL verdict is binary. Probe-level
 # closed sets still include "abstain"/"absent" as legitimate features
 # the adjudicator consumes — but the adjudicator never emits abstain.
 Verdict = Literal["correct", "incorrect"]
@@ -190,14 +189,7 @@ class Adjudication:
 # Legacy lookup for callers that construct Adjudication without an
 # explicit score (mostly tests). The log-odds adjudicator sets
 # Adjudication.score directly and `adjudication_to_score` returns it.
-_VERDICT_SCORE = {
-    ("correct", "high"):     0.95,
-    ("correct", "medium"):   0.80,
-    ("correct", "low"):      0.65,
-    ("incorrect", "low"):    0.35,
-    ("incorrect", "medium"): 0.20,
-    ("incorrect", "high"):   0.05,
-}
+from indra_belief.scorers._shared import VERDICT_SCORE_GRID as _VERDICT_SCORE
 
 
 def adjudication_to_score(a: Adjudication) -> float:

@@ -3,7 +3,7 @@ hedged, or negated in the evidence?
 
 Closed answer set: asserted, hedged, negated, abstain.
 
-Substrate fast-path covers explicit M10 hedge markers and verb-negator
+Substrate fast-path covers explicit hedge markers and verb-negator
 proximity hits between subject and object positions. The LLM handles
 softer cases — "may have", "putative", "appears to", "we tested",
 "it remains unclear", and rhetorical-not constructions.
@@ -83,7 +83,7 @@ _FEW_SHOTS: list[tuple[str, str]] = [
         '"rationale": "negation governs ELK1, not the MAPK1-JUN relation"}',
     ),
     (
-        # Y1: contrastive-suppression pattern. "X suppresses A and B but did not
+        # contrastive-suppression pattern. "X suppresses A and B but did not
         # impair C" — the negation governs the OTHER targets (C), not the
         # claim relation (X → A). Substrate flags the negation cue; LLM resolves.
         "CLAIM: relation between SLIT2 and RAC2\n"
@@ -95,7 +95,7 @@ _FEW_SHOTS: list[tuple[str, str]] = [
         '\\"did not impair\\" governs OTHER pathways (contrastive scope)"}',
     ),
     (
-        # Y1: pull-down with control exclusion — "X pulled down Y but not control".
+        # pull-down with control exclusion — "X pulled down Y but not control".
         "CLAIM: relation between SOX10 and CTNNB1\n"
         "EVIDENCE: V5-tagged SOX10 was able to pull down GST-tagged "
         "β-catenin (GST-β-catenin) but not GST alone, suggesting that "

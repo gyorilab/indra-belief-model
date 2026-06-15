@@ -1,8 +1,4 @@
-# S-phase ship verdict — 2026-05-02
-
-Status: **SHIP-WITH-RESERVATIONS** (5/6 gates passing)
-Predecessor: R-phase (72.86% on holdout_v15_sample)
-Doctrine: research/s_phase_doctrine.md
+# S-phase ship verdict
 
 ## Headline
 

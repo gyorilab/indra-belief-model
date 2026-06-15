@@ -25,8 +25,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import re
 import time
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 from indra_belief.data.scoring_record import ScoringRecord
 from indra_belief.model_client import ModelClient
@@ -76,15 +80,19 @@ def _relation_note(client, record) -> str:
     try:
         return resolve_relation_nature(
             record.subject, record.object, record.stmt_type, record.evidence_text, client)
-    except Exception:
+    except Exception as e:
+        log.warning(
+            "relation-nature step failed for %r->%r (%s): %s",
+            getattr(record, "subject", None),
+            getattr(record, "object", None),
+            getattr(record, "stmt_type", None),
+            e,
+        )
         return ""
 
 ROOT = Path(__file__).resolve().parents[4]
 
-# Note: provenance is injected only when grounding is flagged. Full-
-# population provenance regresses accuracy — attention dilution from the
-# extra context outweighs the disambiguation benefit on records where
-# grounding is unambiguous. See scoring_record.format_user_message.
+# Provenance is injected only when grounding is flagged; selective injection avoids context overhead.
 
 # --- Adaptive few-shot selection ---
 # Seven contrastive pairs (14 examples) per record — a balance between
@@ -123,9 +131,28 @@ for key, pair in _RAW_BANK.items():
     _TYPE_BANK.setdefault(base_type, []).append(pair)
 
 # Map base examples into pairs by their statement type
+# Statement type is the bracketed suffix of a claim, e.g. "... [Activation]".
+# Sentinel for a claim with no parseable [Type] bracket — keeps a malformed
+# claim from raising IndexError; such pairs route to this bucket instead.
+_UNKNOWN_STMT_TYPE = "Unknown"
+_CLAIM_TYPE_RE = re.compile(r"\[([^\]]+)\]")
+
+
+def _claim_stmt_type(claim: str) -> str:
+    """Extract the bracketed statement type from a claim string.
+
+    Returns the contents of the first ``[...]`` (stripped), matching the
+    legacy ``claim.split('[')[1].split(']')[0].strip()`` on well-formed
+    claims, but falls back to ``_UNKNOWN_STMT_TYPE`` instead of raising
+    IndexError when no bracket is present.
+    """
+    m = _CLAIM_TYPE_RE.search(claim)
+    return m.group(1).strip() if m else _UNKNOWN_STMT_TYPE
+
+
 _BASE_PAIRS: dict[str, list[list[dict]]] = {}
 for i in range(0, len(_ALL_EXAMPLES), 2):
-    stype = _ALL_EXAMPLES[i]["claim"].split("[")[1].split("]")[0].strip()
+    stype = _claim_stmt_type(_ALL_EXAMPLES[i]["claim"])
     _BASE_PAIRS.setdefault(stype, []).append([_ALL_EXAMPLES[i], _ALL_EXAMPLES[i + 1]])
 
 # Universal pairs — patterns that apply to all statement types
@@ -149,7 +176,7 @@ _TYPE_ADJACENCY = {
     "Acetylation": ["Deacetylation"],
 }
 
-TARGET_PAIRS = 7  # reduced from 9 — frees ~20% attention for reasoning
+TARGET_PAIRS = 7  # balances type coverage against the model's reasoning budget
 
 
 def _select_examples(stmt_type: str) -> list[dict]:
@@ -430,10 +457,7 @@ def score(
         reject["call_log"] = _pop()
         return reject
 
-    # AMBIGUOUS entities go directly to Tier 2 — the intermediate AMBIGUOUS
-    # LLM was 64% accurate at scale (barely better than coin flip) and added
-    # an extra LLM call that primed the model with grounding-focused evaluation
-    # before the comprehension evaluation.
+    # AMBIGUOUS entities skip the intermediate decision path and proceed directly to full comprehension scoring.
 
     provenance_triggered = bool(record.format_provenance())
 
@@ -443,11 +467,10 @@ def score(
         for e in (record.subject_entity, record.object_entity)
         if e
     )
-    # Pre-computed-lookups only fire for flagged grounding. The short-symbol
-    # soft-flag was considered but rejected: Gilda is the same oracle that
-    # blessed all_match records, so its lookups return the same misranking
-    # that caused the FP. Tool-use can only help where Gilda already
-    # flagged a mismatch or ambiguity.
+    # Pre-computed lookups only fire for flagged grounding: a short-symbol
+    # soft-flag adds nothing, since Gilda is the same oracle that blessed the
+    # all_match records, so its lookups would return the same ranking. Tool-use
+    # only helps where Gilda already flagged a mismatch or ambiguity.
     needs_tool_use = flagged
     grounding_status = "flagged" if flagged else "all_match"
 
@@ -532,7 +555,9 @@ def main():
     from indra_belief.data.corpus import CorpusIndex
 
     parser = argparse.ArgumentParser(description="Evidence quality scorer (INDRA native)")
-    parser.add_argument("--model", default="gemma-remote")
+    # Default model backend is overridable via IBR_MODEL; unchanged default
+    # ('gemma-remote') keeps a transient backend from being hard-pinned here.
+    parser.add_argument("--model", default=_os.environ.get("IBR_MODEL", "gemma-remote"))
     parser.add_argument("--holdout", default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
     parser.add_argument("--output", default=str(ROOT / "data" / "results" / "scorer_output.jsonl"))
     parser.add_argument("--max-tokens", type=int, default=12000)
@@ -553,12 +578,16 @@ def main():
         resume_path = Path(args.resume)
         if resume_path.exists():
             with open(resume_path) as f:
-                for line in f:
+                for lineno, line in enumerate(f, start=1):
                     try:
                         r = json.loads(line)
                         scored_hashes.add(r.get("source_hash"))
                     except json.JSONDecodeError:
-                        pass
+                        # Skip corrupt NDJSON line; surface it for data-integrity visibility.
+                        log.warning(
+                            "resume: skipping corrupt JSON line %d in %s: %r",
+                            lineno, resume_path, line.rstrip("\n")[:200],
+                        )
             print(f"Resuming: {len(scored_hashes)} records already scored")
 
     print(f"\nScorer: {len(records)} records, model={args.model}")

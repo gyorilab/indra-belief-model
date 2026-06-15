@@ -16,10 +16,30 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from indra_belief.composed_scorer import ComposedBeliefScorer
 from indra_belief.model_client import ModelResponse
+
+
+@pytest.fixture
+def force_mono_score(monkeypatch):
+    """Force the dec arch off so each evidence's verdict comes purely from
+    the marker mock (dec arch makes multiple sub-calls per evidence,
+    breaking the 1-call-per-evidence assumption of this mock).
+
+    Uses monkeypatch so the original ``indra_belief.score_statement`` is
+    restored automatically at teardown.
+    """
+    import indra_belief
+    original = indra_belief.score_statement
+
+    def _mono_score(stmt, client, **kw):
+        return original(stmt, client)
+
+    monkeypatch.setattr(indra_belief, "score_statement", _mono_score)
 
 
 class _MarkerMockClient:
@@ -105,37 +125,26 @@ def test_empty_evidence_returns_zero_score():
 # All-correct
 # ---------------------------------------------------------------------------
 
-def test_all_correct_evidence_passes_gate():
+def test_all_correct_evidence_passes_gate(force_mono_score):
     """Three correct verdicts → all 3 evidences survive the gate."""
     stmt = _stmt_with_evidence(
         "RSK1 phosphorylates YB-1 at S102.",
         "Phosphorylation of YB-1 Ser102 by RSK1 in vitro.",
         "RSK1-mediated phosphorylation of YB-1 at S102.",
     )
-    # Force dec arch off so verdict comes purely from the marker mock
-    # (dec arch makes multiple sub-calls per evidence, breaking the
-    # 1-call-per-evidence assumption of this mock).
-    import indra_belief
-    original = indra_belief.score_statement
-    def _mono_score(stmt, client, **kw):
-        return original(stmt, client)
-    indra_belief.score_statement = _mono_score
-    try:
-        scorer = ComposedBeliefScorer()
-        result = scorer.score_statement(stmt, _MarkerMockClient())
-        assert result.n_total == 3
-        assert result.n_gated == 0
-        assert result.n_surviving == 3
-        assert result.has_llm_scores is True
-    finally:
-        indra_belief.score_statement = original
+    scorer = ComposedBeliefScorer()
+    result = scorer.score_statement(stmt, _MarkerMockClient())
+    assert result.n_total == 3
+    assert result.n_gated == 0
+    assert result.n_surviving == 3
+    assert result.has_llm_scores is True
 
 
 # ---------------------------------------------------------------------------
 # All-incorrect
 # ---------------------------------------------------------------------------
 
-def test_all_incorrect_gated_out():
+def test_all_incorrect_gated_out(force_mono_score):
     # Both evidences must mention RSK1 and YB-1 so substrate doesn't
     # route subject/object to "absent" (S-phase semantics: no entity
     # → grounding_gap → abstain, not incorrect).
@@ -143,26 +152,18 @@ def test_all_incorrect_gated_out():
         "INCORRECT_MARKER kinase-dead RSK1 failed to phosphorylate YB-1.",
         "INCORRECT_MARKER RSK1 mutant phenotype: no YB-1 S102 phosphorylation.",
     )
-    import indra_belief
-    original = indra_belief.score_statement
-    def _mono_score(stmt, client, **kw):
-        return original(stmt, client)
-    indra_belief.score_statement = _mono_score
-    try:
-        scorer = ComposedBeliefScorer()
-        result = scorer.score_statement(stmt, _MarkerMockClient())
-        assert result.n_total == 2
-        assert result.n_gated == 2  # all incorrect → all gated
-        assert result.n_surviving == 0
-    finally:
-        indra_belief.score_statement = original
+    scorer = ComposedBeliefScorer()
+    result = scorer.score_statement(stmt, _MarkerMockClient())
+    assert result.n_total == 2
+    assert result.n_gated == 2  # all incorrect → all gated
+    assert result.n_surviving == 0
 
 
 # ---------------------------------------------------------------------------
 # Mixed
 # ---------------------------------------------------------------------------
 
-def test_mixed_evidence_lifts_via_correct_signal():
+def test_mixed_evidence_lifts_via_correct_signal(force_mono_score):
     """One correct + two incorrect → 1 evidence survives the gate."""
     stmt = _stmt_with_evidence(
         "RSK1 phosphorylates YB-1 at S102.",
@@ -170,16 +171,8 @@ def test_mixed_evidence_lifts_via_correct_signal():
         "INCORRECT_MARKER no detectable RSK1-mediated YB-1 Ser102 "
         "phosphorylation in vitro.",
     )
-    import indra_belief
-    original = indra_belief.score_statement
-    def _mono_score(stmt, client, **kw):
-        return original(stmt, client)
-    indra_belief.score_statement = _mono_score
-    try:
-        scorer = ComposedBeliefScorer()
-        result = scorer.score_statement(stmt, _MarkerMockClient())
-        assert result.n_total == 3
-        assert result.n_surviving == 1  # only the first passed
-        assert result.n_gated == 2
-    finally:
-        indra_belief.score_statement = original
+    scorer = ComposedBeliefScorer()
+    result = scorer.score_statement(stmt, _MarkerMockClient())
+    assert result.n_total == 3
+    assert result.n_surviving == 1  # only the first passed
+    assert result.n_gated == 2

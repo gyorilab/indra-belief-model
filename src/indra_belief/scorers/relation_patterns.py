@@ -335,7 +335,7 @@ BINDING_NEUTRAL: list[RelationPattern] = [
         ),
         surface_form_label="X forms a complex with Y",
     ),
-    # R2: coordinated "X and Y complex/heterodimer/dimer (formation)".
+    # coordinated "X and Y complex/heterodimer/dimer (formation)".
     # Q-phase regression: TECPR1-ATG5 ("Atg5 and TECPR1 complex formation").
     # Permissive on trailing nominalizer (formation/interaction/binding) so
     # the pattern matches both "X and Y complex" and "X and Y complex
@@ -398,7 +398,7 @@ BINDING_NEUTRAL: list[RelationPattern] = [
         ),
         surface_form_label="X is associated with Y",
     ),
-    # R2: coordinated "X1 and X2 bound to Y" — captures X2 (the second
+    # coordinated "X1 and X2 bound to Y" — captures X2 (the second
     # entity in coord). The complement pattern bind.bound_to captures X
     # in single position; this adds coverage for the second entity in
     # an "and"-coordination.
@@ -632,7 +632,7 @@ AMOUNT_POSITIVE: list[RelationPattern] = [
         ),
         surface_form_label="X induces the expression of Y",
     ),
-    # R2: coordinated targets — "X induces Y and Z (...) expression"
+    # coordinated targets — "X induces Y and Z (...) expression"
     # captures Y at the start of the coord; the symmetric sibling
     # pattern below captures Y at the end of the coord.
     # Q-phase regression: TNF-ADAMTS12 ("TNF induces ADAMTS-7 and
@@ -669,7 +669,7 @@ AMOUNT_POSITIVE: list[RelationPattern] = [
 
 # ============================================================================
 # U-phase U8: ACTIVITY_NEGATIVE — semantic-equivalent verb taxonomy
-# (Intervention §3.6). Closes axis_mismatch FNs where the LLM probe
+# (Intervention). Closes axis_mismatch FNs where the LLM probe
 # rejected "X decreases activation of Y" / "X inhibits Y signaling" as
 # wrong-axis despite the verb compound being semantically equivalent
 # to Inhibition. Adding the substrate match short-circuits the LLM
@@ -753,15 +753,3 @@ CATALOG: tuple[RelationPattern, ...] = tuple(
         AMOUNT_POSITIVE,
     ) for p in group
 )
-
-
-def iter_patterns(axis: Axis | None = None,
-                  sign: Sign | None = None) -> list[RelationPattern]:
-    """Filter the catalog by axis/sign. Returns the full catalog when
-    both args are None — used by the builder to scan everything."""
-    out = list(CATALOG)
-    if axis is not None:
-        out = [p for p in out if p.axis == axis]
-    if sign is not None:
-        out = [p for p in out if p.sign == sign]
-    return out

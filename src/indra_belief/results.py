@@ -55,6 +55,15 @@ HEDGE = re.compile(
 EV_COLON = re.compile(r'The evidence is:\s*"(.*?)"\s*(?:\n|$)', re.S)
 EV_TICK = re.compile(r'The evidence is\s*`"(.*?)"`', re.S)
 
+# Captured evidence is accepted only if its length is within tolerance of the
+# row's recorded ``text_len`` — this rejects over-captures where the regex would
+# swallow the trailing reasoning. Tolerance = max(text_len + slack, text_len * factor).
+EV_LEN_SLACK = 30  # absolute char slack (covers quoting/whitespace on short evidence)
+EV_LEN_FACTOR = 1.3  # relative slack (covers longer evidence proportionally)
+# Below this many characters an evidence string is treated as a stub / DB token
+# (``placeholder_text``) rather than a real sentence.
+PLACEHOLDER_MAX_LEN = 30
+
 # bucket -> (group-key, remedy/explanation phrase)
 META: dict[str, tuple[str, str]] = {
     "semantic_correct": ("sem", "model affirms the claim"),
@@ -87,7 +96,7 @@ def split_preview(p: str | None, text_len: int) -> tuple[str, str]:
     if m:
         reasoning = p[m.end():]
         cand = m.group(1).strip()
-        if text_len and len(cand) <= max(text_len + 30, int(text_len * 1.3)):
+        if text_len and len(cand) <= max(text_len + EV_LEN_SLACK, int(text_len * EV_LEN_FACTOR)):
             ev = cand
     if not text_len:
         ev = ""
@@ -101,7 +110,7 @@ def classify(d: dict[str, Any], ev: str, reasoning: str) -> str:
     tl = d.get("text_len") or 0
     if tl == 0:
         return "no_evidence"
-    if tl < 30:
+    if tl < PLACEHOLDER_MAX_LEN:
         return "placeholder_text"
     if d.get("stmt_type") == "ActiveForm" and d.get("object") in (None, "?", ""):
         return "incomplete_claim"
