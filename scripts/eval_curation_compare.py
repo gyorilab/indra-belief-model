@@ -77,10 +77,13 @@ def build_gold_index(gold_rows: list[dict]):
 
 def gold_for(scored: dict, by_pair, by_sh) -> dict | None:
     sh = umask(scored["source_hash"])
-    sh_hex = scored.get("stmt_hash")
-    mh = int(sh_hex, 16) if sh_hex else None
+    stmt_hash_hex = scored.get("stmt_hash")
+    mh = int(stmt_hash_hex, 16) if stmt_hash_hex else None
     if mh is not None and (mh, sh) in by_pair:
         return by_pair[(mh, sh)]
+    # Fallback when the statement hash is absent/skewed: accept a source_hash
+    # match ONLY when it is unambiguous (exactly one gold row carries it);
+    # anything else returns None rather than risk a wrong join.
     cand = by_sh.get(sh, [])
     return cand[0] if len(cand) == 1 else None
 
@@ -140,6 +143,8 @@ def main() -> int:
     ap.add_argument("--a-name", default="A")
     ap.add_argument("--b-name", default="B")
     ap.add_argument("--out", default=str(ROOT / "data/results/eval_curation_v1_compare.md"))
+    ap.add_argument("--title", default="human-curation eval (eval_curation_v1)",
+                    help="report subtitle; set when reusing on a different gold set")
     args = ap.parse_args()
 
     gold = load_jsonl(args.gold)
@@ -183,8 +188,9 @@ def main() -> int:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as out:
-        emit(out, f"# {A['name']} vs {B['name']} — human-curation eval (eval_curation_v1)\n")
-        emit(out, f"Balanced 1:1 human gold, fresh + de-contaminated. Gold pairs: {len(gold)}.\n")
+        n_gc = sum(1 for g in gold if is_gold_correct(g["tag"]))
+        emit(out, f"# {A['name']} vs {B['name']} — {args.title}\n")
+        emit(out, f"Human gold: {len(gold)} pairs ({n_gc} correct / {len(gold) - n_gc} incorrect).\n")
 
         emit(out, "## Coverage")
         emit(out, f"- {A['name']}: joined {A['n']}  (parse-null {A_null}, unmatched {A_miss})")

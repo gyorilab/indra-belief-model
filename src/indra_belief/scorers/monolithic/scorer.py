@@ -453,6 +453,27 @@ def score(
     _pop = getattr(client, "pop_call_log", lambda: [])
     _pop()
 
+    # --- Tier 0: no evidence sentence -> correct-by-default ---
+    # Database-sourced evidence (tas, biogrid, ...) often carries no sentence.
+    # With nothing to read it is accepted by default rather than fed an empty
+    # prompt the LLM would reject from nothing; anything WITH text falls through
+    # to the LLM below. Interim handling: text-less verification by the LLM (from
+    # grounding + the asserted relation) is planned and will replace this branch.
+    if not (record.evidence_text or "").strip():
+        return {
+            "score": verdict_to_score("correct", "high"),
+            "verdict": "correct",
+            "confidence": "high",
+            "raw_text": "[NO TEXT] no evidence sentence; correct-by-default (database-sourced)",
+            "tokens": 0,
+            "tier": "no_text",
+            "grounding_status": "skipped",
+            "provenance_triggered": False,
+            "selected_example_ids": [],
+            "selected_examples": [],
+            "call_log": _pop(),
+        }
+
     # --- Tier 1: Deterministic auto-reject ---
     reject = record.tier1_auto_reject()
     if reject:
