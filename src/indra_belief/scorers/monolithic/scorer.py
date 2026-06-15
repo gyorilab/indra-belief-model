@@ -48,13 +48,15 @@ from indra_belief.scorers.monolithic._prompts import (
     verdict_to_score,
 )
 
-# MONO_VARIANT selects the scoring prompt. Unset keeps the baseline byte-for-byte.
-#   disconfirm           commit-first prompt + structured parse + decision backstop
+# MONO_VARIANT selects the scoring prompt. Unset uses disconfirm_relnature (the
+# validated default); set MONO_VARIANT="" (or any other value) for the baseline.
 #   disconfirm_relnature disconfirm + a focused relation-nature step that rejects
 #                        [Complex] claims whose evidence is not a direct physical bind
+#   disconfirm           commit-first prompt + structured parse + decision backstop
+#   "" / other           baseline prompt, byte-for-byte
 import os as _os  # noqa: E402
 
-_VARIANT = _os.environ.get("MONO_VARIANT", "").strip().lower()
+_VARIANT = _os.environ.get("MONO_VARIANT", "disconfirm_relnature").strip().lower()
 if _VARIANT in ("disconfirm", "disconfirm_relnature"):
     from indra_belief.scorers.monolithic._prompts_disconfirm import (
         DISCONFIRM_SYSTEM_PROMPT,
