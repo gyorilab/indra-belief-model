@@ -101,6 +101,34 @@ def lookup_gene_executor(args: dict) -> str:
     return format_tool_result(result)
 
 
+# --- entity grounding for relation-nature alias hints ---
+
+def entity_grounding(name: str) -> dict | None:
+    """Ground a claim entity to its canonical (db, id) + alias list, or None when
+    the name is empty or ungrounded. The alias list lets the relation-nature step
+    recognize a complex stated under a synonym or descriptive name."""
+    name = (name or "").strip().strip("'\"")
+    if not name:
+        return None
+    try:
+        results = gilda.ground(name)
+    except Exception:
+        return None
+    if not results:
+        return None
+    t = results[0].term
+    names = []
+    if t.db == "HGNC":  # get_names is HGNC-specific; FPLX/CHEBI/MESH -> no alias list
+        try:
+            names = gilda.get_names("HGNC", str(t.id)) or []
+        except Exception:
+            names = []
+    # dedup, primary name first; all unique aliases kept (caller caps the list)
+    aliases = [a for a in dict.fromkeys([t.entry_name] + list(names)) if a]
+    return {"db": t.db, "id": str(t.id), "name": t.entry_name, "aliases": aliases}
+
+
+
 if __name__ == "__main__":
     test_names = ["9G8", "CagA", "DVL", "RSK1", "PKB", "TFs", "p63RhoGEF"]
     for name in test_names:

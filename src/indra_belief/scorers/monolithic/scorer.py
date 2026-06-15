@@ -44,13 +44,14 @@ from indra_belief.scorers.monolithic._prompts import (
     verdict_to_score,
 )
 
-# Arm A ablation: MONO_VARIANT=disconfirm swaps in the commit-first prompt +
-# structured parse + decision backstop. Default (unset) keeps baseline behavior
-# byte-for-byte so the A/B comparison is clean.
+# MONO_VARIANT selects the scoring prompt. Unset keeps the baseline byte-for-byte.
+#   disconfirm           commit-first prompt + structured parse + decision backstop
+#   disconfirm_relnature disconfirm + a focused relation-nature step that rejects
+#                        [Complex] claims whose evidence is not a direct physical bind
 import os as _os  # noqa: E402
 
 _VARIANT = _os.environ.get("MONO_VARIANT", "").strip().lower()
-if _VARIANT == "disconfirm":
+if _VARIANT in ("disconfirm", "disconfirm_relnature"):
     from indra_belief.scorers.monolithic._prompts_disconfirm import (
         DISCONFIRM_SYSTEM_PROMPT,
         render_example as _variant_render,
@@ -58,8 +59,25 @@ if _VARIANT == "disconfirm":
         derive_verdict as _variant_derive,
     )
     ACTIVE_SYSTEM_PROMPT = DISCONFIRM_SYSTEM_PROMPT
+    if _VARIANT == "disconfirm_relnature":
+        from indra_belief.scorers.monolithic._prompts_relation import resolve_relation_nature
 else:
     ACTIVE_SYSTEM_PROMPT = SYSTEM_PROMPT
+
+# Variants that use the structured commit-first parse/derive + render.
+_STRUCTURED_VARIANTS = {"disconfirm", "disconfirm_relnature"}
+
+
+def _relation_note(client, record) -> str:
+    """Relation-nature rejection note for [Complex] claims (relnature variant);
+    empty for other variants or when the evidence supports a direct physical bind."""
+    if _VARIANT != "disconfirm_relnature":
+        return ""
+    try:
+        return resolve_relation_nature(
+            record.subject, record.object, record.stmt_type, record.evidence_text, client)
+    except Exception:
+        return ""
 
 ROOT = Path(__file__).resolve().parents[4]
 
@@ -208,16 +226,20 @@ def _example_trace_rows(examples: list[dict]) -> list[dict]:
     ]
 
 
-def _build_messages(record: ScoringRecord, examples: list[dict] | None = None) -> list[dict]:
+def _build_messages(record: ScoringRecord, examples: list[dict] | None = None,
+                    note: str = "") -> list[dict]:
     """Build the contrastive-example + user-message conversation for a record."""
     examples = examples if examples is not None else _select_examples(record.stmt_type)
-    _render = _variant_render if _VARIANT == "disconfirm" else _render_example
+    _render = _variant_render if _VARIANT in _STRUCTURED_VARIANTS else _render_example
     messages: list[dict] = []
     for ex in examples:
         u, a = _render(ex)
         messages.append({"role": "user", "content": u})
         messages.append({"role": "assistant", "content": a})
-    messages.append({"role": "user", "content": record.format_user_message()})
+    user = record.format_user_message()
+    if note:  # relation-nature rejection note, read by the disconfirm verdict as provenance.
+        user = user + "\n\n" + note
+    messages.append({"role": "user", "content": user})
     return messages
 
 
@@ -238,8 +260,8 @@ def _parse_verdict(response) -> tuple[str | None, str | None]:
     the JSON verdict. Without the fallback, such records silently
     collapse to (None, None) → score 0.5.
     """
-    if _VARIANT == "disconfirm":
-        # Structured parse + decision backstop (Arm A). Try content then raw_text.
+    if _VARIANT in _STRUCTURED_VARIANTS:
+        # Structured parse + decision backstop. Try content then raw_text.
         for text in (response.content, response.raw_text):
             if not text:
                 continue
@@ -262,11 +284,12 @@ def _score_single(
     max_tokens: int | None,
     temperature: float = 0.1,
 ) -> dict:
-    """Single LLM call for Tier 2. Returns result dict."""
+    """Single LLM call for Tier 2 (+ optional relation-nature note). Returns result dict."""
     examples = _select_examples(record.stmt_type)
+    note = _relation_note(client, record)
     response = client.call(
         system=ACTIVE_SYSTEM_PROMPT,
-        messages=_build_messages(record, examples),
+        messages=_build_messages(record, examples, note=note),
         max_tokens=max_tokens,
         temperature=temperature,
         kind="monolithic",
@@ -357,7 +380,8 @@ def _score_with_tools(
     """
     lookup_ctx = _format_entity_lookups(record)
     examples = _select_examples(record.stmt_type)
-    messages = _build_messages(record, examples)
+    note = _relation_note(client, record)
+    messages = _build_messages(record, examples, note=note)
     if lookup_ctx:
         # Augment the user message (last message) with the lookup block.
         augmented = messages[-1]["content"] + "\n\n" + lookup_ctx

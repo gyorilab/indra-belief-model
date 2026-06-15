@@ -1,11 +1,8 @@
-"""Arm A — the 'disconfirm-first' monolithic variant.
+"""Disconfirm-first scoring prompt.
 
-Motivation (eval_curation_v1 reasoning-trace profile, 2026-06-08): 44% of MedPsy-4B
-errors REACHED the correct judgment then overrode it; 94% lenient-bias, executed via
-fabrication. The model SEES the disqualifying fact then writes a "but in many
-contexts..." paragraph that reverses it. Capacity is present; commitment is not.
-
-This variant attacks that structurally, without a bigger model:
+A commit-first variant that counters lenient acceptance — the model reaching a
+disqualifying observation and then rationalizing it away. It attacks that
+structurally:
  1. OUTPUT STRUCTURE — the model must first emit `support` (the exact evidence span
     stating THIS relation) and `objection` (the single strongest reason it's wrong),
     THEN the verdict. The disconfirming finding is committed to a field before any
@@ -14,10 +11,9 @@ This variant attacks that structurally, without a bigger model:
     states the claim'; background knowledge is not support.
  3. DECISION BACKSTOP (code) — if the model itself states a substantive `objection`
     (not the family-level carve-out) it MAY NOT return 'correct'; the verdict is
-    derived, not freely chosen. This is the surgical kill for the reached-then-
-    overrode failure: you can't raise a defeating objection and still accept.
+    derived, not freely chosen — it cannot raise a defeating objection and still
+    accept.
 
-Baseline (_prompts.SYSTEM_PROMPT) is untouched so the A/B ablation is clean.
 Selected via env MONO_VARIANT=disconfirm in the scorer.
 """
 from __future__ import annotations
@@ -146,7 +142,7 @@ def derive_verdict(parsed: dict) -> tuple[str | None, str | None, str]:
         return None, None, "parse_null"
     substantive_objection = bool(obj) and not _FAMILY_RE.search(obj)
     if substantive_objection and v == "correct":
-        return "incorrect", (c or "medium"), "override_killed"  # the 44% reached-then-overrode
+        return "incorrect", (c or "medium"), "override_killed"  # committed a defeating objection but tried to accept
     if sup is None and v == "correct":
         return "incorrect", (c or "medium"), "no_support_skeptic"
     return v, (c or "medium"), "model"
