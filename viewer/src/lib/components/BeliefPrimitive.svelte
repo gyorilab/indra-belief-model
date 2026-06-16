@@ -60,6 +60,7 @@
 		beliefSemantic,
 		fmtBelief,
 		fmtDelta,
+		scoringMethod,
 		shortHash,
 		verdictDisplay
 	} from '$lib/format';
@@ -406,14 +407,14 @@
 										<span class="ev-tag">verdict <b class="tone-fg-{verdictTone(e.verdict)}">{verdictDisplay(e.verdict)}</b></span>
 										{#if e.confidence}<span class="ev-tag">confidence <b>{e.confidence}</b></span>{/if}
 										{#if e.bucket}<span class="ev-tag">bucket <b>{bucketLabel(e.bucket)}</b></span>{/if}
-										{#if e.tier}<span class="ev-tag">tier <b>{e.tier}</b></span>{/if}
+										{#if e.tier}<span class="ev-tag"><b>{scoringMethod(e.tier)}</b></span>{/if}
 										{#if e.grounding_status}<span class="ev-tag">grounding <b>{e.grounding_status}</b></span>{/if}
 									</div>
 
 									{#if rparts.body}
 										<div class="reasoning">
 											<div class="reasoning-meta">
-												<span class="reasoning-lbl">reasoned</span>{#if rparts.tag}<span class="reasoning-tier">{rparts.tag}</span>{/if}
+												<span class="reasoning-lbl">reasoned</span>
 											</div>
 											<p class="reasoning-body">{showFullReasoning === e.evidence_hash || !reasoningIsLong(e.reasoning) ? rparts.body : reasoningClamped(e.reasoning)}</p>
 											{#if reasoningIsLong(e.reasoning)}
@@ -829,11 +830,6 @@
 	}
 	.reasoning-lbl {
 		text-transform: lowercase;
-		letter-spacing: 0.02em;
-	}
-	.reasoning-tier {
-		color: var(--accent);
-		font-weight: 600;
 		letter-spacing: 0.02em;
 	}
 	.reasoning-body {

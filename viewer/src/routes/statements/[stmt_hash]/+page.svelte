@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { fmtBelief, fmtDelta, pluralS, shortHash, verdictDisplay } from '$lib/format';
+	import { fmtBelief, fmtDelta, pluralS, scoringMethod, shortHash, verdictDisplay } from '$lib/format';
 
 	let { data }: { data: PageData } = $props();
 	const d = $derived(data.detail);
@@ -158,7 +158,7 @@
 					<div class="ev-meta-secondary">
 						<span class="ev-source">[{e.source_api ?? 'no source'}]</span>
 						{#if e.bucket}<span class="ev-bucket">{e.bucket}</span>{/if}
-						{#if e.tier}<span class="ev-tier">{e.tier}</span>{/if}
+						{#if e.tier}<span class="ev-tier">{scoringMethod(e.tier)}</span>{/if}
 						{#if e.grounding_status}<span class="ev-grounding">grounding: {e.grounding_status}</span>{/if}
 						<code class="ev-hash" title={e.evidence_hash}>{shortHash(e.evidence_hash)}</code>
 					</div>
@@ -168,7 +168,6 @@
 						<div class="reasoning" class:reasoning-clamped={long && !isExpanded}>
 							<div class="reasoning-head">
 								<span class="reasoning-label">reasoning</span>
-								{#if parts.tag}<span class="reasoning-tag">{parts.tag}</span>{/if}
 							</div>
 							<p class="reasoning-body">{parts.body}</p>
 						</div>
@@ -422,12 +421,6 @@
 		text-transform: lowercase;
 		letter-spacing: 0.04em;
 		color: var(--ink-faint);
-	}
-	.reasoning-tag {
-		font-family: var(--mono);
-		font-size: 0.64rem;
-		color: var(--accent);
-		letter-spacing: 0.02em;
 	}
 	.reasoning-body {
 		font-family: var(--serif);

@@ -464,7 +464,7 @@ def score(
             "score": verdict_to_score("correct", "high"),
             "verdict": "correct",
             "confidence": "high",
-            "raw_text": "[NO TEXT] no evidence sentence; correct-by-default (database-sourced)",
+            "raw_text": "No evidence sentence — accepted by default (database-sourced).",
             "tokens": 0,
             "tier": "no_text",
             "grounding_status": "skipped",
@@ -503,14 +503,14 @@ def score(
         verdict = result["verdict"]
         confidence = result["confidence"]
         total_tokens = result["tokens"]
-        raw = f"[TIER 2 TOOL-USE]\n{result['raw_text']}"
+        raw = result["raw_text"]
         tier = "llm_tool_use"
     else:
         result = _score_single(client, record, max_tokens)
         verdict = result["verdict"]
         confidence = result["confidence"]
         total_tokens = result["tokens"]
-        raw = f"[TIER 2 LLM]\n{result['raw_text']}"
+        raw = result["raw_text"]
         tier = "llm_comprehension"
     call_log = _pop()
 

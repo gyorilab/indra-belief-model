@@ -342,7 +342,7 @@ class ScoringRecord:
                     "score": 0.05,
                     "verdict": "incorrect",
                     "confidence": "high",
-                    "raw_text": f"[TIER 1 AUTO-REJECT] {reason}",
+                    "raw_text": reason,
                     "tokens": 0,
                     "tier": tier,
                     "grounding_status": entity.verification_status or "MISMATCH",
