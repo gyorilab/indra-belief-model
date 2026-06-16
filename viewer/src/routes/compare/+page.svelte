@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { goto, afterNavigate } from '$app/navigation';
+	import { page, navigating } from '$app/stores';
+	import BeliefRuler from '$lib/components/BeliefRuler.svelte';
+	import { scoringMethod, reasoningBody } from '$lib/format';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -15,6 +17,12 @@
 		acbi: 'A correct · B incorrect',
 		aibc: 'A incorrect · B correct',
 		aibi: 'both incorrect'
+	};
+	const CELL_SHORT: Record<string, string> = {
+		acbc: 'both ✓',
+		acbi: 'A✓ B✗',
+		aibc: 'A✗ B✓',
+		aibi: 'both ✗'
 	};
 	const AXIS_LABEL: Record<string, string> = {
 		source_api: 'reader / source',
@@ -32,6 +40,17 @@
 	}
 	function vsym(v: string): string {
 		return v === 'correct' ? '✓' : v === 'incorrect' ? '✗' : '·';
+	}
+	// verdict×confidence → the canonical belief-score grid (mirrors the scorer's
+	// VERDICT_SCORE_GRID), so a cohort row's A/B can ride the shared belief ruler.
+	const SCORE_GRID: Record<string, Record<string, number>> = {
+		correct: { high: 0.95, medium: 0.8, low: 0.65 },
+		incorrect: { low: 0.35, medium: 0.2, high: 0.05 }
+	};
+	function gridScore(verdict: string | null, confidence: string | null): number | null {
+		if (verdict !== 'correct' && verdict !== 'incorrect') return null;
+		const c = (confidence ?? '').toLowerCase();
+		return SCORE_GRID[verdict][c] ?? (verdict === 'correct' ? 0.8 : 0.2);
 	}
 
 	// ── URL state helpers ───────────────────────────────────────────
@@ -141,6 +160,21 @@
 
 	const aModel = $derived(anatomy?.run_a.model ?? 'A');
 	const bModel = $derived(anatomy?.run_b.model ?? 'B');
+
+	// Level identity → an aria-live announcement + focus re-home after each drill
+	// nav. Guarded against the initial 'enter' load, which would otherwise steal
+	// focus and announce on a cold arrival the user didn't ask for.
+	const levelName = $derived(
+		sbs ? 'evidence reasoning' : data.cell ? `${CELL_LABEL[data.cell] ?? 'cell'} cohort` : 'anatomy'
+	);
+	let liveMsg = $state('');
+	afterNavigate((nav) => {
+		if (nav.type === 'enter') return;
+		liveMsg = `${levelName} view`;
+		requestAnimationFrame(() => {
+			document.querySelector<HTMLElement>('[data-level-heading]')?.focus();
+		});
+	});
 </script>
 
 <svelte:head>
@@ -166,6 +200,25 @@
 	{/if}
 {/snippet}
 
+<!-- the docked shared element: a shrunken 2×2 that stays as you drill, so you
+     never lose where you came from and can switch cells without going back up. -->
+{#snippet miniMatrix(active: string | null)}
+	<div class="mini-matrix" role="group" aria-label="confusion matrix — selected cell highlighted; switch cell">
+		{#each ['acbc', 'acbi', 'aibc', 'aibi'] as c}
+			<button
+				class="mini-cell {c}"
+				class:active={c === active}
+				aria-pressed={c === active}
+				aria-label={`${CELL_LABEL[c]}, ${cellVal(c).toLocaleString()} evidences${c === active ? ', selected' : ''}`}
+				onclick={() => selectCell(c)}
+			>
+				<span class="mini-tag">{CELL_SHORT[c]}</span>
+				<span class="mini-n mono">{cellVal(c).toLocaleString()}</span>
+			</button>
+		{/each}
+	</div>
+{/snippet}
+
 <main id="main">
 	<h1>compare two runs</h1>
 	<p class="lede">
@@ -174,6 +227,8 @@
 		evidence that <span class="mB">B</span> rejects? Start with the anatomy, then dig into
 		any cell — strata, cohort, then both models' full reasoning side by side.
 	</p>
+
+	<p class="visually-hidden" aria-live="polite" aria-atomic="true">{liveMsg}</p>
 
 	{#if !haveTwo}
 		<section class="empty">
@@ -223,10 +278,15 @@
 			</nav>
 
 			<!-- ════════════ L0: ANATOMY ════════════ -->
-			{#if !data.cell && !sbs}
-				<section class="anatomy">
+			{#if data.ev && !sbs}
+				<section class="empty">
+					<p class="empty-h">this evidence isn't scored in both selected runs</p>
+					<button class="link" onclick={closeEvidence}>← back to {data.cell ? 'cohort' : 'anatomy'}</button>
+				</section>
+			{:else if !data.cell && !sbs}
+				<section class="anatomy" class:pending={!!$navigating} inert={$navigating ? true : undefined} aria-busy={!!$navigating}>
 					<header class="cmp-head">
-						<div class="cmp-vs">
+						<div class="cmp-vs" data-level-heading tabindex="-1">
 							<span class="cmp-model mA">{an.run_a.model}</span>
 							<span class="cmp-sep">vs</span>
 							<span class="cmp-model mB">{an.run_b.model}</span>
@@ -460,6 +520,22 @@
 								</tr>
 							</tbody>
 						</table>
+						<div
+							class="matrix-ribbon"
+							role="img"
+							aria-label={`balance of ${matrixN.toLocaleString()} evidences — both correct ${pct(cellVal('acbc') / Math.max(1, matrixN))}, A correct B incorrect ${pct(cellVal('acbi') / Math.max(1, matrixN))}, A incorrect B correct ${pct(cellVal('aibc') / Math.max(1, matrixN))}, both incorrect ${pct(cellVal('aibi') / Math.max(1, matrixN))}`}
+						>
+							<span class="rib rib-acbc" style="flex:{cellVal('acbc')}" title="both ✓ — {cellVal('acbc').toLocaleString()}"></span>
+							<span class="rib rib-acbi" style="flex:{cellVal('acbi')}" title="A✓ B✗ — {cellVal('acbi').toLocaleString()}"></span>
+							<span class="rib rib-aibc" style="flex:{cellVal('aibc')}" title="A✗ B✓ — {cellVal('aibc').toLocaleString()}"></span>
+							<span class="rib rib-aibi" style="flex:{cellVal('aibi')}" title="both ✗ — {cellVal('aibi').toLocaleString()}"></span>
+						</div>
+						<div class="ribbon-legend hint">
+							<span><span class="rsw rib-acbc"></span>both ✓</span>
+							<span><span class="rsw rib-acbi"></span>A✓ B✗</span>
+							<span><span class="rsw rib-aibc"></span>A✗ B✓</span>
+							<span><span class="rsw rib-aibi"></span>both ✗</span>
+						</div>
 						<p class="matrix-hint hint">
 							diagonal = agreement · off-diagonal = disagreement (shaded by size).
 							click any cell to dig in.
@@ -472,9 +548,10 @@
 
 			<!-- ════════════ L1 + L2: CELL DRILL ════════════ -->
 			{:else if data.cell && !sbs}
-				<section class="drill">
+				<section class="drill" class:pending={!!$navigating} inert={$navigating ? true : undefined} aria-busy={!!$navigating}>
+					{@render miniMatrix(data.cell)}
 					<header class="drill-head">
-						<h2>
+						<h2 data-level-heading tabindex="-1">
 							<span class="cell-badge {data.cell}">{CELL_LABEL[data.cell]}</span>
 							<span class="mono drill-total">{(cohort?.total ?? 0).toLocaleString()} evidences</span>
 							{#if data.semanticOnly}<span class="sem-pill">semantic only</span>{/if}
@@ -494,11 +571,12 @@
 					<!-- L1: stratification -->
 					{#if strat}
 						<div class="strat">
-							<div class="strat-axes" role="tablist" aria-label="stratify by">
+							<div class="strat-axes" role="group" aria-label="stratify by">
 								{#each ['source_api', 'stmt_type', 'grounding_status', 'bucket_a', 'bucket_b'] as ax}
 									<button
 										class="ax-tab"
 										class:active={(data.axis ?? 'source_api') === ax}
+										aria-pressed={(data.axis ?? 'source_api') === ax}
 										onclick={() => setAxis(ax)}
 									>{AXIS_LABEL[ax]}</button>
 								{/each}
@@ -518,6 +596,8 @@
 										<span class="strat-n mono">{row.n.toLocaleString()}</span>
 										<span class="strat-pct mono">{pct(row.pct)}</span>
 									</button>
+								{:else}
+									<p class="hint strat-empty">no rows on this axis</p>
 								{/each}
 							</div>
 							{#if data.axisValue}
@@ -540,6 +620,7 @@
 									<th class="c-v">A</th>
 									<th class="c-v">B</th>
 									{#if goldOn}<th class="c-v c-gold">gold</th>{/if}
+									<th class="c-belief">belief</th>
 									<th class="c-conf">conf</th>
 								</tr>
 							</thead>
@@ -552,22 +633,39 @@
 										class:gold-fn={r.gold_verdict === 'correct' && (r.a_verdict === 'incorrect' || r.b_verdict === 'incorrect')}
 									>
 										<td class="c-stmt">
-											<span class="agent">{r.subject}</span>
-											<span class="rel">[{r.stmt_type}]</span>
-											<span class="agent">{r.object}</span>
+											<button class="row-open" aria-label={`open reasoning for ${r.subject} ${r.stmt_type} ${r.object}`} onclick={(e) => { e.stopPropagation(); openEvidence(r.stmt_hash, r.evidence_hash); }}>
+												<span class="row-caret" aria-hidden="true">▸</span><span class="agent">{r.subject}</span>
+												<span class="rel">[{r.stmt_type}]</span>
+												<span class="agent">{r.object}</span>
+											</button>
 										</td>
 										<td class="c-ev">{r.evidence_text ?? '—'}</td>
 										<td class="c-src mono">{r.source_api ?? '—'}</td>
-										<td class="c-v"><span class="v {r.a_verdict}" class:gmiss={r.gold_verdict && r.a_verdict !== r.gold_verdict}>{vsym(r.a_verdict)}</span></td>
-										<td class="c-v"><span class="v {r.b_verdict}" class:gmiss={r.gold_verdict && r.b_verdict !== r.gold_verdict}>{vsym(r.b_verdict)}</span></td>
+										<td class="c-v"><span class="v {r.a_verdict}" class:gmiss={r.gold_verdict && r.a_verdict !== r.gold_verdict}><span class="visually-hidden">A {r.a_verdict}</span><span aria-hidden="true">{vsym(r.a_verdict)}</span></span></td>
+										<td class="c-v"><span class="v {r.b_verdict}" class:gmiss={r.gold_verdict && r.b_verdict !== r.gold_verdict}><span class="visually-hidden">B {r.b_verdict}</span><span aria-hidden="true">{vsym(r.b_verdict)}</span></span></td>
 										{#if goldOn}
 											<td class="c-v c-gold">
 												{#if r.gold_verdict}
-													<span class="v gold {r.gold_verdict}" title={r.gold_tags.join(', ')}>{vsym(r.gold_verdict)}</span>
-												{:else}<span class="gnone">·</span>{/if}
+													<span class="v gold {r.gold_verdict}" title={r.gold_tags.join(', ')}><span class="visually-hidden">gold {r.gold_verdict}</span><span aria-hidden="true">{vsym(r.gold_verdict)}</span></span>
+												{:else}<span class="gnone"><span class="visually-hidden">no gold</span><span aria-hidden="true">·</span></span>{/if}
 											</td>
 										{/if}
+										<td class="c-belief">
+											<BeliefRuler
+												compact
+												a={gridScore(r.a_verdict, r.a_confidence)}
+												b={gridScore(r.b_verdict, r.b_confidence)}
+												prior={r.rasmachine_belief}
+											/>
+										</td>
 										<td class="c-conf mono">{(r.a_confidence ?? '?').slice(0, 1)}/{(r.b_confidence ?? '?').slice(0, 1)}</td>
+									</tr>
+								{:else}
+									<tr>
+										<td class="cohort-empty" colspan={goldOn ? 8 : 7}>
+											no evidences match this filter —
+											<button class="link" onclick={() => { setGoldFilter(null); clearAxisFilter(); }}>clear filters</button>
+										</td>
 									</tr>
 								{/each}
 							</tbody>
@@ -580,9 +678,9 @@
 
 			<!-- ════════════ L3: SIDE-BY-SIDE REASONING ════════════ -->
 			{:else if sbs}
-				<section class="sbs">
+				<section class="sbs" class:pending={!!$navigating} inert={$navigating ? true : undefined} aria-busy={!!$navigating}>
 					<header class="sbs-claim">
-						<div class="claim-line">
+						<div class="claim-line" data-level-heading tabindex="-1">
 							<span class="agent">{sbs.subject}</span>
 							<span class="rel">[{sbs.stmt_type}]</span>
 							<span class="agent">{sbs.object}</span>
@@ -595,24 +693,37 @@
 						<button class="link back" onclick={closeEvidence}>← back to cohort</button>
 					</header>
 
+					<!-- the disagreement as a position before a word of prose: one shared
+					     0–1 belief ruler, A and B above, INDRA prior + gold below. -->
+					<div class="sbs-ruler">
+						<BeliefRuler
+							a={sbs.a.score}
+							b={sbs.b.score}
+							prior={sbs.rasmachine_belief}
+							gold={sbs.gold?.verdict ?? null}
+							aLabel={sbs.run_a.model}
+							bLabel={sbs.run_b.model}
+						/>
+					</div>
+
 					<div class="traces" class:with-gold={sbs.gold}>
 						<article class="trace tA" class:gmiss={sbs.gold && sbs.a.verdict !== sbs.gold.verdict}>
 							<header class="trace-head">
 								<span class="trace-model mA">{sbs.run_a.model}</span>
 								<span class="trace-verdict v {sbs.a.verdict}">{vsym(sbs.a.verdict)} {sbs.a.verdict}</span>
-								<span class="trace-conf mono">{sbs.a.confidence ?? '?'}{#if sbs.a.bucket} · {sbs.a.bucket}{/if}</span>
+								<span class="trace-conf mono">{sbs.a.confidence ?? '?'}{#if sbs.a.bucket} · {sbs.a.bucket}{/if}</span>{#if sbs.a.tier}<span class="trace-method">{scoringMethod(sbs.a.tier)}</span>{/if}
 								{#if sbs.gold}<span class="trace-gflag {sbs.a.verdict === sbs.gold.verdict ? 'ok' : 'bad'}">{sbs.a.verdict === sbs.gold.verdict ? 'matches gold' : 'vs gold'}</span>{/if}
 							</header>
-							<pre class="reasoning">{sbs.a.reasoning ?? '(no reasoning captured)'}</pre>
+							<pre class="reasoning">{reasoningBody(sbs.a.reasoning) || '(no reasoning captured)'}</pre>
 						</article>
 						<article class="trace tB" class:gmiss={sbs.gold && sbs.b.verdict !== sbs.gold.verdict}>
 							<header class="trace-head">
 								<span class="trace-model mB">{sbs.run_b.model}</span>
 								<span class="trace-verdict v {sbs.b.verdict}">{vsym(sbs.b.verdict)} {sbs.b.verdict}</span>
-								<span class="trace-conf mono">{sbs.b.confidence ?? '?'}{#if sbs.b.bucket} · {sbs.b.bucket}{/if}</span>
+								<span class="trace-conf mono">{sbs.b.confidence ?? '?'}{#if sbs.b.bucket} · {sbs.b.bucket}{/if}</span>{#if sbs.b.tier}<span class="trace-method">{scoringMethod(sbs.b.tier)}</span>{/if}
 								{#if sbs.gold}<span class="trace-gflag {sbs.b.verdict === sbs.gold.verdict ? 'ok' : 'bad'}">{sbs.b.verdict === sbs.gold.verdict ? 'matches gold' : 'vs gold'}</span>{/if}
 							</header>
-							<pre class="reasoning">{sbs.b.reasoning ?? '(no reasoning captured)'}</pre>
+							<pre class="reasoning">{reasoningBody(sbs.b.reasoning) || '(no reasoning captured)'}</pre>
 						</article>
 						{#if sbs.gold}
 							{@const g = sbs.gold}
@@ -1015,6 +1126,7 @@
 		height: 100%;
 		background: var(--accent);
 		opacity: 0.55;
+		transition: width 200ms ease-out;
 	}
 	.strat-n {
 		text-align: right;
@@ -1147,6 +1259,15 @@
 	.trace-conf {
 		font-size: 0.7rem;
 		color: var(--ink-faint);
+	}
+	.trace-method {
+		font-size: 0.66rem;
+		color: var(--ink-faint);
+		font-variant: small-caps;
+		letter-spacing: 0.03em;
+		border: 1px solid var(--rule);
+		border-radius: 2px;
+		padding: 0 0.3rem;
 	}
 	.reasoning {
 		font-family: var(--mono);
@@ -1321,6 +1442,9 @@
 		transform: translateY(-50%);
 		border-radius: 2px;
 		opacity: 0.45;
+		transition:
+			left 200ms ease-out,
+			width 200ms ease-out;
 	}
 	.gp-gap.mAg { background: var(--a-hue); }
 	.gp-gap.mBg { background: var(--b-hue); }
@@ -1332,6 +1456,9 @@
 		transform: translateY(-50%);
 		border-radius: 3px;
 		opacity: 0.28;
+		transition:
+			left 200ms ease-out,
+			width 200ms ease-out;
 	}
 	.gp-eband.mAb { background: var(--a-hue); }
 	.gp-eband.mBb { background: var(--b-hue); }
@@ -1341,6 +1468,7 @@
 		transform: translate(-50%, -50%);
 		border-radius: 50%;
 		z-index: 2;
+		transition: left 200ms ease-out;
 	}
 	.gp-pt.sup {
 		width: 11px;
@@ -1748,5 +1876,191 @@
 			min-width: 0;
 			width: 100%;
 		}
+	}
+
+	/* in-flight drill feedback: dim the level being replaced during navigation,
+	   so a heavy join reads as 'something is happening' instead of a dead UI. */
+	.anatomy,
+	.drill,
+	.sbs {
+		transition: opacity 200ms ease-out;
+	}
+	.anatomy.pending,
+	.drill.pending,
+	.sbs.pending {
+		opacity: 0.55;
+	}
+
+	/* route-wide keyboard focus ring — every interactive surface to the app's
+	   first-class :focus-visible floor */
+	.cell:focus-visible,
+	.gp-dot:focus-visible,
+	.ax-tab:focus-visible,
+	.gf-chip:focus-visible,
+	.strat-row:focus-visible,
+	.row-open:focus-visible,
+	.mini-cell:focus-visible,
+	.crumb:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.anatomy,
+		.drill,
+		.sbs,
+		.strat-bar-fill,
+		.gp-pt,
+		.gp-gap,
+		.gp-eband,
+		.row-caret,
+		.mini-cell,
+		.rib {
+			transition: none;
+		}
+	}
+
+	/* shared belief ruler — L3 (full) above the trace cards, L2 (compact) per row */
+	.sbs-ruler {
+		max-width: 440px;
+		margin: 0 0 1.5rem;
+	}
+	.c-belief {
+		width: 132px;
+		padding-left: 0.6rem;
+		vertical-align: middle;
+	}
+	th.c-belief {
+		text-align: left;
+	}
+
+	/* cohort row as a real control: a caret that brightens, plus named empties */
+	.row-caret {
+		color: var(--ink-faint);
+		margin-right: 0.35rem;
+		transition: color 120ms ease-out;
+	}
+	.cohort-row:hover .row-caret,
+	.row-open:focus-visible .row-caret {
+		color: var(--accent);
+	}
+	/* the claim is a real button (keyboard + AT opener) styled as inline text */
+	.row-open {
+		display: inline;
+		margin: 0;
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		color: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.cohort-empty,
+	.strat-empty {
+		padding: 1rem 0.5rem;
+		color: var(--ink-muted);
+		font-size: 0.85rem;
+	}
+	/* programmatic focus on a level heading re-homes AT without a visible ring */
+	[data-level-heading]:focus {
+		outline: none;
+	}
+
+	/* docked shared-element mini-matrix — shrinks + sticks at the top of a drill,
+	   the selected cell ringed, the others dimmed but still one click away. */
+	.mini-matrix {
+		position: sticky;
+		top: 0;
+		z-index: 5;
+		display: grid;
+		grid-template-columns: auto auto;
+		gap: 2px;
+		width: max-content;
+		margin: 0 0 1.4rem;
+		padding: 0.3rem 0;
+		background: var(--paper);
+	}
+	.mini-cell {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.05rem;
+		padding: 0.3rem 0.55rem;
+		border: 1px solid var(--rule);
+		background: var(--paper);
+		cursor: pointer;
+		font: inherit;
+		font-size: 0.7rem;
+		text-align: left;
+		opacity: 0.5;
+		transition:
+			opacity 120ms ease-out,
+			border-color 120ms ease-out;
+	}
+	.mini-cell:hover {
+		opacity: 0.85;
+	}
+	.mini-cell.active {
+		opacity: 1;
+		border-color: var(--accent);
+		box-shadow: inset 0 0 0 1px var(--accent);
+	}
+	.mini-tag {
+		color: var(--ink-muted);
+	}
+	.mini-n {
+		color: var(--ink);
+		font-weight: 600;
+	}
+
+	/* matrix part-to-whole ribbon — the agree/disagree balance as one geometry */
+	.matrix-ribbon {
+		display: flex;
+		height: 14px;
+		width: 100%;
+		max-width: 420px;
+		margin: 0.9rem 0 0.5rem;
+		border-radius: 2px;
+		overflow: hidden;
+	}
+	.rib {
+		display: block;
+		min-width: 1px;
+		transition: flex-grow 200ms ease-out;
+	}
+	.rib-acbc,
+	.rsw.rib-acbc {
+		background: var(--ok-green);
+	}
+	.rib-acbi,
+	.rsw.rib-acbi {
+		background: var(--a-hue);
+	}
+	.rib-aibc,
+	.rsw.rib-aibc {
+		background: var(--b-hue);
+	}
+	.rib-aibi,
+	.rsw.rib-aibi {
+		background: var(--accent);
+	}
+	.ribbon-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.85rem;
+		margin: 0 0 0.5rem;
+		font-size: 0.7rem;
+	}
+	.ribbon-legend span {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.rsw {
+		display: inline-block;
+		width: 0.6rem;
+		height: 0.6rem;
+		border-radius: 1px;
 	}
 </style>
