@@ -1,6 +1,6 @@
 # LLM-Verifier Calibration — Task Hypergraph
 
-**Status:** Drafted 2026-06-17. No node started. Decision-driven by **G0** (the go/no-go gate): Stage C0 is a zero-model-change diagnostic that tells us whether C1–C3 are worth doing at all. The architecture is settled (soft survival weight = recalibration of the existing per-read `rand`, not a new error term); the empirical anchors are fit + verified (below). This hypergraph turns the calibration plan into do→review cycles. **Math arc** (C0–C3, gated G0–G3) lives here; the **presentation arc** (C4/C5, gated G4/G5v — making products navigable as run-on-its-own vs run-comparison) hands off via substrate edge **E5** to `research/belief_instrument_task_graph.md`.
+**Status:** Drafted 2026-06-17. **C0 executed 2026-06-17 → G0 = GO** for both readers (`scripts/calibration_stage0.py` → `data/results/calibration_stage0.md`): per-statement gated belief AUROC 0.77 (MedPsy) / 0.81 (gemma), AUPRC 0.74 / 0.77 vs base 0.51 — real discrimination AND real miscalibration (mid-range under-confidence). Decision-driven by **G0** (the go/no-go gate): Stage C0 is a zero-model-change diagnostic that tells us whether C1–C3 are worth doing at all. The architecture is settled (soft survival weight = recalibration of the existing per-read `rand`, not a new error term); the empirical anchors are fit + verified (below). This hypergraph turns the calibration plan into do→review cycles. **Math arc** (C0–C3, gated G0–G3) lives here; the **presentation arc** (C4/C5, gated G4/G5v — making products navigable as run-on-its-own vs run-comparison) hands off via substrate edge **E5** to `research/belief_instrument_task_graph.md`.
 **Last update:** 2026-06-17 (+ E5 presentation seam + C4/C5 handoff: viewer is NOT calibration-ready today)
 **Owner question:** "Consider INDRA's existing error mode `1 − ∏ₛ[syst(s) + rand(s)^nₛ]`. How do we arrive at a coherent, useful, accurate heuristic to inform calibration?"
 
@@ -92,15 +92,17 @@ Bump `export_meta.json` to `schema_version: 4` and write a `metrics.json` alongs
 
 **Aim:** produce the reliability curve we don't have today, and **decide whether C1–C3 are worth doing.** Pure analysis; no production code path touched. (~0.5 day)
 
-- [ ] **C0.1** Via E2, join existing `eval_curation_v1_{medpsy,gemma}` outputs to gold; recompute the confusion cells + `rand_corr`/`rand_rej` anchors (expect the verified table above).
-- [ ] **C0.2** Via E1, emit the **Tier-1 reliability diagram** (treat `1 − w_j` as a forecast of `gold==correct`) + ECE + Brier-with-resolution.
-- [ ] **C0.3** Emit the **raw-`belief` per-statement reliability diagram + AUROC/AUPRC** to measure the saturation ceiling (synthesis observed raw belief AUC ≈ 0.67, correct mean 0.965 / incorrect 0.913).
-- [ ] **C0.4** Ship as `scripts/calibration_stage0.py` (analysis-only), figures to `data/results/`.
-- [R] **G0** — **GO/NO-GO.** Does raw-belief AUPRC have headroom above base rate? If **no** → the lever is upstream (reader/grounding); **stop, ship nothing**, record the negative result (D8). If **yes** → proceed to C1.
+- [x] **C0.1** Joined `eval_curation_v1_{medpsy,gemma}` to gold on the canonical (matches_hash, source_hash) pair (1606/1606, 0 missing). Anchors reproduce the verified table: MedPsy `rand_corr` 0.243 / `rand_rej` 0.127; gemma 0.183 / 0.131. Confidence mix degenerate (not fit).
+- [x] **C0.2** Tier-1 per-evidence reliability of the grid `score` vs `gold==correct`: MedPsy ECE 0.139 / gemma 0.108; AUROC 0.810 / 0.843. Degenerate ~2 occupied bins, as expected (confidence collapse).
+- [x] **C0.3** Tier-2 per-statement raw belief (gated belief over scored evidences, hard gate + RECALIBRATED_PRIORS, grouped by `pa_hash`, gold any-incorrect-wins): **AUROC 0.772 / 0.805, AUPRC 0.740 / 0.771 (base 0.514)** — clear headroom. **Finding that overturns the D8 premise:** the saturated, no-headroom belief was the **INDRA prior** (`indra_prior_reference` AUROC 0.710, ECE 0.385, mean 0.96/0.91), NOT our gated belief (mean belief 0.60 correct / 0.24 incorrect — well separated, ECE 0.15, resolution ~0.07–0.09). Reliability diagram shows systematic mid-range under-confidence (single correct reach/sparser reads → belief ~0.46 but ~65–72% correct) — a real recalibration target.
+- [x] **C0.4** Shipped `scripts/calibration_stage0.py` (analysis-only, numpy + shared libs; implements AUROC/AUPRC/Brier-Murphy not in `metrics.py`) → `data/results/calibration_stage0.{md,json}`.
+- [x] **G0** — **GO** (2026-06-17). Raw-belief AUPRC has headroom (Δ +0.226 MedPsy / +0.257 gemma over base; AUROC Δ +0.27 / +0.31). Discrimination is real and the belief is miscalibrated → C1–C3 have both signal to preserve and error to fix. Proceed to C1.
 
 ## Stage C1 — Two-parameter fit + Tier-1 validation  ·  do→review with **G1**
 
 **Aim:** empirical proof the soft weights are calibrated, before any wiring. Still no production code change. (~0.5 day)
+
+> **Data dependency (found at C0):** existing `data/results/*holdout_cc*` are older scorer architectures (CC/AA/monolithic *phases*), not medpsy-4B + gemma-26B under the current monolithic scorer — provenance doesn't cleanly match eval_curation_v1. A clean held-out validation needs a fresh `holdout_cc` scoring run by both readers (**LLM spend — gate at the user**). Interim, zero-cost option: a within-`eval_curation_v1` group-split by `pa_hash` (fit on train, validate Tier-1 on test) as a first check before committing to a held-out run.
 
 - [ ] **C1.1** Via E3, fit `(rand_corr_m, rand_rej_m)` per model on the train split.
 - [ ] **C1.2** Validate Tier-1 ECE/Brier on `holdout_cc`; paired-bootstrap CI on ΔECE and ΔBrier vs the hard-gate baseline.
