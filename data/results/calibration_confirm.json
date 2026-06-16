@@ -1,0 +1,38 @@
+{
+  "results": [
+    {
+      "name": "MedPsy-4B",
+      "fitted_w": {
+        "w_correct": 0.2431578947368421,
+        "w_incorrect": 0.8734756097560976,
+        "rand_corr": 0.2431578947368421,
+        "rand_rej": 0.12652439024390244,
+        "cells": {
+          "cc": 719,
+          "ci": 231,
+          "ic": 83,
+          "ii": 573
+        }
+      }
+    },
+    {
+      "name": "gemma-26B",
+      "fitted_w": {
+        "w_correct": 0.18308227114716108,
+        "w_incorrect": 0.8694481830417228,
+        "rand_corr": 0.18308227114716108,
+        "rand_rej": 0.13055181695827725,
+        "cells": {
+          "cc": 705,
+          "ci": 158,
+          "ic": 97,
+          "ii": 646
+        }
+      }
+    }
+  ],
+  "pending": [
+    "data/results/holdout_cc_medpsy.jsonl",
+    "data/results/holdout_cc_gemma.jsonl"
+  ]
+}
