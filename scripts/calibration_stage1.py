@@ -271,12 +271,56 @@ def render_md(results, seed) -> str:
     return "\n".join(L) + "\n"
 
 
+def sweep(name, joined, seeds) -> dict:
+    """Robustness across resampled pa_hash splits (still same data — checks
+    split-fragility, NOT independence; the holdout_cc run does that)."""
+    methods = ["hard", "parametric", "soft_replace_k0.5", "soft_replace_k1.0",
+               "soft_guard_k0.5", "soft_guard_k1.0"]
+    acc = {m: {"ece": [], "resolution": [], "auroc": []} for m in methods}
+    beats_hard = {m: 0 for m in methods}  # ECE < hard AND resolution >= hard
+    for sd in seeds:
+        r = analyze(name, joined, sd)
+        hm = r["eval"]["metrics"]["hard"]
+        for m in methods:
+            mm = r["eval"]["metrics"][m]
+            for k in ("ece", "resolution", "auroc"):
+                acc[m][k].append(mm[k])
+            if mm["ece"] < hm["ece"] and mm["resolution"] >= hm["resolution"] - 1e-9:
+                beats_hard[m] += 1
+    summary = {}
+    for m in methods:
+        summary[m] = {
+            k: {"mean": float(np.mean(acc[m][k])), "sd": float(np.std(acc[m][k]))}
+            for k in ("ece", "resolution", "auroc")
+        }
+        summary[m]["beats_hard_frac"] = beats_hard[m] / len(seeds)
+    return {"name": name, "n_seeds": len(seeds), "summary": summary}
+
+
+def render_sweep_md(sweeps) -> str:
+    L = ["", "## Robustness across resampled splits (zero-cost; same data, varying pa_hash split)", ""]
+    L.append("Mean±sd over the split seeds. `beats_hard` = fraction of seeds where the method "
+             "improves ECE **and** does not reduce resolution vs the hard gate (the G1 criterion). "
+             "This checks split-fragility only — independence still needs the holdout_cc run.")
+    for s in sweeps:
+        L += ["", f"### {s['name']} (n_seeds={s['n_seeds']})", "",
+              "| method | ECE mean±sd | resolution mean±sd | AUROC mean±sd | beats_hard |",
+              "|---|---|---|---|---|"]
+        for m, v in s["summary"].items():
+            L.append(f"| {m} | {v['ece']['mean']:.3f}±{v['ece']['sd']:.3f} | "
+                     f"{v['resolution']['mean']:.3f}±{v['resolution']['sd']:.3f} | "
+                     f"{v['auroc']['mean']:.3f}±{v['auroc']['sd']:.3f} | "
+                     f"{v['beats_hard_frac']:.0%} |")
+    return "\n".join(L) + "\n"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gold", default="data/benchmark/eval_curation_v1.jsonl")
     ap.add_argument("--run", action="append", default=[])
     ap.add_argument("--name", action="append", default=[])
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--n-seeds", type=int, default=10, help="robustness sweep over seeds 0..n-1")
     ap.add_argument("--out", default="data/results/calibration_stage1.md")
     ap.add_argument("--json", default="data/results/calibration_stage1.json")
     args = ap.parse_args()
@@ -288,15 +332,17 @@ def main():
 
     gold = c0.load_jsonl(ROOT / args.gold)
     by_pair, by_sh = c0.build_gold_index(gold)
-    results = []
+    results, sweeps = [], []
+    seeds = list(range(args.n_seeds))
     for path, name in zip(args.run, names):
         rows = c0.load_jsonl(ROOT / path)
         joined, _, _ = c0.join_model(rows, by_pair, by_sh)
         results.append(analyze(name, joined, args.seed))
+        sweeps.append(sweep(name, joined, seeds))
 
-    md = render_md(results, args.seed)
+    md = render_md(results, args.seed) + render_sweep_md(sweeps)
     (ROOT / args.out).write_text(md)
-    (ROOT / args.json).write_text(json.dumps(results, indent=2, default=float))
+    (ROOT / args.json).write_text(json.dumps({"detail": results, "sweep": sweeps}, indent=2, default=float))
     print(md)
     print(f"\nWrote {args.out} and {args.json}")
 

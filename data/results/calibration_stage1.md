@@ -82,3 +82,29 @@ Reliability — hard gate vs primary soft (`soft_replace_k1.0`):
     [0.95,1.00)     6  0.981  0.500  |            E          P|
 ```
 
+
+## Robustness across resampled splits (zero-cost; same data, varying pa_hash split)
+
+Mean±sd over the split seeds. `beats_hard` = fraction of seeds where the method improves ECE **and** does not reduce resolution vs the hard gate (the G1 criterion). This checks split-fragility only — independence still needs the holdout_cc run.
+
+### MedPsy-4B (n_seeds=10)
+
+| method | ECE mean±sd | resolution mean±sd | AUROC mean±sd | beats_hard |
+|---|---|---|---|---|
+| hard | 0.136±0.010 | 0.078±0.006 | 0.780±0.008 | 0% |
+| parametric | 0.224±0.012 | 0.009±0.004 | 0.516±0.009 | 0% |
+| soft_replace_k0.5 | 0.103±0.015 | 0.086±0.009 | 0.768±0.010 | 90% |
+| soft_replace_k1.0 | 0.103±0.011 | 0.071±0.005 | 0.697±0.011 | 0% |
+| soft_guard_k0.5 | 0.098±0.007 | 0.084±0.007 | 0.791±0.009 | 90% |
+| soft_guard_k1.0 | 0.121±0.011 | 0.072±0.005 | 0.730±0.008 | 0% |
+
+### gemma-26B (n_seeds=10)
+
+| method | ECE mean±sd | resolution mean±sd | AUROC mean±sd | beats_hard |
+|---|---|---|---|---|
+| hard | 0.157±0.009 | 0.090±0.009 | 0.800±0.017 | 0% |
+| parametric | 0.226±0.018 | 0.009±0.003 | 0.516±0.018 | 0% |
+| soft_replace_k0.5 | 0.077±0.010 | 0.087±0.008 | 0.798±0.014 | 0% |
+| soft_replace_k1.0 | 0.122±0.015 | 0.091±0.007 | 0.739±0.015 | 60% |
+| soft_guard_k0.5 | 0.088±0.014 | 0.087±0.008 | 0.804±0.016 | 0% |
+| soft_guard_k1.0 | 0.121±0.014 | 0.087±0.008 | 0.759±0.016 | 30% |
