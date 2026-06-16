@@ -160,6 +160,69 @@ LOCAL_MODELS: dict[str, dict] = {
         "num_ctx": 65536,
         "timeout": 600,
     },
+    # ── AWS Bedrock (OpenAI-compatible "mantle" endpoint) ───────────────
+    # Bedrock exposes an OpenAI-compatible Chat Completions API on the
+    # bedrock-mantle host. Auth is the Bedrock API key (a bearer token)
+    # passed as the OpenAI `api_key` — no SigV4, no boto3. We reuse the
+    # openai_compat backend verbatim: the response shape is standard OpenAI
+    # (choices[0].message.content + usage). strict_openai_compat=True
+    # suppresses the Ollama-only extra_body keys (num_ctx / native `format`
+    # / chat_template_kwargs) this endpoint would 400 on — exactly like the
+    # Google AI Studio entries above.
+    #
+    # base_url is the mantle `/v1` root (the OpenAI SDK appends
+    # /chat/completions and /models). Model IDs are the BARE mantle ids
+    # from `GET {base_url}/models`, NOT the control-plane "...-v1:0" forms.
+    # Region us-east-1 = the gyorilab account's console region (mantle also
+    # serves us-west-2). Token env var: AWS_BEARER_TOKEN_BEDROCK (in .env).
+    #
+    # COST: every chat.completions call here is billed per token by AWS
+    # (listing models is free; inference is not). The API key is tagged
+    # name="indra-belief-model" for cost allocation.
+    #
+    # CAVEAT (unverified — needs a paid smoke test): optional OpenAI extras
+    # the sub-call scorers pass (response_format=json_object on probes /
+    # grounding, reasoning_effort="none") may not be honored identically by
+    # every Bedrock-served model. The DEFAULT monolithic path
+    # (MONO_VARIANT=disconfirm_relnature, no response_format, no
+    # reasoning_effort) sends a minimal request and is the safe first run.
+    "bedrock-gemma": {
+        # Same weights as gemma-remote / gemma-google (gemma-4-26b-a4b),
+        # served by Bedrock: a cloud drop-in for the validated gemma path,
+        # with no local GPU / tailscale hop. reasoning_effort is left unset
+        # — Bedrock's gemma serving may not honor the Ollama thinking
+        # toggles, and sending an unsupported extra_body key risks a 400.
+        # Thinking-mode parity with gemma-remote is therefore NOT guaranteed;
+        # validate before trusting cross-stack comparisons.
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "google.gemma-4-26b-a4b",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "typical_tokens": 400,
+        "max_tokens": 8192,
+        "timeout": 300,
+    },
+    "bedrock-claude-sonnet": {
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "anthropic.claude-sonnet-4-6",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "typical_tokens": 600,
+        "max_tokens": 8192,
+        "timeout": 300,
+    },
+    "bedrock-claude-haiku": {
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "anthropic.claude-haiku-4-5",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "typical_tokens": 500,
+        "max_tokens": 8192,
+        "timeout": 300,
+    },
 }
 
 

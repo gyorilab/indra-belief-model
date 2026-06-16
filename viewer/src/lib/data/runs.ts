@@ -1,6 +1,6 @@
 /**
- * Run discovery + registry. Replaces the DuckDB `score_run` table: a run is an
- * export directory under `data/exports/` containing an `export_meta.json`.
+ * Run discovery + registry. A run is an export directory under
+ * `data/exports/` containing an `export_meta.json`.
  */
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -39,6 +39,9 @@ function toRunMeta(dir: string, m: Record<string, unknown>): RunMeta {
 		generated_date: (m.generated_date as string) ?? null,
 		counts: (m.counts as RunMeta['counts']) ?? {},
 		bucket_counts: (m.bucket_counts as Record<string, number>) ?? {},
+		// Pass the baked cost block through verbatim (numbers only, no compute).
+		// Legacy exports lack `cost` ⇒ null ⇒ viewer shows "unavailable".
+		cost: (m.cost as RunMeta['cost']) ?? null,
 		source_run: sourceRun,
 		...readSourceMeta(sourceRun)
 	};

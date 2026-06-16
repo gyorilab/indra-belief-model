@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { fmtCost } from '$lib/format';
 
 	let { data }: { data: PageData } = $props();
 	const runs = $derived(data.runs);
@@ -59,6 +60,17 @@
 						<span class="run-n">{fmtCount(r.n_statements)} stmts</span>
 						<span class="muted">·</span>
 						<span class="run-n">{fmtCount(r.n_evidences)} evidence</span>
+						<span class="muted">·</span>
+						<span
+							class="run-cost"
+							class:muted={!r.cost || r.cost.status === 'unavailable'}
+							title={r.cost ? `${r.cost.models.join(', ')} · ${r.cost.status}` : 'no cost in export'}
+						>
+							{fmtCost(r.cost)}
+						</span>
+						{#if r.cost && r.cost.status === 'partial'}
+							<span class="run-flag" title="some rows unpriced">±</span>
+						{/if}
 						{#if r.status && r.status !== 'completed' && r.status !== 'succeeded'}
 							<span class="muted">·</span>
 							<span class="run-status muted">{r.status}</span>
@@ -203,6 +215,13 @@
 	}
 	.run-n {
 		color: var(--ink);
+	}
+	.run-cost {
+		color: var(--ink);
+		font-variant-numeric: tabular-nums;
+	}
+	.run-flag {
+		color: var(--ink-faint);
 	}
 
 	@media (max-width: 720px) {

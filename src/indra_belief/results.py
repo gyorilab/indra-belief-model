@@ -34,6 +34,7 @@ from collections import Counter, defaultdict
 from typing import Any
 
 from indra_belief.curation import aggregate_gold
+from indra_belief.corpus.cost import model_has_known_cost, token_cost_usd
 
 DEFAULT_CORPUS = "data/corpora/latest_statements_rasmachine.json"
 
@@ -153,6 +154,59 @@ def _r3(x: Any) -> float | None:
     return round(x, 3) if isinstance(x, (int, float)) else None
 
 
+def call_log_cost(call_log: list[dict]) -> dict:
+    """Observed USD + token totals + cost availability for one row's call_log.
+
+    Single pass: token totals AND USD are accumulated together so they can never
+    diverge. Cost is UNAVAILABLE (cost_usd=None, cost_status="unavailable") iff ANY
+    call used a model_id that is neither priced nor known-zero (including model_id
+    None / "unknown") — we never report a partial/fabricated $0 for an unverified
+    model. Otherwise cost_usd is the sum of token_cost_usd over every call
+    (zero-cost models contribute exactly 0.0). Empty/missing call_log -> $0.00 over
+    0 tokens with cost_status="known" (a no-LLM row, e.g. Tier-0 no_text /
+    Tier-1 auto-reject, genuinely costs $0).
+
+    FLOOR caveat: when a PRICED call's prompt_tokens is the unreported sentinel
+    (-1, model_client.ModelResponse default when a backend omits usage.prompt_tokens)
+    it is clamped to 0 — so input_tokens and the input portion of cost_usd are a
+    LOWER BOUND, while cost_status stays "known". This is latent in practice (the
+    Bedrock OpenAI-compat mantle reports usage.prompt_tokens), but a priced backend
+    that omits input usage would understate cost without flagging it. Output-only
+    cost is still exact.
+    """
+    calls = call_log or []
+    in_tok = out_tok = 0
+    cost = 0.0
+    all_known = True
+    seen_models: set[str] = set()
+    for c in calls:
+        mid = c.get("model_id")
+        if mid:
+            seen_models.add(mid)
+        pt = c.get("prompt_tokens")
+        ot = c.get("out_tokens")
+        in_tok += pt if isinstance(pt, (int, float)) and pt > 0 else 0
+        out_tok += ot if isinstance(ot, (int, float)) and ot > 0 else 0
+        if mid is None or not model_has_known_cost(mid):
+            all_known = False
+        else:
+            # same clamping as the totals via token_cost_usd -> _nonnegative_tokens
+            cost += token_cost_usd(mid, pt, ot, on_unknown="zero")
+    if not all_known:
+        # `cost` accumulated above is discarded here — we never expose a partial
+        # USD for a row that touched an unverified model.
+        return {
+            "cost_usd": None, "cost_status": "unavailable",
+            "input_tokens": in_tok, "output_tokens": out_tok,
+            "n_calls": len(calls), "models": sorted(seen_models),
+        }
+    return {
+        "cost_usd": round(cost, 6), "cost_status": "known",
+        "input_tokens": in_tok, "output_tokens": out_tok,
+        "n_calls": len(calls), "models": sorted(seen_models),
+    }
+
+
 def _read_run_meta(run_path: str) -> dict[str, Any]:
     """Best-effort read of the run's sibling ``<run>.meta.json`` (run_id, model)."""
     meta_path = re.sub(r"\.jsonl$", ".meta.json", run_path)
@@ -264,6 +318,12 @@ def build_run_export(
     per_ev: list[dict] = []
     bucket_n: Counter = Counter()
     join_miss = sourcehash_mismatch = textlen_mismatch = 0
+    # run-level observed-cost accumulators (one pass, alongside the row loop)
+    cost_total = 0.0
+    cost_in_tok = cost_out_tok = 0
+    n_rows_costed = n_rows_unavailable = n_rows_no_llm = 0
+    run_models: set[str] = set()
+    any_unavailable = False
     stmt_agg: dict[str, dict] = defaultdict(lambda: {
         "scores": [], "nc": 0, "ni": 0, "nother": 0, "buckets": Counter(),
         "belief": None, "subject": None, "stmt_type": None, "object": None,
@@ -296,6 +356,7 @@ def build_run_export(
 
         obj = d.get("object")
         cl = d.get("call_log") or []
+        cost = call_log_cost(cl)
         fin = cl[-1].get("finish_reason") if cl else None
         out_tok = cl[-1].get("out_tokens") if cl else None
         rchars = len(d.get("raw_text_preview") or "")
@@ -330,6 +391,14 @@ def build_run_export(
             "reasoning_truncated": reasoning_truncated,
             "gen_finish_reason": fin,
             "gen_out_tokens": out_tok,
+            # observed LLM cost (computed once here, where the full call_log is in
+            # scope). output_tokens is the call_log SUM (distinct from tokens /
+            # gen_out_tokens, which are LAST-call only) — do not reconcile them.
+            "cost_usd": cost["cost_usd"],            # float (USD) | None
+            "cost_status": cost["cost_status"],      # "known" | "unavailable"
+            "input_tokens": cost["input_tokens"],    # int — observed prompt tokens, summed over calls
+            "output_tokens": cost["output_tokens"],  # int — observed completion tokens, summed over calls
+            "n_calls": cost["n_calls"],              # int — LLM calls for this evidence
             "bucket": bucket,
             "bucket_group": GROUP_NAME[META[bucket][0]],
         }
@@ -341,6 +410,19 @@ def build_run_export(
             gk = _ukey(d.get("source_hash"))
             ev_row["gold"] = gold_map.get(gk) if gk is not None else None
         per_ev.append(ev_row)
+
+        # accumulate run-level cost (same `cost` dict baked into the row above)
+        cost_in_tok += cost["input_tokens"]
+        cost_out_tok += cost["output_tokens"]
+        run_models.update(cost["models"])
+        if cost["cost_status"] == "unavailable":
+            any_unavailable = True
+            n_rows_unavailable += 1
+        elif cost["n_calls"] == 0:
+            n_rows_no_llm += 1
+        else:
+            cost_total += cost["cost_usd"]
+            n_rows_costed += 1
 
         a = stmt_agg[d.get("stmt_hash")]
         v = d.get("verdict")
@@ -437,7 +519,25 @@ def build_run_export(
                     "chain-of-thought was not recorded. verdict/confidence/score were parsed before "
                     "clipping and are unaffected.",
         },
-        "schema_version": 2,
+        "cost": {
+            # "known": every row's cost was computable (rows may be $0).
+            # "partial": some rows priced, some unavailable -> total covers only priced rows.
+            # "unavailable": NO row had a verified price (whole run is unverified).
+            "status": ("unavailable" if n_rows_costed == 0 and any_unavailable
+                       else "partial" if any_unavailable
+                       else "known"),
+            "total_usd": round(cost_total, 4) if n_rows_costed > 0 else None,
+            "input_tokens": cost_in_tok,
+            "output_tokens": cost_out_tok,
+            "n_evidence_costed": n_rows_costed,            # rows that contributed to total_usd (>=1 priced call)
+            "n_evidence_no_llm": n_rows_no_llm,            # rows with 0 LLM calls ($0, no spend)
+            "n_evidence_unavailable": n_rows_unavailable,  # rows withheld from total (unverified/missing model)
+            "models": sorted(run_models),                  # distinct model_ids observed across the run
+            # USD per 1k scored evidences — comparable across runs of different size.
+            "usd_per_1k_evidence": (round(cost_total / n_rows_costed * 1000, 4)
+                                    if n_rows_costed > 0 else None),
+        },
+        "schema_version": 3,
     }
     return per_ev, per_stmt, meta
 

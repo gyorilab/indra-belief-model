@@ -25,7 +25,8 @@ export const load: PageServerLoad = async ({ params }) => {
 			generated_date: null,
 			n_statements: 0,
 			n_evidences: 0,
-			bucket_counts: {}
+			bucket_counts: {},
+			cost: null
 		} satisfies RunSummary);
 
 	return { run, validity, residual };

@@ -27,18 +27,17 @@ log = logging.getLogger(__name__)
 
 # Cost per million tokens (USD), public list pricing.
 # Verify pricing is current before deployment; adjust for your contracted rates.
-#
-# NOTE: viewer/src/routes/+page.svelte mirrors this table client-side for
-# the dashboard cost panel. When rates change, update both — there is no
-# build-time check that they match.
+# This hard-coded table is the single source of truth — the viewer does not
+# currently compute or display cost (no client-side mirror).
 def _load_pricing_table() -> tuple[dict[str, tuple[float, float]], set[str]]:
-    """Single source of truth for LLM input/output pricing.
+    """Load the LLM input/output price table (USD per million tokens).
 
-    Reads `viewer/src/lib/modelPrices.json` (the same file the SvelteKit
-    viewer imports), so a rate change lands in Python, the DuckDB tombstone
-    CASE expression, and the UI display from one edit. Falls back to a
-    minimal hard-coded table if the file is unreadable so unit tests can
-    still run without the viewer tree on disk.
+    SSOT CAVEAT: this prefers `viewer/src/lib/modelPrices.json` IF that file
+    exists — a dormant hook for a future shared price source. That file does
+    NOT exist today, so the hard-coded fallback below is the effective single
+    source of truth and editing it IS effective. WARNING: if anyone ever creates
+    `modelPrices.json`, it SILENTLY OVERRIDES the Python edits below, splitting
+    the SSOT. Do not create that file — prices must stay owned by this module.
     """
     import json
     import os
@@ -71,17 +70,40 @@ def _load_pricing_table() -> tuple[dict[str, tuple[float, float]], set[str]]:
                 "could not read pricing table from %s: %s; using fallback", path, e
             )
     # Hard-coded fallback so unit tests in isolated environments still work.
+    # This IS the effective single source of truth (see SSOT caveat above).
     return (
         {
+            # Anthropic-API-spelled ids (estimate_cost defaults / direct calls).
             "claude-haiku-4-5": (0.80, 4.00),
             "claude-sonnet-4-6": (3.00, 15.00),
             "claude-opus-4-7": (15.00, 75.00),
+            # Bedrock-PREFIXED ids — the model_id the call_log actually emits for
+            # Bedrock Claude. Same Anthropic list rates as the non-prefixed keys.
+            "anthropic.claude-sonnet-4-6": (3.00, 15.00),
+            "anthropic.claude-haiku-4-5": (0.80, 4.00),
             "gemini-2.5-flash": (0.075, 0.30),
             "gemini-2.5-pro": (1.25, 5.00),
             "gpt-4o": (2.50, 10.00),
             "gpt-4o-mini": (0.15, 0.60),
         },
-        {"mock", "mock-model", "smoke-local", "unknown"},
+        {
+            # Genuinely-free local / self-hosted (zero marginal cost on owned
+            # hardware), keyed on the REAL call_log model_ids verified in the
+            # live runs (NOT the registry keys).
+            "gemma-4-26b",                                    # FLAGSHIP call_log id (gemma-remote tailnet ollama gateway)
+            "gemma-4-26b-ollama",                             # registry-spelled id for the SAME gateway
+            "medpsy-4b",                                      # medpsy-remote (llama.cpp gateway) + medpsy flagship
+            "qvac/MedPsy-4B",                                 # medpsy-4b-local (transformers)
+            "mlx-community/gemma-4-26b-a4b-it-8bit",          # gemma-moe (local MLX)
+            "mlx-community/gemma-4-31b-it-8bit",              # gemma-31b (local MLX)
+            "minimax-m2.7-jangtq-crack",                     # minimax-local
+            "dealignai/Qwen3.5-VL-122B-A10B-4bit-MLX-CRACK",  # qwen-thinker
+            # test-only sentinels (kept so existing scaffolding stays $0; NOT real models)
+            "mock", "mock-model", "smoke-local",
+            # NOTE: "unknown" is deliberately NOT here — a model_id of "unknown"
+            # is the genuinely-unverified case and must degrade to "unavailable"
+            # (never a fabricated $0).
+        },
     )
 
 

@@ -1,7 +1,6 @@
 /**
  * The in-memory store: loads + indexes a run's export files, cached by file
- * mtime (mirrors db.ts's old stat-based invalidation). This is the entire
- * replacement for the DuckDB connection manager.
+ * mtime.
  *
  * per_statement.json (~6 MB) is parsed eagerly; per_evidence.jsonl (~130 MB,
  * 47k rows) is indexed lazily on first detail/cohort request and cached.

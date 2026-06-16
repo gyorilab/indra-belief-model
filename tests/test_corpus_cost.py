@@ -6,6 +6,7 @@ import pytest
 from indra.statements import Agent, Evidence, Phosphorylation
 
 from indra_belief.corpus import estimate_cost
+from indra_belief.corpus.cost import model_has_known_cost, token_cost_usd
 
 
 def _stmt(n_ev: int):
@@ -111,3 +112,61 @@ def test_estimate_includes_assumptions():
     assert out["assumptions"]["avg_evidences_per_stmt"] == 2.0
     assert out["assumptions"]["avg_llm_calls_per_evidence"] == 5.0
     assert out["assumptions"]["in_price_per_m_tokens_usd"] == 3.00
+
+
+# ── observed-cost price-table contract (token_cost_usd / model_has_known_cost) ──
+
+
+def test_bedrock_prefixed_sonnet_is_priced():
+    # 1M in @ $3.00 + 1M out @ $15.00 = $18.00
+    assert token_cost_usd("anthropic.claude-sonnet-4-6", 1_000_000, 1_000_000) == 18.0
+    assert model_has_known_cost("anthropic.claude-sonnet-4-6") is True
+
+
+def test_bedrock_prefixed_haiku_is_priced():
+    assert token_cost_usd("anthropic.claude-haiku-4-5", 1_000_000, 0) == 0.80
+    assert model_has_known_cost("anthropic.claude-haiku-4-5") is True
+
+
+def test_flagship_gemma_bare_id_is_zero_cost():
+    # The bare gemma-4-26b id (FLAGSHIP call_log) must be recognized as $0.
+    assert token_cost_usd("gemma-4-26b", 5000, 5000) == 0.0
+    assert model_has_known_cost("gemma-4-26b") is True
+
+
+def test_registry_spelled_gemma_is_zero_cost():
+    assert token_cost_usd("gemma-4-26b-ollama", 5000, 5000) == 0.0
+    assert model_has_known_cost("gemma-4-26b-ollama") is True
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "medpsy-4b",
+        "qvac/MedPsy-4B",
+        "mlx-community/gemma-4-26b-a4b-it-8bit",
+        "mlx-community/gemma-4-31b-it-8bit",
+        "minimax-m2.7-jangtq-crack",
+        "dealignai/Qwen3.5-VL-122B-A10B-4bit-MLX-CRACK",
+    ],
+)
+def test_local_self_hosted_models_are_zero_cost(model_id):
+    assert token_cost_usd(model_id, 9999, 9999) == 0.0
+    assert model_has_known_cost(model_id) is True
+
+
+def test_unverified_gemma_ids_are_not_known():
+    # Bedrock-Gemma + Google AI Studio Gemma: UNVERIFIED, must be distinguishable
+    # from priced/zero-cost so the exporter degrades them to "unavailable".
+    assert model_has_known_cost("google.gemma-4-26b-a4b") is False
+    assert model_has_known_cost("gemma-4-26b-a4b-it") is False
+
+
+def test_unknown_sentinel_was_removed_from_zero_cost():
+    # The pre-existing fabricated-zero "unknown" id must NOT resolve to $0 — it is
+    # exactly the genuinely-unverified case and must degrade to "unavailable".
+    assert model_has_known_cost("unknown") is False
+
+
+def test_null_negative_tokens_clamp_to_zero():
+    assert token_cost_usd("anthropic.claude-sonnet-4-6", -1, None) == 0.0

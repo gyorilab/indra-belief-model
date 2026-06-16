@@ -36,10 +36,10 @@ Model: gemma-4-26b (Ollama remote or local MLX 8-bit).
 
 ### Production scoring architecture
 
-The CLI default is the monolithic scorer: one deterministic LLM call per
-`(Statement, Evidence)` pair with type-adaptive contrastive examples. The
-decomposed four-probe scorer remains available for ablations with
-`--arch decomposed`.
+The CLI default is the monolithic scorer: a deterministic LLM call per
+`(Statement, Evidence)` pair with type-adaptive contrastive examples (a second
+call fires only for `[Complex]` claims — see Tier 2). The decomposed four-probe
+scorer remains available for ablations with `--arch decomposed`.
 
 ### Two-tier monolithic path
 
@@ -54,9 +54,17 @@ decomposed four-probe scorer remains available for ablations with
 
 **Tier 2: LLM text comprehension**
 
-- Six-rule system prompt (negation, hedging, family/member equivalence, etc.)
-- Seven adaptive contrastive pairs (14 examples) selected by statement type
-- Single deterministic call at low temperature
+- Commit-first "disconfirm" system prompt: the model commits a defeating
+  objection to a structured field before it rationalizes a verdict (negation,
+  hedging, family/member equivalence, relation-direction reversal).
+- Seven adaptive contrastive pairs (14 examples) selected by statement type.
+- One deterministic LLM call per pair at low temperature — plus, for `[Complex]`
+  claims, a focused relation-nature step (Gilda-grounded entity aliases) that
+  rejects a non-binding relationship mistaken for a Complex.
+
+The default variant is `disconfirm_relnature` (set `MONO_VARIANT=""` for the
+plain six-rule baseline; `MONO_VARIANT=disconfirm` for disconfirm without the
+relation-nature step).
 
 ### Adaptive few-shot selection
 
@@ -97,7 +105,7 @@ Headline baselines measured during iteration: gemma-4-26b + adaptive bank + voti
 ### Dependencies
 
 ```bash
-pip install gilda indra openai
+pip install gilda indra openai anthropic   # anthropic only for the claude-* path
 
 # Download the benchmark corpus (460MB, not included in repo)
 # Place at data/benchmark/indra_benchmark_corpus.json.gz
@@ -193,6 +201,11 @@ verdicts = score_statement(stmt, client)
 #   verdicts[i]["tier"]       → which scoring path produced the verdict
 ```
 
+The importable `score_statement` / `score_evidence` run the decomposed
+four-probe path (so `tier` is always `"decomposed"`); the monolithic default
+applies to the CLI. For the monolithic path from Python, import the same names
+from `indra_belief.scorers.monolithic`.
+
 To score just one evidence of a Statement (skipping the rest of `stmt.evidence`), use `score_evidence(stmt, ev, client)`.
 
 ### Composition with INDRA belief
@@ -225,53 +238,62 @@ failures — are removed. Priors live in `noise_model.py` (`INDRA_PRIORS`,
 `RECALIBRATED_PRIORS`). See `scripts/benchmark_composition.py` for the
 benchmark used to pick them.
 
-### Score a whole corpus + browse the results
+### Score a corpus + browse the results
 
 For corpora larger than a single Statement (e.g. an INDRA-native JSON dump
-from rasmachine), `indra_belief.corpus` persists ingest, scoring, and
-validity to a DuckDB file; the `viewer/` SvelteKit app both browses and
-drives it (via per-card `[ingest]` / `[score]` / `[register truth_set]`
-actions that spawn the `indra_belief.worker` subprocess and stream SSE
-progress). The Python entry points below remain canonical — the viewer
-calls them under the hood.
+from rasmachine), the monolithic pipeline is the production path. It scores
+each evidence and writes append-only per-evidence JSONL alongside a run
+`.meta.json` and `.progress.ndjson`:
 
-```python
-import duckdb
-from indra.statements import stmts_from_json_file
-from indra_belief import ModelClient
-from indra_belief.corpus import (
-    apply_schema, ingest_statements,
-    score_corpus, export_beliefs, model_card,
-)
-
-con = duckdb.connect("data/corpus.duckdb")
-apply_schema(con)
-stmts = stmts_from_json_file("data/corpora/latest_statements_rasmachine.json")
-ingest_statements(con, stmts, source_dump_id="rasmachine_emmaa")
-
-client = ModelClient("claude-sonnet-4-6")
-run_id = score_corpus(con, stmts, client=client,
-                      scorer_version="prod-v1", decompose=True,
-                      cost_threshold_usd=350)  # raises before spend
-
-export_beliefs(con, run_id, f"data/exports/{run_id}_indra.json")
-model_card(con, run_id, out_path=f"data/exports/{run_id}_card.json")
-con.close()
+```bash
+set -a; . ./.env; set +a   # GEMINI_API_KEY / AWS_BEARER_TOKEN_BEDROCK / HF_TOKEN
+PYTHONPATH=src python scripts/run_rasmachine_monolithic.py \
+    --model gemma-remote \
+    --input data/corpora/latest_statements_rasmachine.json \
+    --output data/results/rasmachine_run.jsonl
 ```
 
-Estimate cost first: `from indra_belief.corpus import estimate_cost`
-returns LLM-call counts and projected USD per model. Truth-set support
-(gold pools, INDRA epistemics, source-DB curation) is foundational —
-`register_truth_set` + `load_truth_labels` light up the dashboard's
-P/R/F1-vs-gold panel automatically.
+Estimate cost first: `from indra_belief.corpus import estimate_cost` returns
+projected LLM-call counts and USD per model before you spend.
 
-Browse + drive via the viewer:
+The `viewer/` SvelteKit app browses finished runs. It is a read-only,
+in-memory projection over the per-run JSONL exports under `data/exports/<run>/`
+(`per_statement.json` + `per_evidence.jsonl` + `export_meta.json`), loaded by
+SvelteKit server load functions (`+page.server.ts`) — no database:
 
 ```bash
 cd viewer && npm install && npm run dev  # http://127.0.0.1:5173
 ```
 
-The dashboard discovers files in `data/corpora/` and `data/benchmark/` and exposes per-card actions: `[ingest]`, `[register tag as truth_set]`, cost preflight, and `[score]` against the loaded LLM. Long ingests / scores stream SSE progress with a `[cancel]` button; the closeInstance coordination in `viewer/src/lib/db.ts` releases the cached DuckDB instance before each spawn so the worker can acquire the file lock. Dashboard reads issued during an active write fail closed with HTTP 503 + a "writer in progress" page (`+error.svelte`).
+### Observed LLM cost (per run)
+
+Each run's export carries the real USD it cost to score, computed from the token
+usage actually observed during the run — not an estimate. Prices live in exactly
+one place (`src/indra_belief/corpus/cost.py`); the viewer only reads baked numbers.
+
+At export time, every evidence row's `call_log` (one entry per LLM call, each
+carrying `prompt_tokens`, `out_tokens`, and the real `model_id`) is priced via
+`token_cost_usd` and summed. Per-row `cost_usd` is baked into `per_evidence.jsonl`;
+a run total + input/output token totals + `usd_per_1k_evidence` go into
+`export_meta.json`. The run feed (`/runs`) shows a compact per-run cost; the run
+detail (`/runs/<id>`) shows total, cost per 1k LLM-scored evidence, tokens, and
+the model(s) billed.
+
+Three honest states — the viewer never invents a price:
+
+- **known** — every scored row used a model with a verified price (local /
+  self-hosted models are genuinely free → `$0.00`).
+- **partial** — some rows used a priced model and some an unverified one; the
+  total covers only the priced rows, with the unavailable-row count shown.
+- **unavailable** — no row had a verified per-token price, or the export predates
+  cost capture. Shows "cost unavailable" with token counts, never a fabricated `$0`.
+
+AWS Bedrock Claude (`sonnet-4-6`, `haiku-4-5`) is priced at Anthropic list rates;
+local models are zero marginal cost. Bedrock-served `google.gemma-4-26b-a4b` is
+intentionally left unpriced (no public Gemma-4 Bedrock rate confirmed) → runs
+using it read "unavailable". To price a model, add its per-1M-token input/output
+rate to `MODEL_PRICES_PER_M_TOKENS` (or its id to `ZERO_COST_MODEL_IDS` if free)
+in `cost.py`, then re-export the run.
 
 ### Benchmark evaluation against a holdout file
 
@@ -300,50 +322,80 @@ src/indra_belief/
   model_client.py          # Model transport (OpenAI-compat + Anthropic)
   noise_model.py           # INDRA SimpleScorer (parametric belief from source priors)
   composed_scorer.py       # LLM verdict → hard gate over the parametric noise model
-  worker.py                # Viewer-spawned worker: ingest / estimate-cost / score / register-truth-set
-  scorers/                 # Monolithic default plus decomposed probe orchestrator
-  corpus/                  # Corpus persistence + scoring orchestration (DuckDB)
-    schema.py              # 10-table schema (statement / evidence / agent / truth_set / metric / …)
-    loader.py              # from_indra_json + ingest_statements + register_truth_set
-    scoring.py             # score_corpus(con, stmts, *, decompose, with_validity, cost_threshold_usd)
-    validity.py            # compute_validity → calibration + 4a P/R/F1 + stratified MAE
-    export.py              # aggregate_beliefs + export_beliefs + model_card
-    cost.py                # estimate_cost + MODEL_PRICES_PER_M_TOKENS
+  curation.py              # INDRA-curation gold rule + hash bridge + index
+  metrics.py               # Binary confusion P/R/F1 + ECE calibration
+  sampling.py              # Two-stage / priority sampling + Wilson half-width
+  results.py               # Run-result loading + row shaping
+  scorers/
+    scorer.py              # Public score_statement / score_evidence + benchmark main
+    _shared.py             # Verdict→score mapping shared across scorers
+    context.py             # Per-record scoring context
+    context_builder.py     # Grounding + alias context assembly
+    commitments.py         # Claim-commitment extraction
+    grounding.py           # Gilda-backed entity grounding
+    kg_signal.py           # Knowledge-graph corroboration signal
+    parse_claim.py         # Statement → typed claim parse
+    relation_patterns.py   # Regex relation cues
+    monolithic/            # Default scorer
+      scorer.py            # MONO_VARIANT dispatch (default disconfirm_relnature)
+      _prompts.py          # Baseline six-rule system prompt
+      _prompts_disconfirm.py  # Commit-first disconfirm prompt + backstop
+      _prompts_relation.py    # [Complex] relation-nature step (Gilda aliases)
+    probes/                # Decomposed four-probe scorer (--arch decomposed)
+      orchestrator.py      # Probe pipeline + router
+      router.py            # Statement → probe set
+      subject_role.py object_role.py relation_axis.py scope.py bind_check.py
+      adjudicator.py       # Probe verdicts → final
+      _llm.py types.py
+    panel/                 # Objection-panel ablation
+      orchestrator.py detectors.py adjudicator.py types.py
+  corpus/
+    cost.py                # estimate_cost + MODEL_PRICES_PER_M_TOKENS (only surviving surface)
+  tools/
+    gilda_tools.py         # Gilda lookup helpers
   data/
     entity.py              # GroundedEntity: single gilda resolution per entity
     scoring_record.py      # ScoringRecord: wraps INDRA Statement + Evidence
     corpus.py              # CorpusIndex: source_hash → Statement lookup
     example_bank.json      # Type-specific contrastive pairs
 
-viewer/                    # SvelteKit dashboard — browses + drives the corpus DuckDB
+viewer/                    # SvelteKit dashboard — read-only projection over data/exports/<run>/
   src/lib/
-    db.ts                  # DuckDB connection + closeInstance() for writer coordination
-    datasets.ts            # Filesystem discovery of data/corpora + data/benchmark
-    pathGuard.ts           # Path-arg validation (must resolve under <repoRoot>/data/)
     format.ts              # Cue extraction, verdict rendering, sentence formatting
-    probeAttribution.ts    # Probe-source attribution model (substrate vs LLM)
     residuals.ts           # Residual histogram bucket logic
-    components/            # BeliefPrimitive, HeuristicCoverage, Validity
-  src/routes/
-    +page.svelte           # Dashboard: focus + findings + validity + datasets + runs feed
-    +error.svelte          # 503 writer-in-progress fallback + generic 4xx/5xx page
-    runs/[run_id]/+page.svelte             # Per-run detail with compare-against dropdown
+    index.ts               # Re-exports
+    components/            # BeliefPrimitive, BeliefRuler, SiteNav, Validity
+    data/                  # In-memory data layer over the JSONL exports
+      runs.ts              # Run discovery (dirs with export_meta.json)
+      queries.ts           # Per-run / per-statement / per-evidence selectors
+      curation.ts          # INDRA-curation gold lane (twin of curation.py)
+      adjudicate.ts review.ts store.ts types.ts
+  src/routes/                # each route pairs a +page.svelte with a sibling
+                             # +page.server.ts load (runs/[run_id]/ adds
+                             # +layout.server.ts); the server loads run the
+                             # $lib/data selectors over the per-run JSONL exports
+    +page.svelte           # Dashboard: focus + findings + validity + runs feed
+    +layout.svelte         # Shared nav shell
+    +error.svelte          # Generic 4xx/5xx error page
+    runs/+page.svelte                      # Runs index
+    runs/[run_id]/+page.svelte             # Per-run detail (+layout.server.ts loads the run)
     statements/+page.svelte                # Matrix (paginated, URL-stated)
-    statements/[stmt_hash]/+page.svelte    # Per-stmt deep-dive (9-step rail, evidence cards, truth panel)
-    export/[run_id]/[kind]/+server.ts      # Belief + model-card download endpoints
-    api/datasets/ingest/+server.ts         # SSE-streaming ingest (handles .json + .json.gz)
-    api/truth-sets/+server.ts              # Truth-set registration + validity recompute
-    api/runs/estimate-cost/+server.ts      # Per-model cost preflight
-    api/runs/score/+server.ts              # SSE-streaming score with AbortController kill
+    statements/[stmt_hash]/+page.svelte    # Per-stmt deep-dive (evidence cards + rollup)
+    compare/+page.svelte                   # Model-vs-model dig (L0–L3, optional gold mode)
+    adjudicate/+page.svelte                # Blind human verdict (curation revealed as 3rd judge)
+    review/+page.svelte                    # Faithfulness / correctness review queue
 
 data/
   benchmark/
     holdout.jsonl          # 200-record balanced evaluation set
     holdout_large.jsonl    # 4,625-record half-corpus evaluation
     example_pairs.json     # Entity pairs excluded from holdouts
+  exports/<run>/           # Per-run viewer exports (per_statement.json + per_evidence.jsonl + export_meta.json)
+  corpora/                 # Sampled INDRA Statement dumps to score
   results/                 # Evaluation results
 
 scripts/
+  run_rasmachine_monolithic.py  # Production scoring runner
   check_contamination.py        # Pre-eval gate: examples must not overlap holdout
   check_no_version_labels.py    # CI guard: no v{n} labels in src, tests, scripts
 

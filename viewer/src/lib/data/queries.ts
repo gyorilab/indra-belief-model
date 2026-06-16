@@ -1,6 +1,6 @@
 /**
  * The query API — every payload the viewer needs, derived from the monolithic
- * JSONL exports. This replaces viewer/src/lib/db.ts (the DuckDB query layer).
+ * JSONL exports.
  *
  * Everything here is pure projection/aggregation over the in-memory store; no
  * database, no SQL, no native addon. Fields the monolithic export cannot
@@ -27,6 +27,8 @@ export interface RunSummary {
 	n_statements: number;
 	n_evidences: number;
 	bucket_counts: Record<string, number>;
+	/** Run-level observed cost (null on legacy exports / no exporter cost). */
+	cost: RunMeta['cost'];
 }
 
 function runSummary(m: RunMeta): RunSummary {
@@ -37,7 +39,8 @@ function runSummary(m: RunMeta): RunSummary {
 		generated_date: m.generated_date,
 		n_statements: m.counts.statements ?? 0,
 		n_evidences: m.counts.unique_evidence_rows ?? 0,
-		bucket_counts: m.bucket_counts
+		bucket_counts: m.bucket_counts,
+		cost: m.cost ?? null
 	};
 }
 

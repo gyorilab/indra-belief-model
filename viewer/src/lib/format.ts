@@ -23,6 +23,38 @@ export function fmtDelta(d: number | null | undefined): string {
 	return `${sign}${Math.abs(d).toFixed(2)}`;
 }
 
+/** The baked run-level cost block (numbers only; the viewer holds no price
+ *  table). Mirrors `RunMeta['cost']`; `null` ⇒ legacy export (pre-cost field). */
+export interface RunCost {
+	status: 'known' | 'partial' | 'unavailable';
+	total_usd: number | null;
+}
+
+/**
+ * Run-feed cost label (compact). Status is authoritative, NOT `total_usd`:
+ *  - no cost block / `unavailable` → `"cost n/a"` (legacy export or no verified
+ *    price; never $0 for an unpriced model).
+ *  - `known`/`partial` with `total_usd == null` → `"$0.00"`. This is a genuine
+ *    KNOWN-zero run: every row had 0 LLM calls (all no_text / auto-reject), so
+ *    there was no priced spend to sum. The price IS verified — the run cost $0.
+ *  - a real number → `"$0.00"` / `"<$0.01"` / `"$X.XX"`.
+ */
+export function fmtCost(c: RunCost | null | undefined): string {
+	if (!c || c.status === 'unavailable') return 'cost n/a';
+	if (c.total_usd == null || c.total_usd === 0) return '$0.00';
+	return c.total_usd < 0.01 ? '<$0.01' : `$${c.total_usd.toFixed(2)}`;
+}
+
+/**
+ * Full-precision cost for the detail page. A real $0 stays `$0.00`; sub-cent
+ * shows 4 decimals; `null` → em-dash (the viewer never invents a price). Used
+ * for the per-1k figure, where `null` (no LLM-scored rows) is genuinely "no
+ * datum" and the em-dash is correct.
+ */
+export function fmtCostFull(n: number | null | undefined): string {
+	return n == null ? '—' : n === 0 ? '$0.00' : '$' + n.toFixed(n < 0.01 ? 4 : 2);
+}
+
 /** Plural-aware label suffix. `n=1 → ''`, else `'s'`. */
 export function pluralS(n: number): string {
 	return n === 1 ? '' : 's';
@@ -145,4 +177,38 @@ export function verdictDisplay(v: string | null | undefined): string {
 	if (v === 'incorrect') return 'contradicted';
 	if (v === 'abstain') return 'abstained';
 	return v ?? '—';
+}
+
+/** Plain-language name for HOW an evidence was scored — named for what the
+ *  scorer actually did, not the internal pipeline-stage code it stores. */
+export function scoringMethod(method: string | null | undefined): string | null {
+	switch (method) {
+		case 'llm_comprehension':
+			return 'read the text';
+		case 'llm_tool_use':
+			return 'read + grounding check';
+		case 'deterministic_mismatch':
+			return 'grounding mismatch';
+		case 'deterministic_pseudogene':
+			return 'pseudogene';
+		case 'no_text':
+			return 'no sentence';
+		case 'decomposed':
+		case 'decomposed_probe_only':
+			return 'decomposed probes';
+		case 'panel':
+			return 'objection panel';
+		case 'row_error':
+			return 'error';
+		default:
+			return method ?? null;
+	}
+}
+
+/** Strip a leading bracket marker (e.g. an old "[TIER 2 LLM]" provenance tag
+ *  baked into an already-exported trace) so the reasoning body renders clean.
+ *  New runs carry no marker; this keeps historical runs tidy too. */
+export function reasoningBody(reasoning: string | null | undefined): string {
+	if (!reasoning) return '';
+	return reasoning.replace(/^\s*\[[^\]]+\][ \t]*\n?/, '').trimStart();
 }

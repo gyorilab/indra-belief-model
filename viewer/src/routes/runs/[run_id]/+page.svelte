@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { fmtCost, fmtCostFull } from '$lib/format';
 
 	let { data }: { data: PageData } = $props();
 	const run = $derived(data.run);
@@ -76,6 +77,34 @@
 			<div><dt>scored evidence</dt><dd>{fmtCount(v.calibration.n)}</dd></div>
 		</dl>
 	</section>
+
+	{#if run.cost && run.cost.status !== 'unavailable'}
+		<section class="cost">
+			<h2 class="sec-h">observed LLM cost</h2>
+			<p class="sec-sub">
+				Computed from observed token usage at export time. Local / self-hosted models
+				are billed at $0.00; rows with an unverified price are excluded{#if run.cost.status === 'partial'}
+					({fmtCount(run.cost.n_evidence_unavailable)} rows unavailable){/if}.
+			</p>
+			<dl class="stat-row">
+				<div class="stat"><dt>total</dt><dd>{fmtCost(run.cost)}</dd></div>
+				<div class="stat"><dt>per 1k LLM-scored evidence</dt><dd>{fmtCostFull(run.cost.usd_per_1k_evidence)}</dd></div>
+				<div class="stat"><dt>input tokens</dt><dd>{fmtCount(run.cost.input_tokens)}</dd></div>
+				<div class="stat"><dt>output tokens</dt><dd>{fmtCount(run.cost.output_tokens)}</dd></div>
+			</dl>
+			<p class="sec-sub muted">models: {run.cost.models.join(', ') || 'none (no LLM calls billed)'}</p>
+		</section>
+	{:else}
+		<section class="cost unavailable">
+			<h2 class="sec-h">observed LLM cost</h2>
+			<p class="sec-sub">
+				Cost unavailable — {run.cost
+					? `${run.cost.models.join(', ') || 'this run'}'s per-token price is not verified`
+					: 'this export predates cost capture'}. Token usage is recorded but no verified USD
+				rate exists, so no dollar figure is shown (never $0 for an unpriced model).
+			</p>
+		</section>
+	{/if}
 
 	<section class="calibration">
 		<h2 class="sec-h">calibration vs INDRA belief</h2>

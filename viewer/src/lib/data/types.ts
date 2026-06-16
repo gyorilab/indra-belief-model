@@ -1,7 +1,7 @@
 /**
  * The JSONL-derived data model — a read-only projection of the monolithic
  * pipeline's exports (`data/exports/<run>/{per_statement.json, per_evidence.jsonl,
- * export_meta.json}`). This replaces the DuckDB corpus schema entirely.
+ * export_meta.json}`).
  *
  * A "run" is one monolithic scoring pass (e.g. gemma vs medpsy). Each export dir
  * is self-contained: per_evidence carries evidence_text + reasoning, so the only
@@ -28,6 +28,20 @@ export interface RunMeta {
 	status: string | null;
 	started_at: string | null;
 	finished_at: string | null;
+	/** Run-level observed LLM cost (baked at export from per-evidence call_logs).
+	 *  Numbers only — the viewer holds no price table. `null` ⇒ legacy export
+	 *  (pre-cost field); render as "unavailable", never $0. */
+	cost?: {
+		status: 'known' | 'partial' | 'unavailable';
+		total_usd: number | null;
+		input_tokens: number;
+		output_tokens: number;
+		n_evidence_costed: number;
+		n_evidence_no_llm: number;
+		n_evidence_unavailable: number;
+		models: string[];
+		usd_per_1k_evidence: number | null;
+	} | null;
 }
 
 /** One statement rollup, from `per_statement.json`. */
@@ -86,6 +100,14 @@ export interface EvidenceRow {
 	error: string | null;
 	latency_s?: number | null;
 	tokens?: number | null;
+	/** Observed LLM cost for this evidence (computed at export from call_log).
+	 *  cost_usd null + cost_status 'unavailable' ⇒ a model with no verified price.
+	 *  Absent entirely ⇒ legacy export (pre-cost); treat as unavailable. */
+	cost_usd?: number | null;
+	cost_status?: 'known' | 'unavailable';
+	input_tokens?: number;
+	output_tokens?: number;
+	n_calls?: number;
 	/** Per-run gold baked in at export time (the run's OWN curation source).
 	 *  Present (verdict object OR null=uncurated) on baked runs; ABSENT on legacy
 	 *  runs, which fall back to the global curation index. See goldForRow. */
