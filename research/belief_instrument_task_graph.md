@@ -1,6 +1,6 @@
 # Belief Instrument Task Hypergraph
 
-Status: drafted + first execution pass landed 2026-05-10. T1 fully complete (E0 belief primitive, E1 findings, E2 run-narrative, E3 probe attribution, E4 residual distribution). T2 5/6 complete (focus card, findings strip, validity-as-section, run feed, demolitions — only `/runs/[run_id]` page deferred until corpus has multiple runs). T3 perceptual instruments landed inline with T2 (probe bars, residual sparkline, bias-axis cleanup, verdict pillbar). T4 wayfinding 3/4 (deep-link focus + relevance-sort matrix already work; deep-dive reframed; keyboard nav deferred). T5 gates pending. Successor to `rasmachine_task_graph.md` (closed). The R-phase shipped a *working* interface; this hypergraph reframes it as a *truthful* one.
+Status: drafted + first execution pass landed 2026-05-10. T1 fully complete (E0 belief primitive, E1 findings, E2 run-narrative, E3 probe attribution, E4 residual distribution). T2 6/6 complete (focus card, findings strip, validity-as-section, run feed, `/runs/[run_id]` page, demolitions — the run page **shipped**; the earlier "deferred until multiple runs" note is retired). **T6 — calibration surfaces added 2026-06-17** (C4 run-on-its-own + C5 run-comparison; new substrate edge E5 render primitives; consumes the calibration arc's per-run `metrics.json`; see `research/calibration_task_hypergraph.md`). T3 perceptual instruments landed inline with T2 (probe bars, residual sparkline, bias-axis cleanup, verdict pillbar). T4 wayfinding 3/4 (deep-link focus + relevance-sort matrix already work; deep-dive reframed; keyboard nav deferred). T5 gates pending. Successor to `rasmachine_task_graph.md` (closed). The R-phase shipped a *working* interface; this hypergraph reframes it as a *truthful* one.
 
 ## Frame
 
@@ -53,6 +53,15 @@ For each `(run_id, stmt_hash)`: read scorer_step chain, compute step-wise belief
 ### E4 — Residual distribution view
 
 Histogram of `(our_belief − indra_belief)` over a run, 11 bins on `[-1, +1]`. Two render modes: braille block string `▁▁▂▃▆█▆▃▂▁▁` for inline use; SVG for the validity main view (with stratum overlay).
+
+### E5 — Calibration render primitives
+
+Three reusable Svelte components for the calibration arc (`research/calibration_task_hypergraph.md`):
+- `ReliabilityDiagram.svelte` — `BINS_8` bins; x = mean predicted score, y = empirical correct-rate; diagonal = perfect; marks sized by bin-n so sparse bins don't lie (mirrors the `n_total ≥ 30` validity guard). This is the curve the viewer does not have today.
+- `BrierBar.svelte` — one stacked bar, Murphy decomposition `reliability − resolution + uncertainty`; the narrative spine (low reliability good, high resolution good, uncertainty the irreducible floor) makes the calibration arc's D8 story — a monotone post-hoc map lowers reliability while collapsing resolution — *visible*.
+- `ConfusionMosaic.svelte` — 2×2 TP/FP/FN/TN, area ∝ count; reuses the `/compare` mosaic geometry, single-palette for the run-on-its-own register.
+
+Reused across C4 (run-on-its-own) and C5 (run-comparison) — ≥2 nodes. **Reads** the calibration hypergraph's per-run `metrics.json` (defined *there* as that doc's substrate edge E5 — the *data* export seam; **this** E5 is the *render* layer); never recomputes. Render modes mirror E4: SVG for main views, compact glyph for inline/feed use.
 
 ---
 
@@ -117,6 +126,25 @@ Histogram of `(our_belief − indra_belief)` over a run, 11 bins on `[-1, +1]`. 
 | T5.4  | single-statement coherence | render `/` with one statement. No ranking; the one statement IS the focus card |
 | T5.5  | large-corpus performance | render `/` against ≥10k stmts in <200ms server-time + <300ms paint |
 | T5.6  | regression: existing tests pass | the 245 corpus tests + viewer e2e tests still green |
+| T5.7  | calibration render parity (= calibration arc **G4**) | on a real run, served ECE/Brier/diagram == the persisted `metrics.json` byte-exact (no served-vs-persisted drift); single-palette register; empty-metrics run renders a named empty (P6), not a crash |
+| T5.8  | comparison parity (= calibration arc **G5v**) | viewer ΔECE/ΔBrier == the C1/C2 held-out script outputs for the same run pair; drill skeleton unchanged; comparison register (A/B/gold hues) preserved |
+
+---
+
+## Phase T6 — calibration surfaces (C4 / C5)
+
+The calibration math arc (C0–C3 in `research/calibration_task_hypergraph.md`) emits products to disk; T6 renders them in the live instrument. Same device as the rest of this doc — **route = register**: `/runs/[run_id]` is the single-run register, `/compare` the comparison register. Node IDs keep the calibration arc's `C#`/`G#` vocabulary so the two docs cross-reference cleanly.
+
+| node | deliverable | perceptual contract | depends |
+|------|-------------|---------------------|---------|
+| C4   | run-on-its-own calibration section on `/runs/[run_id]`, **above** the residual histogram (residual stays — it answers a different question, P-doctrine forbids deleting a true signal) | P1 ECE as the headline number; reliability diagram + Brier stacked bar; per-run confusion mosaic; per-stratum ECE strip (reuses the T2.5 stratum table) retires the `unavailable` apology; **one reactive lever** = Tier toggle `?tier=ev\|stmt` (Tier-1 per-evidence + Tier-2 per-statement as two labeled, stacked diagrams, never merged); P5 delta-vs-prev; P6 named-empty; P7 single palette | E5, cal:`metrics.json`, T2.5 |
+| C5   | run-comparison calibration mode `?mode=calib` on `/compare` (mirror `?mode=gold`) — a **mode, not a second matrix** | L0 anatomy swaps the verdict 2×2 for overlaid reliability curves (A `--a-hue` / B `--b-hue` + diagonal) + ΔECE/ΔBrier scalars; three-way baseline (hard / parametric / soft) = three series tied to the calibration **G2** ship gate; L1 stratify → ΔECE per stratum; L2 cohort → reads sorted by distance-to-diagonal; L3 reasoning unchanged; drill skeleton reused (only the L0 payload swaps); comparison register preserved | E5, cal:`metrics.json`, `/compare` L0–L3 |
+
+**Gates:** T5.7 (= G4) for C4, T5.8 (= G5v) for C5.
+
+**Decision-gating:** C4/C5 consume the calibration math arc's products — a NO-GO at that arc's **G0** (raw-belief AUPRC has no headroom) means there is nothing to render and T6 never fires. Zero viewer work is spent before the math earns it.
+
+**Order:** C4 first (single-run is the simpler register and unblocks reading any one run's calibration); C5 once C4's E5 primitives are proven.
 
 ---
 
@@ -127,6 +155,7 @@ Histogram of `(our_belief − indra_belief)` over a run, 11 bins on `[-1, +1]`. 
 - **H_narrative** = {T1.3, T2.3, T2.4, T2.5} — every site that shows run-over-run change
 - **H_reasoning** = {T1.4, T2.1, T4.4, T3.1} — every site that shows pipeline justification
 - **H_distribution** = {T1.5, T2.3, T3.2} — every site that shows residual shape
+- **H_calibration** = {E5, C4, C5, T2.3, T2.5} — every site that renders reliability / ECE / Brier (consumes the calibration arc's `metrics.json`)
 - **H_demolish** = {D1, D2, D3, D4, D5, T2.6} — what we remove or fold
 
 A change to E0 propagates through H_belief; a change to E1 through H_findings; a change to the bias glyph through H_distribution. Hyperedges name the contracts that must remain consistent.
@@ -170,3 +199,4 @@ A change to E0 propagates through H_belief; a change to E1 through H_findings; a
 8. **T3.1–T3.4** — interleaved with T2 panels as each panel ships
 9. **T4.1–T4.4** — wayfinding once content is stable
 10. **T5.1–T5.6** — gates throughout, hardest at the end
+11. **C4** (run-on-its-own calibration) → **C5** (run-comparison mode) — only after the calibration math arc clears its **G0** go/no-go and E5 (`metrics.json`) ships products; gated by T5.7 / T5.8
