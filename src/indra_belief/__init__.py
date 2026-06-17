@@ -1,6 +1,7 @@
 """Evidence-quality scoring for INDRA biomedical text-mining extractions.
 
-Public API:
+Public API (the MONOLITHIC scorer — the default arch, empirically dominant on
+holdout_cc, F1 0.751 vs the decomposed 0.657):
     score_statement(statement, client) -> list[dict]
         Score every evidence in an INDRA Statement. Mirrors INDRA's
         abstraction (a Statement owns a list of Evidence objects);
@@ -12,10 +13,11 @@ Public API:
     ModelClient(model_name)
         Backend-agnostic transport (OpenAI-compatible, Anthropic).
 
-See README for usage examples.
+For the decomposed four-probe path, import the same names from
+`indra_belief.scorers.decomposed`. See README for usage examples.
 """
 from indra_belief.model_client import ModelClient, ModelResponse
-from indra_belief.scorers.scorer import score_evidence, score_statement
+from indra_belief.scorers.monolithic import score_evidence, score_statement
 
 __all__ = [
     "score_statement",

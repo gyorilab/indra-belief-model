@@ -201,10 +201,10 @@ verdicts = score_statement(stmt, client)
 #   verdicts[i]["tier"]       → which scoring path produced the verdict
 ```
 
-The importable `score_statement` / `score_evidence` run the decomposed
-four-probe path (so `tier` is always `"decomposed"`); the monolithic default
-applies to the CLI. For the monolithic path from Python, import the same names
-from `indra_belief.scorers.monolithic`.
+The importable `score_statement` / `score_evidence` run the **monolithic**
+scorer — the default arch (empirically dominant on holdout_cc, F1 0.751 vs the
+decomposed 0.657). For the decomposed four-probe path, import the same names
+from `indra_belief.scorers.decomposed`.
 
 To score just one evidence of a Statement (skipping the rest of `stmt.evidence`), use `score_evidence(stmt, ev, client)`.
 
@@ -288,12 +288,12 @@ Three honest states — the viewer never invents a price:
 - **unavailable** — no row had a verified per-token price, or the export predates
   cost capture. Shows "cost unavailable" with token counts, never a fabricated `$0`.
 
-AWS Bedrock Claude (`sonnet-4-6`, `haiku-4-5`) is priced at Anthropic list rates;
-local models are zero marginal cost. Bedrock-served `google.gemma-4-26b-a4b` is
-intentionally left unpriced (no public Gemma-4 Bedrock rate confirmed) → runs
-using it read "unavailable". To price a model, add its per-1M-token input/output
-rate to `MODEL_PRICES_PER_M_TOKENS` (or its id to `ZERO_COST_MODEL_IDS` if free)
-in `cost.py`, then re-export the run.
+AWS Bedrock Claude (`sonnet-4-6`, `haiku-4-5`) and Gemma 4 (`gemma-4-26b-a4b`,
+`gemma-4-31b`, `gemma-4-e2b`) are priced at published AWS/Anthropic on-demand
+list rates; local models are zero marginal cost. A model in neither table reads
+"unavailable" rather than a fabricated $0. To price a model, add its per-1M-token
+input/output rate to `MODEL_PRICES_PER_M_TOKENS` (or its id to
+`ZERO_COST_MODEL_IDS` if free) in `cost.py`, then re-export the run.
 
 ### Benchmark evaluation against a holdout file
 

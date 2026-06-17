@@ -29,7 +29,10 @@ from pathlib import Path
 from typing import Callable, Literal
 
 from indra_belief.model_client import ModelClient
-from indra_belief.scorers.probes.orchestrator import score_via_probes
+# Decomposed path lives in scorers.decomposed; re-exported here for the CLI
+# dispatcher + backward-compat (older scripts import these names from this
+# module). The PACKAGE default (indra_belief.score_*) is the monolithic scorer.
+from indra_belief.scorers.decomposed import score_evidence, score_statement  # noqa: F401
 
 
 log = logging.getLogger(__name__)
@@ -41,57 +44,14 @@ Arch = Literal["decomposed", "monolithic"]
 
 
 def _resolve_scorer(arch: Arch) -> Callable:
-    """Return a `score_evidence(stmt, ev, client) -> dict` callable for
-    the requested architecture. Imports the monolithic sibling lazily
-    so library callers that only use the decomposed path don't pay the
-    monolithic prompt-asset load cost."""
+    """Return a `score_evidence(stmt, ev, client) -> dict` callable for the
+    requested architecture. Imports each sibling lazily so a caller using one
+    arch doesn't pay the other's prompt-asset load cost."""
     if arch == "monolithic":
         from indra_belief.scorers.monolithic import score_evidence as _ev
-        return _ev
-    return score_evidence  # decomposed path
-
-
-def score_evidence(statement, evidence, client: ModelClient) -> dict:
-    """Score one (Statement, Evidence) pair via the four-probe pipeline.
-
-    Per-sentence comprehension layer. For scoring a whole Statement
-    (which carries `statement.evidence` as a list), use
-    `score_statement`, which iterates this function.
-
-    Args:
-        statement: An `indra.statements.Statement`. Binary types,
-            SelfModification, Complex, and Translocation are rendered.
-        evidence: An `indra.statements.Evidence`.
-        client: A `ModelClient` configured for the chosen backend.
-
-    Returns a dict with keys:
-        score                float in [0, 1]
-        verdict              "correct" | "incorrect" | "abstain"
-        confidence           "high" | "medium" | "low"
-        tier                 "decomposed" (always emitted by this path)
-        grounding_status     "all_match" | "flagged"
-        provenance_triggered bool (always False here)
-        tokens               completion tokens consumed
-        raw_text             decision trace
-        reasons              list[ReasonCode]
-        rationale            informational human-readable note
-        call_log             per-LLM-call telemetry
-    """
-    return score_via_probes(statement, evidence, client)
-
-
-def score_statement(statement, client: ModelClient) -> list[dict]:
-    """Score an INDRA Statement by scoring each evidence sentence.
-
-    Mirrors INDRA's abstraction. Returns one scoring dict per evidence,
-    in the same order as `statement.evidence`. Returns `[]` if the
-    statement has no evidence.
-
-    Pair with `indra_belief.composed_scorer.ComposedBeliefScorer` to
-    aggregate per-sentence verdicts into edge-level belief.
-    """
-    evidences = list(statement.evidence or [])
-    return [score_evidence(statement, ev, client) for ev in evidences]
+    else:
+        from indra_belief.scorers.decomposed import score_evidence as _ev
+    return _ev
 
 
 def main():
