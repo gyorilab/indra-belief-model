@@ -1,5 +1,11 @@
 # Pipeline-In-Viewer Task Hypergraph
 
+> **Superseded.** This is a point-in-time task record. The DuckDB persistence +
+> scoring + viewer-driven ingest/score pipeline it describes has been removed.
+> The viewer is now a read-only projection over per-run JSONL exports under
+> `data/exports/<run>/`; scoring runs through `scripts/run_rasmachine_monolithic.py`.
+> Kept for history; do not treat its module/route references as current.
+
 Status: 2026-05-12. **Hypergraph complete.** All U1–U6 nodes shipped; G_U5 brutalist gate ran (Claude + Codex critics) and P0 findings closed.
 
 **Shipped:**

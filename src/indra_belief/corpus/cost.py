@@ -81,6 +81,11 @@ def _load_pricing_table() -> tuple[dict[str, tuple[float, float]], set[str]]:
             # Bedrock Claude. Same Anthropic list rates as the non-prefixed keys.
             "anthropic.claude-sonnet-4-6": (3.00, 15.00),
             "anthropic.claude-haiku-4-5": (0.80, 4.00),
+            # Bedrock-served Google Gemma 4 — AWS on-demand list rates, us-east-1
+            # (https://aws.amazon.com/bedrock/pricing, 2026-06).
+            "google.gemma-4-26b-a4b": (0.13, 0.40),
+            "google.gemma-4-31b": (0.14, 0.40),
+            "google.gemma-4-e2b": (0.04, 0.08),
             "gemini-2.5-flash": (0.075, 0.30),
             "gemini-2.5-pro": (1.25, 5.00),
             "gpt-4o": (2.50, 10.00),

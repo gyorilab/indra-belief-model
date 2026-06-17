@@ -155,10 +155,11 @@ def test_local_self_hosted_models_are_zero_cost(model_id):
     assert model_has_known_cost(model_id) is True
 
 
-def test_unverified_gemma_ids_are_not_known():
-    # Bedrock-Gemma + Google AI Studio Gemma: UNVERIFIED, must be distinguishable
-    # from priced/zero-cost so the exporter degrades them to "unavailable".
-    assert model_has_known_cost("google.gemma-4-26b-a4b") is False
+def test_bedrock_gemma_priced_google_aistudio_gemma_unverified():
+    # Bedrock-served Gemma 4 carries the published AWS on-demand rate.
+    assert model_has_known_cost("google.gemma-4-26b-a4b") is True
+    assert token_cost_usd("google.gemma-4-26b-a4b", 1_000_000, 1_000_000) == pytest.approx(0.53)
+    # Google AI Studio Gemma stays unpriced → exporter degrades it to "unavailable".
     assert model_has_known_cost("gemma-4-26b-a4b-it") is False
 
 
