@@ -1,0 +1,32 @@
+{
+  "already_completed": 0,
+  "arch": "monolithic",
+  "completed_at": "2026-06-16T23:26:55.054199+00:00",
+  "completed_this_invocation": 500,
+  "completed_total": 500,
+  "duration_this_invocation_s": 941.401,
+  "existing_row_errors": 0,
+  "input": "data/corpora/holdout_cc_statements.json",
+  "max_recorded_errors": null,
+  "max_tokens": null,
+  "model": "medpsy-remote",
+  "output": "data/results/holdout_cc_medpsy.jsonl",
+  "pending_at_start": 500,
+  "pid": 3628439,
+  "progress": "data/results/holdout_cc_medpsy.progress.ndjson",
+  "recorded_row_errors": 0,
+  "retry_parser_nulls": true,
+  "retry_row_errors": true,
+  "retryable_parser_nulls": 0,
+  "retryable_row_errors": 0,
+  "row_error_policy": "record",
+  "run_id": "80b52fc7f5454316b675dc7d73973b2b",
+  "started_or_resumed_at": "2026-06-16T23:11:13.162297+00:00",
+  "status": "completed",
+  "total_evidences": 500,
+  "total_statements": 500,
+  "verdicts": {
+    "correct": 312,
+    "incorrect": 188
+  }
+}

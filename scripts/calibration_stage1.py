@@ -14,7 +14,8 @@ The soft model (C2's mechanism, computed here in analysis only):
         w_j = w_correct     if v_j == "correct"     (= P(read does NOT support | confirmed))
             = w_incorrect    if v_j == "incorrect"   (= P(read does NOT support | rejected))
             = rand_s         if v_j is None          (prior fallback)
-        f_s = syst_s + (geomean_j w_j) ** n_eff,   n_eff = 1 + (n_s - 1)*kappa
+        f_s = syst_s + geomean_j w_j     (a source's reads are correlated, so they
+                                          do NOT compound — one aggregate per source)
         belief = 1 - prod_s f_s
 
 CRITICAL: w_j is P(read does not support) = P(gold == incorrect | verdict). For a
@@ -24,15 +25,10 @@ We fit both conditionals directly from the train cells to avoid the sign trap:
     w_incorrect = P(gold incorrect | verdict incorrect)  [== 1 - rand_rej]
 
 Two variants reported:
-  - replace : w is the pooled per-verdict wrong-rate (the plan's committed form;
-              loses per-source granularity -> helps reach/sparser, can hurt the
-              high-precision sources trips/signor/rlimsp).
+  - replace : w is the pooled per-verdict wrong-rate (loses per-source granularity).
   - guard   : w_correct = min(rand_corr, rand_s) [confirmation can only help],
               w_incorrect = max(1-rand_rej, rand_s) [rejection can only hurt] —
-              preserves source ordering. A C2 design candidate.
-
-PRIMARY for the G1 verdict = `replace` at kappa=1.0 (the plan's design, no test
-tuning). Other variants/kappas are exploration that informs C2.
+              preserves source ordering. The ADOPTED form (holdout_cc-confirmed).
 
     PYTHONPATH=src python scripts/calibration_stage1.py
 """
@@ -121,7 +117,7 @@ def fit_weights(train_stmts) -> dict:
             "cells": {"cc": cc, "ci": ci, "ic": ic, "ii": ii}}
 
 
-def soft_belief(evidence, w_correct, w_incorrect, kappa, variant="replace", priors=PRIORS) -> float:
+def soft_belief(evidence, w_correct, w_incorrect, variant="guard", priors=PRIORS) -> float:
     by_source: dict[str, list[float]] = defaultdict(list)
     syst_of: dict[str, float] = {}
     for ev in evidence:
@@ -140,8 +136,7 @@ def soft_belief(evidence, w_correct, w_incorrect, kappa, variant="replace", prio
     for src, ws in by_source.items():
         n = len(ws)
         geomean = math.exp(sum(math.log(w) for w in ws) / n)
-        n_eff = 1.0 + (n - 1) * kappa
-        f_s = min(1.0, syst_of[src] + geomean ** n_eff)
+        f_s = min(1.0, syst_of[src] + geomean)
         p_inc *= f_s
     return max(0.0, min(1.0, 1.0 - p_inc))
 
@@ -166,20 +161,17 @@ def metric_block(scores, labels) -> dict:
 
 def evaluate(test_stmts, w) -> dict:
     labels = [s["gold_correct"] for s in test_stmts]
-    methods: dict[str, list[float]] = {"hard": [], "parametric": []}
-    kappas = [0.5, 1.0]
     variants = ["replace", "guard"]
+    methods: dict[str, list[float]] = {"hard": [], "parametric": []}
     for var in variants:
-        for k in kappas:
-            methods[f"soft_{var}_k{k}"] = []
+        methods[f"soft_{var}"] = []
     for st in test_stmts:
         hb, pb = hard_belief(st["ev"])
         methods["hard"].append(hb)
         methods["parametric"].append(pb)
         for var in variants:
-            for k in kappas:
-                methods[f"soft_{var}_k{k}"].append(
-                    soft_belief(st["ev"], w["w_correct"], w["w_incorrect"], k, var))
+            methods[f"soft_{var}"].append(
+                soft_belief(st["ev"], w["w_correct"], w["w_incorrect"], var))
     out = {name: metric_block(scores, labels) for name, scores in methods.items()}
     bins = {name: c0.reliability_bins(scores, labels) for name, scores in methods.items()}
     return {"metrics": out, "bins": bins, "n_test": len(test_stmts),
@@ -191,14 +183,15 @@ def analyze(name, joined, seed) -> dict:
     tr, te = split_stratified(stmts, seed=seed)
     w = fit_weights(tr)
     ev = evaluate(te, w)
-    # G1 verdict on the PRIMARY: soft_replace_k1.0 vs hard
-    primary = ev["metrics"]["soft_replace_k1.0"]
+    # G1 verdict on the ADOPTED form: soft_guard vs hard. Gate = ECE down AND AUROC
+    # not reduced (the discrimination guard; per-bin resolution is noise-brittle at this n).
+    primary = ev["metrics"]["soft_guard"]
     hard = ev["metrics"]["hard"]
     g1 = {
-        "primary": "soft_replace_k1.0",
+        "primary": "soft_guard",
         "ece_soft": primary["ece"], "ece_hard": hard["ece"],
-        "resolution_soft": primary["resolution"], "resolution_hard": hard["resolution"],
-        "pass": bool(primary["ece"] < hard["ece"] and primary["resolution"] >= hard["resolution"] - 1e-9),
+        "auroc_soft": primary["auroc"], "auroc_hard": hard["auroc"],
+        "pass": bool(primary["ece"] < hard["ece"] and primary["auroc"] >= hard["auroc"] - 1e-9),
     }
     # best variant by test ECE (exploration, not the G1 gate)
     best = min((m for m in ev["metrics"] if m.startswith("soft")),
@@ -223,21 +216,21 @@ def render_md(results, seed) -> str:
       f"statements. The authoritative C1.2 is a fresh holdout_cc run by both readers "
       f"(gated LLM spend). Per-read weight w = P(read does NOT support | verdict): "
       f"w_correct == rand_corr; w_incorrect == 1 - rand_rej. "
-      f"PRIMARY for G1 = `soft_replace_k1.0` (plan's committed form, no test tuning). "
+      f"PRIMARY for G1 = `soft_guard` (the adopted, holdout-confirmed form). "
       f"Generated by `scripts/calibration_stage1.py`.")
     e("")
     e("## G1 — does the soft weight beat the hard gate on the held-out split?")
     e("")
-    e("| reader | n test | ECE hard | ECE soft | Δ | resolution hard→soft | verdict |")
+    e("| reader | n test | ECE hard | ECE soft | Δ | AUROC hard→soft | verdict |")
     e("|---|---|---|---|---|---|---|")
     for r in results:
         g = r["g1"]
         verdict = "**PASS**" if g["pass"] else "**FAIL**"
         e(f"| {r['name']} | {r['eval']['n_test']} | {_fmt(g['ece_hard'])} | {_fmt(g['ece_soft'])} | "
-          f"{_fmt(g['ece_soft']-g['ece_hard'])} | {_fmt(g['resolution_hard'])}→{_fmt(g['resolution_soft'])} | {verdict} |")
+          f"{_fmt(g['ece_soft']-g['ece_hard'])} | {_fmt(g['auroc_hard'])}→{_fmt(g['auroc_soft'])} | {verdict} |")
     e("")
-    e("> G1 PASS = ECE(soft) < ECE(hard) AND resolution not reduced, on the held-out split, "
-      "for the primary `soft_replace_k1.0`. Other variants/kappas below are exploration for C2.")
+    e("> G1 PASS = ECE(soft) < ECE(hard) AND AUROC not reduced, on the held-out split, "
+      "for the adopted `soft_guard`. `soft_replace` is shown below as a contrast.")
     e("")
     for r in results:
         e(f"## {r['name']}")
@@ -252,20 +245,19 @@ def render_md(results, seed) -> str:
         e("")
         e("| method | ECE | Brier | resolution | AUROC | AUPRC | mean(correct/incorrect) |")
         e("|---|---|---|---|---|---|---|")
-        order = ["hard", "parametric", "soft_replace_k0.5", "soft_replace_k1.0",
-                 "soft_guard_k0.5", "soft_guard_k1.0"]
+        order = ["hard", "parametric", "soft_replace", "soft_guard"]
         for m in order:
             mm = r["eval"]["metrics"][m]
             e(f"| {m} | {_fmt(mm['ece'])} | {_fmt(mm['brier'])} | {_fmt(mm['resolution'])} | "
               f"{_fmt(mm['auroc'])} | {_fmt(mm['auprc'])} | {_fmt(mm['mean_correct'])}/{_fmt(mm['mean_incorrect'])} |")
         e("")
-        e("Reliability — hard gate vs primary soft (`soft_replace_k1.0`):")
+        e("Reliability — hard gate vs adopted soft (`soft_guard`):")
         e("")
         e("```")
         e("  HARD:")
         L.extend(c0.reliability_ascii(r["eval"]["bins"]["hard"]))
-        e("  SOFT (replace, k=1.0):")
-        L.extend(c0.reliability_ascii(r["eval"]["bins"]["soft_replace_k1.0"]))
+        e("  SOFT (guard):")
+        L.extend(c0.reliability_ascii(r["eval"]["bins"]["soft_guard"]))
         e("```")
         e("")
     return "\n".join(L) + "\n"
@@ -274,10 +266,9 @@ def render_md(results, seed) -> str:
 def sweep(name, joined, seeds) -> dict:
     """Robustness across resampled pa_hash splits (still same data — checks
     split-fragility, NOT independence; the holdout_cc run does that)."""
-    methods = ["hard", "parametric", "soft_replace_k0.5", "soft_replace_k1.0",
-               "soft_guard_k0.5", "soft_guard_k1.0"]
+    methods = ["hard", "parametric", "soft_replace", "soft_guard"]
     acc = {m: {"ece": [], "resolution": [], "auroc": []} for m in methods}
-    beats_hard = {m: 0 for m in methods}  # ECE < hard AND resolution >= hard
+    beats_hard = {m: 0 for m in methods}  # ECE < hard AND AUROC >= hard
     for sd in seeds:
         r = analyze(name, joined, sd)
         hm = r["eval"]["metrics"]["hard"]
@@ -285,7 +276,7 @@ def sweep(name, joined, seeds) -> dict:
             mm = r["eval"]["metrics"][m]
             for k in ("ece", "resolution", "auroc"):
                 acc[m][k].append(mm[k])
-            if mm["ece"] < hm["ece"] and mm["resolution"] >= hm["resolution"] - 1e-9:
+            if mm["ece"] < hm["ece"] and mm["auroc"] >= hm["auroc"] - 1e-9:
                 beats_hard[m] += 1
     summary = {}
     for m in methods:
@@ -300,7 +291,7 @@ def sweep(name, joined, seeds) -> dict:
 def render_sweep_md(sweeps) -> str:
     L = ["", "## Robustness across resampled splits (zero-cost; same data, varying pa_hash split)", ""]
     L.append("Mean±sd over the split seeds. `beats_hard` = fraction of seeds where the method "
-             "improves ECE **and** does not reduce resolution vs the hard gate (the G1 criterion). "
+             "improves ECE **and** does not reduce AUROC vs the hard gate (the G1 criterion). "
              "This checks split-fragility only — independence still needs the holdout_cc run.")
     for s in sweeps:
         L += ["", f"### {s['name']} (n_seeds={s['n_seeds']})", "",

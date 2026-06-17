@@ -35,6 +35,7 @@ from typing import Any
 
 from indra_belief.curation import aggregate_gold
 from indra_belief.corpus.cost import model_has_known_cost, token_cost_usd
+from indra_belief.calibration_constants import calibration_for
 
 DEFAULT_CORPUS = "data/corpora/latest_statements_rasmachine.json"
 
@@ -276,6 +277,25 @@ def load_gold_map(gold_path: str) -> dict[int, dict]:
             "notes": notes,
         }
     return gold
+
+
+def _soft_calibration_block(model: str | None) -> dict:
+    """Per-run soft-weight calibration (E5): the fitted triple that WOULD apply to
+    this reader, baked so it travels with the run (per the per-run doctrine). When
+    the reader has no fit, status is 'unavailable' WITH a reason — never an imputed
+    zero. NOTE: the soft path is default-off; this records which calibration
+    *applies* to the run, not that it was used to compute any belief here."""
+    soft = calibration_for(model)
+    if soft is None:
+        return {
+            "status": "unavailable",
+            "model": model,
+            "soft_weights": None,
+            "reason": ("no model recorded for this run" if not model else
+                       f"no fitted soft-weight calibration for reader {model!r} "
+                       "(only gemma-4-26B / medpsy-4B are fitted)"),
+        }
+    return {"status": "available", "model": model, "soft_weights": soft}
 
 
 def build_run_export(
@@ -537,7 +557,10 @@ def build_run_export(
             "usd_per_1k_evidence": (round(cost_total / n_rows_costed * 1000, 4)
                                     if n_rows_costed > 0 else None),
         },
-        "schema_version": 3,
+        # 'soft_calibration' (not 'calibration') to avoid collision with the
+        # viewer's existing Validity.calibration (belief-vs-INDRA residual {n,mae,bias}).
+        "soft_calibration": _soft_calibration_block(model),
+        "schema_version": 4,
     }
     return per_ev, per_stmt, meta
 

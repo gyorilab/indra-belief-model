@@ -1,0 +1,103 @@
+{
+  "label": "gemma-26b",
+  "gold_source": "data/benchmark/eval_curation_v1.jsonl",
+  "run_source": "data/results/eval_curation_v1_gemma.jsonl",
+  "coverage": {
+    "run_rows": 1606,
+    "joined_to_gold": 1606,
+    "statements": 913,
+    "single_evidence": 570,
+    "multi_evidence": 343,
+    "gold_correct": 488
+  },
+  "belief_discrimination": {
+    "belief_llm": {
+      "all": {
+        "n": 913,
+        "auroc": 0.8136,
+        "ece": 0.1559
+      },
+      "single_evidence": {
+        "n": 570,
+        "auroc": 0.8066,
+        "ece": 0.2326
+      },
+      "multi_evidence": {
+        "n": 343,
+        "auroc": 0.8762,
+        "ece": 0.0657
+      }
+    },
+    "belief_recal": {
+      "all": {
+        "n": 913,
+        "auroc": 0.738,
+        "ece": 0.3701
+      },
+      "single_evidence": {
+        "n": 570,
+        "auroc": 0.7443,
+        "ece": 0.297
+      },
+      "multi_evidence": {
+        "n": 343,
+        "auroc": 0.7848,
+        "ece": 0.4916
+      }
+    },
+    "belief_indra": {
+      "all": {
+        "n": 913,
+        "auroc": 0.741,
+        "ece": 0.4006
+      },
+      "single_evidence": {
+        "n": 570,
+        "auroc": 0.7443,
+        "ece": 0.3375
+      },
+      "multi_evidence": {
+        "n": 343,
+        "auroc": 0.7893,
+        "ece": 0.5055
+      }
+    },
+    "belief_stored": {
+      "all": {
+        "n": 913,
+        "auroc": 0.7142,
+        "ece": 0.3723
+      },
+      "single_evidence": {
+        "n": 570,
+        "auroc": 0.7223,
+        "ece": 0.2963
+      },
+      "multi_evidence": {
+        "n": 343,
+        "auroc": 0.7582,
+        "ece": 0.4984
+      }
+    }
+  },
+  "statement_error_detection": {
+    "flag_rule": "verdict_statement != correct (review or incorrect)",
+    "positive_class": "gold-incorrect (majority vote)",
+    "confusion": {
+      "tp": 343,
+      "fp": 89,
+      "fn": 82,
+      "tn": 399,
+      "p": 0.7939814814814815,
+      "r": 0.8070588235294117,
+      "f1": 0.8004667444574095,
+      "acc": 0.8127053669222344
+    },
+    "deterministic_hard_flag_precision": 1.0,
+    "verdict_statement_counts": {
+      "correct": 481,
+      "review": 417,
+      "incorrect": 15
+    }
+  }
+}

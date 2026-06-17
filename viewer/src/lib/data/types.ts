@@ -42,6 +42,19 @@ export interface RunMeta {
 		models: string[];
 		usd_per_1k_evidence: number | null;
 	} | null;
+	/** Per-run soft-weight calibration (E5): the fitted triple that applies to
+	 *  this reader, baked at export so it travels with the run. `status:
+	 *  'unavailable'` (with a reason) when the reader has no fit; `undefined` ⇒
+	 *  legacy export (schema < 4). The soft path is default-off — this records
+	 *  which calibration *applies*, not that it was used. Named `soft_calibration`
+	 *  (not `calibration`) to stay distinct from `Validity.calibration`, the
+	 *  separate belief-vs-INDRA residual measure. */
+	soft_calibration?: {
+		status: 'available' | 'unavailable';
+		model: string | null;
+		soft_weights: { w_correct: number; w_incorrect: number; variant: string } | null;
+		reason?: string;
+	};
 }
 
 /** One statement rollup, from `per_statement.json`. */

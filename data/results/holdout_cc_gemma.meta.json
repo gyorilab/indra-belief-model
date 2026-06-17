@@ -1,0 +1,32 @@
+{
+  "already_completed": 6,
+  "arch": "monolithic",
+  "completed_at": "2026-06-17T06:36:48.832879+00:00",
+  "completed_this_invocation": 494,
+  "completed_total": 500,
+  "duration_this_invocation_s": 14292.497,
+  "existing_row_errors": 0,
+  "input": "data/corpora/holdout_cc_statements.json",
+  "max_recorded_errors": null,
+  "max_tokens": null,
+  "model": "gemma-remote",
+  "output": "data/results/holdout_cc_gemma.jsonl",
+  "pending_at_start": 494,
+  "pid": 3852836,
+  "progress": "data/results/holdout_cc_gemma.progress.ndjson",
+  "recorded_row_errors": 0,
+  "retry_parser_nulls": true,
+  "retry_row_errors": true,
+  "retryable_parser_nulls": 0,
+  "retryable_row_errors": 0,
+  "row_error_policy": "record",
+  "run_id": "2b5c944ceb8b41cbb82d8aa76d8bd0b4",
+  "started_or_resumed_at": "2026-06-17T02:38:36.009838+00:00",
+  "status": "completed",
+  "total_evidences": 500,
+  "total_statements": 500,
+  "verdicts": {
+    "correct": 271,
+    "incorrect": 229
+  }
+}

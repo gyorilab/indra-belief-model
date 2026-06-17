@@ -235,9 +235,102 @@ class GatedBeliefResult:
     per_source: list[SourceBreakdown]
 
 
+def _soft_gated_belief(
+    evidence: list[dict],
+    priors: dict[str, tuple[float, float]],
+    w_correct: float | None,
+    w_incorrect: float | None,
+    variant: str,
+) -> GatedBeliefResult:
+    """Soft survival-weight belief (calibration C2): the LLM verdict recalibrates
+    the per-read random error instead of hard-deleting the read.
+
+    Per source, each read j contributes a wrong-rate ``w_j`` keyed on its verdict;
+    the source factor is ``syst + geomean_j(w_j)``. A source's repeated reads are
+    correlated (same reader, shared bias), so they do NOT compound — the geometric
+    mean is the source's single aggregate per-read wrong-rate. Only INDEPENDENT
+    sources multiply (the product below). Mirrors
+    ``scripts/calibration_stage1.soft_belief`` — the holdout-confirmed form.
+
+    ``variant='guard'`` clamps the weight so a confirmation can only *lower* a
+    read's error (``min(w_correct, rand_s)``) and a rejection only *raise* it
+    (``max(w_incorrect, rand_s)``); ``'replace'`` uses the pooled per-verdict rate.
+    """
+    if w_correct is None or w_incorrect is None:
+        raise ValueError(
+            "soft_weights=True requires w_correct and w_incorrect "
+            "(per-read wrong-rates P(read wrong | verdict))"
+        )
+
+    by_source: dict[str, dict] = {}
+    for i, ev in enumerate(evidence):
+        src_raw = ev.get("source_api")
+        if src_raw is None:
+            raise ValueError(
+                f"Evidence at index {i} is missing required 'source_api' key: {ev!r}"
+            )
+        src = src_raw.lower()
+        rand_s, syst_s = priors.get(src, _DEFAULT_PRIOR)
+        v = ev.get("verdict")
+        if v == "correct":
+            w = w_correct if variant == "replace" else min(w_correct, rand_s)
+        elif v == "incorrect":
+            w = w_incorrect if variant == "replace" else max(w_incorrect, rand_s)
+        else:
+            w = rand_s
+        # Counts report the GATE decision ('included', same coercion as the hard
+        # path) so n_surviving / n_gated mean the same on both paths — only the
+        # belief differs. The soft belief itself weights ALL reads (an incorrect
+        # read is down-weighted via w_incorrect, not removed from the product).
+        included = ev.get("included", True)
+        if isinstance(included, str):
+            included = included.strip().lower() == "true"
+        d = by_source.setdefault(
+            src, {"ws": [], "total": 0, "n_included": 0, "syst": syst_s, "rand": rand_s}
+        )
+        d["ws"].append(min(max(w, 1e-9), 1.0))
+        d["total"] += 1
+        if included:
+            d["n_included"] += 1
+
+    # parametric-only is verdict-independent — computed identically to the hard path.
+    p_parametric = 1.0
+    for d in by_source.values():
+        p_parametric *= d["syst"] + d["rand"] ** d["total"]
+    parametric_only = max(0.0, min(1.0, 1.0 - p_parametric))
+
+    p_incorrect = 1.0
+    breakdowns = []
+    n_total = n_surviving = 0
+    for src, d in sorted(by_source.items()):
+        ws = d["ws"]
+        n = len(ws)
+        n_total += d["total"]
+        n_surviving += d["n_included"]
+        geomean = math.exp(sum(math.log(w) for w in ws) / n)
+        factor = min(1.0, d["syst"] + geomean)
+        p_incorrect *= factor
+        breakdowns.append(SourceBreakdown(
+            source=src, n_total=d["total"], n_surviving=d["n_included"],
+            rand=d["rand"], syst=d["syst"], incorrectness_factor=factor,
+        ))
+
+    belief = max(0.0, min(1.0, 1.0 - p_incorrect))
+    return GatedBeliefResult(
+        belief=belief, parametric_only=parametric_only,
+        n_total_evidence=n_total, n_surviving_evidence=n_surviving,
+        n_gated=n_total - n_surviving, per_source=breakdowns,
+    )
+
+
 def compute_gated_belief(
     evidence: list[dict],
     priors: dict[str, tuple[float, float]] | None = None,
+    *,
+    soft_weights: bool = False,
+    w_correct: float | None = None,
+    w_incorrect: float | None = None,
+    variant: str = "guard",
 ) -> GatedBeliefResult:
     """Compute belief with per-evidence gating from LLM verdicts.
 
@@ -251,8 +344,16 @@ def compute_gated_belief(
     contributes nothing, as if it never reported the edge.
 
     Args:
-        evidence: List of evidence dicts with 'source_api' and 'included'.
+        evidence: List of evidence dicts with 'source_api' and 'included'
+            (hard gate). For the soft path each dict also carries 'verdict'.
         priors: Optional custom priors.
+        soft_weights: When True, use the calibration soft survival weight
+            (verdict-conditioned per-read wrong-rate, see ``_soft_gated_belief``)
+            instead of the hard gate; requires w_correct/w_incorrect. Default
+            False = today's hard gate, byte-identical.
+        w_correct, w_incorrect: per-read wrong-rates P(read wrong | verdict),
+            required when soft_weights=True.
+        variant: 'guard' (default) | 'replace' (soft path only).
 
     Returns:
         GatedBeliefResult with belief, parametric-only, and per-source breakdown.
@@ -265,6 +366,11 @@ def compute_gated_belief(
             belief=0.0, parametric_only=0.0,
             n_total_evidence=0, n_surviving_evidence=0, n_gated=0,
             per_source=[],
+        )
+
+    if soft_weights:
+        return _soft_gated_belief(
+            evidence, priors, w_correct, w_incorrect, variant,
         )
 
     # Group evidence by source
@@ -338,6 +444,11 @@ def compute_gated_belief(
 def compute_gated_belief_with_contradiction(
     evidence: list[dict],
     priors: dict[str, tuple[float, float]] | None = None,
+    *,
+    soft_weights: bool = False,
+    w_correct: float | None = None,
+    w_incorrect: float | None = None,
+    variant: str = "guard",
 ) -> tuple[GatedBeliefResult, str, bool]:
     """Compute gated belief with contradiction penalty across regulation directions.
 
@@ -381,10 +492,15 @@ def compute_gated_belief_with_contradiction(
         d = ev.get("regulation_type", "unknown")
         by_direction.setdefault(d, []).append(ev)
 
-    # Score each direction independently
+    # Score each direction independently (forward soft kwargs — without this,
+    # contradiction-bearing statements silently stay on the hard gate).
     dir_results: dict[str, GatedBeliefResult] = {}
     for direction, dir_evidence in by_direction.items():
-        dir_results[direction] = compute_gated_belief(dir_evidence, priors)
+        dir_results[direction] = compute_gated_belief(
+            dir_evidence, priors,
+            soft_weights=soft_weights, w_correct=w_correct,
+            w_incorrect=w_incorrect, variant=variant,
+        )
 
     if not dir_results:
         return (

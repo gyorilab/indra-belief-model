@@ -26,12 +26,11 @@ from indra_belief.model_client import ModelResponse
 
 @pytest.fixture
 def force_mono_score(monkeypatch):
-    """Force the dec arch off so each evidence's verdict comes purely from
-    the marker mock (dec arch makes multiple sub-calls per evidence,
-    breaking the 1-call-per-evidence assumption of this mock).
-
-    Uses monkeypatch so the original ``indra_belief.score_statement`` is
-    restored automatically at teardown.
+    """Pin `indra_belief.score_statement` to the 1-call-per-evidence path so
+    each evidence's verdict comes purely from the marker mock. The public
+    default is now the monolithic scorer (1 call per evidence); this wrapper
+    also drops any extra kwargs. Uses monkeypatch so the original is restored
+    automatically at teardown.
     """
     import indra_belief
     original = indra_belief.score_statement

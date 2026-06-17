@@ -137,11 +137,13 @@ class ComposedBeliefScorer:
 
         has_llm = any(r.verdict is not None for r in evidence)
 
-        # Build evidence dicts for the gated belief computation
+        # Build evidence dicts for the gated belief computation. 'verdict' is
+        # carried for the soft survival-weight path (ignored by the hard gate).
         gated_evidence = [
             {
                 "source_api": r.source_api,
                 "included": self._should_include(r),
+                "verdict": r.verdict,
             }
             for r in evidence
         ]
@@ -216,12 +218,14 @@ class ComposedBeliefScorer:
 
         has_llm = any(r.verdict is not None for r in evidence)
 
-        # Build evidence dicts with gating + regulation_type for noise model
+        # Build evidence dicts with gating + regulation_type for noise model.
+        # 'verdict' is carried for the soft path (ignored by the hard gate).
         gated_evidence = [
             {
                 "source_api": r.source_api,
                 "included": self._should_include(r),
                 "regulation_type": r.regulation_type or "unknown",
+                "verdict": r.verdict,
             }
             for r in evidence
         ]

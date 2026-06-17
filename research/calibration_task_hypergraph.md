@@ -60,9 +60,11 @@ Per source s, per read j, verdict v_j ∈ {correct, incorrect, none}:
         = rand_rej_m    if v_j = incorrect    (residual wrong-rate of a REJECTED read)
         = rand_s        if v_j = none/abstain (identity fallback → today's behavior)
 
-correlation guard:  n_eff = 1 + (n_s − 1)·κ,   κ ∈ (0,1]    (κ=1 ⇒ full independence)
-source factor:      f_s = syst_s + (geomean_j w_j)^{n_eff}
-statement belief:   1 − ∏_s f_s          (contradiction split unchanged, noise_model.py:204)
+source factor:      f_s = syst_s + geomean_j w_j   (a source's reads are correlated — same
+                    reader — so they count ONCE, no per-source count/correlation term. This
+                    was the κ=0 finding, confirmed on holdout_cc (C1.2); the correlation
+                    exponent has been REMOVED from the model entirely — there is no κ.)
+statement belief:   1 − ∏_s f_s   (only INDEPENDENT sources multiply; contradiction split unchanged)
 ```
 
 Reduce-to-current check: `v_j=None` ∀j and κ=1 ⇒ `f_s = syst_s + rand_s^{n_s}` (today, `noise_model.py:108`). This replaces today's *hard deletion* of `verdict=incorrect` evidence (which drops a lone-evidence source to factor 1.0) with a measured residual penalty.

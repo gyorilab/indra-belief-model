@@ -111,7 +111,7 @@ def test_build_run_export_joins_text_and_rolls_up(tmp_path):
     assert meta["cost"]["total_usd"] is None
     assert meta["cost"]["n_evidence_unavailable"] == 2
     assert meta["cost"]["n_evidence_costed"] == 0
-    assert meta["schema_version"] == 3
+    assert meta["schema_version"] == 4
 
 
 def test_write_run_export_emits_three_files(tmp_path):
@@ -146,7 +146,12 @@ def test_write_run_export_emits_three_files(tmp_path):
     assert meta["cost"]["n_evidence_no_llm"] == 1
     assert meta["cost"]["n_evidence_costed"] == 0
     assert meta["cost"]["n_evidence_unavailable"] == 0
-    assert meta["schema_version"] == 3
+    assert meta["schema_version"] == 4
+    # E5: soft_calibration block baked per run. model "m" is unfitted → named-
+    # unavailable with a reason, never an imputed zero.
+    assert meta["soft_calibration"]["status"] == "unavailable"
+    assert meta["soft_calibration"]["soft_weights"] is None
+    assert meta["soft_calibration"]["reason"]
 
 
 # ── call_log_cost helper (single-pass observed USD + token totals) ────────────
@@ -191,12 +196,12 @@ def test_call_log_cost_mixed_priced_and_unverified():
     # BOTH calls are still reported (they are facts), USD withheld.
     c = call_log_cost([
         {"model_id": "anthropic.claude-sonnet-4-6", "prompt_tokens": 2000, "out_tokens": 500},
-        {"model_id": "google.gemma-4-26b-a4b", "prompt_tokens": 1500, "out_tokens": 300},
+        {"model_id": "gemma-4-26b-a4b-it", "prompt_tokens": 1500, "out_tokens": 300},
     ])
     assert c["cost_status"] == "unavailable" and c["cost_usd"] is None
     assert c["input_tokens"] == 3500 and c["output_tokens"] == 800
     assert c["n_calls"] == 2
-    assert c["models"] == ["anthropic.claude-sonnet-4-6", "google.gemma-4-26b-a4b"]
+    assert c["models"] == ["anthropic.claude-sonnet-4-6", "gemma-4-26b-a4b-it"]
 
 
 def test_call_log_cost_missing_model_id_is_unavailable():
@@ -323,14 +328,14 @@ def test_export_cost_mixed_priced_and_unverified_is_partial(tmp_path):
     # Synthetic run covering ALL THREE classes the spec asks for:
     #   row 0: Bedrock-PRICED (anthropic.claude-sonnet-4-6) → costed
     #   row 1: local ZERO-COST (gemma-4-26b) → costed at $0
-    #   row 2: UNVERIFIED-price (google.gemma-4-26b-a4b) → unavailable, excluded
+    #   row 2: UNVERIFIED-price (gemma-4-26b-a4b-it) → unavailable, excluded
     rows = [
         _cost_row(0, 1, "correct",
                   [{"model_id": "anthropic.claude-sonnet-4-6", "prompt_tokens": 2000, "out_tokens": 500}]),
         _cost_row(1, 2, "incorrect",
                   [{"model_id": "gemma-4-26b", "prompt_tokens": 1000, "out_tokens": 100}]),
         _cost_row(2, 3, "correct",
-                  [{"model_id": "google.gemma-4-26b-a4b", "prompt_tokens": 1500, "out_tokens": 300}]),
+                  [{"model_id": "gemma-4-26b-a4b-it", "prompt_tokens": 1500, "out_tokens": 300}]),
     ]
     run = _write_run(tmp_path, rows)
     corp = _write_corpus(tmp_path, _cost_corpus())
@@ -349,8 +354,8 @@ def test_export_cost_mixed_priced_and_unverified_is_partial(tmp_path):
     assert meta["cost"]["n_evidence_costed"] == 2  # priced + zero-cost both count
     only_priced = 2000 * 3 / 1e6 + 500 * 15 / 1e6  # zero-cost row adds $0
     assert meta["cost"]["total_usd"] == round(only_priced, 4)
-    assert "google.gemma-4-26b-a4b" in meta["cost"]["models"]
-    assert meta["schema_version"] == 3
+    assert "gemma-4-26b-a4b-it" in meta["cost"]["models"]
+    assert meta["schema_version"] == 4
 
 
 def test_export_cost_multi_priced_models_run_sums_and_sorts(tmp_path):
