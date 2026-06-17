@@ -16,9 +16,13 @@ data/benchmark/indra_benchmark_corpus.json.gz
 .claude/
 *.swp
 
-# Benchmark run outputs (reproducible; not checked in)
-data/results/*.jsonl
-data/results/*.log
+# Generated analysis artifacts (reproducible from the scripts; not checked in):
+# run outputs, result json/md, profiles, reports, exports. A few legacy records
+# under data/results/ remain tracked from earlier commits; NEW artifacts are
+# ignored. Force-add (git add -f) if you ever truly need to track one.
+data/results/
+reports/
+data/corpus_export/
 scripts/realistic_gate_results.json
 scripts/composition_benchmark.json
 
