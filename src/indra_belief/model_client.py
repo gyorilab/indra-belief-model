@@ -170,11 +170,16 @@ LOCAL_MODELS: dict[str, dict] = {
     # / chat_template_kwargs) this endpoint would 400 on — exactly like the
     # Google AI Studio entries above.
     #
-    # base_url is the mantle `/v1` root (the OpenAI SDK appends
-    # /chat/completions and /models). Model IDs are the BARE mantle ids
-    # from `GET {base_url}/models`, NOT the control-plane "...-v1:0" forms.
-    # Region us-east-1 = the gyorilab account's console region (mantle also
-    # serves us-west-2). Token env var: AWS_BEARER_TOKEN_BEDROCK (in .env).
+    # base_url is the mantle `/openai/v1` root (the OpenAI SDK appends
+    # /chat/completions, /responses, /models). The `/openai/` segment is
+    # REQUIRED — the bare `/v1` path routes to a different Bedrock surface and
+    # returns the misleading {"code":"access_denied","message":"Berm is not
+    # enabled for this account"} even though listing models at `/v1/models`
+    # works (verified 2026-06-18: `/openai/v1/chat/completions` returns real
+    # Gemma 4 completions with this same token; `/v1/...` errors). Model IDs are
+    # the BARE mantle ids from `GET {base_url}/models`, NOT the control-plane
+    # "...-v1:0" forms. Region us-east-1 (mantle also serves us-east-2/us-west-2/
+    # eu-central-1). Token env var: AWS_BEARER_TOKEN_BEDROCK (in .env).
     #
     # COST: every chat.completions call here is billed per token by AWS
     # (listing models is free; inference is not). The API key is tagged
@@ -194,7 +199,7 @@ LOCAL_MODELS: dict[str, dict] = {
         # toggles, and sending an unsupported extra_body key risks a 400.
         # Thinking-mode parity with gemma-remote is therefore NOT guaranteed;
         # validate before trusting cross-stack comparisons.
-        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
         "model_id": "google.gemma-4-26b-a4b",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
         "strict_openai_compat": True,
@@ -203,8 +208,15 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 8192,
         "timeout": 300,
     },
+    # NOTE (2026-06-18): the Anthropic models on mantle do NOT serve the
+    # /chat/completions API — they return HTTP 400 "does not support the
+    # '/v1/chat/completions' API" and need the /responses (Responses API) path,
+    # which the openai_compat backend here does not speak. The sonnet model_id
+    # below also 404s ("does not exist"). So these two entries are NOT usable as
+    # configured; they need a Responses-API backend + a verified model_id before
+    # use. bedrock-gemma (above) works via chat/completions and is validated.
     "bedrock-claude-sonnet": {
-        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
         "model_id": "anthropic.claude-sonnet-4-6",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
         "strict_openai_compat": True,
@@ -214,7 +226,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "timeout": 300,
     },
     "bedrock-claude-haiku": {
-        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
         "model_id": "anthropic.claude-haiku-4-5",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
         "strict_openai_compat": True,
