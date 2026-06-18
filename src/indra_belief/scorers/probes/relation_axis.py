@@ -54,16 +54,16 @@ language. Three adversarial patterns that look like a match but are \
 `no_relation`:
   • Tangential mention — the subject's effect is asserted on a DIFFERENT \
     downstream entity, and the claim object appears only as background \
-    (e.g., "LPA induces p38" with JNK mentioned in the same paragraph \
-    but not acted on by LPA).
+    (e.g., "LigandL induces KinaseP" with KinaseJ mentioned in the same \
+    sentence but not acted on by LigandL).
   • Co-occurrence via third party — subject and object both bind / are \
-    acted on by a THIRD entity, not each other (e.g., MED12 and MED13 \
-    each interact with the Middle module — not described as binding each \
-    other).
+    acted on by a THIRD entity, not each other (e.g., SubunitM and \
+    SubunitN each contact the core scaffold — not described as binding \
+    each other).
   • Co-listed effect — subject and object are co-listed as features or \
     downstream effects of a third cause, with no direct edge asserted \
-    between them (e.g., catalase and AP-1 both linked to ICAM-1 \
-    induction; catalase is not asserted to activate AP-1).
+    between them (e.g., EnzymeC and FactorA both linked to MarkerY \
+    induction; EnzymeC is not asserted to activate FactorA).
 If any of these patterns describe the evidence, answer `no_relation`.
 
 COUNTER-EXAMPLES that ARE `direct_sign_match` (do NOT collapse to \
@@ -171,37 +171,35 @@ _FEW_SHOTS: list[tuple[str, str]] = [
     ),
     (
         # Tangential mention: subject acts on a DIFFERENT downstream
-        # entity; claim object only appears as background. (LPA/JNK
-        # pattern from an eval walk.)
-        "CLAIM: subject=LPA, object=JNK, axis=activity, sign=positive\n"
-        "EVIDENCE: LPA induces p38 activation in prostate cancer cells "
-        "and suggests a potential involvement of ERK and p38 in LPA-"
-        "induced PC3 cell migration. Although LPA activates several "
-        "MAPKs, JNK was not measured here.",
+        # entity; the claim object only appears as background.
+        # Synthetic placeholder names — no holdout paraphrase.
+        "CLAIM: subject=LigandL, object=KinaseJ, axis=activity, sign=positive\n"
+        "EVIDENCE: LigandL induces KinaseP activation in tumor cells and "
+        "suggests a role for KinaseP in LigandL-driven cell migration. "
+        "Although LigandL activates several kinases, KinaseJ was not "
+        "measured here.",
         '{"answer": "no_relation", '
-        '"rationale": "LPA→p38 is asserted; LPA→JNK is not — JNK appears only as background"}',
+        '"rationale": "LigandL→KinaseP is asserted; LigandL→KinaseJ is not — KinaseJ appears only as background"}',
     ),
     (
         # Co-occurrence via third party: subject and object each bind a
-        # third entity, not each other. (MED12/MED13 pattern from
-        # eval walk.)
-        "CLAIM: subject=MED12, object=MED13, axis=binding, sign=neutral\n"
-        "EVIDENCE: Mediator Middle module subunits are primarily "
-        "responsible for interactions with Med13 (strong) and Med12 "
-        "(weak).",
+        # THIRD entity, not each other.
+        # Synthetic placeholder names — no holdout paraphrase.
+        "CLAIM: subject=SubunitM, object=SubunitN, axis=binding, sign=neutral\n"
+        "EVIDENCE: Core scaffold subunits are chiefly responsible for "
+        "contacts with SubunitN (strong) and SubunitM (weak).",
         '{"answer": "no_relation", '
-        '"rationale": "MED12 and MED13 each bind the Middle module — not described as binding each other"}',
+        '"rationale": "SubunitM and SubunitN each contact the core scaffold — not described as binding each other"}',
     ),
     (
         # Co-listed effect: subject and object are co-listed downstream
-        # of a third cause; no direct edge between them. (CAT/AP-1
-        # pattern from an eval walk.)
-        "CLAIM: subject=CAT, object=AP1, axis=activity, sign=positive\n"
-        "EVIDENCE: Gamma-irradiation-induced intercellular adhesion "
-        "molecule-1 expression is associated with catalase: activation "
-        "of AP-1 and JNK.",
+        # of a THIRD cause; no direct edge between them.
+        # Synthetic placeholder names — no holdout paraphrase.
+        "CLAIM: subject=EnzymeC, object=FactorA, axis=activity, sign=positive\n"
+        "EVIDENCE: StressX-induced MarkerY expression is associated with "
+        "EnzymeC: activation of FactorA and KinaseK.",
         '{"answer": "no_relation", '
-        '"rationale": "catalase and AP-1 are co-listed as features of the ICAM-1 system; catalase is not asserted to activate AP-1"}',
+        '"rationale": "EnzymeC and FactorA are co-listed as features of the MarkerY response; EnzymeC is not asserted to activate FactorA"}',
     ),
     (
         "CLAIM: subject=MAPK1, object=GAPDH, axis=activity, sign=positive\n"

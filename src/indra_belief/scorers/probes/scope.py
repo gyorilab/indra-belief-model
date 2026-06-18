@@ -86,23 +86,25 @@ _FEW_SHOTS: list[tuple[str, str]] = [
         # contrastive-suppression pattern. "X suppresses A and B but did not
         # impair C" — the negation governs the OTHER targets (C), not the
         # claim relation (X → A). Substrate flags the negation cue; LLM resolves.
-        "CLAIM: relation between SLIT2 and RAC2\n"
-        "EVIDENCE: Slit2 mediated these effects by suppressing inducible "
-        "activation of Cdc42 and Rac2 but did not impair activation of "
-        "other major kinase pathways involved in neutrophil migration.",
+        # Synthetic placeholder names — no holdout paraphrase.
+        "CLAIM: relation between LigandS and GTPaseR\n"
+        "EVIDENCE: LigandS mediated these effects by blocking stimulus-"
+        "induced activation of GTPaseC and GTPaseR but did not impair "
+        "other signaling pathways involved in cell migration.",
         '{"answer": "asserted", '
-        '"rationale": "Slit2 suppresses Cdc42 and Rac2 — affirmed; '
+        '"rationale": "LigandS suppresses GTPaseC and GTPaseR — affirmed; '
         '\\"did not impair\\" governs OTHER pathways (contrastive scope)"}',
     ),
     (
         # pull-down with control exclusion — "X pulled down Y but not control".
-        "CLAIM: relation between SOX10 and CTNNB1\n"
-        "EVIDENCE: V5-tagged SOX10 was able to pull down GST-tagged "
-        "β-catenin (GST-β-catenin) but not GST alone, suggesting that "
-        "SOX10 directly interacts with β-catenin.",
+        # Synthetic placeholder names — no holdout paraphrase.
+        "CLAIM: relation between FactorS and PartnerB\n"
+        "EVIDENCE: Tagged FactorS was able to pull down tagged PartnerB "
+        "but not the tag alone, suggesting that FactorS directly "
+        "interacts with PartnerB.",
         '{"answer": "asserted", '
-        '"rationale": "\\"but not GST alone\\" excludes the control bait; '
-        'the SOX10-β-catenin interaction IS asserted"}',
+        '"rationale": "\\"but not the tag alone\\" excludes the control bait; '
+        'the FactorS-PartnerB interaction IS asserted"}',
     ),
     (
         "CLAIM: relation between MAPK1 and JUN\n"
