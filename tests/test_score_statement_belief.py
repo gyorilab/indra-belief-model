@@ -42,12 +42,14 @@ def force_mono_score(monkeypatch):
 
 
 class _MarkerMockClient:
-    """S-phase mock: dispatches by probe kind (subject_role / object_role /
-    relation_axis / scope) to produce probe-schema JSON.
+    """Mock client for both scorer paths.
 
-    INCORRECT_MARKER in evidence text → scope probe answers "negated"
-    (relation explicitly denied). Otherwise → all probes answer the
-    default valid value for a clear correct case.
+    Monolithic (kind="monolithic"*, the public default): emits a verdict —
+    {"verdict": "incorrect"} when INCORRECT_MARKER is in the evidence, else
+    {"verdict": "correct"}.
+
+    S-phase probes (kind="probe_*"): dispatches by probe kind to probe-schema
+    JSON, with INCORRECT_MARKER → scope answers "negated" (relation denied).
     """
 
     def __init__(self):
@@ -64,20 +66,33 @@ class _MarkerMockClient:
         user = messages[-1]["content"] if messages else ""
         is_incorrect = "INCORRECT_MARKER" in user
 
-        # Dispatch by probe kind to return appropriate schema
-        if kind == "probe_subject_role":
-            answer = "present_as_subject"
-        elif kind == "probe_object_role":
-            answer = "present_as_object"
-        elif kind == "probe_relation_axis":
-            answer = "direct_sign_match"
-        elif kind == "probe_scope":
-            answer = "negated" if is_incorrect else "asserted"
+        if kind in ("monolithic", "monolithic_tool_context"):
+            # Monolithic scorer: one verdict per evidence. Emit the disconfirm
+            # structured schema (the validated default variant) — support +
+            # objection are load-bearing because derive_verdict's backstop
+            # forces "incorrect" on null support or a substantive objection.
+            # This same payload also satisfies the baseline extract_verdict.
+            if is_incorrect:
+                payload = ('{"support": null, "objection": "mock objection", '
+                           '"verdict": "incorrect", "confidence": "high"}')
+            else:
+                payload = ('{"support": "mock support", "objection": null, '
+                           '"verdict": "correct", "confidence": "high"}')
         else:
-            # grounding / other; return mentioned-style verdict
-            answer = "asserted"
+            # Dispatch by probe kind to return appropriate schema
+            if kind == "probe_subject_role":
+                answer = "present_as_subject"
+            elif kind == "probe_object_role":
+                answer = "present_as_object"
+            elif kind == "probe_relation_axis":
+                answer = "direct_sign_match"
+            elif kind == "probe_scope":
+                answer = "negated" if is_incorrect else "asserted"
+            else:
+                # grounding / other; return mentioned-style verdict
+                answer = "asserted"
+            payload = f'{{"answer": "{answer}", "rationale": "mock"}}'
 
-        payload = f'{{"answer": "{answer}", "rationale": "mock"}}'
         self.calls += 1
         self._call_log.append({
             "kind": kind, "out_tokens": 10, "duration_s": 0.01,

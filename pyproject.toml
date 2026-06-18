@@ -31,3 +31,9 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "indra_belief.data" = ["*.json"]
+
+[tool.pytest.ini_options]
+# Only collect the real test suite. scripts/ holds runnable analysis tools,
+# some named *_test.py, that depend on generated /tmp artifacts and must not
+# be collected as tests.
+testpaths = ["tests"]
