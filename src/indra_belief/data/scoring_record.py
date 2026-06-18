@@ -249,6 +249,32 @@ class ScoringRecord:
 
         return base
 
+    def _abbreviation_alias_lines(self) -> list[str]:
+        """In-text abbreviation aliases (Schwartz-Hearst) that expand to a CLAIM
+        entity — INPUT-only context so the LLM doesn't misread an in-sentence
+        acronym (e.g. "5S RNP" → 5S ribonucleoprotein complex) as an unrelated
+        entity. Grounding cross-checked via Gilda; never mutates entity state,
+        never drives a verdict. Returns [] on any failure (e.g. gilda absent)."""
+        try:
+            from indra_belief.data.abbreviations import scoped_abbreviation_aliases
+            from indra_belief.data.entity import _cached_ground, LOW_CONFIDENCE_THRESHOLD
+
+            def ground(s):
+                return [(m.term.db, str(m.term.id), m.score) for m in (_cached_ground(s) or [])]
+
+            claims = [
+                (e.db, e.db_id, e.name, role)
+                for e, role in ((self.subject_entity, "subject"), (self.object_entity, "object"))
+                if e and e.db and e.db_id
+            ]
+            aliases = scoped_abbreviation_aliases(
+                self.evidence_text or "", claims, ground, LOW_CONFIDENCE_THRESHOLD
+            )
+            return [f'  In-text abbreviation: "{s}" = {long} (= the {role} {name})'
+                    for s, long, name, role in aliases]
+        except Exception:
+            return []
+
     def format_provenance(self) -> str:
         """Structured provenance context — only when MISMATCH signal exists."""
         entities = [
@@ -307,6 +333,12 @@ class ScoringRecord:
         entity_ctx = self.format_entity_context()
         if entity_ctx:
             parts.append(entity_ctx)
+
+        # In-text abbreviation aliases (always-on, INPUT-only; empty unless a
+        # parenthetical definition expands to a claim entity).
+        abbrev_lines = self._abbreviation_alias_lines()
+        if abbrev_lines:
+            parts.append("In-text abbreviations:\n" + "\n".join(abbrev_lines))
 
         # Provenance: only inject when grounding is flagged (has_grounding_signal).
         # Full-population provenance hurt accuracy by 6.7pp (72.2% vs 78.9% on
