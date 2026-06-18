@@ -170,16 +170,23 @@ LOCAL_MODELS: dict[str, dict] = {
     # / chat_template_kwargs) this endpoint would 400 on — exactly like the
     # Google AI Studio entries above.
     #
-    # base_url is the mantle `/openai/v1` root (the OpenAI SDK appends
-    # /chat/completions, /responses, /models). The `/openai/` segment is
-    # REQUIRED — the bare `/v1` path routes to a different Bedrock surface and
-    # returns the misleading {"code":"access_denied","message":"Berm is not
-    # enabled for this account"} even though listing models at `/v1/models`
-    # works (verified 2026-06-18: `/openai/v1/chat/completions` returns real
-    # Gemma 4 completions with this same token; `/v1/...` errors). Model IDs are
-    # the BARE mantle ids from `GET {base_url}/models`, NOT the control-plane
-    # "...-v1:0" forms. Region us-east-1 (mantle also serves us-east-2/us-west-2/
-    # eu-central-1). Token env var: AWS_BEARER_TOKEN_BEDROCK (in .env).
+    # base_url is the mantle `/openai/v1` root FOR GEMMA 4 (the OpenAI SDK
+    # appends /chat/completions, /responses, /models). Mantle routes are
+    # PER-MODEL and the wrong-route error is MISLEADING — verified 2026-06-18
+    # with this exact token:
+    #   gemma-4-26b-a4b : 200 on /openai/v1 ; on /v1 → 401 {"code":"access_denied",
+    #                     "message":"Berm is not enabled for this account"}. That
+    #                     401 is NOT an account/IAM/provisioning problem — it's
+    #                     just the wrong route (the earlier "Gemma 4 not
+    #                     provisioned, needs AWS" read was this confound).
+    #   gemma-3-27b-it / gpt-oss : 200 on /v1 ; on /openai/v1 → 400 "isn't
+    #                     supported on this route".
+    # ⇒ a Gemma-3 / gpt-oss entry must use base_url `.../api.aws/v1`, NOT
+    # /openai/v1. Listing models at /v1/models works regardless (which is why the
+    # token looked validated while gemma-4 inference 401'd). Model IDs are the
+    # BARE mantle ids from `GET {base_url}/models`, NOT the control-plane
+    # "...-v1:0" forms. Region us-east-1 (also us-east-2 / us-west-2 / eu-central-1).
+    # Token env var: AWS_BEARER_TOKEN_BEDROCK (in .env).
     #
     # COST: every chat.completions call here is billed per token by AWS
     # (listing models is free; inference is not). The API key is tagged
