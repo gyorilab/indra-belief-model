@@ -443,9 +443,12 @@ class ModelClient:
              "content": [{"text": m.get("content", "") or ""}]}
             for m in messages
         ]
+        # NB: `temperature` is intentionally omitted. Claude 4.x on Bedrock
+        # (e.g. opus-4-8) rejects it with HTTP 400 "temperature is deprecated for
+        # this model"; the unified `temp` arg is accepted-and-ignored here.
         body: dict = {
             "messages": conv_messages,
-            "inferenceConfig": {"maxTokens": mt, "temperature": temp},
+            "inferenceConfig": {"maxTokens": mt},
         }
         if system:
             body["system"] = [{"text": system}]
