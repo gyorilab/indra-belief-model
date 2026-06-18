@@ -215,30 +215,40 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 8192,
         "timeout": 300,
     },
-    # NOTE (2026-06-18): the Anthropic models on mantle do NOT serve the
-    # /chat/completions API — they return HTTP 400 "does not support the
-    # '/v1/chat/completions' API" and need the /responses (Responses API) path,
-    # which the openai_compat backend here does not speak. The sonnet model_id
-    # below also 404s ("does not exist"). So these two entries are NOT usable as
-    # configured; they need a Responses-API backend + a verified model_id before
-    # use. bedrock-gemma (above) works via chat/completions and is validated.
-    "bedrock-claude-sonnet": {
-        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
-        "model_id": "anthropic.claude-sonnet-4-6",
+    # AWS Bedrock CLAUDE (Anthropic) — native Converse API, NOT mantle/OpenAI.
+    # Verified 2026-06-18 (this same bearer token): Claude models reject BOTH
+    # mantle OpenAI routes (/chat/completions AND /responses → HTTP 400 "does not
+    # support the '...' API"). They are served by the native Bedrock-runtime
+    # Converse API, which the bearer token authenticates directly (no SigV4, no
+    # boto3). Two more gotchas, both verified:
+    #   • model_id must be an INFERENCE-PROFILE id (us.* / global.*), NOT the bare
+    #     catalog id — the models are inferenceTypesSupported=['INFERENCE_PROFILE'],
+    #     so bare ids 400 with "the provided model identifier is invalid".
+    #   • there is NO claude-sonnet in this account's catalog — only
+    #     haiku-4-5, opus-4-7, opus-4-8 (the old bedrock-claude-sonnet 404'd).
+    # backend="bedrock_converse" (see _call_bedrock_converse) maps
+    # (system, messages) → Converse and parses output.message.content[].text +
+    # usage.{input,output}Tokens. The DEFAULT monolithic path (no response_format,
+    # no reasoning_effort) works; OpenAI response_format=json_object used by the
+    # decomposed sub-calls is NOT honored on Converse — keep Claude on the
+    # monolithic path until a Converse JSON/tool mechanism is wired.
+    "bedrock-claude-haiku": {
+        "backend": "bedrock_converse",
+        "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
-        "strict_openai_compat": True,
         "reasoning_in_content": False,
-        "typical_tokens": 600,
+        "typical_tokens": 500,
         "max_tokens": 8192,
         "timeout": 300,
     },
-    "bedrock-claude-haiku": {
-        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
-        "model_id": "anthropic.claude-haiku-4-5",
+    "bedrock-claude-opus": {
+        "backend": "bedrock_converse",
+        "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "model_id": "us.anthropic.claude-opus-4-8",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
-        "strict_openai_compat": True,
         "reasoning_in_content": False,
-        "typical_tokens": 500,
+        "typical_tokens": 600,
         "max_tokens": 8192,
         "timeout": 300,
     },
@@ -327,6 +337,8 @@ class ModelClient:
                 self._setup_openai_client()
             elif self.backend == "transformers_local":
                 self._setup_transformers_client()
+            elif self.backend == "bedrock_converse":
+                self._setup_bedrock_converse()
             else:
                 raise ValueError(
                     f"Unknown backend {self.backend!r} for model {model_name!r}"
@@ -397,6 +409,75 @@ class ModelClient:
     def _setup_anthropic_client(self):
         import anthropic
         self._client = anthropic.Anthropic()
+
+    def _setup_bedrock_converse(self):
+        import os
+        env_var = self.config.get("api_key_env")
+        token = os.environ.get(env_var) if env_var else None
+        if not token:
+            raise RuntimeError(
+                f"model {self.model_name!r} requires {env_var} in the "
+                f"environment (not set). Source it from your .env or export it "
+                f"before instantiating ModelClient."
+            )
+        self._bedrock_token = token
+
+    def _call_bedrock_converse(
+        self, system: str, messages: list[dict], mt: int, temp: float, timeout: int,
+    ) -> ModelResponse:
+        """Native AWS Bedrock Converse API (Anthropic/Claude models).
+
+        Bearer-token auth (the Bedrock API key), no SigV4 / boto3. Maps the
+        unified (system, messages) shape onto Converse and parses
+        output.message.content[].text + usage.{input,output}Tokens. See the
+        bedrock-claude-* registry comment for the route/id/availability gotchas.
+        """
+        import json as _json
+        import urllib.error
+        import urllib.request
+
+        # OpenAI-style messages -> Converse content blocks; the system prompt is
+        # a top-level Converse field, not a message role.
+        conv_messages = [
+            {"role": m.get("role", "user"),
+             "content": [{"text": m.get("content", "") or ""}]}
+            for m in messages
+        ]
+        body: dict = {
+            "messages": conv_messages,
+            "inferenceConfig": {"maxTokens": mt, "temperature": temp},
+        }
+        if system:
+            body["system"] = [{"text": system}]
+        url = f"{self.config['base_url']}/model/{self.config['model_id']}/converse"
+        req = urllib.request.Request(
+            url,
+            data=_json.dumps(body).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self._bedrock_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                payload = _json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="replace")[:500]
+            raise RuntimeError(f"Bedrock Converse HTTP {e.code}: {detail}") from e
+
+        blocks = payload.get("output", {}).get("message", {}).get("content", []) or []
+        text = "".join(b.get("text", "") for b in blocks if isinstance(b, dict))
+        usage = payload.get("usage", {}) or {}
+        return ModelResponse(
+            content=text,
+            reasoning="",
+            tokens=usage.get("outputTokens", -1),
+            raw_text=text,
+            finish_reason=payload.get("stopReason", "stop"),
+            prompt_tokens=usage.get("inputTokens", -1),
+        )
 
     def call(
         self,
@@ -472,6 +553,11 @@ class ModelClient:
                         response = self._invoke_with_wall_timeout(
                             self._call_transformers, timeout,
                             system, messages, mt, temperature,
+                        )
+                    elif self.backend == "bedrock_converse":
+                        response = self._invoke_with_wall_timeout(
+                            self._call_bedrock_converse, timeout,
+                            system, messages, mt, temperature, timeout,
                         )
                     else:
                         raise ValueError(f"Unknown backend: {self.backend}")
