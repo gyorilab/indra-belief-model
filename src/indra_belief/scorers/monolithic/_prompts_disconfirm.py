@@ -46,11 +46,15 @@ Key rules:
    PKA), evidence about any specific member SUPPORTS it — this is NOT an objection.
 3. "Activation"/"Inhibition" = activity-state change, NOT expression/production/
    degradation (those are Increase/DecreaseAmount), even if the text says "activate"
-   about a promoter/transcription/reporter. miRNA-subject reducing target = Inhibition.
+   about a promoter/transcription/reporter. A miRNA reducing a target = Inhibition OR
+   DecreaseAmount (accept either; don't reject a miRNA DecreaseAmount claim). Inverse:
+   if inhibiting/knocking-down a miRNA RAISES a target, the miRNA DECREASES it.
 4. "may/could/might" on the RELATIONSHIP ITSELF = hypothesis (incorrect). Hedging on a
-   consequence while the relationship is stated = correct.
-5. Epithets in negative contexts are background, not evidence ("kinase-dead mutant was
-   unable to..." = negative result).
+   consequence while the relationship is stated = correct. METHODS/AIM framing ("to
+   examine/test whether X Ys Z", "we asked whether") poses the experiment, not support.
+5. Negation = incorrect even when the relation words appear: "was unable to (confirm)",
+   "failed to detect/show", "did not <verb>", "no evidence that", and epithets in
+   negative contexts ("kinase-dead mutant was unable to...").
 6. Grounding: a flagged MISMATCH means the reader's text does not map to the claim
    entity — a strong incorrect signal unless the evidence independently names it.
 7. The two entities must interact with EACH OTHER. If both are co-objects of one verb

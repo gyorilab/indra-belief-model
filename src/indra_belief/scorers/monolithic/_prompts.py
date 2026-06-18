@@ -41,13 +41,21 @@ Key rules:
    text uses the word "activate" about the promoter.
    miRNA exception: when the claim SUBJECT is a microRNA (starts with "MIR" or
    "let-", e.g. MIR101, MIRLET7A), evidence that the miRNA reduces target mRNA or
-   protein is Inhibition by INDRA convention. This exception is ONLY for miRNA
-   subjects — siRNA, shRNA, and knockdown of a protein all remain IncreaseAmount/
-   DecreaseAmount, not Inhibition.
-4. Hedging scope: "may/could/might" on the RELATIONSHIP ITSELF = hypothesis.
-   Hedging on a CONSEQUENCE while the relationship is stated = correct.
-5. Sentence structure: epithets in negative contexts are background, not evidence.
-   "Kinase-dead mutant was unable to..." = negative result, not positive evidence.
+   protein supports the claim — and may be typed EITHER Inhibition OR DecreaseAmount;
+   accept either, do NOT reject a miRNA DecreaseAmount claim merely because you would
+   call it Inhibition. Inverse inference: if inhibiting/knocking-down/antagonizing a
+   miRNA INCREASES a target, the miRNA normally DECREASES that target. This exception
+   is ONLY for miRNA subjects — siRNA, shRNA, and knockdown of a protein all remain
+   IncreaseAmount/DecreaseAmount, not Inhibition.
+4. Assertion vs speculation/inquiry. "may/could/might" on the RELATIONSHIP ITSELF =
+   hypothesis (incorrect); hedging on a CONSEQUENCE while the relationship is stated
+   = correct. METHODS/AIM framing is NOT support: "to examine/test/determine whether
+   X Ys Z", "we asked whether", "to investigate if" pose the experiment — they do not
+   assert that the relation occurred.
+5. Negation/negative results = incorrect even when the relation words appear in the
+   sentence: "was unable to (confirm/detect)", "failed to show/detect", "did not
+   <verb>", "no evidence that"; and epithets in negative contexts ("kinase-dead
+   mutant was unable to...") are negative results, not positive evidence.
 6. GROUNDING: If an "Extraction provenance:" block shows MISMATCH or
    LOW CONFIDENCE for an entity, the NLP reader's extracted text does not
    reliably map to the claim entity. Example: "Aβ" → APP is valid (Aβ is an

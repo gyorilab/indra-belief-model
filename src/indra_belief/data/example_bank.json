@@ -254,5 +254,53 @@
       "confidence": "high",
       "reason": "'Transcriptionally upregulated by p53' = p53 increases PTEN gene expression. This is IncreaseAmount (gene expression increase), not Activation (functional activity change of PTEN protein)."
     }
+  ],
+  "DecreaseAmount_mirna": [
+    {
+      "claim": "MIR888 [DecreaseAmount] ZBTB42",
+      "evidence": "Conversely, inhibition of miR-888 markedly increased the expression of ZBTB42 in carcinoma cells.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "Inverse inference: knocking the miRNA down RAISES the target, so the miRNA normally DECREASES it — supports MIR888 DecreaseAmount ZBTB42. DecreaseAmount is a valid typing for a miRNA reducing its target."
+    },
+    {
+      "claim": "MIR888 [DecreaseAmount] ZBTB42",
+      "evidence": "miR-888 suppressed tumor growth, and ZBTB42 was downregulated in the same tumors.",
+      "verdict": "incorrect",
+      "confidence": "medium",
+      "reason": "Co-occurrence, not a direct miR-888→ZBTB42 effect: ZBTB42's decrease is associated with the phenotype, not stated to be caused by miR-888. No direct relation."
+    }
+  ],
+  "Phosphorylation_speculation": [
+    {
+      "claim": "KINX1 [Phosphorylation] SUBZ2",
+      "evidence": "KINX1 phosphorylated SUBZ2 at Ser200 both in vitro and in cells.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "Stated as a finding — KINX1 phosphorylated SUBZ2."
+    },
+    {
+      "claim": "KINX1 [Phosphorylation] SUBZ2",
+      "evidence": "To examine whether KINX1 phosphorylates SUBZ2, we co-expressed constitutively active KINX1 with full-length SUBZ2 and probed with an anti-phospho antibody.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "Methods/aim framing ('to examine whether...we co-expressed') poses the experiment; it does not assert that phosphorylation occurred. Support is null — inquiry, not a finding."
+    }
+  ],
+  "Phosphorylation_negation": [
+    {
+      "claim": "KINX3 [Phosphorylation] SUBZ7",
+      "evidence": "KINX3 phosphorylated SUBZ7 at Thr88, as confirmed by mass spectrometry.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "Confirmed finding — KINX3 phosphorylates SUBZ7."
+    },
+    {
+      "claim": "KINX3 [Phosphorylation] SUBZ7",
+      "evidence": "A recent study was unable to confirm the phosphorylation of SUBZ7 by KINX3 in mammalian cells.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "'was unable to confirm' negates the asserted phosphorylation despite the relation words appearing — negative result."
+    }
   ]
 }
