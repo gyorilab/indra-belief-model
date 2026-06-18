@@ -1,18 +1,26 @@
 """Disconfirm-first scoring prompt.
 
 A commit-first variant that counters lenient acceptance — the model reaching a
-disqualifying observation and then rationalizing it away. It attacks that
-structurally:
- 1. OUTPUT STRUCTURE — the model must first emit `support` (the exact evidence span
-    stating THIS relation) and `objection` (the single strongest reason it's wrong),
-    THEN the verdict. The disconfirming finding is committed to a field before any
-    free-form rationalization can bury it.
+disqualifying observation and then rationalizing it away. The disposition is
+INPUT-side (prompt + few-shots); the model's verdict is final — code never
+overrides it:
+ 1. OUTPUT STRUCTURE — the model first states `support` (the exact evidence span
+    stating THIS relation) and `objection` (the single strongest reason to doubt it),
+    THEN the verdict. Surfacing the objection before deciding is a reasoning aid; it
+    does not, by itself, force a verdict — the model judges whether the objection
+    actually stands.
  2. SKEPTICISM PRIOR — default 'incorrect unless the evidence explicitly and directly
     states the claim'; background knowledge is not support.
- 3. DECISION BACKSTOP (code) — if the model itself states a substantive `objection`
-    (not the family-level carve-out) it MAY NOT return 'correct'; the verdict is
-    derived, not freely chosen — it cannot raise a defeating objection and still
-    accept.
+
+Earlier revisions added a code "decision backstop" that forced 'incorrect' whenever the
+parsed `objection` field was non-null. That was output-side determinism second-guessing
+the model: it cannot tell a STANDING defeater from an apparent objection the model
+surfaced and then legitimately resolved (e.g. miRNA inverse-inference — "inhibiting the
+miRNA raised the target" reads like wrong-direction but supports DecreaseAmount), so it
+threw away correct verdicts. Removed. Determinism's role here is INPUT (grounding,
+disposition), never OUTPUT. `support`/`objection` remain as a reasoning scaffold and
+telemetry, not as inputs to a verdict override. Do not re-add the override; sharpen the
+prompt/few-shots instead.
 
 Selected via env MONO_VARIANT=disconfirm in the scorer.
 """
@@ -61,30 +69,41 @@ Key rules:
    whose real partner is a THIRD entity ("A and B bind C"; "A and B bound to a SITE/
    promoter"), they bind C, not each other — that is no relation.
 
-HOW TO DECIDE (commit before you rationalize):
-- First determine `support`: the EXACT span from the EVIDENCE that states THIS relation
+HOW TO DECIDE (surface the objection, then judge whether it actually stands):
+- First state `support`: the EXACT span from the EVIDENCE that states THIS relation
   between THESE two entities. If the evidence does not explicitly and directly state it,
   support is null. Background/world knowledge is NOT support and may NOT be invented.
-- Then determine `objection`: the single strongest concrete reason the extraction is
-  wrong (grounding mismatch, wrong direction, amount-not-activity, no-direct-relation,
-  hypothesis-only, different/ungrounded entities). null only if there is genuinely none.
-  The family-level case (rule 2) is NOT an objection.
-- VERDICT RULE: incorrect if support is null OR objection is non-null. correct only when
-  the evidence explicitly supports the exact claim AND there is no objection. Do not let
-  background knowledge substitute for an explicit statement in THIS evidence.
+- Then state `objection`: the single strongest concrete reason to DOUBT the extraction
+  (grounding mismatch, wrong direction, amount-not-activity, no-direct-relation,
+  hypothesis-only, methods/aim framing, negation, different/ungrounded entities). Surface
+  it even if a rule resolves it; null only if there is genuinely none worth considering.
+  The family-level case (rule 2) is never a real objection.
+- Then give the `verdict`, judging whether that objection STANDS:
+  * correct — the evidence explicitly and directly supports the exact claim AND no
+    objection stands. An apparent objection that an explicit rule resolves (e.g. the
+    miRNA inverse-inference rule on "inhibiting the miRNA raised the target") does NOT
+    stand and does NOT make the claim incorrect.
+  * incorrect — support is null, OR an objection stands that defeats the claim.
+  Default to incorrect unless the evidence explicitly and directly states the claim;
+  background knowledge does not substitute for an explicit statement in THIS evidence.
 
 Output JSON ONLY, in this order:
 {"support": <exact evidence quote or null>, "objection": <string or null>, "verdict": "correct" | "incorrect", "confidence": "high" | "medium" | "low"}\
 """
 
-_FAMILY_RE = re.compile(r"family|member|specific isoform|paralog", re.IGNORECASE)
 _NULLISH = {"", "none", "null", "n/a", "na", "no objection", "no support", "-"}
 
 
 def render_example(ex: dict) -> tuple[str, str]:
     """Render a base contrastive example in the variant's 4-field format, so the
-    few-shots TEACH the structured output. Derives support/objection from the
-    example's verdict + reason (the base examples carry an optional 'reason')."""
+    few-shots TEACH the structured output. Derives support/objection from the example.
+
+    A correct example may carry a `considered` field — an apparent objection that an
+    explicit rule resolves. Rendering it as objection=<considered>, verdict=correct
+    teaches that surfacing an objection does NOT force 'incorrect' when it does not
+    stand (e.g. the miRNA inverse-inference case). Without it, every correct example
+    would show objection=null, training the model to equate any objection with rejection
+    — the conflation we removed from the backstop."""
     user = (
         f"CLAIM: {ex['claim']}\n"
         f"EVIDENCE: {ex['evidence']}\n\n"
@@ -92,7 +111,7 @@ def render_example(ex: dict) -> tuple[str, str]:
     )
     reason = ex.get("reason") or ""
     if ex["verdict"] == "correct":
-        support, objection = ex["evidence"], None
+        support, objection = ex["evidence"], (ex.get("considered") or None)
     else:
         support, objection = None, (reason or "evidence does not support the exact claim")
     assistant = json.dumps(
@@ -138,19 +157,16 @@ def parse_structured(text: str) -> dict:
 
 
 def derive_verdict(parsed: dict) -> tuple[str | None, str | None, str]:
-    """Decision backstop. Returns (verdict, confidence, rule_applied).
+    """Pass the model's committed verdict through unchanged. Returns
+    (verdict, confidence, rule_applied).
 
-    Surgical override-kill: a stated, substantive objection (not the family carve-out)
-    forces 'incorrect' regardless of the model's chosen verdict — you cannot raise a
-    defeating objection and still accept. Null support also forces 'incorrect' (the
-    skepticism prior). Otherwise the model's verdict stands."""
+    We deliberately do NOT re-derive the verdict from the parsed `support`/`objection`
+    fields. Output-side determinism — code reading the objection field and flipping the
+    verdict — is what made the scorer reject correct claims whose objection the model had
+    already resolved (e.g. miRNA inverse-inference). The disconfirm disposition lives in
+    the prompt; the verdict the model commits is final. Kept as a thin seam for telemetry
+    and so callers don't change."""
     v, c = parsed.get("verdict"), parsed.get("confidence")
-    obj, sup = parsed.get("objection"), parsed.get("support")
     if v is None:
         return None, None, "parse_null"
-    substantive_objection = bool(obj) and not _FAMILY_RE.search(obj)
-    if substantive_objection and v == "correct":
-        return "incorrect", (c or "medium"), "override_killed"  # committed a defeating objection but tried to accept
-    if sup is None and v == "correct":
-        return "incorrect", (c or "medium"), "no_support_skeptic"
     return v, (c or "medium"), "model"

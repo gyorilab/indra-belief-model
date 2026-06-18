@@ -261,6 +261,7 @@
       "evidence": "Conversely, inhibition of miR-888 markedly increased the expression of ZBTB42 in carcinoma cells.",
       "verdict": "correct",
       "confidence": "high",
+      "considered": "Surface reading looks like the wrong direction — inhibiting the miRNA RAISES the target — but the inverse-inference rule resolves it: the miRNA normally DECREASES the target.",
       "reason": "Inverse inference: knocking the miRNA down RAISES the target, so the miRNA normally DECREASES it — supports MIR888 DecreaseAmount ZBTB42. DecreaseAmount is a valid typing for a miRNA reducing its target."
     },
     {
