@@ -23,6 +23,11 @@ data/benchmark/indra_benchmark_corpus.json.gz
 data/results/
 reports/
 data/corpus_export/
+# Generated corpus inputs (statement JSONs reproduced via eval_to_statements_json
+# from the benchmark corpus). The two tracked fixtures —
+# synthetic_demo.json + sampled_statements_rasmachine_v1.pkl — stay tracked
+# (already committed; gitignore does not untrack). Force-add a new one if needed.
+data/corpora/
 scripts/realistic_gate_results.json
 scripts/composition_benchmark.json
 
