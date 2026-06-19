@@ -204,8 +204,12 @@ LOCAL_MODELS: dict[str, dict] = {
         # with no local GPU / tailscale hop. reasoning_effort is left unset
         # — Bedrock's gemma serving may not honor the Ollama thinking
         # toggles, and sending an unsupported extra_body key risks a 400.
-        # Thinking-mode parity with gemma-remote is therefore NOT guaranteed;
-        # validate before trusting cross-stack comparisons.
+        # Thinking-mode parity with gemma-remote is therefore NOT guaranteed.
+        # PROBED 2026-06-19: gemma-4 on mantle emits ZERO CoT at every
+        # reasoning_effort (unset / none / medium / high) — thinking parity with
+        # gemma-remote is NOT achievable here, so reasoning_effort is left unset
+        # (setting it would be a silent no-op). Unlike deepseek-v3.2 / kimi-k2.5
+        # below, which DO think at effort="high".
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
         "model_id": "google.gemma-4-26b-a4b",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
@@ -224,14 +228,32 @@ LOCAL_MODELS: dict[str, dict] = {
     # reasoning + content: deepseek-v3.2 / kimi-k2.5 are thinking models that may
     # emit a separate reasoning_content (or inline <think>); the scorer's
     # tolerant verdict parse reads both. Per-token billed by AWS.
+    #
+    # REASONING (probed 2026-06-19, to approximate gemma-remote's medium CoT):
+    # mantle's reasoning_effort scale is COARSE — thinking is OFF at unset / none
+    # / medium and only engages at "high" (the param is ACCEPTED, no 400, at
+    # every level). And only deepseek-v3.2 + kimi-k2.5 deliberate at all: at
+    # "high" they spend real reasoning (probe ~700-850 chars CoT; scorer latency
+    # ~4-5x, 3s→12-14s ≈ gemma-remote). The CoT lands in reasoning_content OR
+    # inline in content depending on the prompt; reasoning_in_content=False
+    # captures both into raw_text so the verdict still parses. The other three
+    # emit NO extra CoT at any effort — qwen3-235b-a22b-2507 is the non-thinking
+    # instruct
+    # variant (high TIMED OUT >120s, pathological), qwen3-coder-480b is
+    # non-thinking, and bedrock-gemma's Bedrock serving exposes no thinking. So
+    # the two thinking models carry reasoning_effort="high" + max_tokens 32000
+    # (CoT headroom, like gemma-remote's 32000); the other three cannot match
+    # gemma-remote's thinking and are left non-thinking (a literal "medium" would
+    # be a silent no-op on mantle).
     "bedrock-deepseek-v3.2": {
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
         "model_id": "deepseek.v3.2",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
         "strict_openai_compat": True,
         "reasoning_in_content": False,
+        "reasoning_effort": "high",  # only "high" engages CoT on mantle (see above)
         "typical_tokens": 600,
-        "max_tokens": 8192,
+        "max_tokens": 32000,         # CoT + verdict room, like gemma-remote
         "timeout": 600,
     },
     "bedrock-kimi-k2.5": {
@@ -240,8 +262,9 @@ LOCAL_MODELS: dict[str, dict] = {
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
         "strict_openai_compat": True,
         "reasoning_in_content": False,
+        "reasoning_effort": "high",  # only "high" engages CoT on mantle (see above)
         "typical_tokens": 600,
-        "max_tokens": 8192,
+        "max_tokens": 32000,         # CoT + verdict room, like gemma-remote
         "timeout": 600,
     },
     "bedrock-qwen3-235b": {
