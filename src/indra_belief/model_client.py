@@ -199,25 +199,25 @@ LOCAL_MODELS: dict[str, dict] = {
     # (MONO_VARIANT=disconfirm_relnature, no response_format, no
     # reasoning_effort) sends a minimal request and is the safe first run.
     "bedrock-gemma": {
-        # Same weights as gemma-remote / gemma-google (gemma-4-26b-a4b),
-        # served by Bedrock: a cloud drop-in for the validated gemma path,
-        # with no local GPU / tailscale hop. reasoning_effort is left unset
-        # — Bedrock's gemma serving may not honor the Ollama thinking
-        # toggles, and sending an unsupported extra_body key risks a 400.
-        # Thinking-mode parity with gemma-remote is therefore NOT guaranteed.
-        # PROBED 2026-06-19: gemma-4 on mantle emits ZERO CoT at every
-        # reasoning_effort (unset / none / medium / high) — thinking parity with
-        # gemma-remote is NOT achievable here, so reasoning_effort is left unset
-        # (setting it would be a silent no-op). Unlike deepseek-v3.2 / kimi-k2.5
-        # below, which DO think at effort="high".
+        # Same weights as gemma-remote / gemma-google (gemma-4-26b-a4b), served
+        # by Bedrock with no local GPU / tailscale hop. Gemma DOES reason on
+        # Bedrock — but the CHAT COMPLETIONS API DROPS the CoT (probed
+        # 2026-06-19: zero reasoning at every reasoning_effort on
+        # /chat/completions). Only the RESPONSES API surfaces it, so this entry
+        # uses backend="bedrock_responses" (POST /openai/v1/responses) with
+        # reasoning_effort="high" (only "high" engages a reasoning item;
+        # medium/none → none, verified). reasoning_in_content=False ⇒ raw_text =
+        # reasoning + answer, so the verdict parse sees both. Gemma is
+        # mantle-only (no Converse route) and uses the /openai/v1 path.
+        "backend": "bedrock_responses",
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
         "model_id": "google.gemma-4-26b-a4b",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
-        "strict_openai_compat": True,
         "reasoning_in_content": False,
+        "reasoning_effort": "high",  # only "high" surfaces a reasoning item
         "typical_tokens": 400,
-        "max_tokens": 8192,
-        "timeout": 300,
+        "max_tokens": 32000,         # CoT + answer share the budget
+        "timeout": 600,
     },
     # ── AWS Bedrock mantle — additional open-weight models on the /v1 route ──
     # Verified 2026-06-19 with AWS_BEARER_TOKEN_BEDROCK: each returns 200 on
@@ -410,7 +410,9 @@ class ModelClient:
             elif self.backend == "transformers_local":
                 self._setup_transformers_client()
             elif self.backend == "bedrock_converse":
-                self._setup_bedrock_converse()
+                self._setup_bedrock_token()
+            elif self.backend == "bedrock_responses":
+                self._setup_bedrock_token()
             else:
                 raise ValueError(
                     f"Unknown backend {self.backend!r} for model {model_name!r}"
@@ -482,7 +484,9 @@ class ModelClient:
         import anthropic
         self._client = anthropic.Anthropic()
 
-    def _setup_bedrock_converse(self):
+    def _setup_bedrock_token(self):
+        """Read the Bedrock bearer token for the raw-HTTP backends
+        (bedrock_converse + bedrock_responses); both authenticate the same way."""
         import os
         env_var = self.config.get("api_key_env")
         token = os.environ.get(env_var) if env_var else None
@@ -552,6 +556,120 @@ class ModelClient:
             raw_text=text,
             finish_reason=payload.get("stopReason", "stop"),
             prompt_tokens=usage.get("inputTokens", -1),
+        )
+
+    def _call_bedrock_responses(
+        self, system: str, messages: list[dict], mt: int, temp: float, timeout: int,
+        reasoning_effort: str | None = None,
+    ) -> ModelResponse:
+        """Bedrock mantle OpenAI-compatible RESPONSES API (POST {base_url}/responses).
+
+        Some Bedrock-served models (Gemma 4, and other reasoning-suppressing
+        families) run chain-of-thought server-side but DROP it on Chat
+        Completions — only the Responses API surfaces it. Maps the unified
+        (system, messages) shape onto a Responses request and reads reasoning +
+        answer out of the output[] item list. Bearer-token auth, raw HTTP (no
+        SDK), mirroring _call_bedrock_converse.
+
+        Verified 2026-06-19 against gemma-4: reasoning is gated to effort="high"
+        (medium/none → no reasoning item). CoT comes back as an output item of
+        type "reasoning" (content[].text); the answer is the "message" item's
+        output_text block — the top-level `output_text` field is null here and
+        must not be relied on.
+        """
+        import json as _json
+        import urllib.error
+        import urllib.request
+
+        # system -> top-level `instructions`; user/assistant turns -> typed input
+        # items (user=input_text, assistant=output_text). A stray system-role
+        # message folds into instructions.
+        instructions = system or ""
+        input_items: list[dict] = []
+        for m in messages:
+            role = m.get("role", "user")
+            text = m.get("content", "") or ""
+            if role == "system":
+                instructions = f"{instructions}\n{text}" if instructions else text
+                continue
+            ctype = "output_text" if role == "assistant" else "input_text"
+            input_items.append(
+                {"role": role, "content": [{"type": ctype, "text": text}]}
+            )
+
+        body: dict = {
+            "model": self.config["model_id"],
+            "input": input_items,
+            "max_output_tokens": mt,
+        }
+        if instructions:
+            body["instructions"] = instructions
+        # Reasoning is gated to "high" on this endpoint; omit for none/unset so
+        # extraction sub-calls (reasoning_effort="none") stay fast and cheap.
+        effort = reasoning_effort if reasoning_effort is not None \
+            else self.config.get("reasoning_effort")
+        if effort and effort != "none":
+            body["reasoning"] = {"effort": effort}
+        # NB: temperature intentionally omitted — reasoning models on this
+        # endpoint can reject non-default temperature; `temp` is accepted-and-
+        # ignored (same posture as _call_bedrock_converse).
+
+        url = f"{self.config['base_url']}/responses"
+        req = urllib.request.Request(
+            url,
+            data=_json.dumps(body).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self._bedrock_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                payload = _json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="replace")[:500]
+            raise RuntimeError(f"Bedrock Responses HTTP {e.code}: {detail}") from e
+
+        reasoning_parts: list[str] = []
+        content_parts: list[str] = []
+        for item in payload.get("output", []) or []:
+            itype = item.get("type")
+            blocks = item.get("content", []) or []
+            if itype == "reasoning":
+                reasoning_parts += [
+                    b["text"] for b in blocks
+                    if isinstance(b, dict) and b.get("text")
+                ]
+            elif itype == "message":
+                # The answer is normally an "output_text" block, but accept ANY
+                # text-bearing non-reasoning block — guards against Responses-API
+                # schema drift silently dropping the verdict (reasoning blocks are
+                # handled above, so excluding them keeps CoT out of the answer).
+                content_parts += [
+                    b["text"] for b in blocks
+                    if isinstance(b, dict) and b.get("text")
+                    and b.get("type") != "reasoning"
+                ]
+        reasoning = "".join(reasoning_parts)
+        content = "".join(content_parts)
+        if self.config.get("reasoning_in_content"):
+            raw_text = content
+        else:
+            raw_text = (reasoning + "\n" + content) if reasoning else content
+
+        usage = payload.get("usage", {}) or {}
+        # status="incomplete" signals a max_output_tokens cutoff (truncation),
+        # mapped to the "length" finish_reason the verdict parser already knows.
+        finish = "length" if payload.get("status") == "incomplete" else "stop"
+        return ModelResponse(
+            content=content,
+            reasoning=reasoning,
+            tokens=usage.get("output_tokens", -1),
+            raw_text=raw_text,
+            finish_reason=finish,
+            prompt_tokens=usage.get("input_tokens", -1),
         )
 
     def call(
@@ -633,6 +751,12 @@ class ModelClient:
                         response = self._invoke_with_wall_timeout(
                             self._call_bedrock_converse, timeout,
                             system, messages, mt, temperature, timeout,
+                        )
+                    elif self.backend == "bedrock_responses":
+                        response = self._invoke_with_wall_timeout(
+                            self._call_bedrock_responses, timeout,
+                            system, messages, mt, temperature, timeout,
+                            reasoning_effort=reasoning_effort,
                         )
                     else:
                         raise ValueError(f"Unknown backend: {self.backend}")
