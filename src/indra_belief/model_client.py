@@ -307,6 +307,25 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 32000,
         "timeout": 600,
     },
+    # OpenAI GPT-5.5 — Responses-API-ONLY on Bedrock (probed 2026-06-19: Chat
+    # Completions AND /v1/responses both 400; only /openai/v1/responses works).
+    # Reuses backend="bedrock_responses". reasoning_effort="high" engages thinking
+    # (usage.output_tokens_details.reasoning_tokens > 0), BUT GPT reasoning is
+    # ENCRYPTED — the reasoning output item carries only an (empty) summary, no
+    # readable CoT, so the `reasoning` telemetry field stays empty (thinking is
+    # real + server-side; the verdict comes back in the message item, which the
+    # parser extracts). max_tokens high so reasoning_tokens + verdict JSON both fit.
+    "bedrock-gpt-5.5": {
+        "backend": "bedrock_responses",
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+        "model_id": "openai.gpt-5.5",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "reasoning_in_content": False,
+        "reasoning_effort": "high",
+        "typical_tokens": 800,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
     # AWS Bedrock CLAUDE (Anthropic) — native Converse API, NOT mantle/OpenAI.
     # Verified 2026-06-18 (this same bearer token): Claude models reject BOTH
     # mantle OpenAI routes (/chat/completions AND /responses → HTTP 400 "does not
