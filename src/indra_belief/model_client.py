@@ -307,6 +307,66 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 32000,
         "timeout": 600,
     },
+    # ── Small/mid open-weight reasoners (mantle /v1 chat, reasoning_content) ──
+    # Probed 2026-06-19: all surface CoT via chat-completions reasoning_effort="high"
+    # (same path as deepseek/kimi/glm), so plain openai_compat. Cheaper/faster
+    # alternatives to the big reasoners; favor-latest picks across two size bands.
+    # gpt-oss reasons HERE (chat), not via Responses — verified, contra some docs.
+    "bedrock-nemotron-nano-30b": {  # 31.6B/3.2B active MoE, Dec 2025 — best small cap/cost
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "nvidia.nemotron-nano-3-30b",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "reasoning_effort": "high",
+        "typical_tokens": 500,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
+    "bedrock-gpt-oss-20b": {  # 20.9B/3.6B active MoE, Aug 2025
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "openai.gpt-oss-20b",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "reasoning_effort": "high",
+        "typical_tokens": 500,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
+    "bedrock-minimax-m2.5": {  # 230B/10B active MoE, Feb 2026 — newest frontier-tier mid
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "minimax.minimax-m2.5",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "reasoning_effort": "high",
+        "typical_tokens": 600,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
+    "bedrock-nemotron-super-120b": {  # 120B/12B active MoE, Mar 2026, 1M ctx
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "nvidia.nemotron-super-3-120b",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "reasoning_effort": "high",
+        "typical_tokens": 600,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
+    "bedrock-gpt-oss-120b": {  # 117B/5.1B active MoE, Aug 2025 — cheapest-with-reasoning
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "openai.gpt-oss-120b",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "reasoning_effort": "high",
+        "typical_tokens": 600,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
     # OpenAI GPT-5.5 — Responses-API-ONLY on Bedrock (probed 2026-06-19: Chat
     # Completions AND /v1/responses both 400; only /openai/v1/responses works).
     # Reuses backend="bedrock_responses". reasoning_effort="high" engages thinking
@@ -323,6 +383,21 @@ LOCAL_MODELS: dict[str, dict] = {
         "reasoning_in_content": False,
         "reasoning_effort": "high",
         "typical_tokens": 800,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
+    # Gemma 4 31B (dense, newest Gemma) — like bedrock-gemma it reasons ONLY via
+    # the Responses API (chat-completions drops the CoT, probed 2026-06-19), so
+    # backend=bedrock_responses on the /openai/v1 route. Heavier/slower dense
+    # counterpart to the gemma-4-26b-a4b MoE already wired as bedrock-gemma.
+    "bedrock-gemma-4-31b": {
+        "backend": "bedrock_responses",
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+        "model_id": "google.gemma-4-31b",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "reasoning_in_content": False,
+        "reasoning_effort": "high",
+        "typical_tokens": 500,
         "max_tokens": 32000,
         "timeout": 600,
     },
