@@ -307,6 +307,28 @@ def _parse_verdict(response) -> tuple[str | None, str | None]:
     return extract_verdict(response.raw_text)
 
 
+def _stamp_committed_justification(response) -> None:
+    """Record the model's committed `support`/`objection` into the response's
+    reasoning trace, so a downstream interface can present the model's own
+    justification uniformly across backends. Structured variants only (baseline
+    has no support/objection). The trace dict is the SAME object the model client
+    appended to the call log, so this mutation travels with the persisted record.
+    No-op (and crash-proof) when there's no structured trace."""
+    if _VARIANT not in _STRUCTURED_VARIANTS:
+        return
+    trace = getattr(response, "reasoning_trace", None)
+    if not isinstance(trace, dict):
+        return
+    parsed = _variant_parse(response.content)
+    if parsed.get("verdict") is None:
+        parsed = _variant_parse(response.raw_text)
+    trace["committed_justification"] = {
+        "support": parsed.get("support"),
+        "objection": parsed.get("objection"),
+        "source": "answer_json",
+    }
+
+
 def _score_single(
     client: ModelClient,
     record: ScoringRecord,
@@ -324,6 +346,7 @@ def _score_single(
         kind="monolithic",
     )
     verdict, confidence = _parse_verdict(response)
+    _stamp_committed_justification(response)
     selected_examples = _example_trace_rows(examples)
     return {
         "verdict": verdict,
@@ -424,6 +447,7 @@ def _score_with_tools(
         kind="monolithic_tool_context",
     )
     verdict, confidence = _parse_verdict(response)
+    _stamp_committed_justification(response)
     selected_examples = _example_trace_rows(examples)
     return {
         "verdict": verdict,

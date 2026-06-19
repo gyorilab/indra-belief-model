@@ -17,7 +17,7 @@ Design principles:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 # Model registry — name → (base_url, model_id, notes)
@@ -399,15 +399,88 @@ def concurrency_hint(model_name: str) -> int:
     return int(cfg.get("concurrency_hint", 1))
 
 
+# ── Reasoning-trace normalization ──────────────────────────────────────────
+# A model-agnostic capture of chain-of-thought, so a downstream interface can
+# present reasoning uniformly for ANY backend. The hard part is that CoT lives
+# in different places (separate reasoning field / Responses reasoning item /
+# inline <think> / encrypted / not returned at all), and "the model reasoned"
+# (reasoning_tokens) is ORTHOGONAL to "we can read it" (text). We normalize both
+# at the adapter boundary (the only place provider-specific knowledge lives) into
+# one dict with an explicit status, so adding a model touches only its _call_*.
+class ReasoningStatus:
+    """Single source of truth for reasoning-trace status values (plain strings
+    so the trace is trivially JSON-serializable in the call log)."""
+    PLAINTEXT = "plaintext"          # readable CoT in a separate field
+    INLINE = "inline"                # CoT was inside content, split out by adapter
+    ENCRYPTED = "encrypted"          # reasoned (tokens>0) but no readable text (gpt-5.5)
+    NOT_RETURNED = "not_returned"    # thinking requested + tokens>0 but text empty
+    NONE = "none"                    # no reasoning emitted / not requested
+
+
+def _reasoning_tokens(usage) -> int:
+    """Pull the reasoning-token count from a usage object/dict, or -1 if the
+    backend doesn't report it. The two field paths the providers use:
+      OpenAI chat:       usage.completion_tokens_details.reasoning_tokens
+      Bedrock Responses: usage["output_tokens_details"]["reasoning_tokens"]"""
+    if usage is None:
+        return -1
+    if isinstance(usage, dict):  # bedrock_responses raw payload
+        d = usage.get("output_tokens_details") or {}
+        try:
+            return int(d.get("reasoning_tokens", -1))
+        except (TypeError, ValueError):
+            return -1
+    d = getattr(usage, "completion_tokens_details", None)  # openai SDK object
+    if d is None:
+        return -1
+    try:
+        return int(getattr(d, "reasoning_tokens", -1))
+    except (TypeError, ValueError):
+        return -1
+
+
+def _classify_reasoning(reasoning: str, reasoning_tokens: int, *, inline: bool) -> str:
+    """Status from (text, token-count): present text → plaintext|inline;
+    no text but tokens>0 → not_returned (suppressed); else none. The encrypted
+    case is set explicitly by the adapter that can see the empty reasoning item."""
+    if reasoning:
+        return ReasoningStatus.INLINE if inline else ReasoningStatus.PLAINTEXT
+    if reasoning_tokens > 0:
+        return ReasoningStatus.NOT_RETURNED
+    return ReasoningStatus.NONE
+
+
+def _build_trace(*, reasoning: str, reasoning_tokens: int, status: str,
+                 provider_source: str, backend: str, model_id: str | None,
+                 finish_reason: str) -> dict:
+    """The uniform reasoning-trace dict persisted per call. committed_justification
+    is stamped later by the structured scorer (it owns the answer format)."""
+    return {
+        "free_cot": reasoning,
+        "status": status,
+        "reasoning_tokens": reasoning_tokens,
+        "provider_source": provider_source,
+        "backend": backend,
+        "model_id": model_id,
+        "finish_reason": finish_reason,
+        "committed_justification": {"support": None, "objection": None, "source": None},
+    }
+
+
 @dataclass
 class ModelResponse:
     """Response from a model call with unified fields."""
     content: str            # Final assistant message (may be empty if all reasoning)
-    reasoning: str          # Chain-of-thought text (may be empty)
+    reasoning: str          # Chain-of-thought text (may be empty) — kept for compat
     tokens: int             # Total completion tokens
     raw_text: str           # Content + reasoning joined (for parsing)
     finish_reason: str      # "stop", "length", etc.
     prompt_tokens: int = -1  # Input tokens (-1 if backend doesn't report)
+    # Uniform CoT capture (free_cot == reasoning by construction). Defaults to a
+    # status="none" trace so every existing ModelResponse(...) call-site stays valid.
+    reasoning_trace: dict = field(default_factory=lambda: _build_trace(
+        reasoning="", reasoning_tokens=-1, status=ReasoningStatus.NONE,
+        provider_source="", backend="", model_id=None, finish_reason="stop"))
 
 
 class ModelClient:
@@ -588,13 +661,19 @@ class ModelClient:
         blocks = payload.get("output", {}).get("message", {}).get("content", []) or []
         text = "".join(b.get("text", "") for b in blocks if isinstance(b, dict))
         usage = payload.get("usage", {}) or {}
+        finish = payload.get("stopReason", "stop") or "stop"
         return ModelResponse(
             content=text,
             reasoning="",
             tokens=usage.get("outputTokens", -1),
             raw_text=text,
-            finish_reason=payload.get("stopReason", "stop"),
+            finish_reason=finish,
             prompt_tokens=usage.get("inputTokens", -1),
+            reasoning_trace=_build_trace(
+                reasoning="", reasoning_tokens=-1, status=ReasoningStatus.NONE,
+                provider_source="bedrock_converse (no reasoning channel)",
+                backend=self.backend, model_id=self.config.get("model_id"),
+                finish_reason=finish),
         )
 
     def _call_bedrock_responses(
@@ -673,10 +752,12 @@ class ModelClient:
 
         reasoning_parts: list[str] = []
         content_parts: list[str] = []
+        had_reasoning_item = False
         for item in payload.get("output", []) or []:
             itype = item.get("type")
             blocks = item.get("content", []) or []
             if itype == "reasoning":
+                had_reasoning_item = True  # present even when text-empty (encrypted)
                 reasoning_parts += [
                     b["text"] for b in blocks
                     if isinstance(b, dict) and b.get("text")
@@ -702,6 +783,13 @@ class ModelClient:
         # status="incomplete" signals a max_output_tokens cutoff (truncation),
         # mapped to the "length" finish_reason the verdict parser already knows.
         finish = "length" if payload.get("status") == "incomplete" else "stop"
+        rtok = _reasoning_tokens(usage)
+        if reasoning:
+            status = ReasoningStatus.PLAINTEXT          # readable CoT (gemma)
+        elif had_reasoning_item and rtok > 0:
+            status = ReasoningStatus.ENCRYPTED          # reasoned, summary-only (gpt-5.5)
+        else:
+            status = _classify_reasoning(reasoning, rtok, inline=False)
         return ModelResponse(
             content=content,
             reasoning=reasoning,
@@ -709,6 +797,11 @@ class ModelClient:
             raw_text=raw_text,
             finish_reason=finish,
             prompt_tokens=usage.get("input_tokens", -1),
+            reasoning_trace=_build_trace(
+                reasoning=reasoning, reasoning_tokens=rtok, status=status,
+                provider_source="bedrock_responses.output[].reasoning",
+                backend=self.backend, model_id=self.config.get("model_id"),
+                finish_reason=finish),
         )
 
     def call(
@@ -816,6 +909,10 @@ class ModelClient:
                         "model_id": self.config.get("model_id"),
                         "content": response.content,
                         "reasoning": response.reasoning,
+                        # Uniform CoT capture (status + tokens + provenance, and
+                        # committed support/objection stamped later by the
+                        # structured scorer). Same dict object the scorer mutates.
+                        "reasoning_trace": response.reasoning_trace,
                     })
                     return response
                 except Exception as e:
@@ -917,13 +1014,23 @@ class ModelClient:
         else:
             raw_text = (reasoning + "\n" + content) if reasoning else content
 
+        finish = response.choices[0].finish_reason or "stop"
+        rtok = _reasoning_tokens(response.usage)
         return ModelResponse(
             content=content,
             reasoning=reasoning,
             tokens=response.usage.completion_tokens,
             raw_text=raw_text,
-            finish_reason=response.choices[0].finish_reason or "stop",
+            finish_reason=finish,
             prompt_tokens=getattr(response.usage, "prompt_tokens", -1),
+            reasoning_trace=_build_trace(
+                reasoning=reasoning, reasoning_tokens=rtok,
+                status=_classify_reasoning(
+                    reasoning, rtok,
+                    inline=bool(self.config.get("reasoning_in_content"))),
+                provider_source="openai_compat.message.reasoning_content",
+                backend=self.backend, model_id=self.config.get("model_id"),
+                finish_reason=finish),
         )
 
     def _call_anthropic(
@@ -953,13 +1060,20 @@ class ModelClient:
         content = "".join(content_parts)
         reasoning = "\n".join(thinking_parts) if thinking_parts else ""
         raw_text = (reasoning + "\n" + content) if reasoning else content
+        finish = response.stop_reason or "stop"
         return ModelResponse(
             content=content,
             reasoning=reasoning,
             tokens=response.usage.output_tokens,
             raw_text=raw_text,
-            finish_reason=response.stop_reason or "stop",
+            finish_reason=finish,
             prompt_tokens=getattr(response.usage, "input_tokens", -1),
+            reasoning_trace=_build_trace(
+                reasoning=reasoning, reasoning_tokens=-1,
+                status=(ReasoningStatus.PLAINTEXT if reasoning else ReasoningStatus.NONE),
+                provider_source="anthropic.thinking blocks",
+                backend=self.backend, model_id=self.config.get("model_id"),
+                finish_reason=finish),
         )
 
     _DEFAULT_MEDPSY_PERSONA = (
@@ -1054,6 +1168,12 @@ class ModelClient:
             raw_text=raw_text,
             finish_reason=finish_reason,
             prompt_tokens=prompt_len,
+            reasoning_trace=_build_trace(
+                reasoning=reasoning, reasoning_tokens=-1,
+                status=(ReasoningStatus.INLINE if reasoning else ReasoningStatus.NONE),
+                provider_source="transformers <think> partition",
+                backend=self.backend, model_id=self.config.get("model_id"),
+                finish_reason=finish_reason),
         )
 
 
