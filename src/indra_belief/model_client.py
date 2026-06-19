@@ -401,6 +401,23 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 32000,
         "timeout": 600,
     },
+    # Gemma 4 E2B (~2.3B effective, tiny on-device tier) — the ONLY clean sub-10B
+    # reasoner on Bedrock: reasons only via the Responses API (probed rc=411,
+    # chat drops it), so backend=bedrock_responses. Extreme-cheap floor;
+    # capacity-gated for subtle relation logic — validate (n=1606) before trusting.
+    # (Other sub-10B mantle models — ministral-3-3b, gemma-3-4b — are non-thinking;
+    # our MedPsy-4B reasoner is local-only on noot-1, not on AWS.)
+    "bedrock-gemma-4-e2b": {
+        "backend": "bedrock_responses",
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+        "model_id": "google.gemma-4-e2b",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "reasoning_in_content": False,
+        "reasoning_effort": "high",
+        "typical_tokens": 400,
+        "max_tokens": 16000,
+        "timeout": 300,
+    },
     # AWS Bedrock CLAUDE (Anthropic) — native Converse API, NOT mantle/OpenAI.
     # Verified 2026-06-18 (this same bearer token): Claude models reject BOTH
     # mantle OpenAI routes (/chat/completions AND /responses → HTTP 400 "does not
