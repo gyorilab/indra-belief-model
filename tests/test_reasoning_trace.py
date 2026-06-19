@@ -123,6 +123,21 @@ def test_responses_plaintext(monkeypatch):
 
 # --- scorer stamps committed support/objection onto the trace ----------------
 
+def test_compact_reasoning_trace_export_projection():
+    from indra_belief.results import compact_reasoning_trace, _FREE_COT_CLIP
+    assert compact_reasoning_trace(None) is None          # legacy row → None
+    assert compact_reasoning_trace("nope") is None
+    raw = _build_trace(reasoning="x" * (_FREE_COT_CLIP + 500), reasoning_tokens=172,
+                       status=ReasoningStatus.ENCRYPTED, provider_source="p",
+                       backend="bedrock_responses", model_id="m", finish_reason="stop")
+    raw["committed_justification"] = {"support": "S", "objection": "O", "source": "answer_json"}
+    out = compact_reasoning_trace(raw)
+    assert out["status"] == "encrypted" and out["reasoning_tokens"] == 172
+    assert len(out["free_cot"]) == _FREE_COT_CLIP          # clipped
+    assert out["free_cot_chars"] == _FREE_COT_CLIP + 500   # full length preserved
+    assert out["committed_justification"] == {"support": "S", "objection": "O", "source": "answer_json"}
+
+
 def test_scorer_stamps_committed_justification():
     from indra_belief.scorers.monolithic import scorer as S
     if S._VARIANT not in S._STRUCTURED_VARIANTS:

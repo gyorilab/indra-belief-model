@@ -208,6 +208,52 @@ def call_log_cost(call_log: list[dict]) -> dict:
     }
 
 
+# Free chain-of-thought can run long (gemma plaintext ~1.5k chars); clip it for
+# the per-evidence export the way `reasoning` is clipped, but keep the full length
+# so the viewer can show a "truncated" affordance. The status / tokens /
+# committed-justification fields are small and always kept.
+_FREE_COT_CLIP = 4000
+
+
+def compact_reasoning_trace(rt: Any) -> dict | None:
+    """Project a raw call_log reasoning_trace into the per-evidence export shape.
+
+    Keeps the small, always-useful fields (status, reasoning_tokens, provenance,
+    committed support/objection) verbatim and clips the free CoT. Returns None
+    for legacy rows (no trace) so the viewer can distinguish "no trace recorded"
+    from a present-but-empty trace."""
+    if not isinstance(rt, dict):
+        return None
+    cot = rt.get("free_cot") or ""
+    cj = rt.get("committed_justification") or {}
+    return {
+        "status": rt.get("status"),
+        "reasoning_tokens": rt.get("reasoning_tokens"),
+        "provider_source": rt.get("provider_source"),
+        "backend": rt.get("backend"),
+        "model_id": rt.get("model_id"),
+        "finish_reason": rt.get("finish_reason"),
+        "free_cot": cot[:_FREE_COT_CLIP],
+        "free_cot_chars": len(cot),
+        "committed_justification": {
+            "support": cj.get("support"),
+            "objection": cj.get("objection"),
+            "source": cj.get("source"),
+        },
+    }
+
+
+def _count_trace_status(per_ev: list[dict]) -> dict[str, int]:
+    """Histogram of reasoning_trace.status across the export (legacy rows with no
+    trace bucket under 'no_trace')."""
+    out: dict[str, int] = {}
+    for r in per_ev:
+        rt = r.get("reasoning_trace")
+        key = rt.get("status") if isinstance(rt, dict) else "no_trace"
+        out[key or "no_trace"] = out.get(key or "no_trace", 0) + 1
+    return out
+
+
 def _read_run_meta(run_path: str) -> dict[str, Any]:
     """Best-effort read of the run's sibling ``<run>.meta.json`` (run_id, model)."""
     meta_path = re.sub(r"\.jsonl$", ".meta.json", run_path)
@@ -379,6 +425,8 @@ def build_run_export(
         cost = call_log_cost(cl)
         fin = cl[-1].get("finish_reason") if cl else None
         out_tok = cl[-1].get("out_tokens") if cl else None
+        # Last-call reasoning trace (same last-call semantics as fin/out_tok).
+        rtrace = compact_reasoning_trace(cl[-1].get("reasoning_trace")) if cl else None
         rchars = len(d.get("raw_text_preview") or "")
         reasoning_truncated = (fin == "length") or bool(out_tok and out_tok * 3.5 > rchars + 200)
 
@@ -411,6 +459,10 @@ def build_run_export(
             "reasoning_truncated": reasoning_truncated,
             "gen_finish_reason": fin,
             "gen_out_tokens": out_tok,
+            # Uniform CoT capture (status + tokens + provenance + committed
+            # support/objection). None on legacy rows scored before the trace
+            # existed; the viewer falls back to `reasoning` then.
+            "reasoning_trace": rtrace,
             # observed LLM cost (computed once here, where the full call_log is in
             # scope). output_tokens is the call_log SUM (distinct from tokens /
             # gen_out_tokens, which are LAST-call only) — do not reconcile them.
@@ -535,9 +587,14 @@ def build_run_export(
             "rows_with_reasoning": sum(1 for r in per_ev if r["reasoning"]),
             "reasoning_truncated": sum(1 for r in per_ev if r["reasoning_truncated"]),
             "generation_length_capped": sum(1 for r in per_ev if r["gen_finish_reason"] == "length"),
+            # CoT-access histogram: how many evidences had readable CoT vs sealed
+            # (encrypted) vs withheld vs none — the epistemic-access distribution
+            # across whatever models scored the run. None = legacy row, no trace.
+            "trace_status": _count_trace_status(per_ev),
             "note": "reasoning is a clipped ~1000-char preview for the truncated rows; the full "
                     "chain-of-thought was not recorded. verdict/confidence/score were parsed before "
-                    "clipping and are unaffected.",
+                    "clipping and are unaffected. reasoning_trace carries the per-evidence CoT-access "
+                    "status (plaintext/inline/encrypted/not_returned/none) + committed support/objection.",
         },
         "cost": {
             # "known": every row's cost was computable (rows may be $0).
@@ -560,7 +617,7 @@ def build_run_export(
         # 'soft_calibration' (not 'calibration') to avoid collision with the
         # viewer's existing Validity.calibration (belief-vs-INDRA residual {n,mae,bias}).
         "soft_calibration": _soft_calibration_block(model),
-        "schema_version": 4,
+        "schema_version": 5,  # v5: per-evidence reasoning_trace (CoT-access + committed justification)
     }
     return per_ev, per_stmt, meta
 

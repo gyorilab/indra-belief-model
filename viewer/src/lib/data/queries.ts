@@ -15,7 +15,7 @@ import {
 	getCurationIndex,
 	goldForRow
 } from './store';
-import type { RunMeta, StatementRollup, EvidenceRow, GoldVerdict } from './types';
+import type { RunMeta, StatementRollup, EvidenceRow, GoldVerdict, ReasoningTrace } from './types';
 
 // ── Shared shapes ───────────────────────────────────────────────────────────
 
@@ -1147,8 +1147,8 @@ export interface SideBySideEvidence {
 	pmid: string | null;
 	evidence_text: string | null;
 	rasmachine_belief: number | null;
-	a: { verdict: V; confidence: string | null; bucket: string | null; reasoning: string | null; tier: string | null; score: number | null };
-	b: { verdict: V; confidence: string | null; bucket: string | null; reasoning: string | null; tier: string | null; score: number | null };
+	a: { verdict: V; confidence: string | null; bucket: string | null; reasoning: string | null; tier: string | null; score: number | null; reasoning_trace: ReasoningTrace | null };
+	b: { verdict: V; confidence: string | null; bucket: string | null; reasoning: string | null; tier: string | null; score: number | null; reasoning_trace: ReasoningTrace | null };
 	/** Human-curation gold trace — the third judge. null when this evidence has
 	 *  no INDRA curation. Curators don't write reasoning; they assign tags + an
 	 *  optional note, so this carries the tag taxonomy + curators + notes. */
@@ -1184,8 +1184,8 @@ export function evidenceSideBySide(
 		pmid: ra.pmid,
 		evidence_text: ra.evidence_text,
 		rasmachine_belief: ra.rasmachine_belief,
-		a: { verdict: normV(ra.verdict), confidence: ra.confidence, bucket: ra.bucket, reasoning: ra.reasoning, tier: ra.tier, score: ra.our_score },
-		b: { verdict: normV(rb.verdict), confidence: rb.confidence, bucket: rb.bucket, reasoning: rb.reasoning, tier: rb.tier, score: rb.our_score },
+		a: { verdict: normV(ra.verdict), confidence: ra.confidence, bucket: ra.bucket, reasoning: ra.reasoning, tier: ra.tier, score: ra.our_score, reasoning_trace: ra.reasoning_trace ?? null },
+		b: { verdict: normV(rb.verdict), confidence: rb.confidence, bucket: rb.bucket, reasoning: rb.reasoning, tier: rb.tier, score: rb.our_score, reasoning_trace: rb.reasoning_trace ?? null },
 		gold
 	};
 }

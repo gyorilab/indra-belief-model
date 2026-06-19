@@ -2,7 +2,8 @@
 	import { goto, afterNavigate } from '$app/navigation';
 	import { page, navigating } from '$app/stores';
 	import BeliefRuler from '$lib/components/BeliefRuler.svelte';
-	import { scoringMethod, reasoningBody } from '$lib/format';
+	import { scoringMethod } from '$lib/format';
+	import ReasoningPanel from '$lib/components/ReasoningPanel.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -714,7 +715,7 @@
 								<span class="trace-conf mono">{sbs.a.confidence ?? '?'}{#if sbs.a.bucket} · {sbs.a.bucket}{/if}</span>{#if sbs.a.tier}<span class="trace-method">{scoringMethod(sbs.a.tier)}</span>{/if}
 								{#if sbs.gold}<span class="trace-gflag {sbs.a.verdict === sbs.gold.verdict ? 'ok' : 'bad'}">{sbs.a.verdict === sbs.gold.verdict ? 'matches gold' : 'vs gold'}</span>{/if}
 							</header>
-							<pre class="reasoning">{reasoningBody(sbs.a.reasoning) || '(no reasoning captured)'}</pre>
+							<ReasoningPanel trace={sbs.a.reasoning_trace} reasoning={sbs.a.reasoning} />
 						</article>
 						<article class="trace tB" class:gmiss={sbs.gold && sbs.b.verdict !== sbs.gold.verdict}>
 							<header class="trace-head">
@@ -723,7 +724,7 @@
 								<span class="trace-conf mono">{sbs.b.confidence ?? '?'}{#if sbs.b.bucket} · {sbs.b.bucket}{/if}</span>{#if sbs.b.tier}<span class="trace-method">{scoringMethod(sbs.b.tier)}</span>{/if}
 								{#if sbs.gold}<span class="trace-gflag {sbs.b.verdict === sbs.gold.verdict ? 'ok' : 'bad'}">{sbs.b.verdict === sbs.gold.verdict ? 'matches gold' : 'vs gold'}</span>{/if}
 							</header>
-							<pre class="reasoning">{reasoningBody(sbs.b.reasoning) || '(no reasoning captured)'}</pre>
+							<ReasoningPanel trace={sbs.b.reasoning_trace} reasoning={sbs.b.reasoning} />
 						</article>
 						{#if sbs.gold}
 							{@const g = sbs.gold}
@@ -1269,18 +1270,6 @@
 		border-radius: 2px;
 		padding: 0 0.3rem;
 	}
-	.reasoning {
-		font-family: var(--mono);
-		font-size: 0.74rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-		word-break: break-word;
-		margin: 0;
-		max-height: 32rem;
-		overflow-y: auto;
-		color: var(--ink);
-	}
-
 	/* ── gold (human curation) ───────────────────────────────── */
 	.toggles {
 		display: flex;

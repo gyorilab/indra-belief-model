@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData, ActionData } from './$types';
+	import ReasoningPanel from '$lib/components/ReasoningPanel.svelte';
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const VERDICT = [
@@ -16,11 +17,6 @@
 	function verdictWord(v: string | null): string {
 		return v === 'correct' ? 'supported' : v === 'incorrect' ? 'contradicted' : (v ?? '—');
 	}
-	function reasoningBody(r: string | null): string {
-		if (!r) return '';
-		return r.replace(/^\s*\[[^\]]+\][ \t]*\n?/, '').trim();
-	}
-
 	// phase 2 active once commit has revealed both models
 	const rev = $derived(form && 'revealed' in form && form.revealed ? form : null);
 	// which model did the blinded verdict side with? (models disagree, so ≤1 matches)
@@ -131,9 +127,9 @@
 							<div class="aj-scoreline">
 								{m.score?.toFixed(2) ?? '—'} · <span class="muted">{m.bucket ?? '—'}</span>
 							</div>
-							{#if reasoningBody(m.reasoning)}
-								<p class="aj-reasoning">{reasoningBody(m.reasoning)}</p>
-							{/if}
+							<div class="aj-reasoning">
+								<ReasoningPanel trace={m.reasoning_trace} reasoning={m.reasoning} />
+							</div>
 						</div>
 					{/each}
 				</div>
@@ -246,9 +242,11 @@
 	.aj-verdict.aj-correct { color: var(--ok-green); }
 	.aj-verdict.aj-incorrect { color: var(--accent); }
 	.aj-scoreline { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-muted); margin: 0.15rem 0 0.5rem; }
+	/* spacing/divider wrapper only — ReasoningPanel owns all text rendering */
 	.aj-reasoning {
-		font-family: var(--mono); font-size: 0.76rem; line-height: 1.5; color: var(--ink-muted);
-		white-space: pre-wrap; margin: 0; border-top: 1px solid var(--rule); padding-top: 0.5rem;
+		border-top: 1px solid var(--rule);
+		padding-top: 0.5rem;
+		margin: 0.3rem 0 0;
 	}
 
 	/* INDRA curation gold reveal (third judge) */

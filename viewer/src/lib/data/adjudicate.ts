@@ -12,7 +12,7 @@ import { readFileSync, appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DATA_DIR, resolveRun } from './runs';
 import { evidenceForStatement, getCurationIndex, goldForRow } from './store';
-import type { EvidenceRow } from './types';
+import type { EvidenceRow, ReasoningTrace } from './types';
 
 const TRUTH_DIR = join(DATA_DIR, 'truth');
 const QUEUE = join(TRUTH_DIR, 'queue_disagree.jsonl');
@@ -61,6 +61,7 @@ export interface ModelCall {
 	score: number | null;
 	reasoning: string | null;
 	bucket: string | null;
+	reasoning_trace: ReasoningTrace | null;
 }
 
 function labelsPath(annotator: string): string {
@@ -180,7 +181,8 @@ export function revealPair(itemId: string): { a: ModelCall; b: ModelCall; gold: 
 		verdict: r?.verdict ?? fallbackVerdict,
 		score: r?.our_score ?? null,
 		reasoning: r?.reasoning ?? null,
-		bucket: r?.bucket ?? null
+		bucket: r?.bucket ?? null,
+		reasoning_trace: r?.reasoning_trace ?? null
 	});
 	return {
 		a: call(item.model_a, ra, item.verdict_a),

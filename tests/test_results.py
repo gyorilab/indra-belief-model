@@ -111,7 +111,7 @@ def test_build_run_export_joins_text_and_rolls_up(tmp_path):
     assert meta["cost"]["total_usd"] is None
     assert meta["cost"]["n_evidence_unavailable"] == 2
     assert meta["cost"]["n_evidence_costed"] == 0
-    assert meta["schema_version"] == 4
+    assert meta["schema_version"] == 5
 
 
 def test_write_run_export_emits_three_files(tmp_path):
@@ -146,7 +146,7 @@ def test_write_run_export_emits_three_files(tmp_path):
     assert meta["cost"]["n_evidence_no_llm"] == 1
     assert meta["cost"]["n_evidence_costed"] == 0
     assert meta["cost"]["n_evidence_unavailable"] == 0
-    assert meta["schema_version"] == 4
+    assert meta["schema_version"] == 5
     # E5: soft_calibration block baked per run. model "m" is unfitted → named-
     # unavailable with a reason, never an imputed zero.
     assert meta["soft_calibration"]["status"] == "unavailable"
@@ -355,7 +355,7 @@ def test_export_cost_mixed_priced_and_unverified_is_partial(tmp_path):
     only_priced = 2000 * 3 / 1e6 + 500 * 15 / 1e6  # zero-cost row adds $0
     assert meta["cost"]["total_usd"] == round(only_priced, 4)
     assert "gemma-4-26b-a4b-it" in meta["cost"]["models"]
-    assert meta["schema_version"] == 4
+    assert meta["schema_version"] == 5
 
 
 def test_export_cost_multi_priced_models_run_sums_and_sorts(tmp_path):
@@ -398,3 +398,38 @@ def test_export_cost_empty_run_is_known_zero(tmp_path):
     assert meta["cost"]["n_evidence_no_llm"] == 0
     assert meta["cost"]["n_evidence_unavailable"] == 0
     assert meta["cost"]["models"] == []
+
+
+def _one_row(tmp_path, call_log):
+    corpus = [{"matches_hash": "mh1", "id": "id1", "belief": 0.9,
+               "evidence": [{"text": "MEK phosphorylates ERK in cells.", "source_hash": 1}]}]
+    rows = [{"stmt_i": 0, "evidence_i": 0, "stmt_hash": "h1", "evidence_hash": "e0", "source_hash": 1,
+             "subject": "MAP2K1", "stmt_type": "Phosphorylation", "object": "MAPK1", "source_api": "reach",
+             "pmid": "111", "text_len": 32, "belief": 0.9, "score": 0.05, "verdict": "incorrect",
+             "confidence": "high", "raw_text_preview": "...", "grounding_status": "all_match",
+             "tier": "llm_comprehension", "provenance_triggered": False, "error": None,
+             "latency_s": 1.2, "tokens": 50, "call_log": call_log}]
+    return build_run_export(str(_write_run(tmp_path, rows)),
+                            str(_write_corpus(tmp_path, corpus)), run_id="r1", model="test-model")
+
+
+def test_build_run_export_carries_reasoning_trace(tmp_path):
+    rt = {"free_cot": "x" * 50, "status": "encrypted", "reasoning_tokens": 172,
+          "provider_source": "bedrock_responses.output[].reasoning", "backend": "bedrock_responses",
+          "model_id": "openai.gpt-5.5", "finish_reason": "stop",
+          "committed_justification": {"support": "MEK phosphorylates ERK", "objection": None, "source": "answer_json"}}
+    per_ev, _ps, meta = _one_row(tmp_path, [{"finish_reason": "stop", "out_tokens": 50, "reasoning_trace": rt}])
+    tr = per_ev[0]["reasoning_trace"]
+    assert tr is not None
+    assert tr["status"] == "encrypted" and tr["reasoning_tokens"] == 172
+    assert tr["committed_justification"]["support"] == "MEK phosphorylates ERK"
+    assert tr["free_cot_chars"] == 50
+    assert meta["reasoning_quality"]["trace_status"]["encrypted"] == 1
+    assert meta["schema_version"] == 5
+
+
+def test_build_run_export_legacy_row_has_null_reasoning_trace(tmp_path):
+    # call_log without reasoning_trace (run scored before the trace existed)
+    per_ev, _ps, meta = _one_row(tmp_path, [{"finish_reason": "stop", "out_tokens": 50}])
+    assert per_ev[0]["reasoning_trace"] is None
+    assert meta["reasoning_quality"]["trace_status"].get("no_trace") == 1

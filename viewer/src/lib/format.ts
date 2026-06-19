@@ -5,6 +5,7 @@
  * routes/components, hoist it here. Tufte-pure, no styling — just data
  * shape. Components live in `$lib/components/`.
  */
+import type { ReasoningStatus, ReasoningTrace } from './data/types';
 
 /** First 8 chars of a hash; canonical short form for the UI. */
 export function shortHash(h: string): string {
@@ -211,4 +212,55 @@ export function scoringMethod(method: string | null | undefined): string | null 
 export function reasoningBody(reasoning: string | null | undefined): string {
 	if (!reasoning) return '';
 	return reasoning.replace(/^\s*\[[^\]]+\][ \t]*\n?/, '').trimStart();
+}
+
+/** Human label for a CoT-access status. */
+export function reasoningStatusLabel(s: ReasoningStatus | null | undefined): string {
+	switch (s) {
+		case 'plaintext':
+		case 'inline':
+			return 'readable';
+		case 'encrypted':
+			return 'sealed';
+		case 'not_returned':
+			return 'withheld';
+		case 'none':
+			return 'no CoT';
+		default:
+			return '';
+	}
+}
+
+/** Tone bucket for styling the status sigil: 'open' = readable CoT present;
+ *  'sealed' = the model reasoned but the text is unreadable (neutral, not a
+ *  failure); 'gap' = no usable reasoning surfaced. */
+export function reasoningStatusTone(
+	s: ReasoningStatus | null | undefined
+): 'open' | 'sealed' | 'gap' {
+	switch (s) {
+		case 'plaintext':
+		case 'inline':
+			return 'open';
+		case 'encrypted':
+			return 'sealed';
+		default:
+			return 'gap'; // not_returned, none, null
+	}
+}
+
+/** Peripheral one-line sigil text: status + the weight of deliberation, e.g.
+ *  "readable · 1461c", "sealed · 172 tok", "withheld", "no CoT". The token count
+ *  (or CoT char length for readable models) is what makes "it thought hard but
+ *  sealed it" perceivable at a glance. */
+export function reasoningSigil(t: ReasoningTrace | null | undefined): string {
+	if (!t) return '';
+	const label = reasoningStatusLabel(t.status);
+	const tok =
+		t.reasoning_tokens != null && t.reasoning_tokens > 0 ? `${t.reasoning_tokens} tok` : '';
+	const cot =
+		(t.status === 'plaintext' || t.status === 'inline') && t.free_cot_chars
+			? `${t.free_cot_chars}c`
+			: '';
+	const weight = tok || cot;
+	return weight ? `${label} · ${weight}` : label;
 }

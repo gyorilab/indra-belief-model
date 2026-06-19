@@ -81,6 +81,40 @@ export interface StatementRollup {
 	sources: string[];
 }
 
+/** Epistemic-access status of a model's chain-of-thought on one call.
+ *  plaintext/inline → readable CoT present; encrypted → it reasoned but the text
+ *  is sealed by the provider (reasoning_tokens > 0, no text); not_returned →
+ *  reasoning requested but nothing came back; none → no reasoning. */
+export type ReasoningStatus =
+	| 'plaintext'
+	| 'inline'
+	| 'encrypted'
+	| 'not_returned'
+	| 'none';
+
+/** Uniform per-call reasoning capture (model_client `reasoning_trace`, projected
+ *  by results.compact_reasoning_trace). Separates "did it reason" (reasoning_tokens)
+ *  from "can we read it" (free_cot + status), and carries the model's committed
+ *  support/objection — the reliable, always-parseable justification. */
+export interface ReasoningTrace {
+	status: ReasoningStatus | null;
+	/** Provider-reported reasoning-token count; -1 when not reported. */
+	reasoning_tokens: number | null;
+	/** Free chain-of-thought, clipped to free_cot_chars at export. */
+	free_cot: string | null;
+	/** Full (pre-clip) CoT length, so the UI can flag truncation. */
+	free_cot_chars: number | null;
+	provider_source: string | null;
+	backend: string | null;
+	model_id: string | null;
+	finish_reason: string | null;
+	committed_justification: {
+		support: string | null;
+		objection: string | null;
+		source: string | null;
+	};
+}
+
 /** One (statement, evidence) row, from `per_evidence.jsonl`. */
 export interface EvidenceRow {
 	stmt_hash: string;
@@ -104,6 +138,9 @@ export interface EvidenceRow {
 	/** The model's chain-of-thought / rationale (the monolithic "trace"). */
 	reasoning: string | null;
 	reasoning_truncated?: boolean;
+	/** Uniform CoT-access + committed-justification capture. Null on legacy
+	 *  exports (pre schema 5); render falls back to `reasoning` then. */
+	reasoning_trace?: ReasoningTrace | null;
 	grounding_status: string | null;
 	tier: string | null;
 	provenance_triggered?: boolean;
