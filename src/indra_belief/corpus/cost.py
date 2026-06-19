@@ -86,6 +86,25 @@ def _load_pricing_table() -> tuple[dict[str, tuple[float, float]], set[str]]:
             "google.gemma-4-26b-a4b": (0.13, 0.40),
             "google.gemma-4-31b": (0.14, 0.40),
             "google.gemma-4-e2b": (0.04, 0.08),
+            # ── Bedrock mantle open-weight reasoners (AWS on-demand, per 1M tokens,
+            # us-east-1, fetched 2026-06-20 from aws.amazon.com/bedrock/pricing
+            # unless flagged). Keyed on the exact call_log model_id. ──
+            "deepseek.v3.2": (0.62, 1.85),
+            "moonshotai.kimi-k2.5": (0.60, 3.00),
+            "zai.glm-5": (1.00, 3.20),
+            "minimax.minimax-m2.5": (0.30, 1.20),
+            "qwen.qwen3-235b-a22b-2507": (0.2266, 0.9064),
+            "qwen.qwen3-coder-480b-a35b-instruct": (0.22, 1.80),  # 2nd-party (Bifrost/pricepertoken); AWS page didn't surface a per-1M figure
+            "nvidia.nemotron-nano-3-30b": (0.06, 0.24),
+            "nvidia.nemotron-super-3-120b": (0.15, 0.65),
+            "openai.gpt-oss-20b": (0.07, 0.30),    # 2nd-party (Bedrock cost directories; AWS page surfaced only Sydney)
+            "openai.gpt-oss-120b": (0.15, 0.60),   # 2nd-party (Bedrock cost directories)
+            "openai.gpt-5.5": (5.50, 33.00),       # Bedrock-specific, ~10% over OpenAI-direct $5/$30
+            # Bedrock Claude — the 'us.' REGIONAL inference-profile ids we actually
+            # call: base $1/$5 (Haiku 4.5) & $5/$25 (Opus 4.8) + the 10% regional-
+            # endpoint premium Anthropic documents = the effective rate below.
+            "us.anthropic.claude-haiku-4-5-20251001-v1:0": (1.10, 5.50),
+            "us.anthropic.claude-opus-4-8": (5.50, 27.50),
             "gemini-2.5-flash": (0.075, 0.30),
             "gemini-2.5-pro": (1.25, 5.00),
             "gpt-4o": (2.50, 10.00),

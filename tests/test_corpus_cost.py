@@ -171,3 +171,18 @@ def test_unknown_sentinel_was_removed_from_zero_cost():
 
 def test_null_negative_tokens_clamp_to_zero():
     assert token_cost_usd("anthropic.claude-sonnet-4-6", -1, None) == 0.0
+
+
+def test_every_bedrock_model_has_known_cost():
+    """Cost-coverage guard: every wired Bedrock model must resolve to a known cost
+    (priced or zero), so wiring a model can never silently skip cost tracking — the
+    registry->price-table link the abstraction was missing. If this fails, add the
+    model's per-1M Bedrock price to MODEL_PRICES_PER_M_TOKENS in corpus/cost.py."""
+    from indra_belief.model_client import LOCAL_MODELS
+
+    missing = sorted(
+        name
+        for name, cfg in LOCAL_MODELS.items()
+        if name.startswith("bedrock-") and not model_has_known_cost(cfg.get("model_id", ""))
+    )
+    assert not missing, f"bedrock models missing a price (add to corpus/cost.py): {missing}"
