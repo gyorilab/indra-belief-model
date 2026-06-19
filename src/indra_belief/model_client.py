@@ -215,6 +215,55 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 8192,
         "timeout": 300,
     },
+    # ── AWS Bedrock mantle — additional open-weight models on the /v1 route ──
+    # Verified 2026-06-19 with AWS_BEARER_TOKEN_BEDROCK: each returns 200 on
+    # `.../api.aws/v1/chat/completions` and 400 "isn't supported on this route"
+    # on /openai/v1 (the INVERSE of gemma-4, which is /openai/v1-only). Bare
+    # mantle ids from `GET .../v1/models`. openai_compat backend, strict (mantle
+    # 400s on the Ollama-only extras). reasoning_in_content=False ⇒ raw_text =
+    # reasoning + content: deepseek-v3.2 / kimi-k2.5 are thinking models that may
+    # emit a separate reasoning_content (or inline <think>); the scorer's
+    # tolerant verdict parse reads both. Per-token billed by AWS.
+    "bedrock-deepseek-v3.2": {
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "deepseek.v3.2",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "typical_tokens": 600,
+        "max_tokens": 8192,
+        "timeout": 600,
+    },
+    "bedrock-kimi-k2.5": {
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "moonshotai.kimi-k2.5",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "typical_tokens": 600,
+        "max_tokens": 8192,
+        "timeout": 600,
+    },
+    "bedrock-qwen3-235b": {
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "qwen.qwen3-235b-a22b-2507",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "typical_tokens": 500,
+        "max_tokens": 8192,
+        "timeout": 600,
+    },
+    "bedrock-qwen3-coder-480b": {
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "qwen.qwen3-coder-480b-a35b-instruct",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "typical_tokens": 500,
+        "max_tokens": 8192,
+        "timeout": 600,
+    },
     # AWS Bedrock CLAUDE (Anthropic) — native Converse API, NOT mantle/OpenAI.
     # Verified 2026-06-18 (this same bearer token): Claude models reject BOTH
     # mantle OpenAI routes (/chat/completions AND /responses → HTTP 400 "does not
