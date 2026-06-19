@@ -287,6 +287,26 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 8192,
         "timeout": 600,
     },
+    # Z.ai GLM-5 — frontier reasoning model, the largest reasoner reachable on
+    # the mantle endpoint. Probed 2026-06-19: surfaces CoT via Chat Completions
+    # reasoning_effort="high" -> reasoning_content (rc=1098; medium/none = none),
+    # the SAME plain path as deepseek/kimi — no Responses API or Converse needed.
+    # max_tokens is high on purpose: at "high" glm-5 spends the budget on
+    # reasoning_content and can emit the verdict JSON late (probe showed empty
+    # content at max_tokens=3000), so 32000 keeps room for CoT + verdict and
+    # avoids truncation to verdict=None. reasoning_in_content=False ⇒ raw_text =
+    # reasoning + answer for the verdict parse.
+    "bedrock-glm-5": {
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "model_id": "zai.glm-5",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "reasoning_effort": "high",
+        "typical_tokens": 800,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
     # AWS Bedrock CLAUDE (Anthropic) — native Converse API, NOT mantle/OpenAI.
     # Verified 2026-06-18 (this same bearer token): Claude models reject BOTH
     # mantle OpenAI routes (/chat/completions AND /responses → HTTP 400 "does not
