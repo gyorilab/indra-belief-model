@@ -1189,3 +1189,268 @@ export function evidenceSideBySide(
 		gold
 	};
 }
+
+// ── Frontier: cost × error-detection-F1 across N runs of one substrate ───────
+//
+// The N-run entry surface. For each run scored on the SAME substrate (corpus —
+// the only runs that share a gold set and a content-hash join), we read the
+// baked cost block and derive error-detection F1 on the run's gold (the lead
+// metric — never accuracy). Cost and F1 together define a Pareto frontier: a run
+// is dominated iff another run is no dearer AND no worse. We do NOT pretend the
+// frontier is exact — every F1 carries a bootstrap 95% CI so the n=60-class
+// substrates read as "differences within noise," not a false ranking.
+
+export interface FrontierRun {
+	run_id: string;
+	model: string;
+	generated_date: string | null;
+	cost: RunMeta['cost'];
+	/** USD per 1k priced evidences — the size-normalized x-coordinate. null when
+	 *  cost is unavailable (NOT plotted on the cost axis, never faked as 0). */
+	usd_per_1k: number | null;
+	/** known-zero local model (genuine $0, ZERO_COST set) — pinned in the gutter. */
+	is_free: boolean;
+	cost_known: boolean;
+	/** cost is a Bedrock-grounded estimate (self-hosted model), not observed spend. */
+	cost_estimated: boolean;
+	n_gold: number;
+	/** error-detection (positive class = 'incorrect') P/R/F1 on this run's gold. */
+	err_f1: number;
+	err_precision: number;
+	err_recall: number;
+	/** bootstrap 95% CI on err_f1 — the honesty band the y-axis whisker draws. */
+	err_f1_lo: number;
+	err_f1_hi: number;
+	/** plain accuracy vs gold (right / n) — secondary, shown but never led with. */
+	accuracy: number;
+	// ── model-size axis (ground truth, baked; closed models → unknown) ──
+	/** total parameters (billions) — the plotted size; null when undisclosed. */
+	params_total_b: number | null;
+	/** active params per forward pass (MoE); null for dense or unknown. */
+	params_active_b: number | null;
+	size_known: boolean;
+	/** size is an estimate/inference, not a published spec — renders hollow on the
+	 *  size axis, the mirror of cost_estimated on the cost axis. */
+	size_estimated: boolean;
+	/** open-weight (size is ground truth) vs closed (size undisclosed) vs unknown. */
+	is_open: boolean | null;
+	// ── Pareto status, computed per axis (cost↓×F1↑ and size↓×F1↑) ──
+	on_frontier_cost: boolean;
+	dominated_by_cost: string | null;
+	on_frontier_size: boolean;
+	dominated_by_size: string | null;
+}
+
+export interface FrontierSubstrate {
+	key: string; // the corpus basename — the join boundary
+	label: string;
+	n_runs: number;
+	n_cost_known: number;
+	gold_n: number; // gold coverage of a representative run (same corpus ⇒ same gold)
+}
+
+export interface Frontier {
+	substrates: FrontierSubstrate[];
+	selected: string | null;
+	runs: FrontierRun[]; // sorted err_f1 desc
+	n_gold: number;
+	cost_span: { min: number | null; max: number | null }; // over priced runs only
+	size_span: { min: number | null; max: number | null }; // over size-known runs
+	f1_span: { min: number; max: number };
+	/** small-sample honesty caveat, or null when n is large enough to rank. */
+	note: string | null;
+}
+
+/** error-detection (gold, pred) pairs for one run's evidence — positive class is
+ *  'incorrect'. Gold is read from the baked per-row field, falling back to the
+ *  global curation index for legacy exports. */
+function errorPairs(meta: RunMeta): Array<[boolean, boolean]> {
+	const cur = getCurationIndex();
+	const pairs: Array<[boolean, boolean]> = [];
+	for (const r of getEvidenceIndex(meta).all) {
+		const gv = r.gold ?? goldForRow(cur, r);
+		if (!gv) continue;
+		pairs.push([gv.verdict === 'incorrect', r.verdict === 'incorrect']);
+	}
+	return pairs;
+}
+
+/** Deterministic bootstrap 95% CI on F1 over (gold, pred) pairs. Seeded by the
+ *  run so the band never flickers between loads (no Math.random). */
+function bootstrapF1CI(pairs: Array<[boolean, boolean]>, seed: number, B = 1000): { lo: number; hi: number } {
+	const n = pairs.length;
+	if (n === 0) return { lo: 0, hi: 0 };
+	let s = (seed ^ 0x9e3779b9) >>> 0;
+	const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+	const f1s: number[] = [];
+	for (let bi = 0; bi < B; bi++) {
+		let tp = 0, fp = 0, fn = 0;
+		for (let i = 0; i < n; i++) {
+			const [g, p] = pairs[(rnd() * n) | 0];
+			if (p && g) tp++;
+			else if (p) fp++;
+			else if (g) fn++;
+		}
+		const pr = tp + fp ? tp / (tp + fp) : 0;
+		const rc = tp + fn ? tp / (tp + fn) : 0;
+		f1s.push(pr + rc ? (2 * pr * rc) / (pr + rc) : 0);
+	}
+	f1s.sort((x, y) => x - y);
+	return { lo: f1s[Math.floor(0.025 * B)], hi: f1s[Math.min(B - 1, Math.ceil(0.975 * B) - 1)] };
+}
+
+function seedFromRunId(runId: string): number {
+	let h = 0;
+	for (let i = 0; i < runId.length; i++) h = (Math.imul(h, 31) + runId.charCodeAt(i)) >>> 0;
+	return h;
+}
+
+function substrateLabel(key: string): string {
+	return key.replace(/_statements\.json$/, '').replace(/\.json$/, '');
+}
+
+/** Build the cost × error-F1 frontier for one substrate (the corpus the runs
+ *  share). With no argument, defaults to the substrate richest in cost-known,
+ *  gold-bearing runs — the one where the tradeoff is actually visible. */
+export function frontier(substrateKey?: string | null): Frontier {
+	const all = listRuns();
+
+	// Group runs by their join boundary; a run with no recorded substrate is
+	// keyed by its run_id so it never silently merges with another corpus.
+	const bySub = new Map<string, RunMeta[]>();
+	for (const m of all) {
+		const k = m.substrate ?? `run:${m.run_id}`;
+		(bySub.get(k) ?? bySub.set(k, []).get(k)!).push(m);
+	}
+
+	const substrates: FrontierSubstrate[] = [];
+	for (const [key, runs] of bySub) {
+		substrates.push({
+			key,
+			label: substrateLabel(key),
+			n_runs: runs.length,
+			n_cost_known: runs.filter((r) => r.cost && r.cost.status !== 'unavailable').length,
+			gold_n: Math.max(0, ...runs.map((r) => r.gold_coverage?.covered ?? 0))
+		});
+	}
+	// Rank substrates so the default is the one where cost AND gold both exist for
+	// the most runs (the frontier is only meaningful there).
+	substrates.sort((a, b) => b.n_cost_known - a.n_cost_known || b.n_runs - a.n_runs);
+
+	const selected =
+		(substrateKey && bySub.has(substrateKey) ? substrateKey : null) ?? substrates[0]?.key ?? null;
+	const runsMeta = selected ? bySub.get(selected) ?? [] : [];
+
+	const runs: FrontierRun[] = [];
+	for (const meta of runsMeta) {
+		const pairs = errorPairs(meta);
+		const nGold = pairs.length;
+		const stats = prf(pairs);
+		// accuracy = fraction of gold rows the run's verdict matched
+		let right = 0;
+		for (const [g, p] of pairs) if (g === p) right++;
+		const ci = bootstrapF1CI(pairs, seedFromRunId(meta.run_id));
+		const c = meta.cost;
+		const known = !!c && c.status !== 'unavailable';
+		const perK = known ? c!.usd_per_1k_evidence : null;
+		const mm = meta.model_meta;
+		runs.push({
+			run_id: meta.run_id,
+			model: meta.model,
+			generated_date: meta.generated_date,
+			cost: c ?? null,
+			usd_per_1k: perK,
+			// genuine zero ONLY (the ZERO_COST local set). A known run with a null
+			// per-1k (e.g. every row no_llm → nothing costed) is NOT free — it has no
+			// cost datum, falls through to fmtCostFull → em-dash, and is not plotted.
+			is_free: known && perK === 0,
+			cost_known: known,
+			cost_estimated: !!c && c.status === 'estimated',
+			n_gold: nGold,
+			err_f1: stats.f1,
+			err_precision: stats.precision,
+			err_recall: stats.recall,
+			err_f1_lo: ci.lo,
+			err_f1_hi: ci.hi,
+			accuracy: nGold ? right / nGold : 0,
+			params_total_b: mm && mm.status === 'known' ? mm.total_b : null,
+			params_active_b: mm && mm.status === 'known' ? mm.active_b : null,
+			size_known: !!mm && mm.status === 'known' && mm.total_b != null,
+			size_estimated: !!mm && mm.status === 'known' && !!mm.estimated,
+			is_open: mm ? mm.is_open : null,
+			on_frontier_cost: false,
+			dominated_by_cost: null,
+			on_frontier_size: false,
+			dominated_by_size: null
+		});
+	}
+
+	// Pareto dominance, computed independently for each axis (cost↓×F1↑ and
+	// size↓×F1↑): R is dominated by S iff S is no worse on x AND no worse on F1,
+	// strict on at least one. Only runs with an x-value on that axis participate;
+	// the cheapest/smallest dominator wins (the most damning "why pay/scale more").
+	const applyDominance = (
+		xOf: (r: FrontierRun) => number | null,
+		setOn: (r: FrontierRun, v: boolean) => void,
+		setDom: (r: FrontierRun, v: string | null) => void
+	) => {
+		const pts = runs.filter((r) => xOf(r) != null);
+		for (const r of pts) {
+			const rx = xOf(r)!;
+			let dom: FrontierRun | null = null;
+			for (const s of pts) {
+				if (s === r) continue;
+				const sx = xOf(s)!;
+				if (sx <= rx && s.err_f1 >= r.err_f1 && (sx < rx || s.err_f1 > r.err_f1)) {
+					if (!dom || sx < xOf(dom)!) dom = s;
+				}
+			}
+			setDom(r, dom ? dom.model : null);
+			setOn(r, dom === null);
+		}
+	};
+	applyDominance(
+		(r) => (r.cost_known && r.usd_per_1k != null ? r.usd_per_1k : null),
+		(r, v) => (r.on_frontier_cost = v),
+		(r, v) => (r.dominated_by_cost = v)
+	);
+	applyDominance(
+		(r) => (r.size_known ? r.params_total_b : null),
+		(r, v) => (r.on_frontier_size = v),
+		(r, v) => (r.dominated_by_size = v)
+	);
+
+	runs.sort((a, b) => b.err_f1 - a.err_f1 || (a.usd_per_1k ?? Infinity) - (b.usd_per_1k ?? Infinity));
+
+	const pricedVals = runs
+		.filter((r) => r.cost_known && r.usd_per_1k != null && r.usd_per_1k > 0)
+		.map((r) => r.usd_per_1k!);
+	const sizeVals = runs.filter((r) => r.size_known).map((r) => r.params_total_b!);
+	const nGold = runs.length ? Math.max(...runs.map((r) => r.n_gold)) : 0;
+	const f1s = runs.map((r) => r.err_f1);
+	const note =
+		nGold > 0 && nGold < 300
+			? `gold n=${nGold} per run — error-F1 bands overlap; read rank as indicative, not decisive.`
+			: null;
+
+	// backfill the representative gold_n now that we've computed it
+	const selSub = substrates.find((s) => s.key === selected);
+	if (selSub) selSub.gold_n = nGold;
+
+	return {
+		substrates,
+		selected,
+		runs,
+		n_gold: nGold,
+		cost_span: {
+			min: pricedVals.length ? Math.min(...pricedVals) : null,
+			max: pricedVals.length ? Math.max(...pricedVals) : null
+		},
+		size_span: {
+			min: sizeVals.length ? Math.min(...sizeVals) : null,
+			max: sizeVals.length ? Math.max(...sizeVals) : null
+		},
+		f1_span: { min: f1s.length ? Math.min(...f1s) : 0, max: f1s.length ? Math.max(...f1s) : 0 },
+		note
+	};
+}

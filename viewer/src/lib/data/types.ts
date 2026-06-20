@@ -24,6 +24,29 @@ export interface RunMeta {
 	bucket_counts: Record<string, number>;
 	/** Raw run JSONL this export was generated from. */
 	source_run: string | null;
+	/** The corpus this run was scored against (`generated_from.corpus`, basename).
+	 *  The JOIN BOUNDARY for cross-run comparison: runs are only comparable —
+	 *  content-hash-joinable, frontier-plottable — within one substrate. `null` on
+	 *  legacy exports that did not record it. */
+	substrate: string | null;
+	/** Run-level gold coverage from `export_meta.gold` (how many evidences carry a
+	 *  human curation). Read at discovery, no evidence load. `null` on runs with no
+	 *  baked gold. */
+	gold_coverage: { covered: number; total: number } | null;
+	/** Ground-truth model size, baked from `export_meta.model_meta` (travels with
+	 *  the run; the viewer holds no size table). `status: 'unknown'` (total_b null)
+	 *  for closed-weight models — never a guessed number. `undefined` ⇒ legacy
+	 *  export (pre model_meta). */
+	model_meta?: {
+		status: 'known' | 'unknown';
+		total_b: number | null;
+		active_b: number | null;
+		is_open: boolean | null;
+		/** size is inferred/undisclosed for this exact model (not a published spec)
+		 *  — the size-axis analogue of an estimated cost; renders as a hollow dot. */
+		estimated: boolean;
+		source: string;
+	} | null;
 	/** From the raw run's .meta.json, when present. */
 	status: string | null;
 	started_at: string | null;
@@ -32,7 +55,7 @@ export interface RunMeta {
 	 *  Numbers only — the viewer holds no price table. `null` ⇒ legacy export
 	 *  (pre-cost field); render as "unavailable", never $0. */
 	cost?: {
-		status: 'known' | 'partial' | 'unavailable';
+		status: 'known' | 'estimated' | 'partial' | 'unavailable';
 		total_usd: number | null;
 		input_tokens: number;
 		output_tokens: number;
@@ -154,7 +177,7 @@ export interface EvidenceRow {
 	 *  cost_usd null + cost_status 'unavailable' ⇒ a model with no verified price.
 	 *  Absent entirely ⇒ legacy export (pre-cost); treat as unavailable. */
 	cost_usd?: number | null;
-	cost_status?: 'known' | 'unavailable';
+	cost_status?: 'known' | 'estimated' | 'unavailable';
 	input_tokens?: number;
 	output_tokens?: number;
 	n_calls?: number;

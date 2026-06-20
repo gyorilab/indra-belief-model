@@ -27,7 +27,7 @@ export function fmtDelta(d: number | null | undefined): string {
 /** The baked run-level cost block (numbers only; the viewer holds no price
  *  table). Mirrors `RunMeta['cost']`; `null` ⇒ legacy export (pre-cost field). */
 export interface RunCost {
-	status: 'known' | 'partial' | 'unavailable';
+	status: 'known' | 'estimated' | 'partial' | 'unavailable';
 	total_usd: number | null;
 }
 
@@ -42,8 +42,11 @@ export interface RunCost {
  */
 export function fmtCost(c: RunCost | null | undefined): string {
 	if (!c || c.status === 'unavailable') return 'cost n/a';
-	if (c.total_usd == null || c.total_usd === 0) return '$0.00';
-	return c.total_usd < 0.01 ? '<$0.01' : `$${c.total_usd.toFixed(2)}`;
+	// 'estimated' = a Bedrock-grounded estimate for a self-hosted model (no model
+	// is free); mark it with a leading ~ so it never reads as observed spend.
+	const est = c.status === 'estimated' ? '~' : '';
+	if (c.total_usd == null || c.total_usd === 0) return `${est}$0.00`;
+	return est + (c.total_usd < 0.01 ? '<$0.01' : `$${c.total_usd.toFixed(2)}`);
 }
 
 /**

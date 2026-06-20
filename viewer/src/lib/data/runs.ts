@@ -30,8 +30,15 @@ function readSourceMeta(sourceRun: string | null): Pick<RunMeta, 'status' | 'sta
 }
 
 function toRunMeta(dir: string, m: Record<string, unknown>): RunMeta {
-	const generatedFrom = (m.generated_from ?? {}) as { run?: string };
+	const generatedFrom = (m.generated_from ?? {}) as { run?: string; corpus?: string };
 	const sourceRun = generatedFrom.run ?? null;
+	const corpus = generatedFrom.corpus ?? null;
+	const substrate = corpus ? corpus.split('/').pop() ?? corpus : null;
+	const goldBlock = m.gold as { covered?: number; total?: number } | undefined;
+	const gold_coverage =
+		goldBlock && typeof goldBlock.covered === 'number' && typeof goldBlock.total === 'number'
+			? { covered: goldBlock.covered, total: goldBlock.total }
+			: null;
 	return {
 		run_id: String(m.run_id ?? ''),
 		export_dir: dir,
@@ -43,6 +50,9 @@ function toRunMeta(dir: string, m: Record<string, unknown>): RunMeta {
 		// Legacy exports lack `cost` ⇒ null ⇒ viewer shows "unavailable".
 		cost: (m.cost as RunMeta['cost']) ?? null,
 		source_run: sourceRun,
+		substrate,
+		gold_coverage,
+		model_meta: (m.model_meta as RunMeta['model_meta']) ?? null,
 		...readSourceMeta(sourceRun)
 	};
 }
