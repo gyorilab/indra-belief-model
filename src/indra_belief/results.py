@@ -34,7 +34,9 @@ from collections import Counter, defaultdict
 from typing import Any
 
 from indra_belief.curation import aggregate_gold
-from indra_belief.corpus.cost import model_has_known_cost, token_cost_usd
+from indra_belief.corpus.cost import price_basis, token_cost_usd
+from indra_belief.model_client import canonical_model_name
+from indra_belief.model_meta import model_size
 from indra_belief.calibration_constants import calibration_for
 
 DEFAULT_CORPUS = "data/corpora/latest_statements_rasmachine.json"
@@ -160,12 +162,13 @@ def call_log_cost(call_log: list[dict]) -> dict:
 
     Single pass: token totals AND USD are accumulated together so they can never
     diverge. Cost is UNAVAILABLE (cost_usd=None, cost_status="unavailable") iff ANY
-    call used a model_id that is neither priced nor known-zero (including model_id
-    None / "unknown") — we never report a partial/fabricated $0 for an unverified
-    model. Otherwise cost_usd is the sum of token_cost_usd over every call
-    (zero-cost models contribute exactly 0.0). Empty/missing call_log -> $0.00 over
-    0 tokens with cost_status="known" (a no-LLM row, e.g. Tier-0 no_text /
-    Tier-1 auto-reject, genuinely costs $0).
+    call used a model_id with no price at all (list or estimate; including model_id
+    None / "unknown") — we never report a partial/fabricated $0 for an unpriced
+    model. Otherwise cost_usd is the sum of token_cost_usd over every call. When any
+    priced call used a Bedrock-GROUNDED ESTIMATE (a local/self-hosted model, no
+    observed list price) the status is "estimated" rather than "known". Empty/
+    missing call_log -> $0.00 over 0 tokens with cost_status="known" (a no-LLM row,
+    e.g. Tier-0 no_text / Tier-1 auto-reject, genuinely costs $0).
 
     FLOOR caveat: when a PRICED call's prompt_tokens is the unreported sentinel
     (-1, model_client.ModelResponse default when a backend omits usage.prompt_tokens)
@@ -179,6 +182,7 @@ def call_log_cost(call_log: list[dict]) -> dict:
     in_tok = out_tok = 0
     cost = 0.0
     all_known = True
+    any_estimate = False
     seen_models: set[str] = set()
     for c in calls:
         mid = c.get("model_id")
@@ -188,9 +192,12 @@ def call_log_cost(call_log: list[dict]) -> dict:
         ot = c.get("out_tokens")
         in_tok += pt if isinstance(pt, (int, float)) and pt > 0 else 0
         out_tok += ot if isinstance(ot, (int, float)) and ot > 0 else 0
-        if mid is None or not model_has_known_cost(mid):
+        basis = price_basis(mid) if mid else None
+        if basis is None:
             all_known = False
         else:
+            if basis == "estimate":
+                any_estimate = True
             # same clamping as the totals via token_cost_usd -> _nonnegative_tokens
             cost += token_cost_usd(mid, pt, ot, on_unknown="zero")
     if not all_known:
@@ -201,8 +208,10 @@ def call_log_cost(call_log: list[dict]) -> dict:
             "input_tokens": in_tok, "output_tokens": out_tok,
             "n_calls": len(calls), "models": sorted(seen_models),
         }
+    # "estimated": at least one priced call used a Bedrock-grounded estimate (a
+    # local/self-hosted model) rather than an observed list price.
     return {
-        "cost_usd": round(cost, 6), "cost_status": "known",
+        "cost_usd": round(cost, 6), "cost_status": "estimated" if any_estimate else "known",
         "input_tokens": in_tok, "output_tokens": out_tok,
         "n_calls": len(calls), "models": sorted(seen_models),
     }
@@ -361,7 +370,10 @@ def build_run_export(
     """
     rmeta = _read_run_meta(run_path)
     run_id = run_id or rmeta.get("run_id")
-    model = model or rmeta.get("model")
+    # Canonicalize the recorded model name (host-prefix + full tag) so every
+    # export — incl. legacy runs recorded under abbreviated names — reads
+    # consistently; model_size/_soft_calibration_block downstream use this.
+    model = canonical_model_name(model or rmeta.get("model"))
 
     with open(corpus_path) as f:
         corpus = json.load(f)
@@ -390,6 +402,7 @@ def build_run_export(
     n_rows_costed = n_rows_unavailable = n_rows_no_llm = 0
     run_models: set[str] = set()
     any_unavailable = False
+    any_estimated = False
     stmt_agg: dict[str, dict] = defaultdict(lambda: {
         "scores": [], "nc": 0, "ni": 0, "nother": 0, "buckets": Counter(),
         "belief": None, "subject": None, "stmt_type": None, "object": None,
@@ -493,6 +506,8 @@ def build_run_export(
         elif cost["n_calls"] == 0:
             n_rows_no_llm += 1
         else:
+            if cost["cost_status"] == "estimated":
+                any_estimated = True
             cost_total += cost["cost_usd"]
             n_rows_costed += 1
 
@@ -597,11 +612,14 @@ def build_run_export(
                     "status (plaintext/inline/encrypted/not_returned/none) + committed support/objection.",
         },
         "cost": {
-            # "known": every row's cost was computable (rows may be $0).
+            # "known": every priced row used an observed list price (rows may be $0).
+            # "estimated": all rows priced, but some used a Bedrock-grounded estimate
+            #              (a local/self-hosted model with no observed list price).
             # "partial": some rows priced, some unavailable -> total covers only priced rows.
             # "unavailable": NO row had a verified price (whole run is unverified).
             "status": ("unavailable" if n_rows_costed == 0 and any_unavailable
                        else "partial" if any_unavailable
+                       else "estimated" if any_estimated
                        else "known"),
             "total_usd": round(cost_total, 4) if n_rows_costed > 0 else None,
             "input_tokens": cost_in_tok,
@@ -617,6 +635,10 @@ def build_run_export(
         # 'soft_calibration' (not 'calibration') to avoid collision with the
         # viewer's existing Validity.calibration (belief-vs-INDRA residual {n,mae,bias}).
         "soft_calibration": _soft_calibration_block(model),
+        # Ground-truth model size (params), so F1 can be read over scale, not just
+        # cost. Static model metadata baked per-run (travels with the run; viewer
+        # holds no size table). Closed models -> status 'unknown' (never guessed).
+        "model_meta": model_size(model or "unknown"),
         "schema_version": 5,  # v5: per-evidence reasoning_trace (CoT-access + committed justification)
     }
     return per_ev, per_stmt, meta

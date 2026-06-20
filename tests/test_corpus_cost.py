@@ -6,7 +6,7 @@ import pytest
 from indra.statements import Agent, Evidence, Phosphorylation
 
 from indra_belief.corpus import estimate_cost
-from indra_belief.corpus.cost import model_has_known_cost, token_cost_usd
+from indra_belief.corpus.cost import model_has_known_cost, price_basis, token_cost_usd
 
 
 def _stmt(n_ev: int):
@@ -128,15 +128,19 @@ def test_bedrock_prefixed_haiku_is_priced():
     assert model_has_known_cost("anthropic.claude-haiku-4-5") is True
 
 
-def test_flagship_gemma_bare_id_is_zero_cost():
-    # The bare gemma-4-26b id (FLAGSHIP call_log) must be recognized as $0.
-    assert token_cost_usd("gemma-4-26b", 5000, 5000) == 0.0
-    assert model_has_known_cost("gemma-4-26b") is True
+def test_flagship_gemma_is_bedrock_estimated():
+    # gemma-remote (bare + ollama call_log ids) is NO LONGER free — it is GROUNDED
+    # in the Bedrock gemma-4-26b-a4b list rate ($0.13/$0.40), basis 'estimate'.
+    for mid in ("gemma-4-26b", "gemma-4-26b-ollama"):
+        assert model_has_known_cost(mid) is True
+        assert price_basis(mid) == "estimate"
+        assert token_cost_usd(mid, 5000, 5000) == pytest.approx(5000 * 0.13 / 1e6 + 5000 * 0.40 / 1e6)
 
 
-def test_registry_spelled_gemma_is_zero_cost():
-    assert token_cost_usd("gemma-4-26b-ollama", 5000, 5000) == 0.0
-    assert model_has_known_cost("gemma-4-26b-ollama") is True
+def test_medpsy_4b_estimated_from_gemma_e2b():
+    # No Bedrock 4B twin → proxy 2x gemma-4-e2b ($0.04/$0.08 → $0.08/$0.16).
+    assert price_basis("medpsy-4b") == "estimate"
+    assert token_cost_usd("medpsy-4b", 1_000_000, 1_000_000) == pytest.approx(0.08 + 0.16)
 
 
 @pytest.mark.parametrize(
@@ -150,17 +154,26 @@ def test_registry_spelled_gemma_is_zero_cost():
         "dealignai/Qwen3.5-VL-122B-A10B-4bit-MLX-CRACK",
     ],
 )
-def test_local_self_hosted_models_are_zero_cost(model_id):
-    assert token_cost_usd(model_id, 9999, 9999) == 0.0
+def test_local_self_hosted_models_are_estimated_not_free(model_id):
+    # No model is free to run: each local model resolves to a Bedrock-grounded
+    # estimate (>$0), never $0.
     assert model_has_known_cost(model_id) is True
+    assert price_basis(model_id) == "estimate"
+    assert token_cost_usd(model_id, 9999, 9999) > 0.0
 
 
-def test_bedrock_gemma_priced_google_aistudio_gemma_unverified():
-    # Bedrock-served Gemma 4 carries the published AWS on-demand rate.
-    assert model_has_known_cost("google.gemma-4-26b-a4b") is True
+def test_bedrock_gemma_list_google_aistudio_gemma_estimated_from_twin():
+    # Bedrock-served Gemma 4 carries the published AWS on-demand rate (list basis).
+    assert price_basis("google.gemma-4-26b-a4b") == "list"
     assert token_cost_usd("google.gemma-4-26b-a4b", 1_000_000, 1_000_000) == pytest.approx(0.53)
-    # Google AI Studio Gemma stays unpriced → exporter degrades it to "unavailable".
-    assert model_has_known_cost("gemma-4-26b-a4b-it") is False
+    # Google AI Studio Gemma (gemma-4-*-it) is the SAME model on a different host
+    # with no published Google rate → grounded in the Bedrock twin as an ESTIMATE
+    # (no model is free), at the twin's rate. Overridable by adding a real Google
+    # list price to MODEL_PRICES_PER_M_TOKENS.
+    assert price_basis("gemma-4-26b-a4b-it") == "estimate"
+    assert price_basis("gemma-4-31b-it") == "estimate"
+    assert token_cost_usd("gemma-4-26b-a4b-it", 1_000_000, 1_000_000) == pytest.approx(0.53)
+    assert token_cost_usd("gemma-4-31b-it", 1_000_000, 1_000_000) == pytest.approx(0.14 + 0.40)
 
 
 def test_unknown_sentinel_was_removed_from_zero_cost():

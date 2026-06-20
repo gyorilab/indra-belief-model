@@ -111,27 +111,78 @@ def _load_pricing_table() -> tuple[dict[str, tuple[float, float]], set[str]]:
             "gpt-4o-mini": (0.15, 0.60),
         },
         {
-            # Genuinely-free local / self-hosted (zero marginal cost on owned
-            # hardware), keyed on the REAL call_log model_ids verified in the
-            # live runs (NOT the registry keys).
-            "gemma-4-26b",                                    # FLAGSHIP call_log id (gemma-remote tailnet ollama gateway)
-            "gemma-4-26b-ollama",                             # registry-spelled id for the SAME gateway
-            "medpsy-4b",                                      # medpsy-remote (llama.cpp gateway) + medpsy flagship
-            "qvac/MedPsy-4B",                                 # medpsy-4b-local (transformers)
-            "mlx-community/gemma-4-26b-a4b-it-8bit",          # gemma-moe (local MLX)
-            "mlx-community/gemma-4-31b-it-8bit",              # gemma-31b (local MLX)
-            "minimax-m2.7-jangtq-crack",                     # minimax-local
-            "dealignai/Qwen3.5-VL-122B-A10B-4bit-MLX-CRACK",  # qwen-thinker
-            # test-only sentinels (kept so existing scaffolding stays $0; NOT real models)
+            # Test sentinels ONLY — genuinely $0 because they are not real models.
+            # Real local / self-hosted models are NO LONGER treated as free: each
+            # carries a Bedrock-GROUNDED estimate (ESTIMATED_PRICE_REFS below).
+            # "No model is free to run." "unknown" stays OUT (it degrades to
+            # unavailable, never a fabricated $0).
             "mock", "mock-model", "smoke-local",
-            # NOTE: "unknown" is deliberately NOT here — a model_id of "unknown"
-            # is the genuinely-unverified case and must degrade to "unavailable"
-            # (never a fabricated $0).
         },
     )
 
 
 MODEL_PRICES_PER_M_TOKENS, ZERO_COST_MODEL_IDS = _load_pricing_table()
+
+# ── Estimated prices for self-hosted / local models ─────────────────────────
+# No model is free to run. A local model's per-token cost is GROUNDED in a
+# provider list price (Bedrock first) for the closest comparable model, scaled by
+# an active-parameter factor where there is no exact twin. Expressed as a
+# REFERENCE (not a frozen number) so the estimate tracks the reference's list
+# price. Keyed on the REAL call_log model_id; basis surfaces as 'estimate' so the
+# UI can mark it (~) distinctly from observed ('list') spend.
+#
+# EXTENSIBLE TO ANY PROVIDER: to price a new provider's served model, add its list
+# rate to MODEL_PRICES_PER_M_TOKENS (keyed by whatever model_id its call_log
+# emits). To price a self-hosted model, add a (reference_model_id, factor, note)
+# row here — the cost then follows that reference's list price automatically.
+ESTIMATED_PRICE_REFS: dict[str, tuple[str, float, str]] = {
+    # Exact Bedrock twins (the same model is also served on Bedrock) — factor 1.0.
+    "gemma-4-26b": ("google.gemma-4-26b-a4b", 1.0, "Bedrock gemma-4-26b-a4b list (exact twin)"),
+    "gemma-4-26b-ollama": ("google.gemma-4-26b-a4b", 1.0, "Bedrock gemma-4-26b-a4b list (exact twin)"),
+    "mlx-community/gemma-4-26b-a4b-it-8bit": ("google.gemma-4-26b-a4b", 1.0, "Bedrock gemma-4-26b-a4b list (same model, local MLX)"),
+    "mlx-community/gemma-4-31b-it-8bit": ("google.gemma-4-31b", 1.0, "Bedrock gemma-4-31b list (same model, local MLX)"),
+    # Google AI Studio (Gemini API) Gemma — the SAME gemma-4 model on a different
+    # host with no published Google rate; grounded in the Bedrock twin. If a real
+    # Google list price is verified, add it to MODEL_PRICES_PER_M_TOKENS above
+    # (keyed on these ids) — that takes precedence over the estimate.
+    "gemma-4-26b-a4b-it": ("google.gemma-4-26b-a4b", 1.0, "Google AI Studio Gemma; ~ Bedrock gemma-4-26b-a4b list (same model)"),
+    "gemma-4-31b-it": ("google.gemma-4-31b", 1.0, "Google AI Studio Gemma; ~ Bedrock gemma-4-31b list (same model)"),
+    "minimax-m2.7-jangtq-crack": ("minimax.minimax-m2.5", 1.0, "Bedrock minimax-m2.5 list (closest MiniMax)"),
+    "dealignai/Qwen3.5-VL-122B-A10B-4bit-MLX-CRACK": ("qwen.qwen3-235b-a22b-2507", 1.0, "Bedrock Qwen3 MoE list (closest Qwen)"),
+    # No Bedrock 4B twin — proxy to gemma-4-e2b (2B-effective) scaled 2x by the
+    # active-param ratio (medpsy-4b is 4B dense). Tune the factor to taste.
+    "medpsy-4b": ("google.gemma-4-e2b", 2.0, "~2x Bedrock gemma-4-e2b (4B dense vs 2B-effective)"),
+    "qvac/MedPsy-4B": ("google.gemma-4-e2b", 2.0, "~2x Bedrock gemma-4-e2b (4B dense vs 2B-effective)"),
+}
+
+
+def price_for(model_id: str) -> tuple[float, float, str] | None:
+    """Resolve ``(in_per_M, out_per_M, basis)`` for a model, or ``None`` if it
+    cannot be priced. The single resolver all cost math goes through.
+
+    basis: ``'list'`` (a provider's observed list rate) | ``'estimate'`` (grounded
+    in a reference list price) | ``'test'`` (a $0 test sentinel).
+    """
+    p = MODEL_PRICES_PER_M_TOKENS.get(model_id)
+    if p is not None:
+        return (p[0], p[1], "list")
+    ref = ESTIMATED_PRICE_REFS.get(model_id)
+    if ref is not None:
+        ref_id, factor, _note = ref
+        rp = MODEL_PRICES_PER_M_TOKENS.get(ref_id)
+        if rp is not None:
+            return (rp[0] * factor, rp[1] * factor, "estimate")
+    if model_id in ZERO_COST_MODEL_IDS:
+        return (0.0, 0.0, "test")
+    return None
+
+
+def price_basis(model_id: str) -> str | None:
+    """``'list'`` | ``'estimate'`` | ``'test'`` | ``None`` — how a price is known."""
+    p = price_for(model_id)
+    return p[2] if p is not None else None
+
+
 PROBE_STEP_KINDS = frozenset({
     "subject_role_probe",
     "object_role_probe",
@@ -163,7 +214,7 @@ def _normalize_probe_step_filter(
 
 
 def model_has_known_cost(model_id: str) -> bool:
-    return model_id in MODEL_PRICES_PER_M_TOKENS or model_id in ZERO_COST_MODEL_IDS
+    return price_for(model_id) is not None
 
 
 def _nonnegative_tokens(value: int | float | None) -> int | float:
@@ -179,22 +230,20 @@ def token_cost_usd(
     *,
     on_unknown: Literal["zero", "raise"] = "zero",
 ) -> float:
-    """Compute observed USD from token counts and the local price table."""
-    if model_id in ZERO_COST_MODEL_IDS:
-        return 0.0
-    prices = MODEL_PRICES_PER_M_TOKENS.get(model_id)
+    """Compute USD from token counts and the resolved price (list or estimate)."""
+    prices = price_for(model_id)
     if prices is None:
         if on_unknown == "raise":
             raise ValueError(
-                f"model_id {model_id!r} is missing from MODEL_PRICES_PER_M_TOKENS; "
+                f"model_id {model_id!r} has no price (list or estimate); "
                 "cannot enforce observed-spend cap"
             )
         log.warning(
-            "model_id %r unknown to MODEL_PRICES_PER_M_TOKENS; observed cost recorded as 0",
+            "model_id %r has no list price or estimate; cost recorded as 0",
             model_id,
         )
         return 0.0
-    in_price, out_price = prices
+    in_price, out_price, _basis = prices
     return (
         _nonnegative_tokens(prompt_tokens) * in_price / 1_000_000
         + _nonnegative_tokens(out_tokens) * out_price / 1_000_000
@@ -270,10 +319,10 @@ def estimate_cost(
     output_tokens = n_llm_calls * avg_output_tokens_per_call
 
     if in_price_per_m is None or out_price_per_m is None:
-        prices = MODEL_PRICES_PER_M_TOKENS.get(model_id)
+        prices = price_for(model_id)
         if prices is None:
             log.warning(
-                "model_id %r unknown to MODEL_PRICES_PER_M_TOKENS; "
+                "model_id %r has no list price or estimate; "
                 "pass in_price_per_m + out_price_per_m to override",
                 model_id,
             )

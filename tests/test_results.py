@@ -166,9 +166,13 @@ def test_call_log_cost_empty_is_known_zero():
     assert c["models"] == []
 
 
-def test_call_log_cost_single_zero_cost_call():
+def test_call_log_cost_single_estimated_local_call():
+    # gemma-4-26b is a local model → Bedrock-grounded ESTIMATE ($0.13/$0.40),
+    # cost_status "estimated", never a fabricated $0.
     c = call_log_cost([{"model_id": "gemma-4-26b", "prompt_tokens": 2549, "out_tokens": 296}])
-    assert c["cost_usd"] == 0.0 and c["cost_status"] == "known"
+    assert c["cost_status"] == "estimated"
+    assert c["cost_usd"] == round(2549 * 0.13 / 1e6 + 296 * 0.40 / 1e6, 6)
+    assert c["cost_usd"] > 0.0
     assert c["input_tokens"] == 2549 and c["output_tokens"] == 296
     assert c["models"] == ["gemma-4-26b"]
 
@@ -196,12 +200,12 @@ def test_call_log_cost_mixed_priced_and_unverified():
     # BOTH calls are still reported (they are facts), USD withheld.
     c = call_log_cost([
         {"model_id": "anthropic.claude-sonnet-4-6", "prompt_tokens": 2000, "out_tokens": 500},
-        {"model_id": "gemma-4-26b-a4b-it", "prompt_tokens": 1500, "out_tokens": 300},
+        {"model_id": "vendor.unlisted-7b", "prompt_tokens": 1500, "out_tokens": 300},
     ])
     assert c["cost_status"] == "unavailable" and c["cost_usd"] is None
     assert c["input_tokens"] == 3500 and c["output_tokens"] == 800
     assert c["n_calls"] == 2
-    assert c["models"] == ["anthropic.claude-sonnet-4-6", "gemma-4-26b-a4b-it"]
+    assert c["models"] == ["anthropic.claude-sonnet-4-6", "vendor.unlisted-7b"]
 
 
 def test_call_log_cost_missing_model_id_is_unavailable():
@@ -218,7 +222,9 @@ def test_call_log_cost_unknown_sentinel_is_unavailable():
 def test_call_log_cost_error_call_shape_clamps_to_zero():
     c = call_log_cost([{"model_id": "gemma-4-26b", "prompt_tokens": -1, "out_tokens": 0}])
     assert c["input_tokens"] == 0 and c["output_tokens"] == 0
-    assert c["cost_status"] == "known" and c["cost_usd"] == 0.0
+    # gemma-4-26b is an estimated local model → status "estimated" even though the
+    # clamped (-1/0) tokens make the computed cost exactly $0.00.
+    assert c["cost_status"] == "estimated" and c["cost_usd"] == 0.0
 
 
 def test_call_log_cost_priced_unreported_prompt_tokens_is_a_floor():
@@ -276,7 +282,10 @@ def _cost_row(evidence_i, source_hash, verdict, call_log):
     }
 
 
-def test_export_cost_zero_cost_run_is_known(tmp_path):
+def test_export_cost_local_run_is_estimated(tmp_path):
+    # A run scored entirely on a local model (gemma-4-26b-ollama) is no longer
+    # "free" — it is GROUNDED in the Bedrock gemma-4-26b-a4b list rate, so the run
+    # cost is a positive ESTIMATE and cost_status is "estimated".
     rows = [
         _cost_row(0, 1, "correct",
                   [{"model_id": "gemma-4-26b-ollama", "prompt_tokens": 2549, "out_tokens": 296, "finish_reason": "stop"}]),
@@ -287,11 +296,14 @@ def test_export_cost_zero_cost_run_is_known(tmp_path):
     corp = _write_corpus(tmp_path, _cost_corpus())
     per_ev, _, meta = build_run_export(str(run), str(corp), run_id="z", model="gemma")
 
-    assert per_ev[0]["cost_usd"] == 0.0 and per_ev[0]["cost_status"] == "known"
+    row0 = round(2549 * 0.13 / 1e6 + 296 * 0.40 / 1e6, 6)
+    row1 = round(1000 * 0.13 / 1e6 + 100 * 0.40 / 1e6, 6)
+    assert per_ev[0]["cost_usd"] == row0 and per_ev[0]["cost_status"] == "estimated"
     assert per_ev[0]["input_tokens"] == 2549 and per_ev[0]["output_tokens"] == 296
     assert per_ev[0]["n_calls"] == 1
-    assert meta["cost"]["status"] == "known"
-    assert meta["cost"]["total_usd"] == 0.0
+    assert meta["cost"]["status"] == "estimated"
+    assert meta["cost"]["total_usd"] == round(row0 + row1, 4)
+    assert meta["cost"]["total_usd"] > 0.0
     assert meta["cost"]["models"] == ["gemma-4-26b-ollama"]
     assert meta["cost"]["n_evidence_costed"] == 2
     assert meta["cost"]["n_evidence_unavailable"] == 0
@@ -326,16 +338,16 @@ def test_export_cost_priced_bedrock_run_sums(tmp_path):
 
 def test_export_cost_mixed_priced_and_unverified_is_partial(tmp_path):
     # Synthetic run covering ALL THREE classes the spec asks for:
-    #   row 0: Bedrock-PRICED (anthropic.claude-sonnet-4-6) → costed
-    #   row 1: local ZERO-COST (gemma-4-26b) → costed at $0
-    #   row 2: UNVERIFIED-price (gemma-4-26b-a4b-it) → unavailable, excluded
+    #   row 0: Bedrock-PRICED list (anthropic.claude-sonnet-4-6) → costed
+    #   row 1: local ESTIMATED (gemma-4-26b) → costed at its Bedrock-grounded estimate
+    #   row 2: UNVERIFIED-price (vendor.unlisted-7b) → unavailable, excluded
     rows = [
         _cost_row(0, 1, "correct",
                   [{"model_id": "anthropic.claude-sonnet-4-6", "prompt_tokens": 2000, "out_tokens": 500}]),
         _cost_row(1, 2, "incorrect",
                   [{"model_id": "gemma-4-26b", "prompt_tokens": 1000, "out_tokens": 100}]),
         _cost_row(2, 3, "correct",
-                  [{"model_id": "gemma-4-26b-a4b-it", "prompt_tokens": 1500, "out_tokens": 300}]),
+                  [{"model_id": "vendor.unlisted-7b", "prompt_tokens": 1500, "out_tokens": 300}]),
     ]
     run = _write_run(tmp_path, rows)
     corp = _write_corpus(tmp_path, _cost_corpus())
@@ -344,17 +356,19 @@ def test_export_cost_mixed_priced_and_unverified_is_partial(tmp_path):
     by_i = {r["evidence_i"]: r for r in per_ev}
     assert by_i[0]["cost_status"] == "known"
     assert by_i[0]["cost_usd"] == round(2000 * 3 / 1e6 + 500 * 15 / 1e6, 6)
-    assert by_i[1]["cost_status"] == "known" and by_i[1]["cost_usd"] == 0.0
+    by1 = round(1000 * 0.13 / 1e6 + 100 * 0.40 / 1e6, 6)
+    assert by_i[1]["cost_status"] == "estimated" and by_i[1]["cost_usd"] == by1
     assert by_i[2]["cost_status"] == "unavailable" and by_i[2]["cost_usd"] is None
     # the unverified row still reports its observed tokens
     assert by_i[2]["input_tokens"] == 1500 and by_i[2]["output_tokens"] == 300
 
+    # row 2 is unavailable → the run is "partial" (dominates "estimated").
     assert meta["cost"]["status"] == "partial"
     assert meta["cost"]["n_evidence_unavailable"] == 1
-    assert meta["cost"]["n_evidence_costed"] == 2  # priced + zero-cost both count
-    only_priced = 2000 * 3 / 1e6 + 500 * 15 / 1e6  # zero-cost row adds $0
-    assert meta["cost"]["total_usd"] == round(only_priced, 4)
-    assert "gemma-4-26b-a4b-it" in meta["cost"]["models"]
+    assert meta["cost"]["n_evidence_costed"] == 2  # priced + estimated both count
+    sonnet = round(2000 * 3 / 1e6 + 500 * 15 / 1e6, 6)  # + the gemma estimate
+    assert meta["cost"]["total_usd"] == round(sonnet + by1, 4)
+    assert "vendor.unlisted-7b" in meta["cost"]["models"]
     assert meta["schema_version"] == 5
 
 
