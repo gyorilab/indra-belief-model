@@ -33,10 +33,11 @@ _CALIBRATION: dict[str, dict] = {
 def calibration_for(model: str | None) -> dict | None:
     """Resolve the soft-weight pair for a run's reader model name.
 
-    The gemma fit covers **gemma-4-26B** (served as ``gemma-remote`` /
-    ``gemma-moe`` / ``gemma-google-moe`` — same weights, which inherit the fit).
-    The **gemma-4-31B** variants (``gemma-31b`` / ``gemma-google-31b``) are a
-    DIFFERENT model and must NOT inherit the 26B fit; ``bedrock-*`` serving is
+    The gemma fit covers **gemma-4-26B** (served as ``remote-gemma-4-26b`` /
+    ``local-gemma-4-26b`` / ``google-gemma-4-26b`` — same weights, which inherit
+    the fit). The **gemma-4-31B** variants (``local-gemma-4-31b`` /
+    ``google-gemma-4-31b``) are a DIFFERENT model and must NOT inherit the 26B
+    fit; ``bedrock-*`` serving is
     uncertain/unprovisioned — all return None (→ hard gate) until separately fit
     (open question Q3). ``medpsy-4B`` is the only medpsy model. None ⇒ hard gate.
     """

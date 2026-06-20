@@ -17,7 +17,7 @@ Also dumps the most-confident errors (|belief-0.5| largest) for human/agent
 categorisation. In-sample on eval_curation_v1 (the held-out picture comes with
 the holdout_cc run).
 
-    PYTHONPATH=src python scripts/profile_residual.py --model gemma-remote
+    PYTHONPATH=src python scripts/profile_residual.py --model remote-gemma-4-26b
 """
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--gold", default="data/benchmark/eval_curation_v1.jsonl")
     ap.add_argument("--run", default="data/results/eval_curation_v1_gemma.jsonl")
-    ap.add_argument("--model", default="gemma-remote")
+    ap.add_argument("--model", default="remote-gemma-4-26b")
     ap.add_argument("--label", default=None)
     ap.add_argument("--dump", default="data/results/residual_examples.json")
     ap.add_argument("--out", default="data/results/residual_profile.md")

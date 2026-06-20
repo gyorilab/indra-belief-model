@@ -7,7 +7,7 @@ interrupted, rerunning the same command continues from the next missing row.
 
 Example:
   PYTHONPATH=src .venv/bin/python scripts/run_rasmachine_monolithic.py \
-    --model gemma-remote \
+    --model remote-gemma-4-26b \
     --input data/corpora/latest_statements_rasmachine.json \
     --output data/results/rasmachine_mono_gemma_remote_direct.jsonl
 """
@@ -530,7 +530,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run monolithic rasmachine scoring with JSONL resume.")
     parser.add_argument("--input", default=str(DEFAULT_INPUT))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
-    parser.add_argument("--model", default="gemma-remote")
+    parser.add_argument("--model", default="remote-gemma-4-26b")
     parser.add_argument("--arch", choices=("monolithic", "decomposed", "panel"), default="monolithic",
                         help="scoring architecture; decomposed = four-probe orchestrator")
     parser.add_argument(

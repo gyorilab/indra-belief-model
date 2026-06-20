@@ -3,7 +3,7 @@
 # Run detached on noot-1 (nohup/setsid) so it survives SSH drop / laptop sleep.
 cd ~/indra-belief-model || exit 1
 run(){ MONO_VARIANT="$1" PYTHONPATH=src .venv/bin/python scripts/run_rasmachine_monolithic.py \
-  --model medpsy-remote --input /tmp/eval_curation_v1_statements.json \
+  --model remote-medpsy-4b --input /tmp/eval_curation_v1_statements.json \
   --output "/tmp/$2.jsonl" --workers 4 --no-resume --row-error-policy record --no-export \
   >"/tmp/$2.runlog" 2>&1; }
 rm -f /tmp/ec1_BATCH_DONE

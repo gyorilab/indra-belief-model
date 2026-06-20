@@ -110,18 +110,18 @@ def test_contradiction_forwards_soft_kwargs():
 
 def test_calibration_resolver():
     from indra_belief.calibration_constants import calibration_for
-    assert calibration_for("gemma-remote")["w_correct"] == 0.183
+    assert calibration_for("remote-gemma-4-26b")["w_correct"] == 0.183
     assert calibration_for("gemma-26B")["variant"] == "guard"
-    assert calibration_for("gemma-moe")["w_correct"] == 0.183          # 26B weights inherit
-    assert calibration_for("gemma-google-moe")["w_correct"] == 0.183   # 26B weights inherit
-    assert calibration_for("medpsy-remote")["w_correct"] == 0.243
+    assert calibration_for("local-gemma-4-26b")["w_correct"] == 0.183          # 26B weights inherit
+    assert calibration_for("google-gemma-4-26b")["w_correct"] == 0.183   # 26B weights inherit
+    assert calibration_for("remote-medpsy-4b")["w_correct"] == 0.243
     assert math.isclose(calibration_for("medpsy-4b")["w_incorrect"], 1 - 0.127)
-    assert "kappa" not in calibration_for("medpsy-remote")  # κ removed from the model
+    assert "kappa" not in calibration_for("remote-medpsy-4b")  # κ removed from the model
     # gemma-4-31B is a DIFFERENT model — must NOT inherit the 26B fit
-    assert calibration_for("gemma-31b") is None
-    assert calibration_for("gemma-google-31b") is None
+    assert calibration_for("local-gemma-4-31b") is None
+    assert calibration_for("google-gemma-4-31b") is None
     # bedrock serving uncertain / unfitted
-    assert calibration_for("bedrock-gemma") is None
+    assert calibration_for("bedrock-gemma-4-26b") is None
     assert calibration_for(None) is None
     assert calibration_for("some-unfitted-model") is None
 
@@ -141,7 +141,7 @@ def test_statement_belief_soft_lifts_confirmed_single_read():
     from indra_belief.calibration_constants import calibration_for
     rows = [_ev("reach", "correct", evidence_text="a")]
     hard = statement_belief(rows, RECALIBRATED_PRIORS).belief
-    soft = statement_belief(rows, RECALIBRATED_PRIORS, soft=calibration_for("gemma-remote")).belief
+    soft = statement_belief(rows, RECALIBRATED_PRIORS, soft=calibration_for("remote-gemma-4-26b")).belief
     assert math.isclose(hard, 0.488, abs_tol=1e-3)
     assert math.isclose(soft, 0.767, abs_tol=1e-3)
     assert soft > hard
@@ -153,4 +153,4 @@ def test_statement_belief_soft_preserves_undefined_contract():
     from indra_belief.calibration_constants import calibration_for
     rows = [_ev("signor", "correct", tier="no_text"), _ev("biogrid", "correct", tier="no_text")]
     assert statement_belief(rows, RECALIBRATED_PRIORS).belief is None
-    assert statement_belief(rows, RECALIBRATED_PRIORS, soft=calibration_for("gemma-remote")).belief is None
+    assert statement_belief(rows, RECALIBRATED_PRIORS, soft=calibration_for("remote-gemma-4-26b")).belief is None

@@ -51,7 +51,7 @@ SYS = (
 def user(ent, text):
     return f'Gene/protein: {ent}\nSentence: "{text}"\nIs {ent} referred to in this sentence?'
 
-client = ModelClient("medpsy-remote")
+client = ModelClient("remote-medpsy-4b")
 rows = present + control
 res = []
 for r in rows:

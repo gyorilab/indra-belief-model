@@ -28,9 +28,9 @@ compare with the existing harness:
 
     PYTHONPATH=src .venv/bin/python scripts/run_rasmachine_monolithic.py \
         --input  data/corpora/rasmachine_v1_statements.json \
-        --model  gemma-remote --workers 4 \
+        --model  remote-gemma-4-26b --workers 4 \
         --output data/results/rasmachine_v1_gemma.jsonl
-    # ... again with --model medpsy-remote ...
+    # ... again with --model remote-medpsy-4b ...
     PYTHONPATH=src .venv/bin/python scripts/eval_curation_compare.py \
         --gold data/benchmark/rasmachine_v1_gold.jsonl \
         --a data/results/rasmachine_v1_medpsy.jsonl --a-name MedPsy-4B \

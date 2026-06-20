@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 # Model registry — name → (base_url, model_id, notes)
 LOCAL_MODELS: dict[str, dict] = {
-    "qwen-thinker": {
+    "local-qwen3.5-vl-122b-a10b": {
         "base_url": "http://localhost:8082/v1",
         "model_id": "dealignai/Qwen3.5-VL-122B-A10B-4bit-MLX-CRACK",
         "reasoning_in_content": True,  # CoT is emitted in content
@@ -33,7 +33,7 @@ LOCAL_MODELS: dict[str, dict] = {
     # Minimax-M2.7 (JANGTQ-CRACK quant) served via vmlx-engine on a local
     # MLX backend. Same response shape as gemma — separate reasoning_content
     # field, JSON content. Faster than gemma-remote (~43 tok/sec vs 22).
-    "minimax-local": {
+    "local-minimax-m2.7": {
         "base_url": "http://localhost:8086/v1",
         "model_id": "minimax-m2.7-jangtq-crack",
         "reasoning_in_content": False,
@@ -44,7 +44,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 32000,
         "timeout": 600,
     },
-    "gemma-moe": {
+    "local-gemma-4-26b": {
         "base_url": "http://localhost:8085/v1",
         "model_id": "mlx-community/gemma-4-26b-a4b-it-8bit",
         "reasoning_in_content": False,  # separate reasoning_content field
@@ -52,7 +52,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 1000,
         "timeout": 60,
     },
-    "gemma-31b": {
+    "local-gemma-4-31b": {
         "base_url": "http://localhost:8084/v1",
         "model_id": "mlx-community/gemma-4-31b-it-8bit",
         "reasoning_in_content": False,
@@ -60,7 +60,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 1000,
         "timeout": 60,
     },
-    "gemma-remote": {
+    "remote-gemma-4-26b": {
         "base_url": "http://100.97.101.59:11434/v1",
         # Gateway serves gemma via ollama under this exact id; other id
         # spellings return 400 ("Invalid model name"). Match it exactly.
@@ -88,7 +88,7 @@ LOCAL_MODELS: dict[str, dict] = {
     # latency, no LiteLLM proxy in the path (eliminates the channel-token
     # 500 class of failures), and significantly higher per-request
     # throughput. Auth: GEMINI_API_KEY env var.
-    "gemma-google-moe": {
+    "google-gemma-4-26b": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "model_id": "gemma-4-26b-a4b-it",
         "api_key_env": "GEMINI_API_KEY",
@@ -110,7 +110,7 @@ LOCAL_MODELS: dict[str, dict] = {
         # conservative; --workers can override per-run if quota changes.
         "concurrency_hint": 2,
     },
-    "gemma-google-31b": {
+    "google-gemma-4-31b": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "model_id": "gemma-4-31b-it",
         "api_key_env": "GEMINI_API_KEY",
@@ -127,7 +127,7 @@ LOCAL_MODELS: dict[str, dict] = {
     # persona; _setup_transformers_client swaps it for a task-specific
     # adjudicator persona at load time so the scorer's SYSTEM_PROMPT carries
     # the actual instructions instead of fighting the persona.
-    "medpsy-4b-local": {
+    "local-medpsy-4b": {
         "backend": "transformers_local",
         "model_id": "qvac/MedPsy-4B",
         "reasoning_in_content": False,
@@ -152,7 +152,7 @@ LOCAL_MODELS: dict[str, dict] = {
     # separate reasoning_content field (reasoning_in_content=False) — same response
     # shape as gemma-remote. Thinking mode emits long CoT, so keep the generation
     # ceiling high.
-    "medpsy-remote": {
+    "remote-medpsy-4b": {
         "base_url": "http://100.97.101.59:11434/v1",
         "model_id": "medpsy-4b",
         "reasoning_in_content": False,
@@ -198,7 +198,7 @@ LOCAL_MODELS: dict[str, dict] = {
     # every Bedrock-served model. The DEFAULT monolithic path
     # (MONO_VARIANT=disconfirm_relnature, no response_format, no
     # reasoning_effort) sends a minimal request and is the safe first run.
-    "bedrock-gemma": {
+    "bedrock-gemma-4-26b": {
         # Same weights as gemma-remote / gemma-google (gemma-4-26b-a4b), served
         # by Bedrock with no local GPU / tailscale hop. Gemma DOES reason on
         # Bedrock — but the CHAT COMPLETIONS API DROPS the CoT (probed
@@ -267,7 +267,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 32000,         # CoT + verdict room, like gemma-remote
         "timeout": 600,
     },
-    "bedrock-qwen3-235b": {
+    "bedrock-qwen3-235b-a22b": {
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
         "model_id": "qwen.qwen3-235b-a22b-2507",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
@@ -277,7 +277,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 8192,
         "timeout": 600,
     },
-    "bedrock-qwen3-coder-480b": {
+    "bedrock-qwen3-coder-480b-a35b": {
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
         "model_id": "qwen.qwen3-coder-480b-a35b-instruct",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
@@ -312,7 +312,7 @@ LOCAL_MODELS: dict[str, dict] = {
     # (same path as deepseek/kimi/glm), so plain openai_compat. Cheaper/faster
     # alternatives to the big reasoners; favor-latest picks across two size bands.
     # gpt-oss reasons HERE (chat), not via Responses — verified, contra some docs.
-    "bedrock-nemotron-nano-30b": {  # 31.6B/3.2B active MoE, Dec 2025 — best small cap/cost
+    "bedrock-nemotron-nano-3-30b": {  # 31.6B/3.2B active MoE, Dec 2025 — best small cap/cost
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
         "model_id": "nvidia.nemotron-nano-3-30b",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
@@ -345,7 +345,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 32000,
         "timeout": 600,
     },
-    "bedrock-nemotron-super-120b": {  # 120B/12B active MoE, Mar 2026, 1M ctx
+    "bedrock-nemotron-super-3-120b": {  # 120B/12B active MoE, Mar 2026, 1M ctx
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
         "model_id": "nvidia.nemotron-super-3-120b",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
@@ -435,7 +435,7 @@ LOCAL_MODELS: dict[str, dict] = {
     # no reasoning_effort) works; OpenAI response_format=json_object used by the
     # decomposed sub-calls is NOT honored on Converse — keep Claude on the
     # monolithic path until a Converse JSON/tool mechanism is wired.
-    "bedrock-claude-haiku": {
+    "bedrock-claude-haiku-4-5": {
         "backend": "bedrock_converse",
         "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com",
         "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -445,7 +445,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 8192,
         "timeout": 300,
     },
-    "bedrock-claude-opus": {
+    "bedrock-claude-opus-4-8": {
         "backend": "bedrock_converse",
         "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com",
         "model_id": "us.anthropic.claude-opus-4-8",
@@ -456,6 +456,41 @@ LOCAL_MODELS: dict[str, dict] = {
         "timeout": 300,
     },
 }
+
+
+# Historical / abbreviated registry name -> canonical (host-prefix + full tag).
+# Lets old `--model` invocations and already-recorded run `model` fields keep
+# working. NOTE: cost + call-log key on each entry's `model_id`, NOT this name,
+# so aliasing never affects pricing.
+_MODEL_ALIASES: dict[str, str] = {
+    "qwen-thinker": "local-qwen3.5-vl-122b-a10b",
+    "minimax-local": "local-minimax-m2.7",
+    "gemma-moe": "local-gemma-4-26b",
+    "gemma-31b": "local-gemma-4-31b",
+    "gemma-remote": "remote-gemma-4-26b",
+    "gemma-google-moe": "google-gemma-4-26b",
+    "gemma-google-31b": "google-gemma-4-31b",
+    "medpsy-4b-local": "local-medpsy-4b",
+    "medpsy-remote": "remote-medpsy-4b",
+    "bedrock-gemma": "bedrock-gemma-4-26b",
+    "bedrock-qwen3-235b": "bedrock-qwen3-235b-a22b",
+    "bedrock-qwen3-coder-480b": "bedrock-qwen3-coder-480b-a35b",
+    "bedrock-nemotron-nano-30b": "bedrock-nemotron-nano-3-30b",
+    "bedrock-nemotron-super-120b": "bedrock-nemotron-super-3-120b",
+    "bedrock-claude-haiku": "bedrock-claude-haiku-4-5",
+    "bedrock-claude-opus": "bedrock-claude-opus-4-8",
+    # recorded-only legacy literal (old export/viewer `model` field)
+    "gemma-4-26b (remote)": "remote-gemma-4-26b",
+}
+
+
+def canonical_model_name(model: str) -> str:
+    """Map any historical/abbreviated model name to its canonical host-prefixed,
+    full-tag form. Idempotent: canonical names pass through unchanged. Applied at
+    run-export time so recorded `model` fields and the viewer read consistently."""
+    if not model:
+        return model
+    return _MODEL_ALIASES.get(model, model)
 
 
 _RETRY_DELAY_RE = __import__("re").compile(
@@ -601,7 +636,10 @@ class ModelClient:
                                         thread_name_prefix="mc-wall")
 
     def __init__(self, model_name: str):
-        # Set name first so setup helpers can use it in error messages.
+        # Resolve historical/abbreviated names to canonical so old --model calls
+        # and recorded runs keep working; set name first so setup helpers can use
+        # it in error messages.
+        model_name = _MODEL_ALIASES.get(model_name, model_name)
         self.model_name = model_name
         # Thread-local call log; see `pop_call_log()`.
         import threading as _threading

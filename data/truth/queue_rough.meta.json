@@ -2,7 +2,7 @@
   "pass": "rough",
   "seed": 20260602,
   "run_id": "d004e3970856484689531396132ca055",
-  "model": "gemma-4-26b (remote)",
+  "model": "remote-gemma-4-26b",
   "export": "data/exports/rasmachine_belief",
   "params": {
     "n_per_bucket": 96,

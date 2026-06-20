@@ -153,8 +153,8 @@ def main() -> None:
           f"+ {len(sign_regs)} sign + {len(gains[:10])} gains "
           f"= {len(selected)} records\n")
 
-    print("Initializing model client (gemma-remote)...")
-    client = ModelClient("gemma-remote")
+    print("Initializing model client (remote-gemma-4-26b)...")
+    client = ModelClient("remote-gemma-4-26b")
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     out_f = OUT_PATH.open("w")

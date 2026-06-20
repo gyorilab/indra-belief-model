@@ -2,7 +2,7 @@
 
 Adapted from the R-phase run_n9_holdout.py concurrency pattern, threaded
 via ThreadPoolExecutor sized by `concurrency_hint(model)` to amortize
-the slow gemma-remote endpoint.
+the slow remote-gemma-4-26b endpoint.
 
 Output JSONL is comparable to dec_e3_v18_mphase.jsonl / dec_q_phase.jsonl
 / dec_r_phase.jsonl so S11 can do the four-way comparison.
@@ -67,7 +67,7 @@ def _score_one(rec, client) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--model", default="gemma-remote")
+    p.add_argument("--model", default="remote-gemma-4-26b")
     p.add_argument("--input", default=str(HOLDOUT))
     p.add_argument("--output", default=str(OUTPUT))
     p.add_argument("--limit", type=int, default=None)

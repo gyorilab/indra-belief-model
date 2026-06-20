@@ -17,8 +17,8 @@
 #
 # Usage:
 #   scripts/score_holdout_cc.sh build                 # 1. corpus -> statements json (needs indra)
-#   scripts/score_holdout_cc.sh score gemma-remote    # 2. (gateway serving gemma)
-#   scripts/score_holdout_cc.sh score medpsy-remote   # 3. (after swapping gateway to medpsy)
+#   scripts/score_holdout_cc.sh score remote-gemma-4-26b    # 2. (gateway serving gemma)
+#   scripts/score_holdout_cc.sh score remote-medpsy-4b   # 3. (after swapping gateway to medpsy)
 #   scripts/score_holdout_cc.sh confirm               # 4. local: fit on eval_curation_v1, test on holdout_cc
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -32,10 +32,10 @@ case "${1:-}" in
     python scripts/eval_to_statements_json.py --input "$GOLD" --output "$STMTS"
     ;;
   score)
-    MODEL="${2:?usage: score <gemma-remote|medpsy-remote>}"
+    MODEL="${2:?usage: score <remote-gemma-4-26b|remote-medpsy-4b>}"
     case "$MODEL" in
-      gemma-remote)  OUT=data/results/holdout_cc_gemma.jsonl ;;
-      medpsy-remote) OUT=data/results/holdout_cc_medpsy.jsonl ;;
+      remote-gemma-4-26b)  OUT=data/results/holdout_cc_gemma.jsonl ;;
+      remote-medpsy-4b) OUT=data/results/holdout_cc_medpsy.jsonl ;;
       *) echo "unknown model $MODEL" >&2; exit 2 ;;
     esac
     python scripts/run_rasmachine_monolithic.py \

@@ -49,7 +49,7 @@ def nature_user(subj, obj, text):
     return (f'Entities: {subj}, {obj}\nSentence: "{text}"\n'
             f"What relationship does the sentence assert between {subj} and {obj}?")
 
-client = ModelClient("medpsy-remote")
+client = ModelClient("remote-medpsy-4b")
 SUPPORTS = {"physical_binding"}
 cohort = [(sh, g) for sh, g in G.items() if meta.get(sh, {}).get("stmt_type") == "Complex"]
 print("Complex cohort n=%d" % len(cohort), flush=True)
