@@ -145,18 +145,37 @@ class ScoringRecord:
         obj_rt = clean_rt[1] if len(clean_rt) > 1 else None
 
         self.subject_entity = GroundedEntity.resolve(self.subject, subj_rt)
-        self.object_entity = GroundedEntity.resolve(self.object, obj_rt)
+        # Only resolve an object entity for a real second agent. Unary statements
+        # (ActiveForm, Translocation, ...) carry object == "?" — grounding that
+        # sentinel yields a spurious entity that would leak into the prompt's
+        # entity context. SelfModification keeps object == subject (resolved).
+        self.object_entity = (
+            None if self.object == "?"
+            else GroundedEntity.resolve(self.object, obj_rt)
+        )
 
     # --- Formatting for LLM prompt ---
+
+    def _site_suffix(self) -> str:
+        """Modification-site suffix ` @<residue><position>`, or '' when absent."""
+        if self.residue or self.position:
+            return " @" + (self.residue or "") + (self.position or "")
+        return ""
 
     def format_claim(self) -> str:
         """Render the claim string in a statement-type-aware form.
 
+        A claim NEVER contains a '?' placeholder: a missing object, endpoint, or
+        site is omitted, not rendered as '?'. A bare '?' reads to the model as a
+        malformed/template claim (it has rejected real extractions on that basis).
+
         Shapes:
-          - Binary types (Phosphorylation, Activation, ...): `A [Type] B @site`
+          - Binary (Phosphorylation, Activation, ...): `A [Type] B @site`
+          - Unary (ActiveForm, ...): `A [Type] @site`  — no object
           - Complex (>=2 members): `A + B + C [Complex]`
           - SelfModification (Auto/Transphosphorylation): `A [Type] A @site`
-          - Translocation: `A [Translocation] from X to Y`
+          - Translocation: `A [Translocation] from X to Y` — each endpoint
+            clause appears only when that location is known
         """
         from indra.statements import Complex, SelfModification, Translocation
 
@@ -167,35 +186,36 @@ class ScoringRecord:
             names = [m.name for m in stmt.members if m]
             if len(names) >= 2:
                 return f"{' + '.join(names)} [{stype}]"
-            # Fallback to binary rendering if Complex has <2 members
-            # (malformed input — not expected but defensive).
+            # <2 members (malformed/defensive): fall through to the unary path.
 
         if isinstance(stmt, SelfModification):
-            agents = stmt.agent_list()
-            name = agents[0].name if agents and agents[0] else "?"
+            agents = [a for a in stmt.agent_list() if a]
+            name = agents[0].name if agents else "?"
             ann = self._format_agent_annotations(0)
-            claim = f"{name}{ann} [{stype}] {name}"
-            if self.residue or self.position:
-                site = "@" + (self.residue or "") + (self.position or "")
-                claim += f" {site}"
-            return claim
+            return f"{name}{ann} [{stype}] {name}{self._site_suffix()}"
 
         if isinstance(stmt, Translocation):
-            agents = stmt.agent_list()
-            name = agents[0].name if agents and agents[0] else "?"
+            agents = [a for a in stmt.agent_list() if a]
+            name = agents[0].name if agents else "?"
             ann = self._format_agent_annotations(0)
-            from_loc = stmt.from_location or "?"
-            to_loc = stmt.to_location or "?"
-            return f"{name}{ann} [{stype}] from {from_loc} to {to_loc}"
+            loc = ""
+            if stmt.from_location:
+                loc += f" from {stmt.from_location}"
+            if stmt.to_location:
+                loc += f" to {stmt.to_location}"
+            return f"{name}{ann} [{stype}]{loc}"
 
-        # Binary default
+        # Binary / unary default. A real object exists only when the statement
+        # carries a grounded second agent; unary types (ActiveForm) have none —
+        # render `A [Type]`, never `A [Type] ?`.
         subj_ann = self._format_agent_annotations(0)
-        obj_ann = self._format_agent_annotations(1)
-        claim = f"{self.subject}{subj_ann} [{stype}] {self.object}{obj_ann}"
-        if self.residue or self.position:
-            site = "@" + (self.residue or "") + (self.position or "")
-            claim += f" {site}"
-        return claim
+        agents = [a for a in stmt.agent_list() if a]
+        if len(agents) >= 2:
+            obj_ann = self._format_agent_annotations(1)
+            claim = f"{self.subject}{subj_ann} [{stype}] {self.object}{obj_ann}"
+        else:
+            claim = f"{self.subject}{subj_ann} [{stype}]"
+        return claim + self._site_suffix()
 
     def _format_agent_annotations(self, index: int) -> str:
         """Format activity, mutations, bound conditions for an agent."""

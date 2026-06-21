@@ -193,14 +193,14 @@
   ],
   "Translocation": [
     {
-      "claim": "RAF1 [Translocation] RAF1",
+      "claim": "RAF1 [Translocation] to membrane",
       "evidence": "IGF-I induced the formation of a ras-GTP complex, raf-1 translocation to membranes and the subsequent phosphorylation of MEK1/2 in HepG2 cells.",
       "verdict": "correct",
       "confidence": "high",
       "reason": "Direct experimental observation: IGF-I induced 'raf-1 translocation to membranes'. Translocation event confirmed."
     },
     {
-      "claim": "TFRC [Translocation] TFRC",
+      "claim": "TFRC [Translocation] to plasma membrane",
       "evidence": "By contrast, the transferrin receptor does not translocate to the plasma membrane under these conditions.",
       "verdict": "incorrect",
       "confidence": "high",
