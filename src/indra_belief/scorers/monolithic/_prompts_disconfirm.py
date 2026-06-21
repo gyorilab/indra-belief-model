@@ -52,11 +52,17 @@ Key rules:
 1. @residue+position must match the evidence. "S51A" is a mutation, not a phospho-site.
 2. Family-level claims: if the claim names a protein family (JUN, AKT, ERK, CK2, MAPK,
    PKA), evidence about any specific member SUPPORTS it — this is NOT an objection.
-3. "Activation"/"Inhibition" = activity-state change, NOT expression/production/
-   degradation (those are Increase/DecreaseAmount), even if the text says "activate"
-   about a promoter/transcription/reporter. A miRNA reducing a target = Inhibition OR
-   DecreaseAmount (accept either; don't reject a miRNA DecreaseAmount claim). Inverse:
-   if inhibiting/knocking-down a miRNA RAISES a target, the miRNA DECREASES it.
+3. "Activation"/"Inhibition" = a change in the target's activity STATE (its function
+   switched on/off — phosphorylation, catalysis, binding that gates activity), NOT a
+   change in its AMOUNT. The following are AMOUNT (Increase/DecreaseAmount), so an
+   Activation/Inhibition claim whose evidence is only about them is INCORRECT (objection:
+   amount-not-activity) EVEN when the verb reads "represses"/"suppresses"/"activates":
+   transcription or expression, mRNA/protein levels or abundance, promoter/luciferase/
+   reporter activity, up-/down-regulation, stabilization, accumulation, or proteasomal
+   degradation. It is activity ONLY when the target's OWN function/enzymatic activity is
+   turned on/off. A miRNA reducing a target = Inhibition OR DecreaseAmount (accept either;
+   don't reject a miRNA DecreaseAmount claim). Inverse: if inhibiting/knocking-down a
+   miRNA RAISES a target, the miRNA DECREASES it.
 4. "may/could/might" on the RELATIONSHIP ITSELF = hypothesis (incorrect). Hedging on a
    consequence while the relationship is stated = correct. METHODS/AIM framing ("to
    examine/test whether X Ys Z", "we asked whether") poses the experiment, not support.

@@ -120,11 +120,11 @@
       "reason": "'Inhibits its kinase activity' = direct suppression of JNK3/MAPK10 enzymatic function. This is functional Inhibition, not expression change."
     },
     {
-      "claim": "AKT [Inhibition] Wnt",
-      "evidence": "Thus the decreased expression of Akt may induce the down-regulation of the wnt and NFkappaB-route.",
+      "claim": "PRDM1 [Inhibition] CIITA",
+      "evidence": "PRDM1 acts as a transcriptional repressor that binds the CIITA promoter and represses CIITA transcription, lowering CIITA mRNA and protein levels.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "'Decreased expression' = amount change (DecreaseAmount), and 'may induce' = hedging. Double error: wrong relation type + unconfirmed result."
+      "reason": "Amount-not-activity: 'represses' here targets CIITA transcription/promoter and lowers its mRNA and protein levels — that is DecreaseAmount, not inhibition of CIITA's own enzymatic/functional activity."
     }
   ],
   "IncreaseAmount": [
