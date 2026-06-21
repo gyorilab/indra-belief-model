@@ -74,13 +74,13 @@ Output JSON: {"verdict": "correct" or "incorrect", "confidence": "high" | "mediu
 CONTRASTIVE_EXAMPLES = [
     # --- Pair 1: Complex with explicit signal ---
     {
-        "claim": "Actin [Complex] CDK9",
+        "claim": "Actin + CDK9 [Complex]",
         "evidence": "Actin was found to interact with Cdk9, a catalytic subunit of P-TEFb, in elongation complexes.",
         "verdict": "correct", "confidence": "high",
         "reason": "Evidence says 'in elongation complexes' — Complex relationship supported.",
     },
     {
-        "claim": "AKT [Complex] CASP3",
+        "claim": "AKT + CASP3 [Complex]",
         "evidence": "Akt and caspase-3 expression interact to regulate proliferation and apoptosis.",
         "verdict": "incorrect", "confidence": "high",
         "reason": "Text says 'interact' metaphorically about signaling pathways, without complex formation.",
@@ -116,13 +116,13 @@ CONTRASTIVE_EXAMPLES = [
 
     # --- Pair 4: Hedging scope — same word "could", opposite scope ---
     {
-        "claim": "MYB [Complex] PPID",
+        "claim": "MYB + PPID [Complex]",
         "evidence": "However, we found that the cyclophilin Cyp-40 could interact with c-Myb to inhibit its DNA binding activity.",
         "verdict": "correct", "confidence": "high",
         "reason": "'we found that...could interact' reports a discovered result. 'Could' scopes over the consequence (inhibiting DNA binding), not the interaction itself.",
     },
     {
-        "claim": "MYB [Complex] PPID",
+        "claim": "MYB + PPID [Complex]",
         "evidence": "A binding assay was used to test whether c-Myb and Cyp-40 could interact directly with one another in vitro.",
         "verdict": "incorrect", "confidence": "high",
         "reason": "'to test whether...could interact' is an experimental question. 'Could' scopes over the relationship itself — the interaction is what's being tested, not confirmed.",

@@ -49,14 +49,14 @@
   ],
   "Complex": [
     {
-      "claim": "SIRT1 [Complex] MYC",
+      "claim": "SIRT1 + MYC [Complex]",
       "evidence": "We found that SIRT1 coimmunoprecipitated with c-Myc in 2H- and HPC2-exposed cells, indicating that SIRT1 interacts directly with c-Myc during hypoxic conditions.",
       "verdict": "correct",
       "confidence": "high",
       "reason": "Co-IP plus 'interacts directly' is strong evidence for a physical complex between SIRT1 and MYC."
     },
     {
-      "claim": "TGFB2 [Complex] SMAD2",
+      "claim": "TGFB2 + SMAD2 [Complex]",
       "evidence": "We analyzed the 3-prime-UTR sequences of the TGFbeta2 and SMAD2 genes and performed luciferase assays to confirm whether miR-148a could bind to the TGFbeta2 and SMAD2 genes.",
       "verdict": "incorrect",
       "confidence": "high",
@@ -65,14 +65,14 @@
   ],
   "Complex_locus": [
     {
-      "claim": "AKT [Complex] PPP2",
+      "claim": "AKT + PPP2 [Complex]",
       "evidence": "Akt directly interacts with the PP2A-B55 holoenzyme.",
       "verdict": "correct",
       "confidence": "high",
       "reason": "Direct protein-protein interaction statement: 'Akt directly interacts with the PP2A-B55 holoenzyme.' Both are proteins; 'interacts' unambiguously refers to physical protein binding."
     },
     {
-      "claim": "AP1 [Complex] SMAD",
+      "claim": "AP1 + SMAD [Complex]",
       "evidence": "Mutation of the 3' end of GRAS had little effect on SMAD or AP1 binding to the Gnrhr promoter but had an effect on activin responsiveness.",
       "verdict": "incorrect",
       "confidence": "high",
