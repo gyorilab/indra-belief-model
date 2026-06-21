@@ -80,6 +80,22 @@ def test_unary_statements_have_no_object_entity():
         assert rec.subject_entity is not None
 
 
+def test_enzyme_less_modification_has_no_question_mark_subject():
+    # A None first agent (e.g. an enzyme-less modification) must NOT render a "?"
+    # subject — it collapses to the grounded substrate, and is not grounded.
+    rec = _rec(Phosphorylation(None, B))
+    assert rec.format_claim() == "MAP2K1 [Phosphorylation]"
+    assert "?" not in rec.format_claim()
+    assert rec.subject == "?"          # the property still returns the sentinel
+    assert rec.subject_entity is None  # but the sentinel is NOT grounded
+
+
+def test_fully_ungrounded_statement_renders_type_only():
+    rec = _rec(Phosphorylation(None, None))
+    assert rec.format_claim() == "[Phosphorylation]"
+    assert "?" not in rec.format_claim()
+
+
 def test_binary_and_selfmod_keep_object_entity():
     assert _rec(Phosphorylation(A, B)).object_entity is not None
     # SelfModification: object == subject, still a real grounded entity.

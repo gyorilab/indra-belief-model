@@ -144,11 +144,14 @@ class ScoringRecord:
         subj_rt = clean_rt[0] if len(clean_rt) > 0 else None
         obj_rt = clean_rt[1] if len(clean_rt) > 1 else None
 
-        self.subject_entity = GroundedEntity.resolve(self.subject, subj_rt)
-        # Only resolve an object entity for a real second agent. Unary statements
-        # (ActiveForm, Translocation, ...) carry object == "?" — grounding that
-        # sentinel yields a spurious entity that would leak into the prompt's
-        # entity context. SelfModification keeps object == subject (resolved).
+        # Only resolve an entity for a real (grounded) agent. The "?" sentinel —
+        # an absent object on a unary statement, or an absent subject on a
+        # None-first-agent statement (e.g. an enzyme-less modification) — must NOT
+        # be grounded, or it injects a spurious entity into the prompt context.
+        self.subject_entity = (
+            None if self.subject == "?"
+            else GroundedEntity.resolve(self.subject, subj_rt)
+        )
         self.object_entity = (
             None if self.object == "?"
             else GroundedEntity.resolve(self.object, obj_rt)
@@ -190,31 +193,37 @@ class ScoringRecord:
 
         if isinstance(stmt, SelfModification):
             agents = [a for a in stmt.agent_list() if a]
-            name = agents[0].name if agents else "?"
-            ann = self._format_agent_annotations(0)
-            return f"{name}{ann} [{stype}] {name}{self._site_suffix()}"
+            if not agents:
+                return f"[{stype}]{self._site_suffix()}"  # no grounded agent
+            name = agents[0].name
+            return f"{name}{self._format_agent_annotations(0)} [{stype}] {name}{self._site_suffix()}"
 
         if isinstance(stmt, Translocation):
             agents = [a for a in stmt.agent_list() if a]
-            name = agents[0].name if agents else "?"
-            ann = self._format_agent_annotations(0)
             loc = ""
             if stmt.from_location:
                 loc += f" from {stmt.from_location}"
             if stmt.to_location:
                 loc += f" to {stmt.to_location}"
-            return f"{name}{ann} [{stype}]{loc}"
+            if agents:
+                return f"{agents[0].name}{self._format_agent_annotations(0)} [{stype}]{loc}"
+            return f"[{stype}]{loc}"  # no grounded agent
 
-        # Binary / unary default. A real object exists only when the statement
-        # carries a grounded second agent; unary types (ActiveForm) have none —
-        # render `A [Type]`, never `A [Type] ?`.
-        subj_ann = self._format_agent_annotations(0)
-        agents = [a for a in stmt.agent_list() if a]
-        if len(agents) >= 2:
-            obj_ann = self._format_agent_annotations(1)
-            claim = f"{self.subject}{subj_ann} [{stype}] {self.object}{obj_ann}"
+        # Binary / unary default. Render from the GROUNDED agents (keeping each
+        # agent's original index so annotations stay correct), so a None first
+        # agent — e.g. an enzyme-less modification, Phosphorylation(None, sub) —
+        # collapses to "sub [Type]" rather than leaking a "?" subject, and unary
+        # types (ActiveForm) render "A [Type]", never "A [Type] ?".
+        grounded = [(a.name, i) for i, a in enumerate(stmt.agent_list()) if a]
+        if len(grounded) >= 2:
+            (n0, i0), (n1, i1) = grounded[0], grounded[1]
+            claim = (f"{n0}{self._format_agent_annotations(i0)} [{stype}] "
+                     f"{n1}{self._format_agent_annotations(i1)}")
+        elif len(grounded) == 1:
+            n0, i0 = grounded[0]
+            claim = f"{n0}{self._format_agent_annotations(i0)} [{stype}]"
         else:
-            claim = f"{self.subject}{subj_ann} [{stype}]"
+            claim = f"[{stype}]"  # no grounded agents — fully malformed
         return claim + self._site_suffix()
 
     def _format_agent_annotations(self, index: int) -> str:

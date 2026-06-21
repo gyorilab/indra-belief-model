@@ -92,7 +92,8 @@ def resolve_relation_nature(subj: str, obj: str, stmt_type: str, text: str, clie
     answer, or a non-Complex claim leave the holistic verdict untouched). Claim-entity
     aliases are grounded via Gilda and supplied to the model so a complex stated under a
     synonym or descriptive name is recognized."""
-    if stmt_type != "Complex" or not subj or not obj or not (text or "").strip():
+    if (stmt_type != "Complex" or not subj or not obj
+            or subj == "?" or obj == "?" or not (text or "").strip()):
         return ""
     gt = _gilda()
     gs = gt.entity_grounding(subj) if gt else None
