@@ -6,7 +6,7 @@ substrate-first orchestrator. Each probe commits a single decision from
 a closed answer set; the adjudicator combines them via a flat decision
 table.
 
-See research/s_phase_doctrine.md for full design rationale.
+See research/archive/completed_phases/s_phase_doctrine.md for full design rationale.
 """
 from indra_belief.scorers.probes import (
     object_role,
