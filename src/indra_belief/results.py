@@ -12,8 +12,7 @@ script in the loop:
   export_meta.json    provenance + counts + join/reasoning quality
 
 The bucket taxonomy (``classify`` / ``split_preview`` / ``META`` / ``ORDER``)
-lives here so the export and the report's figure scripts share one definition
-(``scripts/fig1_drilldown_data`` re-exports these for back-compat).
+lives here as the single definition the export uses.
 
 Use it as a library (the runner calls :func:`write_run_export` at the end of a
 run) or as a CLI for an existing run::
@@ -777,9 +776,9 @@ def build_run_export(
             a["pmids"].add(d["pmid"])
         if d.get("source_api"):
             a["sources"].add(d["source_api"])
-        # Row dict for statement_belief (hard / parametric / soft) — same shape
-        # belief_headtohead feeds it. evidence_text is the joined corpus text
-        # (for within-source de-dup), evidence_hash a de-dup fallback.
+        # Row dict for statement_belief (hard / parametric / soft). evidence_text
+        # is the joined corpus text (for within-source de-dup), evidence_hash a
+        # de-dup fallback.
         a["belief_rows"].append({
             "source_api": d.get("source_api"),
             "verdict": d.get("verdict"),

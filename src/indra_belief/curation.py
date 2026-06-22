@@ -1,7 +1,7 @@
 """INDRA curations as gold — the single source of truth for the curation domain.
 
-Until now this logic lived, copied, across four scripts (pull_rasmachine_curations,
-curation_accuracy, build_disagreement_queue, prepare_dataset) and was re-expressed
+Until now this logic lived, copied, across several scripts (pull_rasmachine_curations,
+build_disagreement_queue, prepare_dataset) and was re-expressed
 again in the SvelteKit viewer's TypeScript. The `tag == "correct"` gold atom was
 independently rewritten in a half-dozen eval scripts besides. This module is the
 canonical Python home; the viewer's `viewer/src/lib/data/curation.ts` is its
