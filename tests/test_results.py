@@ -111,7 +111,7 @@ def test_build_run_export_joins_text_and_rolls_up(tmp_path):
     assert meta["cost"]["total_usd"] is None
     assert meta["cost"]["n_evidence_unavailable"] == 2
     assert meta["cost"]["n_evidence_costed"] == 0
-    assert meta["schema_version"] == 6
+    assert meta["schema_version"] == 7
 
 
 def test_write_run_export_emits_three_files(tmp_path):
@@ -146,7 +146,7 @@ def test_write_run_export_emits_three_files(tmp_path):
     assert meta["cost"]["n_evidence_no_llm"] == 1
     assert meta["cost"]["n_evidence_costed"] == 0
     assert meta["cost"]["n_evidence_unavailable"] == 0
-    assert meta["schema_version"] == 6
+    assert meta["schema_version"] == 7
     # E5: soft_calibration block baked per run. model "m" is unfitted → named-
     # unavailable with a reason, never an imputed zero.
     assert meta["soft_calibration"]["status"] == "unavailable"
@@ -369,7 +369,7 @@ def test_export_cost_mixed_priced_and_unverified_is_partial(tmp_path):
     sonnet = round(2000 * 3 / 1e6 + 500 * 15 / 1e6, 6)  # + the gemma estimate
     assert meta["cost"]["total_usd"] == round(sonnet + by1, 4)
     assert "vendor.unlisted-7b" in meta["cost"]["models"]
-    assert meta["schema_version"] == 6
+    assert meta["schema_version"] == 7
 
 
 def test_export_cost_multi_priced_models_run_sums_and_sorts(tmp_path):
@@ -439,7 +439,7 @@ def test_build_run_export_carries_reasoning_trace(tmp_path):
     assert tr["committed_justification"]["support"] == "MEK phosphorylates ERK"
     assert tr["free_cot_chars"] == 50
     assert meta["reasoning_quality"]["trace_status"]["encrypted"] == 1
-    assert meta["schema_version"] == 6
+    assert meta["schema_version"] == 7
 
 
 def test_build_run_export_legacy_row_has_null_reasoning_trace(tmp_path):

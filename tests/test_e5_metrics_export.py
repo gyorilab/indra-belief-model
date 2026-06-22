@@ -150,7 +150,7 @@ def test_metrics_schema_with_gold(tmp_path):
     ])
     _ev, _ps, _meta, m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
 
-    assert m["schema_version"] == 1
+    assert m["schema_version"] == 2
     assert m["run_id"] == "r" and m["model"] == "gemma"
     assert set(m["tiers"]) == {"ev", "stmt"}
     assert m["metrics_basis"]["bins"] == "BINS_8"
@@ -292,3 +292,91 @@ def test_e5_crosscheck_ship_gate(model):
     a = stmt["arms"]["soft"]
     assert a["ece"] == pytest.approx(sg["guard"]["ece"], abs=2e-4)
     assert a["auroc"] == pytest.approx(sg["guard"]["auroc"], abs=2e-3)
+
+
+# ── 4. statement-heuristics instrument (I1–I4, E10) — additive + first-class ───
+
+V7_KEYS = {"gold_statement", "coherence_summary"}
+COHERENCE_KEYS = {"n_dedup_groups", "n_distinct_sources", "n_correct", "n_incorrect",
+                  "n_no_text", "n_parse_fail", "n_null_source",
+                  "n_credible_incorrect_det", "n_credible_incorrect_llm"}
+VERDICT_ERR_KEYS = {"n", "tp", "fp", "fn", "tn", "accuracy", "precision", "recall", "f1"}
+STRATA_DIMS = {"by_stmt_type", "by_n_sources", "by_n_evidence", "by_dominant_bucket", "by_driver"}
+
+
+def _three_ev_gold(tmp_path):
+    """One statement, three reads (2 correct + 1 high-conf incorrect → gold
+    incorrect by any-incorrect-wins; verdict_statement → 'review')."""
+    rows = [_row(0, 11, "correct", 0.95), _row(1, 22, "incorrect", 0.05),
+            _row(2, 33, "correct", 0.8)]
+    run, corp = _write(tmp_path, rows, _corpus())
+    gold = _gold(tmp_path, [
+        {"matches_hash": 123, "source_hash": 11, "pa_hash": 900, "tag": "correct"},
+        {"matches_hash": 123, "source_hash": 22, "pa_hash": 900, "tag": "wrong_relation"},
+        {"matches_hash": 123, "source_hash": 33, "pa_hash": 900, "tag": "correct"},
+    ])
+    return run, corp, gold
+
+
+def test_per_statement_v7_gold_and_coherence_additive(tmp_path):
+    # per_statement grows by EXACTLY gold_statement + coherence_summary on top of
+    # the v6 belief_* keys; every pre-existing key/value untouched.
+    run, corp, gold = _three_ev_gold(tmp_path)
+    _ev, per_stmt, meta, _m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
+    s = per_stmt[0]
+    assert meta["schema_version"] == 7
+    assert NEW_KEYS <= set(s) and V7_KEYS <= set(s)            # v6 + v7 both present
+    # gold_statement: any-incorrect-wins over the statement's evidence gold
+    assert s["gold_statement"]["verdict"] == "incorrect"
+    assert s["gold_statement"]["n"] == 3
+    assert "wrong_relation" in s["gold_statement"]["tags"]
+    # coherence_summary: the multi-evidence depth (3 reads, all one source)
+    assert set(s["coherence_summary"]) == COHERENCE_KEYS
+    assert s["coherence_summary"]["n_distinct_sources"] == 1
+    # the join helpers still never leak
+    assert not any(k.startswith("_") or k == "belief_rows" for k in s)
+
+
+def test_gold_statement_null_without_gold(tmp_path):
+    # No gold baked → gold_statement is null (named-empty), never imputed.
+    rows = [_row(0, 11, "correct", 0.95)]
+    run, corp = _write(tmp_path, rows, _corpus())
+    _ev, per_stmt, _meta, _m = build_run_export(run, corp, run_id="r", model="gemma")
+    assert per_stmt[0]["gold_statement"] is None
+    # coherence_summary is gold-independent — always present
+    assert set(per_stmt[0]["coherence_summary"]) == COHERENCE_KEYS
+
+
+def test_metrics_statement_verdict_err_review_is_positive(tmp_path):
+    # tiers.stmt gains verdict_err (error-detection on the TIERED verdict) as a
+    # sibling of arms; arms stay byte-identical (the cross-check proves the math).
+    run, corp, gold = _three_ev_gold(tmp_path)
+    _ev, _ps, _meta, m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
+    st = m["tiers"]["stmt"]
+    assert set(st["arms"]) == {"hard", "parametric", "soft"}      # unchanged
+    assert set(st["verdict_err"]) == VERDICT_ERR_KEYS
+    # gold=incorrect, verdict=review → review counts as a FLAG (positive=error) → tp
+    assert st["verdict_err"]["n"] == 1
+    assert st["verdict_err"]["tp"] == 1 and st["verdict_err"]["fn"] == 0
+    assert st["verdict_err"]["f1"] == 1.0
+
+
+def test_metrics_statement_stratified_shape(tmp_path):
+    run, corp, gold = _three_ev_gold(tmp_path)
+    _ev, _ps, _meta, m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
+    strat = m["tiers"]["stmt"]["stratified"]
+    assert set(strat) == STRATA_DIMS
+    # one Phosphorylation statement, single source, multi-evidence, llm-driven reject
+    assert strat["by_stmt_type"]["Phosphorylation"]["n"] == 1
+    assert "single" in strat["by_n_sources"] and "multi" in strat["by_n_evidence"]
+    assert "llm" in strat["by_driver"]
+    block = strat["by_stmt_type"]["Phosphorylation"]
+    assert set(block) == {"n", "base_rate_correct", "verdict_err", "hard"}
+    _assert_arm_shape(block["hard"])                              # reuses the arm unit
+    assert set(block["verdict_err"]) == VERDICT_ERR_KEYS
+
+
+def test_metrics_schema_version_is_2(tmp_path):
+    run, corp, gold = _three_ev_gold(tmp_path)
+    _ev, _ps, _meta, m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
+    assert m["schema_version"] == 2

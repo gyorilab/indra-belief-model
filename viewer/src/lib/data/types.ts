@@ -187,11 +187,15 @@ export interface EvidenceRow {
 	gold?: GoldVerdict | null;
 }
 
-// ── Calibration products (E5 metrics.json, schema_version 1) ────────────────
+// ── Calibration products (E5 metrics.json, schema_version 2) ────────────────
 //
 // Written alongside per_evidence.jsonl by results.build_run_metrics. The viewer
 // READS these byte-exact and never recomputes (gate G4). Two tiers (ev/stmt),
 // each either named-empty (status 'unavailable' + reason) or a block of arms.
+// v2 adds tiers.stmt.verdict_err (statement error-detection confusion on the
+// tiered verdict) + tiers.stmt.stratified (per-type/source/evidence/bucket/driver
+// residual). Untyped here until the viewer reads them (E11); structural typing
+// tolerates the extra keys meanwhile.
 
 /** One reliability bin (BINS_8). Unoccupied bins carry n:0 + null pred/empirical
  *  so the x-axis is stable across runs (mirrors the n≥30 validity guard). */

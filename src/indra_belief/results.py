@@ -363,7 +363,11 @@ def _soft_calibration_block(model: str | None) -> dict:
     return {"status": "available", "model": model, "soft_weights": soft}
 
 
-METRICS_SCHEMA_VERSION = 1  # the metrics.json contract the viewer (C4/C5) pins
+METRICS_SCHEMA_VERSION = 2  # the metrics.json contract the viewer (C4/C5) pins
+# v2: + tiers.stmt.verdict_err (error-detection confusion on the TIERED
+#     verdict_statement, positive=ERROR) and tiers.stmt.stratified (per
+#     stmt_type / source-count / evidence-count / bucket-group / reject-driver
+#     residual). Purely additive — arms{hard,parametric,soft} unchanged + byte-exact.
 
 
 def _metric_block(scores: list[float], labels: list[bool], tau: float) -> dict:
@@ -393,6 +397,48 @@ def _metric_block(scores: list[float], labels: list[bool], tau: float) -> dict:
         "confusion": {"tp": conf["tp"], "fp": conf["fp"], "fn": conf["fn"], "tn": conf["tn"]},
         "bins": reliability_bins(scores, labels),
     }
+
+
+def _verdict_err_confusion(rows: list[dict]) -> dict:
+    """Error-detection confusion for the TIERED ``verdict_statement`` vs statement
+    gold — the first-class statement heuristic the leaderboard reads.
+
+    positive = ERROR. ``pred_error = verdict_statement != "correct"`` (review AND
+    incorrect both count as flagged — the shipped review tier is an error-side
+    escalation, not a clean pass). ``gold_error = statement gold is incorrect``
+    (any-incorrect-wins). Long-key shape {n,tp,fp,fn,tn,accuracy,precision,recall,
+    f1} so error precision/recall/F1 read straight off it. Distinct from the
+    per-arm belief-threshold confusion inside ``_metric_block`` (belief < tau)."""
+    pairs = [((not r["gold_correct"]), (r["verdict_statement"] != "correct")) for r in rows]
+    return confusion_metrics(pairs)
+
+
+def _stmt_stratum(rows: list[dict], tau: float) -> dict:
+    """One statement-grain stratum: the verdict-driven error-detection confusion
+    + the hard-arm belief calibration block, both over the same rows. Lets R7 read
+    where error mass concentrates (verdict_err.f1) and where belief mis-calibrates
+    (hard.ece) per stratum."""
+    labels = [r["gold_correct"] for r in rows]
+    return {
+        "n": len(rows),
+        "base_rate_correct": sum(labels) / len(labels),
+        "verdict_err": _verdict_err_confusion(rows),
+        "hard": _metric_block([r["hard"] for r in rows], labels, tau=tau),
+    }
+
+
+def _stratify(rows: list[dict], keyfn, tau: float) -> dict:
+    """Group rows by ``keyfn`` (None keys dropped → not every statement carries
+    every stratum dim) and emit a stratum block per group, key-sorted for a
+    stable, byte-comparable JSON ordering."""
+    groups: dict[Any, list[dict]] = defaultdict(list)
+    for r in rows:
+        k = keyfn(r)
+        if k is None:
+            continue
+        groups[k].append(r)
+    return {str(k): _stmt_stratum(v, tau)
+            for k, v in sorted(groups.items(), key=lambda kv: str(kv[0]))}
 
 
 def build_run_metrics(
@@ -447,6 +493,19 @@ def build_run_metrics(
         "soft_weights_note": ("soft arm uses the FROZEN calibration_constants (3-dp "
                               "rounded); calibration_ship_gate re-fits the same values, so "
                               "the soft arm matches it within rounding; hard/parametric exact."),
+        "statement_verdict_err": ("tiers.stmt.verdict_err (+ per stratum): error-"
+                                  "detection confusion on the TIERED verdict_statement, NOT "
+                                  "belief<tau. positive=ERROR; pred_error = verdict_statement "
+                                  "!= 'correct' (review AND incorrect flagged); gold_error = "
+                                  "statement gold incorrect (any-incorrect-wins)."),
+        "statement_strata": ("tiers.stmt.stratified dims: by_stmt_type, by_n_sources "
+                             "(single/multi POST-gate distinct reads behind the belief), "
+                             "by_n_evidence (single/multi RAW attached evidence, incl. "
+                             "no_text/parse_fail — so a statement can be multi-evidence yet "
+                             "single-source), by_dominant_bucket (grouped bucket), by_driver "
+                             "(deterministic/llm/none reject driver). Each stratum = {n, "
+                             "base_rate_correct, verdict_err, hard:<metric_block>}. Diagnostic "
+                             "residual map; the shipped arms are unchanged."),
     }
     out: dict = {
         "schema_version": METRICS_SCHEMA_VERSION,
@@ -553,9 +612,26 @@ def build_run_metrics(
             continue  # nothing read → belief UNDEFINED, drop (matches calib scripts)
         soft_b = (statement_belief(rec["rows"], RECALIBRATED_PRIORS, dedup=False, soft=soft).belief
                   if soft else None)
+        # Strata metadata for the residual map (I3). stmt_type/bucket_group ride on
+        # the belief_rows (build_run_export bakes them). stmt_type can be None (older
+        # rows) → that statement is dropped from by_stmt_type; bucket_group is always
+        # populated (classify covers every row). driver = which reject path condemned
+        # the statement.
+        grp = rec["rows"]
+        stmt_type = next((r.get("stmt_type") for r in grp if r.get("stmt_type")), None)
+        bg = Counter(r.get("bucket_group") for r in grp if r.get("bucket_group"))
+        dominant_bucket = bg.most_common(1)[0][0] if bg else None
+        driver = ("deterministic" if sb.n_credible_incorrect_det > 0
+                  else "llm" if sb.n_credible_incorrect_llm > 0 else "none")
         stmt_rows.append({
             "hard": sb.belief, "parametric": sb.parametric_only, "soft": soft_b,
             "gold_correct": is_gold_correct(gv),
+            "verdict_statement": sb.verdict_statement,   # tiered decision (I2)
+            "stmt_type": stmt_type,                      # I3 strata dims ↓
+            "n_distinct_sources": sb.n_distinct_sources,
+            "n_evidence": sb.n_evidence,
+            "dominant_bucket": dominant_bucket,
+            "driver": driver,
         })
 
     if stmt_rows:
@@ -578,6 +654,19 @@ def build_run_metrics(
             "n": len(stmt_rows),
             "base_rate_correct": sum(labels) / len(labels),
             "arms": arms,
+            # ── NEW (schema v2): first-class statement heuristic surface ─────────
+            # verdict_err = error-detection F1 on the tiered verdict_statement;
+            # stratified = where the residual error mass concentrates (R7 reads it).
+            "verdict_err": _verdict_err_confusion(stmt_rows),
+            "stratified": {
+                "by_stmt_type": _stratify(stmt_rows, lambda r: r["stmt_type"], tau),
+                "by_n_sources": _stratify(
+                    stmt_rows, lambda r: "multi" if r["n_distinct_sources"] > 1 else "single", tau),
+                "by_n_evidence": _stratify(
+                    stmt_rows, lambda r: "multi" if r["n_evidence"] > 1 else "single", tau),
+                "by_dominant_bucket": _stratify(stmt_rows, lambda r: r["dominant_bucket"], tau),
+                "by_driver": _stratify(stmt_rows, lambda r: r["driver"], tau),
+            },
         }
     else:
         out["tiers"]["stmt"] = {"status": "unavailable",
@@ -786,6 +875,10 @@ def build_run_export(
             "tier": d.get("tier"),
             "evidence_text": ev_text,
             "evidence_hash": d.get("evidence_hash"),
+            # Strata metadata for build_run_metrics' Tier-2 residual map (I3);
+            # computation-only, never written into per_statement.json.
+            "stmt_type": d.get("stmt_type"),
+            "bucket_group": GROUP_NAME[META[bucket][0]],
             # gold + statement-grouping keys (used by build_run_metrics' Tier-2
             # join only; never written into per_statement.json). _stmt_hash is the
             # run's statement hash (hex) — the calibration pair-join derives the
@@ -811,6 +904,28 @@ def build_run_export(
         sb = statement_belief(a["belief_rows"], RECALIBRATED_PRIORS)
         soft_belief = (statement_belief(a["belief_rows"], RECALIBRATED_PRIORS, soft=calib).belief
                        if calib else None)
+        # Statement-grain gold (I4): any-incorrect-wins over THIS statement's
+        # per-evidence gold tags (gold_map is source_hash-keyed + pre-aggregated
+        # per source). None when no evidence is curated. This is the source_hash-
+        # keyed, stmt_hash-grouped rollup (load_gold_map's authoritative-source-hash
+        # doctrine) — NOT byte-equal to the Tier-2 metrics join, which prefers the
+        # (matches_hash, source_hash) pair and groups by the gold's pa_hash. They
+        # agree at evidence grain but can diverge for a source_hash shared across
+        # statements; this surface is for per-statement viewer drill, not for
+        # cross-checking the Tier-2 arms.
+        gold_stmt = None
+        if gold_map is not None:
+            g_tags: list[str] = []
+            g_n = 0
+            for r in a["belief_rows"]:
+                gk = _ukey(r.get("_source_hash"))
+                gv = gold_map.get(gk) if gk is not None else None
+                if gv:
+                    g_tags += gv.get("tags") or []
+                    g_n += 1
+            gverdict = aggregate_gold(g_tags)
+            if gverdict is not None:
+                gold_stmt = {"verdict": gverdict, "n": g_n, "tags": sorted(set(g_tags))}
         per_stmt.append({
             "stmt_hash": h,
             "indra_matches_hash": a["matches_hash"],
@@ -836,6 +951,28 @@ def build_run_export(
             "belief_parametric": _r3(sb.parametric_only),  # no gating — all surviving evidence
             "belief_soft": _r3(soft_belief),             # soft survival weight; None = no fit
             "belief_verdict_statement": sb.verdict_statement,  # correct|review|incorrect (tier-driven)
+            # ── I4 + E10 (schema v7; purely additive) ──────────────────────────
+            # gold_statement: aggregated statement-grain gold {verdict,n,tags} | null.
+            # coherence_summary: the multi-evidence depth behind the belief (post-
+            # dedup; the headline n_correct/n_incorrect above stay RAW). These make
+            # the belief_* signal a first-class, joinable statement surface.
+            "gold_statement": gold_stmt,
+            "coherence_summary": {
+                # ALL counts here are POST-dedup (the belief's own view); the
+                # headline n_correct/n_incorrect above are RAW pre-dedup. n_correct/
+                # n_incorrect are included so the post-dedup correct/incorrect split
+                # the belief actually rests on is reconstructable, not just its
+                # credible-incorrect subset.
+                "n_dedup_groups": sb.n_dedup_groups,
+                "n_distinct_sources": sb.n_distinct_sources,
+                "n_correct": sb.n_correct,
+                "n_incorrect": sb.n_incorrect,
+                "n_no_text": sb.n_no_text,
+                "n_parse_fail": sb.n_parse_fail,
+                "n_null_source": sb.n_null_source,
+                "n_credible_incorrect_det": sb.n_credible_incorrect_det,
+                "n_credible_incorrect_llm": sb.n_credible_incorrect_llm,
+            },
         })
 
     # internal consistency (the partition is total; tallies match depth)
@@ -914,7 +1051,9 @@ def build_run_export(
         "model_meta": model_size(model or "unknown"),
         # v6: + metrics.json calibration products (Tier-1/Tier-2) + per-statement
         # three-way belief (belief_hard/parametric/soft + belief_verdict_statement)
-        "schema_version": 6,
+        # v7: + per-statement gold_statement (aggregated statement-grain gold) +
+        # coherence_summary (multi-evidence depth behind the belief)
+        "schema_version": 7,
     }
     metrics = build_run_metrics(per_ev, stmt_agg, gold_map, model, run_id, gold_path)
     return per_ev, per_stmt, meta, metrics
