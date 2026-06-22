@@ -128,3 +128,13 @@ Per this project's principle — **determinism's role is INPUT, never OUTPUT** �
 ---
 
 Reproduction script: `GroundedEntity.resolve(claim, reader)` from `src/indra_belief/data/entity.py` (threshold at line 19, signal logic at lines 240–248); source data at `/tmp/grounding_misses.json` (38 records).
+
+---
+
+## Addendum (2026-06-22): §6.1 SHIPPED for the competing-candidate class; §6.2 layer-2 TESTED + NO-GO for the sole-hit residual
+
+**§6.1 implemented (commit `ebaa600`).** `_competing_candidates` resolves raw_text independently and, when it finds a distinct rival within a 0.10 band, routes to `MISMATCH` (collision, e.g. SH3BP1→SH3BP1) or `AMBIGUOUS` (tie, e.g. S1P→MBTPS1 + sphingosine-1-phosphate) with `has_grounding_signal=True` and the candidates surfaced — **not a scalar threshold**, the separator is "does raw_text have its own competing grounding?". Catches 10/12 labeled bugs; 9/9 legit aliases stay clean MATCH (zero over-flag); 427 tests. Determinism stays INPUT.
+
+**The 3 sole-hit residual (TRAF3←CRAF1, TKT←TK, HJV←JH) cannot be separated deterministically** — they ground SOLELY to the claim's gene at the 0.556 floor with no rival, byte-identical to legit RRAS2←TC21 / SOCS3←CIS3 / KRT23←K23.
+
+**§6.2 (LLM evidence-context disambiguation) was tested on this sole-hit class and FAILS.** A scrub is brittle, so the principled move was to surface the floor-only-alias match as a soft *confirm-sense* signal (distinct from the MISMATCH reject-prior) and let the LLM judge from the sentence. Exposure (eval_curation_v1, n=1606): the class fires on **147 unique pairs but holds only 2 genuine bugs vs ~145 legit aliases** (the naive 90:57 correct:incorrect split is a decoy — the 57 incorrect are legit aliases on statements gold-wrong for *other* reasons). Even a perfect catch is +2 = 0.12pp, below the ~5% noise floor. The paired gemma eval (n=323 floor-alias statements, baseline vs signal) confirmed: **err-F1 −0.0022, bootstrap CI [−0.024,+0.020], McNemar p=1.0 — net-flat.** And the decisive failure: the signal **un-caught** the bugs — TRAF3←CRAF1 and HJV←JH flipped correctly-REJECTED → wrongly-ACCEPTED. **Mechanism:** the dirty string usually *is* in the sentence (that is *why* it grounded there — "TC21 binds c-Raf-1", "CIS3 bound to JH1"), so "confirm the sense from the evidence" tells the model to affirm *because the string is present*. **Sense-presence ≠ grounding-correctness** — the §6.2 premise inverts on the sole-hit bug class. Reverted; `ebaa600` kept; the residual is noise, now MEASURED not assumed. (This NO-GO is specific to the *sole-hit* class — the competing-candidate AMBIGUOUS class §6.1 surfaces gives the LLM actual rivals to choose between, a different and still-open layer-2.)
