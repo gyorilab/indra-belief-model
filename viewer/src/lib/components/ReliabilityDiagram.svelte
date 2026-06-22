@@ -7,6 +7,14 @@
   as a mark sitting high above the line). Marks are sized by bin-n so a sparse
   bin cannot lie about a confident curve. Reads metrics.json bins VERBATIM —
   recomputes nothing.
+
+  OVERLAY (C5): pass `bins2`/`hue2`/`label2` to render a SECOND series (run B)
+  against the SAME shared diagonal — the run-comparison strong center. The eye
+  reads divergence between A and B AND from the diagonal at once. Both series'
+  marks share one bin-n scale so their relative weights stay honest. When the
+  overlay is active the per-mark gap stems are dropped (two stem fans would
+  cross-hatch into noise); divergence from the diagonal is carried by the line
+  paths instead.
 -->
 <script lang="ts">
 	import type { ReliabilityBin } from '$lib/data/types';
@@ -15,21 +23,40 @@
 		bins,
 		n,
 		hue = 'var(--accent)',
-		label = ''
-	}: { bins: ReliabilityBin[]; n: number; hue?: string; label?: string } = $props();
+		label = '',
+		bins2 = null,
+		n2 = null,
+		hue2 = 'var(--b-hue)',
+		label2 = ''
+	}: {
+		bins: ReliabilityBin[];
+		n: number;
+		hue?: string;
+		label?: string;
+		/** Optional second series (run B). When present the diagram is an A/B overlay. */
+		bins2?: ReliabilityBin[] | null;
+		n2?: number | null;
+		hue2?: string;
+		label2?: string;
+	} = $props();
 
-	// occupied bins only carry a point; the others still anchor the x-axis grid.
-	const pts = $derived(
-		bins
+	const overlay = $derived(bins2 != null);
+
+	function toPts(bs: ReliabilityBin[]) {
+		return bs
 			.filter((b) => b.n > 0 && b.mean_pred != null && b.empirical != null)
 			.map((b) => ({
 				x: b.mean_pred as number,
 				y: b.empirical as number,
 				n: b.n,
 				gap: (b.empirical as number) - (b.mean_pred as number)
-			}))
-	);
-	const maxBinN = $derived(Math.max(1, ...pts.map((p) => p.n)));
+			}));
+	}
+	// occupied bins only carry a point; the others still anchor the x-axis grid.
+	const pts = $derived(toPts(bins));
+	const pts2 = $derived(bins2 ? toPts(bins2) : []);
+	// shared bin-n scale across BOTH series — relative weights stay comparable.
+	const maxBinN = $derived(Math.max(1, ...pts.map((p) => p.n), ...pts2.map((p) => p.n)));
 
 	// SVG viewbox in calibration space [0,1]×[0,1], y inverted (1 at top).
 	const PAD = 6; // % padding inside the 0..100 box for stroke breathing room
@@ -46,6 +73,16 @@
 	function fmtPct(v: number): string {
 		return `${(v * 100).toFixed(0)}%`;
 	}
+	// connect a series' occupied bins left→right into a curve, so a model's
+	// trajectory off the diagonal reads as one line (the overlay's strong center).
+	function pathOf(ps: { x: number; y: number }[]): string {
+		if (ps.length < 2) return '';
+		return ps
+			.slice()
+			.sort((a, b) => a.x - b.x)
+			.map((p, i) => `${i === 0 ? 'M' : 'L'}${px(p.x).toFixed(2)} ${py(p.y).toFixed(2)}`)
+			.join(' ');
+	}
 </script>
 
 <figure class="rel">
@@ -56,31 +93,58 @@
 		<!-- gridlines at 0.5 -->
 		<line class="grid" x1={px(0.5)} y1={py(0)} x2={px(0.5)} y2={py(1)} />
 		<line class="grid" x1={px(0)} y1={py(0.5)} x2={px(1)} y2={py(0.5)} />
-		<!-- gap stems: how far each bin sits off the diagonal (the lie, drawn) -->
-		{#each pts as p}
-			<line class="stem" x1={px(p.x)} y1={py(p.x)} x2={px(p.x)} y2={py(p.y)} />
-		{/each}
-		<!-- bin marks, area ∝ n -->
-		{#each pts as p}
-			<circle
-				class="mark"
-				cx={px(p.x)}
-				cy={py(p.y)}
-				r={rOf(p.n)}
-				style="--hue:{hue}"
-			>
-				<title>{`predicted ${fmtPct(p.x)} · empirical ${fmtPct(p.y)} · n=${p.n} · ${p.gap >= 0 ? 'under' : 'over'}-confident by ${fmtPct(Math.abs(p.gap))}`}</title>
-			</circle>
-		{/each}
+		{#if overlay}
+			<!-- A/B overlay: a connecting curve per series carries each model's
+			     trajectory off the shared diagonal (no per-bin stems — two fans
+			     would cross-hatch). Marks still area ∝ n on the shared scale. -->
+			{#if pathOf(pts)}<path class="curve" d={pathOf(pts)} style="--hue:{hue}" />{/if}
+			{#if pathOf(pts2)}<path class="curve" d={pathOf(pts2)} style="--hue:{hue2}" />{/if}
+			{#each pts as p}
+				<circle class="mark" cx={px(p.x)} cy={py(p.y)} r={rOf(p.n)} style="--hue:{hue}">
+					<title>{`${label || 'A'} · predicted ${fmtPct(p.x)} · empirical ${fmtPct(p.y)} · n=${p.n} · ${p.gap >= 0 ? 'under' : 'over'}-confident by ${fmtPct(Math.abs(p.gap))}`}</title>
+				</circle>
+			{/each}
+			{#each pts2 as p}
+				<circle class="mark mark-b" cx={px(p.x)} cy={py(p.y)} r={rOf(p.n)} style="--hue:{hue2}">
+					<title>{`${label2 || 'B'} · predicted ${fmtPct(p.x)} · empirical ${fmtPct(p.y)} · n=${p.n} · ${p.gap >= 0 ? 'under' : 'over'}-confident by ${fmtPct(Math.abs(p.gap))}`}</title>
+				</circle>
+			{/each}
+		{:else}
+			<!-- gap stems: how far each bin sits off the diagonal (the lie, drawn) -->
+			{#each pts as p}
+				<line class="stem" x1={px(p.x)} y1={py(p.x)} x2={px(p.x)} y2={py(p.y)} />
+			{/each}
+			<!-- bin marks, area ∝ n -->
+			{#each pts as p}
+				<circle
+					class="mark"
+					cx={px(p.x)}
+					cy={py(p.y)}
+					r={rOf(p.n)}
+					style="--hue:{hue}"
+				>
+					<title>{`predicted ${fmtPct(p.x)} · empirical ${fmtPct(p.y)} · n=${p.n} · ${p.gap >= 0 ? 'under' : 'over'}-confident by ${fmtPct(Math.abs(p.gap))}`}</title>
+				</circle>
+			{/each}
+		{/if}
 	</svg>
 	<div class="axes">
 		<span class="ax-y">empirical correct-rate →</span>
 		<span class="ax-x">mean predicted belief →</span>
 	</div>
-	<p class="caption">
-		<span class="diag-key">— perfect</span> · marks sized by bin-n · above the line =
-		under-confident, below = over-confident · n={n.toLocaleString('en-US')}
-	</p>
+	{#if overlay}
+		<p class="caption">
+			<span class="key-a" style="--hue:{hue}">● {label || 'A'}</span>
+			<span class="key-b" style="--hue:{hue2}">● {label2 || 'B'}</span>
+			<span class="diag-key">— perfect</span> · marks sized by bin-n · above the line =
+			under-confident, below = over-confident · n={n.toLocaleString('en-US')} / {(n2 ?? 0).toLocaleString('en-US')}
+		</p>
+	{:else}
+		<p class="caption">
+			<span class="diag-key">— perfect</span> · marks sized by bin-n · above the line =
+			under-confident, below = over-confident · n={n.toLocaleString('en-US')}
+		</p>
+	{/if}
 </figure>
 
 <style>
@@ -121,6 +185,21 @@
 		stroke: var(--paper);
 		stroke-width: 0.6;
 	}
+	/* B series sits hollow so an A mark behind it stays readable when they cross */
+	.mark-b {
+		fill: var(--paper);
+		fill-opacity: 0.92;
+		stroke: var(--hue);
+		stroke-width: 1.1;
+	}
+	.curve {
+		fill: none;
+		stroke: var(--hue);
+		stroke-width: 1.1;
+		stroke-opacity: 0.85;
+		stroke-linejoin: round;
+		stroke-linecap: round;
+	}
 	.axes {
 		display: flex;
 		justify-content: space-between;
@@ -143,5 +222,11 @@
 	}
 	.diag-key {
 		color: var(--ink-muted);
+	}
+	.key-a,
+	.key-b {
+		color: var(--hue);
+		font-weight: 600;
+		margin-right: 0.5rem;
 	}
 </style>

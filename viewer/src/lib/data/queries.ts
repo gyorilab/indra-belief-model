@@ -295,6 +295,83 @@ export function getRunCalibration(runId?: string): RunCalibration | null {
 	};
 }
 
+// ── Run-comparison calibration (C5) — ?mode=calib on /compare ────────────────
+//
+// Mirrors getRunCalibration but for an A/B PAIR. Both runs' metrics.json are
+// served VERBATIM (getRunMetrics); the only derived quantities are ΔECE/ΔBrier
+// = the difference of the two SERVED values per tier+arm (gate G5v: viewer
+// deltas == the C1/C2 held-out script outputs). Nothing is recomputed.
+
+/** ΔECE/ΔBrier for one tier+arm: B minus A over the two byte-exact served arms.
+ *  delta_* convention matches C4 (negative = B better, since lower ECE/Brier
+ *  is better). null when either side lacks the arm. */
+export interface CalibDelta {
+	arm: string;
+	a_ece: number | null;
+	b_ece: number | null;
+	delta_ece: number | null; // b − a (negative ⇒ B better calibrated)
+	a_brier: number | null;
+	b_brier: number | null;
+	delta_brier: number | null; // b − a (negative ⇒ B better)
+}
+
+export interface CompareCalibration {
+	run_a: { run_id: string; model: string };
+	run_b: { run_id: string; model: string };
+	/** Whole metrics.json per side, served verbatim. null ⇒ predates cal arc. */
+	a_metrics: RunMetrics | null;
+	b_metrics: RunMetrics | null;
+	a_present: boolean;
+	b_present: boolean;
+	/** Headline ΔECE/ΔBrier per tier (Tier-1 → 'score'; Tier-2 → 'hard'). */
+	delta: { ev: CalibDelta | null; stmt: CalibDelta | null };
+}
+
+function armOfMetrics(m: RunMetrics | null, tier: Tier, arm: string): MetricArm | null {
+	const t = m?.tiers?.[tier];
+	if (!t || t.status !== 'available') return null;
+	const a: ArmSlot | undefined = t.arms[arm];
+	return armAvailable(a) ? a : null;
+}
+
+export function compareCalibration(runIdA: string, runIdB: string): CompareCalibration | null {
+	const a = resolveRun(runIdA);
+	const b = resolveRun(runIdB);
+	if (!a || !b) return null;
+	const am = getRunMetrics(a);
+	const bm = getRunMetrics(b);
+
+	const deltaFor = (tier: Tier): CalibDelta | null => {
+		const arm = HEADLINE_ARM[tier];
+		const aa = armOfMetrics(am, tier, arm);
+		const ba = armOfMetrics(bm, tier, arm);
+		if (!aa && !ba) return null;
+		const aE = aa?.ece ?? null;
+		const bE = ba?.ece ?? null;
+		const aB = aa?.brier ?? null;
+		const bB = ba?.brier ?? null;
+		return {
+			arm,
+			a_ece: aE,
+			b_ece: bE,
+			delta_ece: aE != null && bE != null ? bE - aE : null,
+			a_brier: aB,
+			b_brier: bB,
+			delta_brier: aB != null && bB != null ? bB - aB : null
+		};
+	};
+
+	return {
+		run_a: { run_id: a.run_id, model: a.model },
+		run_b: { run_id: b.run_id, model: b.model },
+		a_metrics: am,
+		b_metrics: bm,
+		a_present: am != null,
+		b_present: bm != null,
+		delta: { ev: deltaFor('ev'), stmt: deltaFor('stmt') }
+	};
+}
+
 // ── Statement matrix ────────────────────────────────────────────────────────
 
 export interface MatrixRow {

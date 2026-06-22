@@ -5,6 +5,7 @@ import {
 	cohortForCell,
 	evidenceSideBySide,
 	goldPerformance,
+	compareCalibration,
 	type RunSummary,
 	type CompareAnatomy,
 	type CellStratification,
@@ -14,7 +15,8 @@ import {
 	type StratAxis,
 	type GoldFilter,
 	type GoldGranularity,
-	type GoldPerformance
+	type GoldPerformance,
+	type CompareCalibration
 } from '$lib/data/queries';
 import type { PageServerLoad } from './$types';
 
@@ -46,7 +48,13 @@ export const load: PageServerLoad = async ({ url }) => {
 	const axis: StratAxis | null = axisParam && AXES.includes(axisParam as StratAxis) ? (axisParam as StratAxis) : null;
 	const axisValue = q.get('val');
 	const ev = q.get('ev'); // "<stmt_hash>.<evidence_hash>"
-	const goldMode = q.get('mode') === 'gold';
+	// ?mode is a single mutually-exclusive slot (mirrors ?mode=gold): gold lane,
+	// calibration lane, or neither. calib swaps ONLY the L0 anatomy payload.
+	const mode = q.get('mode');
+	const goldMode = mode === 'gold';
+	const calibMode = mode === 'calib';
+	// calibration tier toggle (calib mode only): ev (default) | statement.
+	const calTier: 'evidence' | 'statement' = q.get('caltier') === 'statement' ? 'statement' : 'evidence';
 	const goldParam = q.get('gold');
 	const goldFilter: GoldFilter | null =
 		goldParam && GOLD_FILTERS.includes(goldParam as GoldFilter) ? (goldParam as GoldFilter) : null;
@@ -57,10 +65,12 @@ export const load: PageServerLoad = async ({ url }) => {
 	let cohort: Cohort | null = null;
 	let sideBySide: SideBySideEvidence | null = null;
 	let goldPerf: GoldPerformance | null = null;
+	let calibration: CompareCalibration | null = null;
 
 	if (a && b && a !== b) {
 		anatomy = compareAnatomy(a, b);
 		if (goldMode) goldPerf = goldPerformance(a, b, granularity);
+		if (calibMode) calibration = compareCalibration(a, b);
 
 		// L3: a specific evidence is selected → side-by-side reasoning.
 		if (ev) {
@@ -93,6 +103,9 @@ export const load: PageServerLoad = async ({ url }) => {
 		selectedB: b,
 		semanticOnly,
 		goldMode,
+		calibMode,
+		calTier,
+		calibration,
 		goldFilter,
 		granularity,
 		goldPerf,

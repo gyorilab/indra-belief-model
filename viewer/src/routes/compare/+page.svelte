@@ -4,6 +4,9 @@
 	import BeliefRuler from '$lib/components/BeliefRuler.svelte';
 	import { scoringMethod } from '$lib/format';
 	import ReasoningPanel from '$lib/components/ReasoningPanel.svelte';
+	import ReliabilityDiagram from '$lib/components/ReliabilityDiagram.svelte';
+	import BrierBar from '$lib/components/BrierBar.svelte';
+	import { armAvailable, type MetricArm, type TierBlock } from '$lib/data/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -92,7 +95,11 @@
 		nav({ cell: null, axis: null, val: null, ev: null });
 	}
 	function toggleGoldMode() {
+		// ?mode is one mutually-exclusive slot — turning gold on clears calib.
 		nav({ mode: data.goldMode ? null : 'gold' });
+	}
+	function toggleCalibMode() {
+		nav({ mode: data.calibMode ? null : 'calib' });
 	}
 	function setGoldFilter(g: string | null) {
 		nav({ gold: data.goldFilter === g ? null : g });
@@ -103,6 +110,54 @@
 
 	// gold-performance payload (error partition + CI recalls), gold mode only
 	const gp = $derived(data.goldPerf);
+
+	// ── calibration comparison (C5, ?mode=calib) ─────────────────────────────
+	// Every number served byte-exact from each run's metrics.json; the page
+	// derives nothing but display strings + the tier toggle (gate G5v).
+	const cal = $derived(data.calibration);
+	type CalTier = 'ev' | 'stmt';
+	function setCalTier(t: CalTier) {
+		nav({ caltier: t === 'stmt' ? 'statement' : null });
+	}
+	const calTier = $derived<CalTier>(data.calTier === 'statement' ? 'stmt' : 'ev');
+	const CAL_TIER_LABEL: Record<CalTier, string> = {
+		ev: 'Tier 1 — per evidence',
+		stmt: 'Tier 2 — per statement'
+	};
+	// Tier-1 has one realized arm (score); Tier-2 shows the three-way G2 series.
+	const CAL_TIER_ARMS: Record<CalTier, string[]> = {
+		ev: ['score'],
+		stmt: ['hard', 'parametric', 'soft']
+	};
+	const CAL_HEADLINE_ARM: Record<CalTier, string> = { ev: 'score', stmt: 'hard' };
+	const CAL_ARM_LABEL: Record<string, string> = {
+		score: 'per-evidence score',
+		hard: 'hard gate (production)',
+		parametric: 'parametric (ablation)',
+		soft: 'soft survival (calibrated)'
+	};
+	function calTierBlock(m: typeof cal extends null ? never : NonNullable<typeof cal>['a_metrics'], t: CalTier): TierBlock | null {
+		return m?.tiers?.[t] ?? null;
+	}
+	function calArm(block: TierBlock | null, arm: string): MetricArm | null {
+		if (!block || block.status !== 'available') return null;
+		const a = block.arms[arm];
+		return armAvailable(a) ? a : null;
+	}
+	function calArmReason(block: TierBlock | null, arm: string): string | null {
+		if (!block || block.status !== 'available') return null;
+		const a = block.arms[arm];
+		return a && 'status' in a ? a.reason : null;
+	}
+	function f3c(n: number | null | undefined): string {
+		return n == null ? '—' : n.toFixed(3);
+	}
+	// ΔECE/ΔBrier sign string. delta = B − A; lower ECE/Brier is better, so a
+	// NEGATIVE delta means B is better-calibrated than A.
+	function deltaStr(d: number | null | undefined): string {
+		if (d == null) return '—';
+		return `${d > 0 ? '+' : d < 0 ? '−' : '±'}${Math.abs(d).toFixed(3)}`;
+	}
 
 	const haveTwo = $derived(runs.length >= 2);
 	const sameRun = $derived(data.selectedA != null && data.selectedA === data.selectedB);
@@ -303,6 +358,10 @@
 									show human gold <span class="hint">(INDRA curations)</span>
 								</label>
 							{/if}
+							<label class="sem-toggle calib-toggle">
+								<input type="checkbox" checked={data.calibMode} onchange={toggleCalibMode} />
+								calibration <span class="hint">(reliability vs gold)</span>
+							</label>
 						</div>
 					</header>
 
@@ -478,6 +537,155 @@
 							</section>
 						{/if}
 
+					{#if data.calibMode}
+						<!-- ══ L0 CALIBRATION: overlaid reliability curves + ΔECE/ΔBrier ══
+						     The verdict 2×2 is SWAPPED for the two models' confessions read
+						     against one shared diagonal. Drill skeleton below is untouched —
+						     only this L0 payload changes. -->
+						{#if !cal || (!cal.a_present && !cal.b_present)}
+							<div class="cal-empty">
+								<p class="ce-head">no calibration products for this pair</p>
+								<p class="ce-why">
+									One or both runs predate the calibration arc (no <code>metrics.json</code>).
+									Re-export with baked gold to populate the overlaid reliability curves. The
+									verdict matrix is available with calibration off.
+								</p>
+							</div>
+						{:else}
+							{@const ab = calArm(calTierBlock(cal.a_metrics, calTier), CAL_HEADLINE_ARM[calTier])}
+							{@const bb = calArm(calTierBlock(cal.b_metrics, calTier), CAL_HEADLINE_ARM[calTier])}
+							{@const d = cal.delta[calTier]}
+							<div class="cal-l0">
+								<!-- ΔECE/ΔBrier scalars: B − A, lower-is-better → negative = B wins -->
+								<div class="cal-deltas">
+									<div class="cal-d">
+										<div class="cd-pair mono">
+											<span class="mA">{f3c(d?.a_ece)}</span>
+											<span class="cd-arrow">→</span>
+											<span class="mB">{f3c(d?.b_ece)}</span>
+										</div>
+										<div class="cd-delta mono" class:better={d != null && d.delta_ece != null && d.delta_ece < 0} class:worse={d != null && d.delta_ece != null && d.delta_ece > 0}>
+											ΔECE {deltaStr(d?.delta_ece)}
+										</div>
+										<div class="cd-lbl">expected calibration error · A → B</div>
+									</div>
+									<div class="cal-d">
+										<div class="cd-pair mono">
+											<span class="mA">{f3c(d?.a_brier)}</span>
+											<span class="cd-arrow">→</span>
+											<span class="mB">{f3c(d?.b_brier)}</span>
+										</div>
+										<div class="cd-delta mono" class:better={d != null && d.delta_brier != null && d.delta_brier < 0} class:worse={d != null && d.delta_brier != null && d.delta_brier > 0}>
+											ΔBrier {deltaStr(d?.delta_brier)}
+										</div>
+										<div class="cd-lbl">Brier score · A → B</div>
+									</div>
+									<p class="cal-d-note hint">
+										lower is better — a <strong>negative</strong> Δ means
+										<span class="mB">{cal.run_b.model}</span> is the more honest of the two on
+										{calTier === 'stmt' ? 'rolled-up statement belief' : 'per-evidence belief'}.
+									</p>
+								</div>
+
+								<!-- tier toggle -->
+								<div class="cal-tier-toggle" role="group" aria-label="calibration tier">
+									<button class:active={calTier === 'ev'} onclick={() => setCalTier('ev')}>Tier 1 · evidence</button>
+									<button class:active={calTier === 'stmt'} onclick={() => setCalTier('stmt')}>Tier 2 · statement</button>
+								</div>
+
+								<!-- STRONG CENTER: overlaid reliability curves on the shared diagonal -->
+								{#if ab && bb}
+									<div class="cal-overlay">
+										<ReliabilityDiagram
+											bins={ab.bins}
+											n={ab.n}
+											hue="var(--a-hue)"
+											label={cal.run_a.model}
+											bins2={bb.bins}
+											n2={bb.n}
+											hue2="var(--b-hue)"
+											label2={cal.run_b.model}
+										/>
+									</div>
+								{:else}
+									<p class="cal-empty-inline hint">
+										{calArmReason(calTierBlock(cal.a_metrics, calTier), CAL_HEADLINE_ARM[calTier]) ??
+											calArmReason(calTierBlock(cal.b_metrics, calTier), CAL_HEADLINE_ARM[calTier]) ??
+											'this tier is unavailable for one of the runs'}
+									</p>
+								{/if}
+
+								<!-- RESONANCE: the three-way G2 series (hard / parametric / soft).
+								     soft pulling toward the diagonal = the calibration lever made
+								     visible as motion-toward-honesty. Only Tier-2 carries the arms. -->
+								{#if calTier === 'stmt'}
+									<div class="cal-threeway">
+										<p class="ctw-lab">
+											the calibration lever (G2 ship gate) — ECE per arm, both models.
+											<strong>soft survival</strong> is the recalibrated arm; lower ECE = closer to the diagonal.
+										</p>
+										<div class="ctw-grid">
+											<div class="ctw-head mono">
+												<span></span>
+												{#each CAL_TIER_ARMS.stmt as armKey}
+													<span class="ctw-arm">{CAL_ARM_LABEL[armKey]}</span>
+												{/each}
+											</div>
+											{#each [{ m: cal.a_metrics, name: cal.run_a.model, cls: 'mA' }, { m: cal.b_metrics, name: cal.run_b.model, cls: 'mB' }] as row}
+												{@const blk = calTierBlock(row.m, 'stmt')}
+												<div class="ctw-row">
+													<span class="ctw-model {row.cls}">{row.name}</span>
+													{#each CAL_TIER_ARMS.stmt as armKey}
+														{@const arm = calArm(blk, armKey)}
+														<span class="ctw-cell mono" class:soft={armKey === 'soft'}>
+															{#if arm}ECE {f3c(arm.ece)}{:else}—{/if}
+														</span>
+													{/each}
+												</div>
+											{/each}
+										</div>
+										<p class="ctw-note hint">
+											read each row left→right: hard gate → parametric ablation → soft survival.
+											where <strong>soft</strong> &lt; hard, the lever bought honesty without flattening.
+										</p>
+									</div>
+								{/if}
+
+								<!-- per-arm Brier decomposition, both models stacked -->
+								<div class="cal-arms">
+									{#each CAL_TIER_ARMS[calTier] as armKey}
+										{@const aArm = calArm(calTierBlock(cal.a_metrics, calTier), armKey)}
+										{@const bArm = calArm(calTierBlock(cal.b_metrics, calTier), armKey)}
+										{#if aArm || bArm}
+											<div class="cal-arm-block">
+												<p class="cab-h">{CAL_ARM_LABEL[armKey] ?? armKey}</p>
+												<div class="cab-pair">
+													<div class="cab-side">
+														<p class="cab-model mA">{cal.run_a.model}</p>
+														{#if aArm}
+															<BrierBar reliability={aArm.reliability} resolution={aArm.resolution} uncertainty={aArm.uncertainty} brier={aArm.brier} />
+														{:else}<p class="hint">unavailable</p>{/if}
+													</div>
+													<div class="cab-side">
+														<p class="cab-model mB">{cal.run_b.model}</p>
+														{#if bArm}
+															<BrierBar reliability={bArm.reliability} resolution={bArm.resolution} uncertainty={bArm.uncertainty} brier={bArm.brier} />
+														{:else}<p class="hint">unavailable</p>{/if}
+													</div>
+												</div>
+											</div>
+										{/if}
+									{/each}
+								</div>
+
+								<p class="matrix-hint hint">
+									{CAL_TIER_LABEL[calTier]} · every number served byte-exact from each run's
+									<code>metrics.json</code> — the viewer recomputes nothing; Δ is the difference of
+									the two served values. Turn calibration off to dig into a verdict cohort.
+								</p>
+							</div>
+						{/if}
+					{:else}
 					<!-- confusion matrix -->
 					<div class="matrix-wrap">
 						<table class="matrix">
@@ -545,6 +753,7 @@
 							{/if}
 						</p>
 					</div>
+					{/if}
 				</section>
 
 			<!-- ════════════ L1 + L2: CELL DRILL ════════════ -->
@@ -1279,6 +1488,190 @@
 	}
 	.gold-toggle {
 		color: var(--gold-hue);
+	}
+	.calib-toggle {
+		color: var(--accent);
+	}
+
+	/* ── C5 calibration L0 (mode=calib) ───────────────────────────── */
+	.cal-empty,
+	.cal-empty-inline {
+		border-left: 3px solid var(--rule);
+		padding: 0.2rem 0 0.2rem 0.9rem;
+		margin: 0.6rem 0 1rem;
+	}
+	.ce-head {
+		font-family: var(--mono);
+		font-size: 0.82rem;
+		color: var(--ink);
+		margin: 0 0 0.3rem;
+	}
+	.ce-why {
+		font-size: 0.88rem;
+		color: var(--ink-muted);
+		margin: 0;
+		max-width: 66ch;
+		line-height: 1.45;
+	}
+	.cal-l0 {
+		margin: 0 0 1rem;
+	}
+	.cal-deltas {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		gap: 1.2rem 2.4rem;
+		padding: 0 0 1.2rem;
+		border-bottom: 1px solid var(--rule);
+		margin-bottom: 1.2rem;
+	}
+	.cal-d {
+		min-width: 9rem;
+	}
+	.cd-pair {
+		font-size: 1.4rem;
+		line-height: 1;
+		display: flex;
+		align-items: baseline;
+		gap: 0.4rem;
+	}
+	.cd-arrow {
+		color: var(--ink-faint);
+		font-size: 1rem;
+	}
+	.cd-delta {
+		font-size: 0.86rem;
+		margin-top: 0.35rem;
+		color: var(--ink-muted);
+	}
+	.cd-delta.better {
+		color: var(--ok-green);
+		font-weight: 600;
+	}
+	.cd-delta.worse {
+		color: var(--accent);
+		font-weight: 600;
+	}
+	.cd-lbl {
+		font-size: 0.7rem;
+		color: var(--ink-muted);
+		margin-top: 0.3rem;
+		max-width: 18ch;
+	}
+	.cal-d-note {
+		flex: 1 1 18rem;
+		max-width: 40ch;
+		margin: 0;
+		align-self: center;
+	}
+	.cal-tier-toggle {
+		display: inline-flex;
+		border: 1px solid var(--rule);
+		margin: 0 0 1.2rem;
+	}
+	.cal-tier-toggle button {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		background: transparent;
+		border: none;
+		color: var(--ink-muted);
+		padding: 0.35rem 0.85rem;
+		cursor: pointer;
+	}
+	.cal-tier-toggle button + button {
+		border-left: 1px solid var(--rule);
+	}
+	.cal-tier-toggle button.active {
+		background: var(--ink);
+		color: var(--paper);
+	}
+	.cal-tier-toggle button:hover:not(.active) {
+		color: var(--ink);
+	}
+	.cal-overlay {
+		max-width: 24rem;
+		margin: 0 0 1.6rem;
+	}
+	.cal-threeway {
+		margin: 0 0 1.6rem;
+		padding: 0.9rem 0 0;
+		border-top: 1px dotted var(--rule);
+	}
+	.ctw-lab {
+		font-size: 0.84rem;
+		color: var(--ink-muted);
+		max-width: 70ch;
+		margin: 0 0 0.7rem;
+		line-height: 1.45;
+	}
+	.ctw-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+	.ctw-head,
+	.ctw-row {
+		display: grid;
+		grid-template-columns: 12rem repeat(3, 1fr);
+		gap: 0.6rem;
+		align-items: center;
+	}
+	.ctw-head {
+		padding-bottom: 0.3rem;
+		border-bottom: 1px solid var(--rule);
+	}
+	.ctw-arm {
+		font-size: 0.66rem;
+		color: var(--ink-muted);
+	}
+	.ctw-row {
+		padding: 0.25rem 0;
+		border-bottom: 1px dotted var(--rule);
+	}
+	.ctw-model {
+		font-size: 0.84rem;
+		font-weight: 600;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.ctw-cell {
+		font-size: 0.78rem;
+		color: var(--ink-muted);
+	}
+	.ctw-cell.soft {
+		color: var(--ok-green);
+		font-weight: 600;
+	}
+	.ctw-note {
+		margin: 0.6rem 0 0;
+		max-width: 70ch;
+	}
+	.cal-arms {
+		display: flex;
+		flex-direction: column;
+		gap: 1.6rem;
+		margin: 0 0 1.2rem;
+	}
+	.cal-arm-block {
+		padding-top: 0.9rem;
+		border-top: 1px dotted var(--rule);
+	}
+	.cab-h {
+		font-family: var(--mono);
+		font-size: 0.76rem;
+		color: var(--ink);
+		margin: 0 0 0.7rem;
+	}
+	.cab-pair {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1.6rem;
+	}
+	.cab-model {
+		font-size: 0.8rem;
+		font-weight: 600;
+		margin: 0 0 0.5rem;
 	}
 	.gold-coverage {
 		margin: 0 0 1.2rem;
