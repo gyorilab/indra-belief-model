@@ -81,7 +81,7 @@ def test_build_run_export_joins_text_and_rolls_up(tmp_path):
     run = _write_run(tmp_path, rows)
     corp = _write_corpus(tmp_path, corpus)
 
-    per_ev, per_stmt, meta = build_run_export(str(run), str(corp), run_id="r1", model="test-model")
+    per_ev, per_stmt, meta, _m = build_run_export(str(run), str(corp), run_id="r1", model="test-model")
 
     assert len(per_ev) == 2
     # evidence text was joined from the corpus, not the run
@@ -111,7 +111,7 @@ def test_build_run_export_joins_text_and_rolls_up(tmp_path):
     assert meta["cost"]["total_usd"] is None
     assert meta["cost"]["n_evidence_unavailable"] == 2
     assert meta["cost"]["n_evidence_costed"] == 0
-    assert meta["schema_version"] == 5
+    assert meta["schema_version"] == 6
 
 
 def test_write_run_export_emits_three_files(tmp_path):
@@ -146,7 +146,7 @@ def test_write_run_export_emits_three_files(tmp_path):
     assert meta["cost"]["n_evidence_no_llm"] == 1
     assert meta["cost"]["n_evidence_costed"] == 0
     assert meta["cost"]["n_evidence_unavailable"] == 0
-    assert meta["schema_version"] == 5
+    assert meta["schema_version"] == 6
     # E5: soft_calibration block baked per run. model "m" is unfitted → named-
     # unavailable with a reason, never an imputed zero.
     assert meta["soft_calibration"]["status"] == "unavailable"
@@ -294,7 +294,7 @@ def test_export_cost_local_run_is_estimated(tmp_path):
     ]
     run = _write_run(tmp_path, rows)
     corp = _write_corpus(tmp_path, _cost_corpus())
-    per_ev, _, meta = build_run_export(str(run), str(corp), run_id="z", model="gemma")
+    per_ev, _, meta, _m = build_run_export(str(run), str(corp), run_id="z", model="gemma")
 
     row0 = round(2549 * 0.13 / 1e6 + 296 * 0.40 / 1e6, 6)
     row1 = round(1000 * 0.13 / 1e6 + 100 * 0.40 / 1e6, 6)
@@ -321,7 +321,7 @@ def test_export_cost_priced_bedrock_run_sums(tmp_path):
     ]
     run = _write_run(tmp_path, rows)
     corp = _write_corpus(tmp_path, _cost_corpus())
-    per_ev, _, meta = build_run_export(str(run), str(corp), run_id="b", model="sonnet")
+    per_ev, _, meta, _m = build_run_export(str(run), str(corp), run_id="b", model="sonnet")
 
     by_i = {r["evidence_i"]: r for r in per_ev}
     # 2-call row: output_tokens is the SUM (350) but gen_out_tokens is LAST-call (150)
@@ -351,7 +351,7 @@ def test_export_cost_mixed_priced_and_unverified_is_partial(tmp_path):
     ]
     run = _write_run(tmp_path, rows)
     corp = _write_corpus(tmp_path, _cost_corpus())
-    per_ev, _, meta = build_run_export(str(run), str(corp), run_id="m", model="mixed")
+    per_ev, _, meta, _m = build_run_export(str(run), str(corp), run_id="m", model="mixed")
 
     by_i = {r["evidence_i"]: r for r in per_ev}
     assert by_i[0]["cost_status"] == "known"
@@ -369,7 +369,7 @@ def test_export_cost_mixed_priced_and_unverified_is_partial(tmp_path):
     sonnet = round(2000 * 3 / 1e6 + 500 * 15 / 1e6, 6)  # + the gemma estimate
     assert meta["cost"]["total_usd"] == round(sonnet + by1, 4)
     assert "vendor.unlisted-7b" in meta["cost"]["models"]
-    assert meta["schema_version"] == 5
+    assert meta["schema_version"] == 6
 
 
 def test_export_cost_multi_priced_models_run_sums_and_sorts(tmp_path):
@@ -383,7 +383,7 @@ def test_export_cost_multi_priced_models_run_sums_and_sorts(tmp_path):
     ]
     run = _write_run(tmp_path, rows)
     corp = _write_corpus(tmp_path, _cost_corpus())
-    _, _, meta = build_run_export(str(run), str(corp), run_id="mp", model="multi-priced")
+    _, _, meta, _m = build_run_export(str(run), str(corp), run_id="mp", model="multi-priced")
 
     sonnet = 2000 * 3 / 1e6 + 500 * 15 / 1e6
     haiku = 1000 * 0.8 / 1e6 + 200 * 4 / 1e6
@@ -402,7 +402,7 @@ def test_export_cost_empty_run_is_known_zero(tmp_path):
     run = tmp_path / "empty.jsonl"
     run.write_text("")
     corp = _write_corpus(tmp_path, _cost_corpus())
-    per_ev, per_stmt, meta = build_run_export(str(run), str(corp), run_id="e", model="empty")
+    per_ev, per_stmt, meta, _m = build_run_export(str(run), str(corp), run_id="e", model="empty")
 
     assert per_ev == [] and per_stmt == []
     assert meta["cost"]["status"] == "known"
@@ -432,18 +432,18 @@ def test_build_run_export_carries_reasoning_trace(tmp_path):
           "provider_source": "bedrock_responses.output[].reasoning", "backend": "bedrock_responses",
           "model_id": "openai.gpt-5.5", "finish_reason": "stop",
           "committed_justification": {"support": "MEK phosphorylates ERK", "objection": None, "source": "answer_json"}}
-    per_ev, _ps, meta = _one_row(tmp_path, [{"finish_reason": "stop", "out_tokens": 50, "reasoning_trace": rt}])
+    per_ev, _ps, meta, _m = _one_row(tmp_path, [{"finish_reason": "stop", "out_tokens": 50, "reasoning_trace": rt}])
     tr = per_ev[0]["reasoning_trace"]
     assert tr is not None
     assert tr["status"] == "encrypted" and tr["reasoning_tokens"] == 172
     assert tr["committed_justification"]["support"] == "MEK phosphorylates ERK"
     assert tr["free_cot_chars"] == 50
     assert meta["reasoning_quality"]["trace_status"]["encrypted"] == 1
-    assert meta["schema_version"] == 5
+    assert meta["schema_version"] == 6
 
 
 def test_build_run_export_legacy_row_has_null_reasoning_trace(tmp_path):
     # call_log without reasoning_trace (run scored before the trace existed)
-    per_ev, _ps, meta = _one_row(tmp_path, [{"finish_reason": "stop", "out_tokens": 50}])
+    per_ev, _ps, meta, _m = _one_row(tmp_path, [{"finish_reason": "stop", "out_tokens": 50}])
     assert per_ev[0]["reasoning_trace"] is None
     assert meta["reasoning_quality"]["trace_status"].get("no_trace") == 1

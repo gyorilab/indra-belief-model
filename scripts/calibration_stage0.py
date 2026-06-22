@@ -46,7 +46,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
-from indra_belief.metrics import BINS_8, ece  # noqa: E402
+from indra_belief.metrics import (  # noqa: E402
+    BINS_8,
+    auroc,
+    auprc,
+    brier_murphy,
+    ece,
+    reliability_bins,
+)
 from indra_belief.noise_model import (  # noqa: E402
     RECALIBRATED_PRIORS,
     compute_gated_belief,
@@ -99,93 +106,11 @@ def join_model(scored_rows, by_pair, by_sh):
     return joined, parse_null, missed
 
 
-# ---- metrics not in the shared lib (AUROC / AUPRC / Brier) -------------------
-def _rankdata_avg(a: np.ndarray) -> np.ndarray:
-    """1-based ranks with ties averaged (no scipy)."""
-    order = a.argsort(kind="mergesort")
-    sa = a[order]
-    n = len(a)
-    rnk = np.empty(n, float)
-    i = 0
-    while i < n:
-        j = i
-        while j + 1 < n and sa[j + 1] == sa[i]:
-            j += 1
-        rnk[i : j + 1] = (i + j) / 2.0 + 1.0
-        i = j + 1
-    out = np.empty(n, float)
-    out[order] = rnk
-    return out
-
-
-def auroc(scores, labels) -> float:
-    """AUROC via Mann-Whitney U. positive class = label True."""
-    s = np.asarray(scores, float)
-    y = np.asarray(labels, bool)
-    n_pos, n_neg = int(y.sum()), int((~y).sum())
-    if n_pos == 0 or n_neg == 0:
-        return float("nan")
-    ranks = _rankdata_avg(s)
-    return (ranks[y].sum() - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg)
-
-
-def auprc(scores, labels) -> float:
-    """Average precision (AUPRC), positive class = label True."""
-    s = np.asarray(scores, float)
-    y = np.asarray(labels, bool)
-    n_pos = int(y.sum())
-    if n_pos == 0:
-        return float("nan")
-    order = np.argsort(-s, kind="mergesort")
-    y_sorted = y[order]
-    tp = np.cumsum(y_sorted)
-    fp = np.cumsum(~y_sorted)
-    precision = tp / np.maximum(tp + fp, 1)
-    recall = tp / n_pos
-    # AP = sum over thresholds of (R_k - R_{k-1}) * P_k
-    rec_prev = np.concatenate([[0.0], recall[:-1]])
-    return float(np.sum((recall - rec_prev) * precision))
-
-
-def brier_murphy(scores, labels, bins=BINS_8) -> dict:
-    """Brier score + Murphy decomposition (reliability - resolution + uncertainty)."""
-    p = np.asarray(scores, float)
-    y = np.asarray(labels, float)
-    n = len(p)
-    if n == 0:
-        return {"brier": float("nan"), "reliability": float("nan"),
-                "resolution": float("nan"), "uncertainty": float("nan"), "n": 0}
-    brier = float(np.mean((p - y) ** 2))
-    ybar = float(np.mean(y))
-    uncertainty = ybar * (1.0 - ybar)
-    reliability = 0.0
-    resolution = 0.0
-    for lo, hi in bins:
-        m = (p >= lo) & (p < hi)
-        nk = int(m.sum())
-        if nk == 0:
-            continue
-        pbar_k = float(np.mean(p[m]))
-        ybar_k = float(np.mean(y[m]))
-        reliability += nk / n * (pbar_k - ybar_k) ** 2
-        resolution += nk / n * (ybar_k - ybar) ** 2
-    return {"brier": brier, "reliability": reliability,
-            "resolution": resolution, "uncertainty": uncertainty, "n": n}
-
-
-def reliability_bins(scores, labels, bins=BINS_8) -> list[dict]:
-    p = np.asarray(scores, float)
-    y = np.asarray(labels, bool)
-    out = []
-    for lo, hi in bins:
-        m = (p >= lo) & (p < hi)
-        nk = int(m.sum())
-        out.append({
-            "lo": lo, "hi": hi, "n": nk,
-            "mean_pred": float(np.mean(p[m])) if nk else None,
-            "empirical": float(np.mean(y[m])) if nk else None,
-        })
-    return out
+# ---- AUROC / AUPRC / Brier / reliability_bins now live in indra_belief.metrics
+#      (lifted there so results.py + the calibration scripts share ONE definition;
+#      re-imported above). They are re-exported as module attributes so downstream
+#      `c0.auroc` / `c0.brier_murphy` (calibration_stage1, calibration_ship_gate)
+#      keep working unchanged.
 
 
 # ---- per-statement aggregation (Tier-2) -------------------------------------

@@ -33,11 +33,22 @@ import re
 from collections import Counter, defaultdict
 from typing import Any
 
-from indra_belief.curation import aggregate_gold
+from indra_belief.curation import aggregate_gold, is_gold_correct
 from indra_belief.corpus.cost import price_basis, token_cost_usd
 from indra_belief.model_client import canonical_model_name
 from indra_belief.model_meta import model_size
 from indra_belief.calibration_constants import calibration_for
+from indra_belief.metrics import (
+    BINS_8,
+    auroc,
+    auprc,
+    brier_murphy,
+    confusion_metrics,
+    ece,
+    reliability_bins,
+)
+from indra_belief.noise_model import RECALIBRATED_PRIORS
+from indra_belief.statement_belief import statement_belief
 
 DEFAULT_CORPUS = "data/corpora/latest_statements_rasmachine.json"
 
@@ -353,6 +364,228 @@ def _soft_calibration_block(model: str | None) -> dict:
     return {"status": "available", "model": model, "soft_weights": soft}
 
 
+METRICS_SCHEMA_VERSION = 1  # the metrics.json contract the viewer (C4/C5) pins
+
+
+def _metric_block(scores: list[float], labels: list[bool], tau: float) -> dict:
+    """The stable per-arm metric unit C4/C5 read: {n, ece, auroc, auprc, brier,
+    reliability, resolution, uncertainty, confusion{tp,fp,fn,tn}, bins[8]}.
+
+    All math reuses src/indra_belief/metrics.py (the same definitions
+    calibration_ship_gate.py goes through → served numbers cross-check exactly).
+    `confusion` positive class = ERROR (pred_error = score < tau), matching the
+    ship gate's err-F1 axis. `bins` is always exactly the 8 BINS_8 entries
+    (unoccupied → n:0, mean_pred/empirical null) for a stable reliability x-axis.
+    """
+    b = brier_murphy(scores, labels)
+    # err axis: positive = error (gold incorrect); pred_error = score < tau.
+    conf = confusion_metrics([((not y), (s < tau)) for s, y in zip(scores, labels)])
+    au = auroc(scores, labels)
+    ap = auprc(scores, labels)
+    return {
+        "n": len(scores),
+        "ece": ece(list(zip(scores, [bool(y) for y in labels]))),
+        "auroc": None if au != au else au,   # NaN (single-class) → null
+        "auprc": None if ap != ap else ap,
+        "brier": b["brier"],
+        "reliability": b["reliability"],
+        "resolution": b["resolution"],
+        "uncertainty": b["uncertainty"],
+        "confusion": {"tp": conf["tp"], "fp": conf["fp"], "fn": conf["fn"], "tn": conf["tn"]},
+        "bins": reliability_bins(scores, labels),
+    }
+
+
+def build_run_metrics(
+    per_ev: list[dict],
+    stmt_agg: dict[str, dict],
+    gold_map: dict[int, dict] | None,
+    model: str | None,
+    run_id: str | None,
+    gold_path: str | None,
+    *,
+    tau: float = 0.5,
+) -> dict:
+    """The per-run calibration-product contract (E5) — `metrics.json`.
+
+    Two tiers, keyed per run + per model:
+      ev   (Tier-1) one realized arm — the per-evidence `our_score` vs gold.
+      stmt (Tier-2) three arms — hard / parametric / soft belief vs statement gold.
+
+    Gold travels with the run (baked `gold_map`, joined on source_hash). When no
+    gold is baked, each tier is named-empty (`status: unavailable` + reason, no
+    arms — never imputed zeros). When gold exists but the reader has no soft-weight
+    fit, only the `soft` arm is named-empty; hard/parametric still render.
+
+    Tier-2 mirrors the calibration arc EXACTLY so the served hard/soft ECE+AUROC
+    cross-check calibration_ship_gate.py byte-for-byte: it re-builds a pair-index
+    from gold_path (mirroring calibration_stage0.build_gold_index/gold_for),
+    joins each evidence on (matches_hash, source_hash) with a unique-source_hash
+    fallback, drops parse-null verdicts, groups statements by the gold's pa_hash,
+    and rolls up with dedup OFF (the calibration arc does not de-dup). The frozen
+    calibration_constants are the SAME values the ship gate re-fits (rounded to 3
+    dp), so the soft arm matches within rounding (documented; hard/parametric are
+    exact). Statement gold = any-incorrect-wins over its evidence tags."""
+    soft = calibration_for(model)
+    basis = {
+        "bins": "BINS_8",
+        "tau": tau,
+        "join": ("Tier-1: source_hash (per-run baked gold). Tier-2: (matches_hash, "
+                 "source_hash) pair with unique-source_hash fallback (mirrors "
+                 "calibration_stage0.gold_for)."),
+        "tier2_statement_key": ("gold pa_hash; statement gold = any-incorrect-wins; "
+                                "belief rolled up with dedup OFF (matches the "
+                                "calibration arc → cross-checks calibration_ship_gate)"),
+        "soft_calibration": (
+            {"status": "available", "w_correct": soft["w_correct"],
+             "w_incorrect": soft["w_incorrect"], "variant": soft.get("variant", "guard")}
+            if soft else {"status": "unavailable"}),
+        "definitions": ("ece/BINS_8/confusion_metrics + auroc/auprc/brier_murphy/"
+                        "reliability_bins all from src/indra_belief/metrics.py"),
+        "confusion_axis": ("Tier-1: pred_correct = our_score >= tau (positive=correct). "
+                           "Tier-2: pred_error = belief < tau (positive=ERROR), matching "
+                           "calibration_ship_gate err-F1."),
+        "soft_weights_note": ("soft arm uses the FROZEN calibration_constants (3-dp "
+                              "rounded); calibration_ship_gate re-fits the same values, so "
+                              "the soft arm matches it within rounding; hard/parametric exact."),
+    }
+    out: dict = {
+        "schema_version": METRICS_SCHEMA_VERSION,
+        "run_id": run_id,
+        "model": model,
+        "generated_date": datetime.date.today().isoformat(),
+        "metrics_basis": basis,
+        "gold": ({"source": gold_path,
+                  "covered": sum(1 for r in per_ev if r.get("gold")),
+                  "total": len(per_ev)} if gold_map is not None else None),
+        "tiers": {},
+    }
+
+    if gold_map is None:
+        reason = "no gold baked for this run (pass --gold to enable calibration metrics)"
+        out["tiers"] = {
+            "ev": {"status": "unavailable", "reason": reason},
+            "stmt": {"status": "unavailable", "reason": reason},
+        }
+        return out
+
+    # ── Tier-1: per-evidence realized score vs gold ──────────────────────────
+    ev_pairs = [(r["our_score"], is_gold_correct(r["gold"]["verdict"]))
+                for r in per_ev
+                if r.get("gold") and isinstance(r.get("our_score"), (int, float))]
+    if ev_pairs:
+        ev_scores = [s for s, _ in ev_pairs]
+        ev_labels = [y for _, y in ev_pairs]
+        # Tier-1 confusion axis: positive = CORRECT (pred_correct = score >= tau).
+        ev_block = _metric_block(ev_scores, ev_labels, tau=tau)
+        ev_block["confusion"] = {  # override to the correct-positive axis
+            k: v for k, v in
+            confusion_metrics([(y, (s >= tau)) for s, y in ev_pairs]).items()
+            if k in ("tp", "fp", "fn", "tn")
+        }
+        out["tiers"]["ev"] = {
+            "status": "available",
+            "n": len(ev_pairs),
+            "base_rate_correct": sum(ev_labels) / len(ev_labels),
+            "arms": {"score": ev_block},
+        }
+    else:
+        out["tiers"]["ev"] = {"status": "unavailable",
+                              "reason": "no per-evidence rows with both gold and a score"}
+
+    # ── Tier-2: per-statement three-way belief vs statement gold ─────────────
+    # Build the calibration arc's pair-index from gold_path (NOT the baked per-row
+    # gold_map, which is source_hash-keyed) so the join matches calibration_stage0
+    # exactly: prefer the (matches_hash, source_hash) pair, fall back to a unique
+    # source_hash. Each gold row carries pa_hash (the statement grouping key).
+    by_pair: dict[tuple[int, int], dict] = {}
+    by_sh_gold: dict[int, list[dict]] = defaultdict(list)
+    with open(gold_path) as gf:
+        for line in gf:
+            line = line.strip()
+            if not line:
+                continue
+            gr = json.loads(line)
+            sh = _ukey(gr.get("source_hash"))
+            mh = _ukey(gr.get("matches_hash"))
+            if sh is None:
+                continue
+            if mh is not None:
+                by_pair[(mh, sh)] = gr
+            by_sh_gold[sh].append(gr)
+
+    def _gold_for(er: dict) -> dict | None:
+        sh = _ukey(er.get("_source_hash"))
+        if sh is None:
+            return None
+        sx = er.get("_stmt_hash")
+        try:
+            mh = int(sx, 16) & _HASH_MASK if sx else None
+        except (ValueError, TypeError):
+            mh = None
+        if mh is not None and (mh, sh) in by_pair:
+            return by_pair[(mh, sh)]
+        cand = by_sh_gold.get(sh, [])
+        return cand[0] if len(cand) == 1 else None
+
+    # Group statements by the gold's pa_hash; drop parse-null verdicts (the
+    # calibration join_model drops them before grouping).
+    by_stmt: dict[Any, dict] = defaultdict(lambda: {"rows": [], "tags": []})
+    for a in stmt_agg.values():
+        for er in a["belief_rows"]:
+            if er.get("verdict") is None:
+                continue
+            g = _gold_for(er)
+            if g is None or not g.get("tag"):
+                continue
+            rec = by_stmt[g["pa_hash"]]
+            rec["rows"].append(er)
+            rec["tags"].append(g["tag"])
+
+    stmt_rows: list[dict] = []
+    for _pa, rec in by_stmt.items():
+        gv = aggregate_gold(rec["tags"])
+        if gv is None:
+            continue
+        # dedup OFF — the calibration arc rolls up raw evidence (no within-source
+        # text de-dup), so this matches calibration_ship_gate's belief exactly.
+        sb = statement_belief(rec["rows"], RECALIBRATED_PRIORS, dedup=False)
+        if sb.belief is None:
+            continue  # nothing read → belief UNDEFINED, drop (matches calib scripts)
+        soft_b = (statement_belief(rec["rows"], RECALIBRATED_PRIORS, dedup=False, soft=soft).belief
+                  if soft else None)
+        stmt_rows.append({
+            "hard": sb.belief, "parametric": sb.parametric_only, "soft": soft_b,
+            "gold_correct": is_gold_correct(gv),
+        })
+
+    if stmt_rows:
+        labels = [r["gold_correct"] for r in stmt_rows]
+        arms: dict = {
+            "hard": _metric_block([r["hard"] for r in stmt_rows], labels, tau=tau),
+            "parametric": _metric_block([r["parametric"] for r in stmt_rows], labels, tau=tau),
+        }
+        if soft:
+            arms["soft"] = _metric_block([r["soft"] for r in stmt_rows], labels, tau=tau)
+        else:
+            arms["soft"] = {
+                "status": "unavailable",
+                "reason": (f"no fitted soft-weight calibration for reader {model!r} "
+                           "(only gemma-4-26B / medpsy-4B are fitted)"
+                           if model else "no model recorded for this run"),
+            }
+        out["tiers"]["stmt"] = {
+            "status": "available",
+            "n": len(stmt_rows),
+            "base_rate_correct": sum(labels) / len(labels),
+            "arms": arms,
+        }
+    else:
+        out["tiers"]["stmt"] = {"status": "unavailable",
+                                "reason": "no statements with gold and a defined belief"}
+    return out
+
+
 def build_run_export(
     run_path: str,
     corpus_path: str = DEFAULT_CORPUS,
@@ -360,13 +593,17 @@ def build_run_export(
     run_id: str | None = None,
     model: str | None = None,
     gold_path: str | None = None,
-) -> tuple[list[dict], list[dict], dict]:
-    """Enrich a raw run into ``(per_evidence, per_statement, meta)``.
+) -> tuple[list[dict], list[dict], dict, dict]:
+    """Enrich a raw run into ``(per_evidence, per_statement, meta, metrics)``.
 
     Pure transform: dedups the run by ``(stmt_i, evidence_i)`` (last write wins,
     matching the figure reproducers), joins authoritative evidence text + INDRA
     ids from the corpus positionally, classifies buckets, and rolls up per
     statement. ``run_id`` / ``model`` default to the run's ``.meta.json``.
+
+    ``metrics`` is the E5 per-run calibration-product contract (``metrics.json``):
+    Tier-1 per-evidence + Tier-2 three-way per-statement ECE/AUROC/AUPRC/Brier +
+    reliability bins, keyed per run + model. Named-empty when no gold is baked.
     """
     rmeta = _read_run_meta(run_path)
     run_id = run_id or rmeta.get("run_id")
@@ -408,6 +645,10 @@ def build_run_export(
         "belief": None, "subject": None, "stmt_type": None, "object": None,
         "stmt_i": None, "matches_hash": None, "indra_id": None,
         "beliefs": set(), "indra_ids": set(), "pmids": set(), "sources": set(),
+        # Minimal per-evidence rows for the three-way belief (statement_belief);
+        # collected from fields already read off `d`, so no new parsing. Used
+        # only to compute the NEW belief_* keys — the existing rollup is untouched.
+        "belief_rows": [],
     })
 
     for (si, ei), d in rows.items():
@@ -536,6 +777,27 @@ def build_run_export(
             a["pmids"].add(d["pmid"])
         if d.get("source_api"):
             a["sources"].add(d["source_api"])
+        # Row dict for statement_belief (hard / parametric / soft) — same shape
+        # belief_headtohead feeds it. evidence_text is the joined corpus text
+        # (for within-source de-dup), evidence_hash a de-dup fallback.
+        a["belief_rows"].append({
+            "source_api": d.get("source_api"),
+            "verdict": d.get("verdict"),
+            "confidence": d.get("confidence"),
+            "tier": d.get("tier"),
+            "evidence_text": ev_text,
+            "evidence_hash": d.get("evidence_hash"),
+            # gold + statement-grouping keys (used by build_run_metrics' Tier-2
+            # join only; never written into per_statement.json). _stmt_hash is the
+            # run's statement hash (hex) — the calibration pair-join derives the
+            # matches_hash int from it (mirrors calibration_stage0.gold_for).
+            "_source_hash": d.get("source_hash"),
+            "_stmt_hash": d.get("stmt_hash"),
+        })
+
+    # Resolve the run's soft-weight calibration ONCE (frozen per-reader constants;
+    # None for an unfitted reader → belief_soft is named-empty per statement).
+    calib = calibration_for(model)
 
     per_stmt: list[dict] = []
     for h, a in stmt_agg.items():
@@ -543,6 +805,13 @@ def build_run_export(
         noisy_or = 1 - math.prod(1 - s for s in sc) if sc else None
         dominant = a["buckets"].most_common(1)[0][0] if a["buckets"] else None
         indra_ids = sorted(a["indra_ids"])
+        # Three-way belief (NEW; additive — never touches our_noisy_or/mean above).
+        # hard = production gated noisy-OR; parametric = ungated; soft = survival-
+        # weight recalibration (None when the reader has no fit). verdict_statement
+        # is tier-driven — the soft weight moves the scalar, not the decision.
+        sb = statement_belief(a["belief_rows"], RECALIBRATED_PRIORS)
+        soft_belief = (statement_belief(a["belief_rows"], RECALIBRATED_PRIORS, soft=calib).belief
+                       if calib else None)
         per_stmt.append({
             "stmt_hash": h,
             "indra_matches_hash": a["matches_hash"],
@@ -563,6 +832,11 @@ def build_run_export(
             "bucket_counts": dict(a["buckets"]),
             "pmids": sorted(a["pmids"]),
             "sources": sorted(a["sources"]),
+            # ── E5: three-way calibrated belief (NEW; purely additive) ─────────
+            "belief_hard": _r3(sb.belief),               # gated noisy-OR (production hard gate)
+            "belief_parametric": _r3(sb.parametric_only),  # no gating — all surviving evidence
+            "belief_soft": _r3(soft_belief),             # soft survival weight; None = no fit
+            "belief_verdict_statement": sb.verdict_statement,  # correct|review|incorrect (tier-driven)
         })
 
     # internal consistency (the partition is total; tallies match depth)
@@ -639,9 +913,12 @@ def build_run_export(
         # cost. Static model metadata baked per-run (travels with the run; viewer
         # holds no size table). Closed models -> status 'unknown' (never guessed).
         "model_meta": model_size(model or "unknown"),
-        "schema_version": 5,  # v5: per-evidence reasoning_trace (CoT-access + committed justification)
+        # v6: + metrics.json calibration products (Tier-1/Tier-2) + per-statement
+        # three-way belief (belief_hard/parametric/soft + belief_verdict_statement)
+        "schema_version": 6,
     }
-    return per_ev, per_stmt, meta
+    metrics = build_run_metrics(per_ev, stmt_agg, gold_map, model, run_id, gold_path)
+    return per_ev, per_stmt, meta, metrics
 
 
 def write_run_export(
@@ -659,7 +936,7 @@ def write_run_export(
     self-describing export the viewer discovers by globbing ``export_meta.json``.
     ``gold_path`` (optional) bakes per-run gold from that curation source.
     """
-    per_ev, per_stmt, meta = build_run_export(
+    per_ev, per_stmt, meta, metrics = build_run_export(
         run_path, corpus_path, run_id=run_id, model=model, gold_path=gold_path)
     out_dir = out_dir or os.path.join("data", "exports", str(meta["run_id"]))
     os.makedirs(out_dir, exist_ok=True)
@@ -671,6 +948,10 @@ def write_run_export(
         json.dump(per_stmt, f, ensure_ascii=False)
     with open(os.path.join(out_dir, "export_meta.json"), "w") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
+    # E5: the per-run calibration-product contract the viewer (C4/C5) serves
+    # byte-exact (no downstream recompute).
+    with open(os.path.join(out_dir, "metrics.json"), "w") as f:
+        json.dump(metrics, f, ensure_ascii=False, indent=2)
     return meta
 
 

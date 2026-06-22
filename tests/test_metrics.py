@@ -5,7 +5,19 @@ short-key from aa/cc/three_way confusion). The behavioral guarantee that the
 five eval scripts reproduce their committed .md reports byte-exactly is the
 real extraction proof; these lock the unit contract.
 """
-from indra_belief.metrics import BINS_8, confusion_counts, confusion_metrics, confusion_pr, ece
+import math
+
+from indra_belief.metrics import (
+    BINS_8,
+    auprc,
+    auroc,
+    brier_murphy,
+    confusion_counts,
+    confusion_metrics,
+    confusion_pr,
+    ece,
+    reliability_bins,
+)
 
 
 def test_confusion_counts_quadrants():
@@ -99,3 +111,73 @@ def test_ece_default_bins_are_the_8_bin_scheme():
         (0.50, 0.65), (0.65, 0.80), (0.80, 0.95), (0.95, 1.001),
     ]
     assert len(BINS_8) == 8
+
+
+# ---- AUROC / AUPRC / Brier / reliability_bins -----------------------------
+# Lifted VERBATIM from scripts/calibration_stage0.py into src so results.py and
+# the calibration scripts share ONE definition. The real proof is that
+# calibration_stage0.md/.json reproduce their COMMITTED bytes through these (the
+# metric-extraction discipline; verified at lift time and on every regen). These
+# lock the unit contract + the re-export identity (the structural-change guard).
+
+
+def test_lifted_metrics_are_reexported_by_calibration_stage0():
+    # calibration_stage0 must resolve to the SAME function objects (it re-imports
+    # them from src) — so a future divergence can't silently desync the served
+    # metrics.json numbers from the ship-gate numbers.
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import calibration_stage0 as c0
+    assert c0.auroc is auroc
+    assert c0.auprc is auprc
+    assert c0.brier_murphy is brier_murphy
+    assert c0.reliability_bins is reliability_bins
+
+
+def test_auroc_perfect_and_reversed():
+    # perfect separation → 1.0; fully reversed → 0.0
+    assert auroc([0.1, 0.2, 0.8, 0.9], [False, False, True, True]) == 1.0
+    assert auroc([0.9, 0.8, 0.2, 0.1], [False, False, True, True]) == 0.0
+    # single-class → NaN
+    assert math.isnan(auroc([0.1, 0.2], [True, True]))
+
+
+def test_auroc_ties_averaged():
+    # two tied scores straddling the boundary → 0.5 (chance)
+    assert auroc([0.5, 0.5], [True, False]) == 0.5
+
+
+def test_auprc_perfect_is_one():
+    assert auprc([0.1, 0.2, 0.8, 0.9], [False, False, True, True]) == 1.0
+    assert math.isnan(auprc([0.1, 0.2], [False, False]))  # no positives
+
+
+def test_brier_murphy_decomposition_identity():
+    # Brier == reliability − resolution + uncertainty (Murphy)
+    scores = [0.9, 0.9, 0.1, 0.1, 0.6, 0.4]
+    labels = [True, False, False, True, True, False]
+    b = brier_murphy(scores, labels)
+    assert b["brier"] == pytest_approx(
+        b["reliability"] - b["resolution"] + b["uncertainty"])
+    assert b["n"] == 6
+    # empty → all NaN, n 0
+    e = brier_murphy([], [])
+    assert e["n"] == 0 and math.isnan(e["brier"])
+
+
+def test_reliability_bins_are_eight_with_null_empties():
+    bins = reliability_bins([0.97, 0.97], [True, False])
+    assert len(bins) == 8
+    occupied = [b for b in bins if b["n"]]
+    assert len(occupied) == 1  # both in (0.95, 1.001)
+    assert occupied[0]["n"] == 2
+    assert occupied[0]["mean_pred"] == pytest_approx(0.97)
+    assert occupied[0]["empirical"] == pytest_approx(0.5)
+    empties = [b for b in bins if b["n"] == 0]
+    assert all(b["mean_pred"] is None and b["empirical"] is None for b in empties)
+
+
+def pytest_approx(x):
+    import pytest
+    return pytest.approx(x)

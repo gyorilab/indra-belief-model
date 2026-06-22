@@ -21,6 +21,8 @@ from __future__ import annotations
 import statistics
 from typing import Iterable
 
+import numpy as np
+
 
 def confusion_counts(pairs: Iterable[tuple[bool, bool]]) -> tuple[int, int, int, int]:
     """Tally (tp, fp, fn, tn) over `(gold, pred)` boolean pairs. `correct`/
@@ -111,3 +113,97 @@ def ece(items: Iterable[tuple[float, bool]], *, bins=BINS_8) -> float:
         empirical = sum(1 for _, c in bin_pairs if c) / len(bin_pairs)
         tot += abs(mean_pred - empirical) * len(bin_pairs) / n_all
     return tot
+
+
+# ---- Discrimination + Brier (lifted verbatim from scripts/calibration_stage0.py
+#      so results.py and the calibration scripts share ONE definition — the same
+#      metrics-extraction discipline as confusion_*/ece. The scripts re-import
+#      these; their committed .md/.json reproduce byte-exact through this module).
+
+
+def _rankdata_avg(a: np.ndarray) -> np.ndarray:
+    """1-based ranks with ties averaged (no scipy)."""
+    order = a.argsort(kind="mergesort")
+    sa = a[order]
+    n = len(a)
+    rnk = np.empty(n, float)
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and sa[j + 1] == sa[i]:
+            j += 1
+        rnk[i : j + 1] = (i + j) / 2.0 + 1.0
+        i = j + 1
+    out = np.empty(n, float)
+    out[order] = rnk
+    return out
+
+
+def auroc(scores, labels) -> float:
+    """AUROC via Mann-Whitney U. positive class = label True."""
+    s = np.asarray(scores, float)
+    y = np.asarray(labels, bool)
+    n_pos, n_neg = int(y.sum()), int((~y).sum())
+    if n_pos == 0 or n_neg == 0:
+        return float("nan")
+    ranks = _rankdata_avg(s)
+    return (ranks[y].sum() - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg)
+
+
+def auprc(scores, labels) -> float:
+    """Average precision (AUPRC), positive class = label True."""
+    s = np.asarray(scores, float)
+    y = np.asarray(labels, bool)
+    n_pos = int(y.sum())
+    if n_pos == 0:
+        return float("nan")
+    order = np.argsort(-s, kind="mergesort")
+    y_sorted = y[order]
+    tp = np.cumsum(y_sorted)
+    fp = np.cumsum(~y_sorted)
+    precision = tp / np.maximum(tp + fp, 1)
+    recall = tp / n_pos
+    # AP = sum over thresholds of (R_k - R_{k-1}) * P_k
+    rec_prev = np.concatenate([[0.0], recall[:-1]])
+    return float(np.sum((recall - rec_prev) * precision))
+
+
+def brier_murphy(scores, labels, bins=BINS_8) -> dict:
+    """Brier score + Murphy decomposition (reliability - resolution + uncertainty)."""
+    p = np.asarray(scores, float)
+    y = np.asarray(labels, float)
+    n = len(p)
+    if n == 0:
+        return {"brier": float("nan"), "reliability": float("nan"),
+                "resolution": float("nan"), "uncertainty": float("nan"), "n": 0}
+    brier = float(np.mean((p - y) ** 2))
+    ybar = float(np.mean(y))
+    uncertainty = ybar * (1.0 - ybar)
+    reliability = 0.0
+    resolution = 0.0
+    for lo, hi in bins:
+        m = (p >= lo) & (p < hi)
+        nk = int(m.sum())
+        if nk == 0:
+            continue
+        pbar_k = float(np.mean(p[m]))
+        ybar_k = float(np.mean(y[m]))
+        reliability += nk / n * (pbar_k - ybar_k) ** 2
+        resolution += nk / n * (ybar_k - ybar) ** 2
+    return {"brier": brier, "reliability": reliability,
+            "resolution": resolution, "uncertainty": uncertainty, "n": n}
+
+
+def reliability_bins(scores, labels, bins=BINS_8) -> list[dict]:
+    p = np.asarray(scores, float)
+    y = np.asarray(labels, bool)
+    out = []
+    for lo, hi in bins:
+        m = (p >= lo) & (p < hi)
+        nk = int(m.sum())
+        out.append({
+            "lo": lo, "hi": hi, "n": nk,
+            "mean_pred": float(np.mean(p[m])) if nk else None,
+            "empirical": float(np.mean(y[m])) if nk else None,
+        })
+    return out
