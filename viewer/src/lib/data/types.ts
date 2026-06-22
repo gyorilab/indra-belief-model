@@ -187,6 +187,65 @@ export interface EvidenceRow {
 	gold?: GoldVerdict | null;
 }
 
+// ── Calibration products (E5 metrics.json, schema_version 1) ────────────────
+//
+// Written alongside per_evidence.jsonl by results.build_run_metrics. The viewer
+// READS these byte-exact and never recomputes (gate G4). Two tiers (ev/stmt),
+// each either named-empty (status 'unavailable' + reason) or a block of arms.
+
+/** One reliability bin (BINS_8). Unoccupied bins carry n:0 + null pred/empirical
+ *  so the x-axis is stable across runs (mirrors the n≥30 validity guard). */
+export interface ReliabilityBin {
+	lo: number;
+	hi: number;
+	n: number;
+	mean_pred: number | null;
+	empirical: number | null;
+}
+
+/** One arm's full calibration unit — the stable shape C4/C5 render. */
+export interface MetricArm {
+	n: number;
+	ece: number;
+	auroc: number | null;
+	auprc: number | null;
+	brier: number;
+	/** Murphy decomposition: brier = reliability − resolution + uncertainty. */
+	reliability: number;
+	resolution: number;
+	uncertainty: number;
+	confusion: { tp: number; fp: number; fn: number; tn: number };
+	bins: ReliabilityBin[];
+}
+
+/** An arm slot is either a realized MetricArm or a named-empty reason. */
+export type ArmSlot = MetricArm | { status: 'unavailable'; reason: string };
+
+export function armAvailable(a: ArmSlot | undefined): a is MetricArm {
+	return !!a && !('status' in a);
+}
+
+/** One tier (ev = Tier-1 per-evidence, stmt = Tier-2 per-statement). */
+export type TierBlock =
+	| { status: 'unavailable'; reason: string }
+	| {
+			status: 'available';
+			n: number;
+			base_rate_correct: number;
+			arms: Record<string, ArmSlot>;
+	  };
+
+/** The per-run metrics.json contract (E5). */
+export interface RunMetrics {
+	schema_version: number;
+	run_id: string | null;
+	model: string | null;
+	generated_date: string;
+	metrics_basis: Record<string, unknown>;
+	gold: { source: string | null; covered: number; total: number } | null;
+	tiers: { ev: TierBlock; stmt: TierBlock };
+}
+
 /**
  * One INDRA curation, from data/benchmark/rasmachine_curations.jsonl (pulled
  * from db.indra.bio/curation/list/<matches_hash>). A human correctness label

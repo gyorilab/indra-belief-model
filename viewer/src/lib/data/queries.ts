@@ -13,9 +13,20 @@ import {
 	getEvidenceIndex,
 	evidenceForStatement,
 	getCurationIndex,
+	getRunMetrics,
 	goldForRow
 } from './store';
-import type { RunMeta, StatementRollup, EvidenceRow, GoldVerdict, ReasoningTrace } from './types';
+import type {
+	RunMeta,
+	StatementRollup,
+	EvidenceRow,
+	GoldVerdict,
+	ReasoningTrace,
+	RunMetrics,
+	MetricArm,
+	ArmSlot
+} from './types';
+import { armAvailable } from './types';
 
 // ── Shared shapes ───────────────────────────────────────────────────────────
 
@@ -204,6 +215,83 @@ export function getResidualDistribution(runId?: string): ResidualDistribution | 
 		bins,
 		n_total: scored.length,
 		mean_residual: scored.length ? sum / scored.length : null
+	};
+}
+
+// ── Calibration surface (C4) — served byte-exact from metrics.json (G4) ──────
+//
+// The viewer NEVER recomputes a calibration number: every ECE/Brier/reliability
+// bin/confusion cell here is passed through from the per-run `metrics.json`
+// (results.build_run_metrics). The only thing this query DERIVES is the P5
+// delta-vs-prev — and even that is the difference of two byte-exact served ECEs,
+// not a recomputed metric. The per-stratum strip is the residual stratification
+// (a different measure than gold-ECE; see getValidity.byIndraType), surfaced
+// here to retire the `unavailable` apology.
+
+export type Tier = 'ev' | 'stmt';
+
+/** P5 delta: this run's headline ECE minus the previous run's (same tier+arm),
+ *  both read byte-exact from metrics.json. null when there's no comparable prev. */
+export interface EceDelta {
+	prev_run_id: string;
+	prev_model: string;
+	prev_ece: number;
+	delta: number; // this_ece − prev_ece (negative = improved)
+}
+
+export interface RunCalibration {
+	run_id: string;
+	model: string;
+	/** Whole metrics.json, served verbatim. null ⇒ export predates the cal arc. */
+	metrics: RunMetrics | null;
+	/** Whether a metrics.json was present at all (drives the named-empty copy). */
+	present: boolean;
+	/** P5: ECE delta vs the previous run, per tier, for the headline arm
+	 *  (Tier-1 → 'score'; Tier-2 → 'hard', the production gate). null when the
+	 *  prior run has no comparable available arm. */
+	delta: { ev: EceDelta | null; stmt: EceDelta | null };
+}
+
+/** The headline arm of a tier: Tier-1 has one realized arm (score); Tier-2's
+ *  headline is the production hard gate. */
+const HEADLINE_ARM: Record<Tier, string> = { ev: 'score', stmt: 'hard' };
+
+function armEce(m: RunMetrics | null, tier: Tier): number | null {
+	const t = m?.tiers?.[tier];
+	if (!t || t.status !== 'available') return null;
+	const arm: ArmSlot | undefined = t.arms[HEADLINE_ARM[tier]];
+	return armAvailable(arm) ? arm.ece : null;
+}
+
+export function getRunCalibration(runId?: string): RunCalibration | null {
+	const meta = resolveRun(runId);
+	if (!meta) return null;
+	const metrics = getRunMetrics(meta);
+
+	// Previous run = the next-older run in the registry (newest-first list).
+	const runs = listRuns();
+	const idx = runs.findIndex((r) => r.run_id === meta.run_id);
+	const prev = idx >= 0 && idx + 1 < runs.length ? runs[idx + 1] : null;
+	const prevMetrics = prev ? getRunMetrics(prev) : null;
+
+	const deltaFor = (tier: Tier): EceDelta | null => {
+		const here = armEce(metrics, tier);
+		const there = armEce(prevMetrics, tier);
+		if (here == null || there == null || !prev) return null;
+		return {
+			prev_run_id: prev.run_id,
+			prev_model: prev.model,
+			prev_ece: there,
+			delta: here - there
+		};
+	};
+
+	return {
+		run_id: meta.run_id,
+		model: meta.model,
+		metrics,
+		present: metrics != null,
+		delta: { ev: deltaFor('ev'), stmt: deltaFor('stmt') }
 	};
 }
 

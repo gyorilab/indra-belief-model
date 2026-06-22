@@ -15,7 +15,7 @@ import {
 	goldForRow,
 	type CurationIndex
 } from './curation';
-import type { RunMeta, StatementRollup, EvidenceRow, CurationRow } from './types';
+import type { RunMeta, StatementRollup, EvidenceRow, CurationRow, RunMetrics } from './types';
 
 // Re-export the curation domain surface so existing call sites can keep importing
 // from './store' (the IO entry point) without reaching into ./curation directly.
@@ -34,6 +34,7 @@ interface EvidenceIndex {
 
 const _runCache = new Map<string, { mtime: number; data: RunData }>();
 const _evCache = new Map<string, { mtime: number; index: EvidenceIndex }>();
+const _metricsCache = new Map<string, { mtime: number; metrics: RunMetrics | null }>();
 
 function statementsPath(meta: RunMeta): string {
 	return join(meta.export_dir, 'per_statement.json');
@@ -90,6 +91,30 @@ export function getEvidenceIndex(meta: RunMeta): EvidenceIndex {
 	const index: EvidenceIndex = { byStmt, all };
 	_evCache.set(meta.run_id, { mtime, index });
 	return index;
+}
+
+function metricsPath(meta: RunMeta): string {
+	return join(meta.export_dir, 'metrics.json');
+}
+
+/** Load (and cache) a run's calibration products (E5 `metrics.json`).
+ *  Returns null when the export predates the calibration arc (no metrics.json) —
+ *  the surface renders a named-empty for that, never a crash. The viewer serves
+ *  these bytes verbatim (gate G4): NO recompute, NO derivation. */
+export function getRunMetrics(meta: RunMeta): RunMetrics | null {
+	const path = metricsPath(meta);
+	if (!existsSync(path)) return null;
+	const mtime = statSync(path).mtimeMs;
+	const cached = _metricsCache.get(meta.run_id);
+	if (cached && cached.mtime === mtime) return cached.metrics;
+	let metrics: RunMetrics | null;
+	try {
+		metrics = JSON.parse(readFileSync(path, 'utf8')) as RunMetrics;
+	} catch {
+		metrics = null; // malformed → treat as absent, named-empty downstream
+	}
+	_metricsCache.set(meta.run_id, { mtime, metrics });
+	return metrics;
 }
 
 /** Evidence rows for one statement (ordered as in the export). */

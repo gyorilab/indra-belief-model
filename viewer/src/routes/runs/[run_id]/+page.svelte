@@ -1,11 +1,88 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { fmtCost, fmtCostFull } from '$lib/format';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import ReliabilityDiagram from '$lib/components/ReliabilityDiagram.svelte';
+	import BrierBar from '$lib/components/BrierBar.svelte';
+	import ConfusionMosaic from '$lib/components/ConfusionMosaic.svelte';
+	import { armAvailable, type MetricArm, type TierBlock } from '$lib/data/types';
+	import type { Tier } from '$lib/data/queries';
 
 	let { data }: { data: PageData } = $props();
 	const run = $derived(data.run);
 	const v = $derived(data.validity);
 	const residual = $derived(data.residual);
+	const cal = $derived(data.calibration);
+	const tier = $derived(data.tier);
+
+	// ── Calibration surface (C4) — every number served byte-exact from
+	// metrics.json; the page derives nothing but display strings + the toggle. ──
+	const metrics = $derived(cal?.metrics ?? null);
+
+	// The Tier toggle is the ONE reactive lever. ?tier=ev|stmt.
+	function setTier(t: Tier) {
+		const p = new URLSearchParams($page.url.searchParams);
+		if (t === 'ev') p.delete('tier');
+		else p.set('tier', t);
+		const qs = p.toString();
+		goto(qs ? `?${qs}` : $page.url.pathname, { replaceState: false, keepFocus: true, noScroll: true });
+	}
+
+	// One tier block (the active one) + the OTHER tier, so both render stacked.
+	const TIER_LABEL: Record<Tier, string> = {
+		ev: 'Tier 1 — per evidence',
+		stmt: 'Tier 2 — per statement'
+	};
+	const TIER_SUB: Record<Tier, string> = {
+		ev: 'the realized per-evidence score vs human gold',
+		stmt: 'rolled-up statement belief vs statement gold (any-incorrect-wins)'
+	};
+
+	function tierBlock(t: Tier): TierBlock | null {
+		return metrics?.tiers?.[t] ?? null;
+	}
+
+	// The arms to show per tier, headline first. Tier-1 has one realized arm
+	// (score); Tier-2 has three (hard = production, parametric, soft).
+	const TIER_ARMS: Record<Tier, string[]> = { ev: ['score'], stmt: ['hard', 'parametric', 'soft'] };
+	const ARM_LABEL: Record<string, string> = {
+		score: 'per-evidence score',
+		hard: 'hard gate (production)',
+		parametric: 'parametric (ablation)',
+		soft: 'soft survival (calibrated)'
+	};
+	const HEADLINE_ARM: Record<Tier, string> = { ev: 'score', stmt: 'hard' };
+
+	function armOf(block: TierBlock | null, arm: string): MetricArm | null {
+		if (!block || block.status !== 'available') return null;
+		const a = block.arms[arm];
+		return armAvailable(a) ? a : null;
+	}
+	function armReason(block: TierBlock | null, arm: string): string | null {
+		if (!block || block.status !== 'available') return null;
+		const a = block.arms[arm];
+		return a && 'status' in a ? a.reason : null;
+	}
+
+	// P5 delta string for the headline arm of a tier.
+	function deltaStr(t: Tier): string | null {
+		const d = cal?.delta?.[t];
+		if (!d) return null;
+		const sign = d.delta <= 0 ? '▼' : '▲'; // ECE: lower is better
+		return `${sign}${Math.abs(d.delta).toFixed(3)} vs ${d.prev_model} (${d.prev_run_id.slice(0, 8)})`;
+	}
+	function deltaImproved(t: Tier): boolean {
+		const d = cal?.delta?.[t];
+		return !!d && d.delta <= 0;
+	}
+
+	function f3c(n: number | null | undefined): string {
+		return n == null ? '—' : n.toFixed(3);
+	}
+
+	// Tiers to render, active one first, both always shown stacked + labeled.
+	const orderedTiers = $derived<Tier[]>(tier === 'stmt' ? ['stmt', 'ev'] : ['ev', 'stmt']);
 
 	function fmtCount(n: number | null | undefined): string {
 		return n == null ? '—' : n.toLocaleString('en-US');
@@ -106,11 +183,166 @@
 		</section>
 	{/if}
 
+	<!-- ── C4: run-on-its-own calibration surface (above the residual histogram) ── -->
+	<section class="cal-surface" aria-label="calibration vs human gold">
+		<h2 class="sec-h">calibration vs human gold</h2>
+		{#if !cal || !cal.present}
+			<div class="named-empty">
+				<p class="ne-head">no calibration products for this run</p>
+				<p class="ne-why">
+					This export predates the calibration arc (no <code>metrics.json</code>). Re-export with
+					baked gold to populate the reliability diagram, Brier decomposition, and confusion
+					mosaic. The residual-vs-INDRA view below is unaffected.
+				</p>
+			</div>
+		{:else if !metrics?.gold}
+			<div class="named-empty">
+				<p class="ne-head">no gold baked for this run</p>
+				<p class="ne-why">
+					{(metrics?.tiers?.ev && 'reason' in metrics.tiers.ev && metrics.tiers.ev.reason) ||
+						'This run was scored without a human-curation gold set, so there is nothing to calibrate against.'}
+					Cost, verdict mix, and residual-vs-INDRA below are still shown.
+				</p>
+			</div>
+		{:else}
+			{@const headBlock = tierBlock(tier)}
+			{@const headArm = armOf(headBlock, HEADLINE_ARM[tier])}
+			<p class="sec-sub">
+				The reliability diagram is the instrument's confession: where the model's stated belief
+				and its real correct-rate part ways. Read on
+				{metrics.gold.covered.toLocaleString('en-US')} gold-labelled rows
+				(<code>{metrics.gold.source?.split('/').pop()}</code>). Every number is served from
+				<code>metrics.json</code> — the viewer computes none of it.
+			</p>
+
+			<!-- P1: ECE as the HEADLINE number, with P5 delta -->
+			<div class="headline">
+				<div class="ece">
+					<span class="ece-lab">ECE</span>
+					<span class="ece-val">{f3c(headArm?.ece)}</span>
+					<span class="ece-tier">{TIER_LABEL[tier]} · {ARM_LABEL[HEADLINE_ARM[tier]]}</span>
+				</div>
+				{#if deltaStr(tier)}
+					<span class="ece-delta" class:improved={deltaImproved(tier)} class:worse={!deltaImproved(tier)}>
+						{deltaStr(tier)}
+					</span>
+				{:else}
+					<span class="ece-delta none">no prior run to compare</span>
+				{/if}
+			</div>
+
+			<!-- The ONE reactive lever: Tier toggle -->
+			<div class="tier-toggle" role="group" aria-label="tier toggle">
+				<button class:active={tier === 'ev'} onclick={() => setTier('ev')}>Tier 1 · evidence</button>
+				<button class:active={tier === 'stmt'} onclick={() => setTier('stmt')}>Tier 2 · statement</button>
+			</div>
+
+			<!-- Both tiers rendered stacked + labeled, active one first; NEVER merged -->
+			{#each orderedTiers as t (t)}
+				{@const block = tierBlock(t)}
+				<section class="tier-panel" class:dimmed={t !== tier}>
+					<header class="tier-head">
+						<h3 class="tier-h">{TIER_LABEL[t]}</h3>
+						<span class="tier-sub">{TIER_SUB[t]}</span>
+						{#if block && block.status === 'available'}
+							<span class="tier-n"
+								>n={block.n.toLocaleString('en-US')} · base-rate correct
+								{(block.base_rate_correct * 100).toFixed(0)}%</span
+							>
+						{/if}
+					</header>
+
+					{#if !block || block.status !== 'available'}
+						<div class="named-empty inline">
+							<p class="ne-why">
+								{block && 'reason' in block ? block.reason : 'this tier is unavailable for this run'}
+							</p>
+						</div>
+					{:else}
+						{@const headline = armOf(block, HEADLINE_ARM[t])}
+						<!-- reliability diagram (strong center) + confusion mosaic side by side -->
+						{#if headline}
+							<div class="diag-row">
+								<div class="diag-cell">
+									<ReliabilityDiagram
+										bins={headline.bins}
+										n={headline.n}
+										label="reliability — {ARM_LABEL[HEADLINE_ARM[t]]}"
+									/>
+								</div>
+								<div class="diag-cell">
+									<p class="mini-lab">confusion vs gold</p>
+									<ConfusionMosaic
+										tp={headline.confusion.tp}
+										fp={headline.confusion.fp}
+										fn={headline.confusion.fn}
+										tn={headline.confusion.tn}
+										axis={t === 'ev' ? 'correct' : 'error'}
+									/>
+								</div>
+							</div>
+						{/if}
+
+						<!-- per-arm row: ECE + Brier decomposition for each arm -->
+						<div class="arm-grid">
+							{#each TIER_ARMS[t] as armKey}
+								{@const arm = armOf(block, armKey)}
+								<div class="arm-card" class:head={armKey === HEADLINE_ARM[t]}>
+									<div class="arm-head">
+										<span class="arm-name">{ARM_LABEL[armKey] ?? armKey}</span>
+										{#if arm}
+											<span class="arm-metrics"
+												>ECE {f3c(arm.ece)} · AUROC {f3c(arm.auroc)} · AUPRC {f3c(arm.auprc)}</span
+											>
+										{/if}
+									</div>
+									{#if arm}
+										<BrierBar
+											reliability={arm.reliability}
+											resolution={arm.resolution}
+											uncertainty={arm.uncertainty}
+											brier={arm.brier}
+										/>
+									{:else}
+										<p class="ne-why inline">{armReason(block, armKey) ?? 'arm unavailable'}</p>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</section>
+			{/each}
+
+			<!-- P5/stratum: the residual stratification retires the unavailable apology -->
+			{#if v.byIndraType.length > 0}
+				<div class="stratum-strip">
+					<p class="strip-lab">
+						residual dispersion by statement type — worst-calibrated types first (this is the
+						belief-vs-INDRA residual, a different axis than the gold-ECE above; it is what we
+						previously filed as "unavailable")
+					</p>
+					<div class="strip-rows">
+						{#each v.byIndraType.slice(0, 8) as s}
+							<div class="strip-row">
+								<span class="strip-type">{s.value}</span>
+								<span class="strip-n">n={fmtCount(s.n)}</span>
+								<span class="strip-mae">MAE {fmt3(s.mae)}</span>
+								<span class="strip-bias">{fmtSigned(s.bias)}</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		{/if}
+	</section>
+
 	<section class="calibration">
-		<h2 class="sec-h">calibration vs INDRA belief</h2>
+		<h2 class="sec-h">residual vs INDRA belief</h2>
 		<p class="sec-sub">
 			Residual is our per-evidence score minus the published RasMachine belief, over the
 			{fmtCount(v.calibration.n)} evidence rows with a score, a belief, and a verdict.
+			This is a different question than the gold calibration above — it measures agreement with
+			INDRA's prior, not correctness.
 		</p>
 		<dl class="stat-row">
 			<div class="stat">
@@ -429,6 +661,227 @@
 		font-variant-numeric: tabular-nums;
 		margin: 0.1rem 0 0;
 		color: var(--ink);
+	}
+
+	/* ── C4 calibration surface ── */
+	.cal-surface {
+		border-top: 2px solid var(--ink);
+		padding-top: 1.2rem;
+	}
+	.headline {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 0.5rem 1.4rem;
+		margin: 0.6rem 0 1rem;
+	}
+	.ece {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+	.ece-lab {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		color: var(--ink-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+	}
+	.ece-val {
+		font-family: var(--mono);
+		font-size: 2.6rem;
+		line-height: 1;
+		font-variant-numeric: tabular-nums;
+		color: var(--ink);
+	}
+	.ece-tier {
+		font-family: var(--mono);
+		font-size: 0.72rem;
+		color: var(--ink-muted);
+	}
+	.ece-delta {
+		font-family: var(--mono);
+		font-size: 0.8rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.ece-delta.improved {
+		color: var(--ok-green);
+	}
+	.ece-delta.worse {
+		color: var(--accent);
+	}
+	.ece-delta.none {
+		color: var(--ink-faint);
+	}
+
+	.tier-toggle {
+		display: inline-flex;
+		border: 1px solid var(--rule);
+		margin: 0 0 1.4rem;
+	}
+	.tier-toggle button {
+		font-family: var(--mono);
+		font-size: 0.76rem;
+		background: transparent;
+		border: none;
+		color: var(--ink-muted);
+		padding: 0.4rem 0.9rem;
+		cursor: pointer;
+	}
+	.tier-toggle button + button {
+		border-left: 1px solid var(--rule);
+	}
+	.tier-toggle button.active {
+		background: var(--ink);
+		color: var(--paper);
+	}
+	.tier-toggle button:hover:not(.active) {
+		color: var(--ink);
+	}
+
+	.tier-panel {
+		margin: 0 0 2rem;
+		padding-left: 0.9rem;
+		border-left: 3px solid var(--accent);
+	}
+	.tier-panel.dimmed {
+		border-left-color: var(--rule);
+		opacity: 0.82;
+	}
+	.tier-head {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 0.3rem 0.8rem;
+		margin-bottom: 0.9rem;
+	}
+	.tier-h {
+		font-family: var(--serif);
+		font-size: 1.02rem;
+		font-weight: 400;
+		margin: 0;
+	}
+	.tier-sub {
+		font-size: 0.86rem;
+		color: var(--ink-muted);
+	}
+	.tier-n {
+		font-family: var(--mono);
+		font-size: 0.7rem;
+		color: var(--ink-faint);
+		margin-left: auto;
+	}
+	.diag-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 2rem;
+		margin-bottom: 1.2rem;
+	}
+	.diag-cell {
+		flex: 1 1 18rem;
+		min-width: 16rem;
+	}
+	.mini-lab {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		color: var(--ink-muted);
+		margin: 0 0 0.4rem;
+		letter-spacing: 0.02em;
+	}
+	.arm-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+		gap: 1.4rem 1.6rem;
+	}
+	.arm-card {
+		min-width: 0;
+	}
+	.arm-head {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		margin-bottom: 0.5rem;
+	}
+	.arm-name {
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		color: var(--ink);
+	}
+	.arm-metrics {
+		font-family: var(--mono);
+		font-size: 0.68rem;
+		color: var(--ink-muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.named-empty {
+		border-left: 3px solid var(--rule);
+		padding: 0.2rem 0 0.2rem 0.9rem;
+		margin: 0.4rem 0 1rem;
+	}
+	.named-empty.inline {
+		margin: 0.4rem 0;
+	}
+	.ne-head {
+		font-family: var(--mono);
+		font-size: 0.82rem;
+		color: var(--ink);
+		margin: 0 0 0.3rem;
+	}
+	.ne-why {
+		font-size: 0.88rem;
+		color: var(--ink-muted);
+		margin: 0;
+		max-width: 720px;
+		line-height: 1.45;
+	}
+	.ne-why.inline {
+		font-family: var(--mono);
+		font-size: 0.72rem;
+	}
+
+	.stratum-strip {
+		margin-top: 1.4rem;
+		padding-top: 1rem;
+		border-top: 1px dotted var(--rule);
+	}
+	.strip-lab {
+		font-size: 0.82rem;
+		color: var(--ink-muted);
+		max-width: 760px;
+		margin: 0 0 0.6rem;
+		line-height: 1.4;
+	}
+	.strip-rows {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+	}
+	.strip-row {
+		display: grid;
+		grid-template-columns: 12rem 7ch 9ch 7ch;
+		gap: 0.8rem;
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		font-variant-numeric: tabular-nums;
+		padding: 0.18rem 0;
+		border-bottom: 1px dotted var(--rule);
+	}
+	.strip-type {
+		color: var(--ink);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.strip-n,
+	.strip-mae {
+		color: var(--ink-muted);
+		text-align: right;
+	}
+	.strip-bias {
+		color: var(--ink);
+		text-align: right;
 	}
 
 	.hist {
