@@ -104,8 +104,21 @@ class GroundedEntity:
         self.text_top_name = text_top.entry_name
         self.is_low_confidence = self.gilda_score <= LOW_CONFIDENCE_THRESHOLD
 
-        # Same (db, id)?
-        if text_top.db == self.db and str(text_top.id) == self.db_id:
+        # Independent-competition check (the structural separator).
+        # Resolve raw_text on its OWN terms and ask whether it carries a
+        # competing entity grounding distinct from the claim. Collisions and
+        # ambiguous abbreviations do (a different top gene, or a tied rival
+        # within the score band); legitimate aliases do not (a single clean
+        # candidate that IS the claim). This — not any scalar threshold —
+        # separates dirty-alias false MATCHes from real aliases that happen
+        # to share the same 0.556 gilda floor.
+        competitors = _competing_candidates(text_results, self.db, self.db_id)
+
+        # Same (db, id)? Only a clean MATCH when raw_text has no competing
+        # grounding of its own. With a competitor, the claim being the top hit
+        # is an ambiguous abbreviation, routed to the collision block below.
+        if (text_top.db == self.db and str(text_top.id) == self.db_id
+                and not competitors):
             self.verification_status = "MATCH"
             self.is_known_alias = any(
                 n.lower() == raw_text.lower() for n in self.all_names
@@ -142,7 +155,11 @@ class GroundedEntity:
         # "collagenase 1" is an alias of MMP1, "beta-arrestin 2" of ARRB2).
         # Requires at least one specific (non-generic) token overlap to
         # avoid accepting ultra-generic terms like "protein phosphatase".
-        if self.db == "HGNC" and _alias_substring_match(raw_text, self.all_names):
+        # Gated on no independent competition: a token-overlap with the claim's
+        # (dirty) HGNC alias list must NOT assert MATCH when raw_text has its
+        # own competing specific-gene grounding (the SH3BP1→SH3BGRL3 collision).
+        if (self.db == "HGNC" and not competitors
+                and _alias_substring_match(raw_text, self.all_names)):
             self.verification_status = "MATCH"
             self.verification_note = (
                 f'"{raw_text}" matches an alias of {self.name} '
@@ -162,6 +179,42 @@ class GroundedEntity:
                 f'"{raw_text}" resolves to {text_top.entry_name} '
                 f'(claim name {self.name} is ambiguous; text extraction agrees)'
             )
+            return
+
+        # Collision / ambiguous-abbreviation surface.
+        # raw_text has its OWN competing entity grounding. Surface the rival(s)
+        # as input-grounding context (never an output verdict) so the existing
+        # provenance block / LLM can disambiguate from the evidence sentence.
+        #   - claim IS the band-top but a rival ties  -> AMBIGUOUS (S1P, PL)
+        #   - claim is NOT the band-top (rival wins)   -> MISMATCH  (SH3BP1, SAP)
+        if competitors:
+            for r in competitors[:5]:
+                desc, pseudo = _cached_get_desc(r.term.db, str(r.term.id))
+                self.competing_candidates.append({
+                    "name": r.term.entry_name,
+                    "db": r.term.db,
+                    "id": str(r.term.id),
+                    "score": r.score,
+                    "description": desc,
+                    "is_pseudogene": pseudo,
+                })
+            claim_is_top = (text_top.db == self.db
+                            and str(text_top.id) == self.db_id)
+            rivals = ", ".join(c["name"] for c in self.competing_candidates)
+            if claim_is_top:
+                self.verification_status = "AMBIGUOUS"
+                self.verification_note = (
+                    f'"{raw_text}" is ambiguous: grounds to {self.name} and '
+                    f'also {rivals} (equal confidence) — disambiguate from '
+                    f'evidence'
+                )
+            else:
+                self.verification_status = "MISMATCH"
+                self.verification_note = (
+                    f'"{raw_text}" independently grounds to '
+                    f'{text_top.entry_name} ({text_top.db}:{text_top.id}), '
+                    f'NOT {self.name}'
+                )
             return
 
         # Check if claim entity is in lower-ranked candidates
@@ -317,6 +370,40 @@ class GroundedEntity:
                         return True
 
         return False
+
+
+# Score delta within which a runner-up grounding is treated as competing with
+# raw_text's top hit. This is a band on raw_text's OWN candidate spread — the
+# presence/absence of a competing entity is the structural separator — NOT an
+# accept/reject threshold on the claim (so it does not recreate the
+# "buggy 0.556 == legit 0.556" failure a scalar claim-threshold would).
+_COMPETE_BAND = 0.10
+
+
+def _competing_candidates(text_results, claim_db, claim_id):
+    """raw_text's own competing groundings.
+
+    Distinct entities (any namespace) within ``_COMPETE_BAND`` of raw_text's
+    top hit that are NOT the claim's own ``(db, id)``. These are the signature
+    of a collision (a different specific gene wins) or an ambiguous abbreviation
+    (a rival ties the claim). Legitimate aliases produce none — a single clean
+    candidate that IS the claim.
+    """
+    if not text_results:
+        return []
+    top_score = text_results[0].score
+    seen, out = set(), []
+    for r in text_results:
+        if top_score - r.score > _COMPETE_BAND:
+            break
+        key = (r.term.db, str(r.term.id))
+        if key == (claim_db, claim_id):
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
 
 
 # --- Cached helpers (shared across all entities) ---
