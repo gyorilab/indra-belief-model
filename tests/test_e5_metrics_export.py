@@ -380,3 +380,22 @@ def test_metrics_schema_version_is_2(tmp_path):
     run, corp, gold = _three_ev_gold(tmp_path)
     _ev, _ps, _meta, m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
     assert m["schema_version"] == 2
+
+
+def test_metrics_gold_without_pa_hash_degrades(tmp_path):
+    # rasmachine-style gold (matches_hash/source_hash/tag, NO pa_hash) must NOT
+    # crash build_run_metrics — Tier-2 statement falls through to named-empty while
+    # Tier-1 (ev) still renders and per_statement still carries gold_statement
+    # (which joins on source_hash, not pa_hash).
+    rows = [_row(0, 11, "correct", 0.95), _row(1, 22, "incorrect", 0.05)]
+    run, corp = _write(tmp_path, rows, _corpus())
+    gold = _gold(tmp_path, [
+        {"matches_hash": 123, "source_hash": 11, "tag": "correct"},
+        {"matches_hash": 123, "source_hash": 22, "tag": "wrong_relation"},
+    ])
+    _ev, per_stmt, _meta, m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
+    assert m["tiers"]["ev"]["status"] == "available"        # Tier-1 unaffected
+    assert m["tiers"]["stmt"]["status"] == "unavailable"    # no pa_hash → named-empty
+    assert m["tiers"]["stmt"]["reason"]
+    # per_statement gold_statement still resolves (source_hash join)
+    assert per_stmt[0]["gold_statement"] is not None

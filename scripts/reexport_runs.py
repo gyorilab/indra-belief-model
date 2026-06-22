@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""Re-export scored runs to the current viewer schema (schema 5), baking the
-observed LLM cost (from each row's call_log) and per-run gold.
+"""Re-export scored runs to the current viewer schema (per_statement schema 7 +
+metrics.json schema 2), baking the observed LLM cost (from each row's call_log)
+and per-run gold. Schema 7 adds the statement-grain instrument: per_statement
+gold_statement + coherence_summary, and metrics.json tiers.stmt.verdict_err +
+stratified (the /runs statement error-detection surface + /statements belief).
 
 No rescoring: this is a pure transform over data/results/<run>.jsonl. Each run's
 sibling `.meta.json` records the corpus it was scored against (`input`); we map

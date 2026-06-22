@@ -596,7 +596,15 @@ def build_run_metrics(
             g = _gold_for(er)
             if g is None or not g.get("tag"):
                 continue
-            rec = by_stmt[g["pa_hash"]]
+            pa = g.get("pa_hash")
+            if pa is None:
+                # Gold without a statement grouping key (e.g. rasmachine_v1 gold,
+                # which carries matches_hash/source_hash but no pa_hash) — we can't
+                # build Tier-2 statement metrics. Skip; the tier falls through to
+                # named-empty below rather than raising KeyError. Tier-1 (ev) +
+                # per_statement belief are unaffected.
+                continue
+            rec = by_stmt[pa]
             rec["rows"].append(er)
             rec["tags"].append(g["tag"])
 
