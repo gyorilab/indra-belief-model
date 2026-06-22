@@ -102,6 +102,43 @@ export interface StatementRollup {
 	bucket_counts: Record<string, number>;
 	pmids: string[];
 	sources: string[];
+	// ── E5/E11 three-way belief + statement gold (schema v7; optional: legacy
+	//    exports pre-v7 lack them, so the viewer narrows on presence) ───────────
+	/** Gated noisy-OR (production hard gate). */
+	belief_hard?: number | null;
+	/** Ungated belief — all surviving evidence counted. */
+	belief_parametric?: number | null;
+	/** Soft survival-weight recalibration; null = reader has no fit. */
+	belief_soft?: number | null;
+	/** Tier-driven decision: deterministic reject hard-flags incorrect; credible
+	 *  LLM incorrect routes to review; else correct. */
+	belief_verdict_statement?: 'correct' | 'review' | 'incorrect';
+	/** Statement-grain gold (any-incorrect-wins over the statement's evidence
+	 *  gold). null = no curated evidence. Narrower than GoldVerdict (no curators/
+	 *  notes — it is a rollup, not a single curation group). */
+	gold_statement?: StatementGold | null;
+	/** The multi-evidence depth behind the belief (POST-dedup tallies). */
+	coherence_summary?: CoherenceSummary;
+}
+
+/** Statement-grain gold rollup baked into per_statement.json (schema v7). */
+export interface StatementGold {
+	verdict: 'correct' | 'incorrect';
+	n: number;
+	tags: string[];
+}
+
+/** Post-dedup multi-evidence tallies behind a statement's belief (schema v7). */
+export interface CoherenceSummary {
+	n_dedup_groups: number;
+	n_distinct_sources: number;
+	n_correct: number;
+	n_incorrect: number;
+	n_no_text: number;
+	n_parse_fail: number;
+	n_null_source: number;
+	n_credible_incorrect_det: number;
+	n_credible_incorrect_llm: number;
 }
 
 /** Epistemic-access status of a model's chain-of-thought on one call.
@@ -229,7 +266,44 @@ export function armAvailable(a: ArmSlot | undefined): a is MetricArm {
 	return !!a && !('status' in a);
 }
 
-/** One tier (ev = Tier-1 per-evidence, stmt = Tier-2 per-statement). */
+/** Error-detection confusion on the tiered verdict_statement (schema v2).
+ *  positive = ERROR; pred_error = verdict != 'correct' (review AND incorrect
+ *  flag); gold_error = statement gold incorrect. Distinct from a MetricArm: this
+ *  is a decision, not a calibrated scalar — no bins/ece/brier. */
+export interface ConfusionMetrics {
+	n: number;
+	tp: number;
+	fp: number;
+	fn: number;
+	tn: number;
+	accuracy: number;
+	precision: number;
+	recall: number;
+	f1: number;
+}
+
+/** One stratum of the statement residual map (schema v2). `hard` is the belief
+ *  calibration over the same statements; `verdict_err` the decision quality. */
+export interface StratumBlock {
+	n: number;
+	base_rate_correct: number;
+	verdict_err: ConfusionMetrics;
+	hard: MetricArm;
+}
+
+/** The statement residual map (schema v2): each dim → {stratum value → block}.
+ *  Strata are sparse (a None key — e.g. unknown stmt_type — is dropped). */
+export interface StratificationLayer {
+	by_stmt_type: Record<string, StratumBlock>;
+	by_n_sources: Record<string, StratumBlock>;
+	by_n_evidence: Record<string, StratumBlock>;
+	by_dominant_bucket: Record<string, StratumBlock>;
+	by_driver: Record<string, StratumBlock>;
+}
+
+/** One tier (ev = Tier-1 per-evidence, stmt = Tier-2 per-statement).
+ *  verdict_err + stratified are Tier-2-only and present from schema v2; legacy
+ *  exports omit them, so consumers narrow on presence. */
 export type TierBlock =
 	| { status: 'unavailable'; reason: string }
 	| {
@@ -237,6 +311,8 @@ export type TierBlock =
 			n: number;
 			base_rate_correct: number;
 			arms: Record<string, ArmSlot>;
+			verdict_err?: ConfusionMetrics;
+			stratified?: StratificationLayer;
 	  };
 
 /** The per-run metrics.json contract (E5). */

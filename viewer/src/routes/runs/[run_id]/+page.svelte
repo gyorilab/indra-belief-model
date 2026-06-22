@@ -6,6 +6,7 @@
 	import ReliabilityDiagram from '$lib/components/ReliabilityDiagram.svelte';
 	import BrierBar from '$lib/components/BrierBar.svelte';
 	import ConfusionMosaic from '$lib/components/ConfusionMosaic.svelte';
+	import DriverMosaic from '$lib/components/DriverMosaic.svelte';
 	import { armAvailable, type MetricArm, type TierBlock } from '$lib/data/types';
 	import type { Tier } from '$lib/data/queries';
 
@@ -121,6 +122,48 @@
 		if (verdict === 'correct') return 'v-correct';
 		if (verdict === 'incorrect') return 'v-incorrect';
 		return 'v-other';
+	}
+
+	// ── E11: statement verdict error-detection (schema v2 metrics) ──────────────
+	// A different question than calibration: does the TIERED decision (correct /
+	// review / incorrect) catch the statements gold says are wrong? verdict_err +
+	// stratified residual ride on tiers.stmt from schema v2; legacy runs omit them.
+	const stmtTier = $derived(metrics?.tiers?.stmt ?? null);
+	const stmtVerdict = $derived(
+		stmtTier && stmtTier.status === 'available' ? (stmtTier.verdict_err ?? null) : null
+	);
+	const stratified = $derived(
+		stmtTier && stmtTier.status === 'available' ? (stmtTier.stratified ?? null) : null
+	);
+
+	const STRAT_AXES = [
+		{ key: 'by_stmt_type', label: 'statement type' },
+		{ key: 'by_n_evidence', label: 'evidence depth' },
+		{ key: 'by_n_sources', label: 'source breadth' },
+		{ key: 'by_dominant_bucket', label: 'bucket' }
+	] as const;
+	type StratAxis = (typeof STRAT_AXES)[number]['key'];
+	let stratAxis = $state<StratAxis>('by_stmt_type');
+
+	// Worst error-F1 first — the eye should land on where the verdict fails most.
+	const sortedStrata = $derived.by(() => {
+		const layer = stratified?.[stratAxis];
+		if (!layer) return [];
+		return Object.entries(layer)
+			.map(([value, b]) => ({
+				value,
+				n: b.n,
+				f1: b.verdict_err.f1,
+				fp: b.verdict_err.fp,
+				fn: b.verdict_err.fn
+			}))
+			.sort((a, b) => a.f1 - b.f1 || b.n - a.n);
+	});
+
+	function f1Class(f1: number): string {
+		if (f1 >= 0.85) return 'f1-good';
+		if (f1 >= 0.72) return 'f1-mid';
+		return 'f1-weak';
 	}
 </script>
 
@@ -335,6 +378,82 @@
 			{/if}
 		{/if}
 	</section>
+
+	<!-- ── E11: statement verdict error-detection (schema v2) ── -->
+	{#if stmtVerdict}
+		<section class="verdict-surface" aria-label="statement verdict error detection">
+			<h2 class="sec-h">statement verdict — error detection</h2>
+			<p class="sec-sub">
+				A different question than calibration. Not "is the belief scalar well-calibrated" but:
+				does the tiered <em>decision</em> — correct / review / incorrect — catch the statements
+				human gold says are wrong? Positive = error; <strong>review and incorrect both count as
+				flagged</strong>. Every number served from <code>metrics.json</code>.
+			</p>
+
+			<!-- strong center: error-F1 headline -->
+			<div class="headline">
+				<div class="ece">
+					<span class="ece-lab">error F1</span>
+					<span class="ece-val">{f3c(stmtVerdict.f1)}</span>
+					<span class="ece-tier"
+						>precision {f3c(stmtVerdict.precision)} · recall {f3c(stmtVerdict.recall)} · n={stmtVerdict.n.toLocaleString(
+							'en-US'
+						)}</span
+					>
+				</div>
+			</div>
+
+			<div class="diag-row">
+				<div class="diag-cell">
+					<p class="mini-lab">verdict vs statement gold</p>
+					<ConfusionMosaic
+						tp={stmtVerdict.tp}
+						fp={stmtVerdict.fp}
+						fn={stmtVerdict.fn}
+						tn={stmtVerdict.tn}
+						axis="error"
+					/>
+				</div>
+				{#if stratified}
+					<div class="diag-cell driver">
+						<p class="mini-lab">where the errors live — by what drove the decision</p>
+						<DriverMosaic drivers={stratified.by_driver} />
+					</div>
+				{/if}
+			</div>
+
+			<!-- progressive disclosure: residual map by stratum, worst error-F1 first -->
+			{#if stratified}
+				<div class="stratum-strip">
+					<div class="strat-tabs" role="group" aria-label="stratification axis">
+						{#each STRAT_AXES as ax (ax.key)}
+							<button class:active={stratAxis === ax.key} onclick={() => (stratAxis = ax.key)}>
+								{ax.label}
+							</button>
+						{/each}
+					</div>
+					<p class="strip-lab">
+						error detection by {STRAT_AXES.find((a) => a.key === stratAxis)?.label} — worst F1 first.
+						<span class="weak-key">faint = under-powered (n&lt;50)</span>; fp = a correct statement
+						over-rejected, fn = a real error that slipped through.
+					</p>
+					<div class="strip-rows">
+						{#each sortedStrata as s (s.value)}
+							<div class="vstrip-row" class:weak={s.n < 50}>
+								<span class="strip-type">{s.value}</span>
+								<span class="strip-n">n={fmtCount(s.n)}</span>
+								<span class="f1-track" title={`error F1 ${f3c(s.f1)}`}>
+									<span class="f1-fill {f1Class(s.f1)}" style={`width:${s.f1 * 100}%`}></span>
+								</span>
+								<span class="strip-f1 {f1Class(s.f1)}">{f3c(s.f1)}</span>
+								<span class="strip-fr">fp {s.fp} · fn {s.fn}</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		</section>
+	{/if}
 
 	<section class="calibration">
 		<h2 class="sec-h">residual vs INDRA belief</h2>
@@ -881,6 +1000,93 @@
 	}
 	.strip-bias {
 		color: var(--ink);
+		text-align: right;
+	}
+
+	/* ── E11 verdict-surface — error detection on the tiered decision ── */
+	.verdict-surface {
+		border-top: 2px solid var(--ink);
+		padding-top: 1.2rem;
+	}
+	.diag-cell.driver {
+		flex: 2 1 26rem;
+		min-width: 20rem;
+	}
+	.strat-tabs {
+		display: inline-flex;
+		border: 1px solid var(--rule);
+		margin: 0 0 0.7rem;
+		flex-wrap: wrap;
+	}
+	.strat-tabs button {
+		font-family: var(--mono);
+		font-size: 0.72rem;
+		background: transparent;
+		border: none;
+		color: var(--ink-muted);
+		padding: 0.35rem 0.8rem;
+		cursor: pointer;
+	}
+	.strat-tabs button + button {
+		border-left: 1px solid var(--rule);
+	}
+	.strat-tabs button.active {
+		background: var(--ink);
+		color: var(--paper);
+	}
+	.strat-tabs button:hover:not(.active) {
+		color: var(--ink);
+	}
+	.weak-key {
+		color: var(--ink-faint);
+	}
+	.vstrip-row {
+		display: grid;
+		grid-template-columns: minmax(7rem, 12rem) 7ch 1fr 6ch 13ch;
+		gap: 0.8rem;
+		align-items: center;
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		font-variant-numeric: tabular-nums;
+		padding: 0.22rem 0;
+		border-bottom: 1px dotted var(--rule);
+	}
+	.vstrip-row.weak {
+		opacity: 0.5;
+	}
+	.f1-track {
+		height: 0.5rem;
+		background: var(--accent-wash);
+		overflow: hidden;
+	}
+	.f1-fill {
+		display: block;
+		height: 100%;
+		transition: width 200ms ease-out;
+	}
+	.f1-fill.f1-good {
+		background: var(--ok-green);
+	}
+	.f1-fill.f1-mid {
+		background: #6f5a16;
+	}
+	.f1-fill.f1-weak {
+		background: var(--accent);
+	}
+	.strip-f1 {
+		text-align: right;
+	}
+	.strip-f1.f1-good {
+		color: var(--ok-green);
+	}
+	.strip-f1.f1-mid {
+		color: #6f5a16;
+	}
+	.strip-f1.f1-weak {
+		color: var(--accent);
+	}
+	.strip-fr {
+		color: var(--ink-muted);
 		text-align: right;
 	}
 

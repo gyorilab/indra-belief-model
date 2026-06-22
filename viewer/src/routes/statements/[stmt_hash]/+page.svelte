@@ -101,6 +101,35 @@
 			<div><dt>min / max</dt><dd>{fmtBelief(r.our_min_score)} / {fmtBelief(r.our_max_score)}</dd></div>
 		</dl>
 
+		<!-- E11: three-way statement belief + tiered verdict + human gold (schema v7;
+		     absent on legacy exports). The decision is verdict-driven; the soft
+		     weight moves the scalar, not the tier. -->
+		{#if r.belief_verdict_statement}
+			<div class="belief-block">
+				<div class="bb-row">
+					<span class="bb-lab">statement belief</span>
+					<span class="bb-verdict v-{r.belief_verdict_statement}">{r.belief_verdict_statement}</span>
+					{#if r.gold_statement}
+						<span class="bb-gold-chip g-{r.gold_statement.verdict}">gold: {r.gold_statement.verdict}</span>
+					{/if}
+				</div>
+				<dl class="belief-scores">
+					<div><dt>hard gate</dt><dd>{fmtBelief(r.belief_hard)}</dd></div>
+					<div><dt>parametric</dt><dd>{fmtBelief(r.belief_parametric)}</dd></div>
+					<div><dt>soft</dt><dd>{fmtBelief(r.belief_soft)}</dd></div>
+					{#if r.coherence_summary}
+						<div>
+							<dt>depth</dt>
+							<dd>{r.coherence_summary.n_dedup_groups} read{pluralS(r.coherence_summary.n_dedup_groups)} · {r.coherence_summary.n_distinct_sources} src</dd>
+						</div>
+					{/if}
+				</dl>
+				{#if r.gold_statement && r.gold_statement.tags.length > 0}
+					<p class="bb-gold-tags">gold tags: {r.gold_statement.tags.join(', ')}</p>
+				{/if}
+			</div>
+		{/if}
+
 		<div class="stmt-meta">
 			{#if scoredN > 0}
 				<span class="verdict-tally">
@@ -302,6 +331,87 @@
 	.score-ours { color: var(--accent); font-weight: 600; }
 	.delta-pos { color: var(--ok-green); }
 	.delta-neg { color: var(--accent); }
+
+	/* E11 — three-way belief + tiered verdict + human gold (gold = the cross-page
+	   purple judge from /compare). */
+	.belief-block {
+		border: 1px solid var(--rule);
+		border-left: 3px solid var(--gold-hue, #5a4a86);
+		background: var(--gold-wash, rgba(90, 74, 134, 0.05));
+		padding: 0.6rem 0.8rem;
+		margin: 0 0 1rem;
+	}
+	.bb-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.6rem;
+		margin-bottom: 0.5rem;
+	}
+	.bb-lab {
+		font-family: var(--mono);
+		font-size: 0.68rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink-muted);
+	}
+	.bb-verdict {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		font-weight: 600;
+		padding: 0.02rem 0.4rem;
+		border: 1px solid currentColor;
+	}
+	.bb-verdict.v-correct {
+		color: var(--ok-green);
+	}
+	.bb-verdict.v-review {
+		color: #6f5a16;
+	}
+	.bb-verdict.v-incorrect {
+		color: var(--accent);
+	}
+	.bb-gold-chip {
+		font-family: var(--mono);
+		font-size: 0.72rem;
+		color: var(--gold-hue, #5a4a86);
+	}
+	.bb-gold-chip.g-correct {
+		color: var(--ok-green);
+	}
+	.bb-gold-chip.g-incorrect {
+		color: var(--accent);
+	}
+	.belief-scores {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem 1.4rem;
+		margin: 0;
+		font-family: var(--mono);
+	}
+	.belief-scores div {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+	}
+	.belief-scores dt {
+		font-size: 0.64rem;
+		color: var(--ink-faint);
+		text-transform: lowercase;
+		letter-spacing: 0.03em;
+	}
+	.belief-scores dd {
+		margin: 0;
+		font-size: 0.92rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--ink);
+	}
+	.bb-gold-tags {
+		font-family: var(--mono);
+		font-size: 0.68rem;
+		color: var(--ink-muted);
+		margin: 0.5rem 0 0;
+	}
 
 	.stmt-meta {
 		font-family: var(--mono);
