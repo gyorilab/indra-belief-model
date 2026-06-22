@@ -10,6 +10,15 @@ venv/
 # Large data files (download separately)
 data/benchmark/indra_benchmark_corpus.json.gz
 
+# Benchmark scratch / generated artifacts (reproducible; not checked in).
+# Tracked benchmark fixtures (eval_curation_v1*, rasmachine_*, holdout*,
+# fewshot_pool*, eval_set_v4, belief_benchmark, probe_*, example_pairs) stay
+# tracked — these patterns are scoped to the specific scratch filenames only.
+data/benchmark/ALL_curations_global.json
+data/benchmark/direction_reversals.json
+data/benchmark/rasmachine_full_curations.json
+data/benchmark/eval_curation_v1_clean.jsonl
+
 # IDE / tool state
 .idea/
 .vscode/
