@@ -97,6 +97,29 @@ Output JSON ONLY, in this order:
 {"support": <exact evidence quote or null>, "objection": <string or null>, "verdict": "correct" | "incorrect", "confidence": "high" | "medium" | "low"}\
 """
 
+# Reasoning-FIRST variant: identical rule body, but the model emits ONE terse,
+# acceptance-routed `relation_check` clause BEFORE committing. A single-input
+# STRUCTURE lever for the 4B-active model targeting over-rejection — reason toward a
+# rule-licensed acceptance first, then judge. Zero extra LLM calls; user-side input
+# held byte-identical to the disconfirm variant. MONO_VARIANT=disconfirm_relnature_rf.
+REASONFIRST_SYSTEM_PROMPT = DISCONFIRM_SYSTEM_PROMPT.split("HOW TO DECIDE")[0] + """\
+HOW TO DECIDE (reason FIRST in one short clause toward acceptance, then judge):
+- First state `relation_check` — ONE short clause (<= ~15 words). It is an ACCEPTANCE check: look for a reason the relation HOLDS before doubting it.
+  * [Activation]/[Inhibition]: is there a change in the target's activity STATE, OR a form an explicit rule LICENSES — an AMOUNT form (rule 3), a miRNA inverse (rule 3), a family member (rule 2), an indirect/inverse statement that still asserts the direction, or a biological PROCESS/phenotype object (e.g. proliferation, migration)? Name the licensing form, or say "no licensing form".
+  * [Complex]: is a DIRECT physical bind between the two entities stated? Defer to any Extraction-provenance / relation-nature note present.
+  * else: name the exact span stating this relation, or "no direct span".
+  Keep it terse — one clause, not a paragraph; do not restate the rules.
+- Then `support`: the EXACT evidence span stating THIS relation between THESE entities (null if none; background knowledge is NOT support and may not be invented).
+- Then `objection`: the single strongest concrete reason to doubt (null if none worth considering). The family-level case (rule 2) is never a real objection; a rule-licensed form you named in relation_check is not a standing objection.
+- Then the `verdict`, judging whether any objection STANDS:
+  * correct — the evidence explicitly and directly supports the claim (including a rule-licensed activity / amount / family / inverse / process form) AND no objection stands.
+  * incorrect — support is null, OR a standing objection defeats it (negation, hypothesis-only, methods/aim, wrong direction, amount-vs-activity with no licensing form, no-direct-relation, grounding mismatch).
+  Default to incorrect ONLY when there is no licensing form AND no direct span; a licensing form named in relation_check is grounds to ACCEPT.
+
+Output JSON ONLY, in this order:
+{"relation_check": <one short clause>, "support": <exact evidence quote or null>, "objection": <string or null>, "verdict": "correct" | "incorrect", "confidence": "high" | "medium" | "low"}\
+"""
+
 _NULLISH = {"", "none", "null", "n/a", "na", "no objection", "no support", "-"}
 
 
@@ -122,6 +145,34 @@ def render_example(ex: dict) -> tuple[str, str]:
         support, objection = None, (reason or "evidence does not support the exact claim")
     assistant = json.dumps(
         {"support": support, "objection": objection,
+         "verdict": ex["verdict"], "confidence": ex.get("confidence", "high")},
+        ensure_ascii=True,
+    )
+    return user, assistant
+
+
+def render_example_reasonfirst(ex: dict) -> tuple[str, str]:
+    """Render a base example in the reasoning-first format: a terse, acceptance-routed
+    `relation_check` clause BEFORE support/objection/verdict, so the few-shots teach the
+    reason-first structure. For correct examples the relation_check NAMES the licensing
+    form (the `considered` rule-resolution if present); for incorrect it states the
+    missing license. Derived from existing fields — no new authoring per example."""
+    user = (
+        f"CLAIM: {ex['claim']}\n"
+        f"EVIDENCE: {ex['evidence']}\n\n"
+        f'Output JSON: {{"relation_check": ..., "support": ..., "objection": ..., '
+        f'"verdict": ..., "confidence": ...}}'
+    )
+    reason = ex.get("reason") or ""
+    if ex["verdict"] == "correct":
+        considered = ex.get("considered")
+        relation_check = considered or "direct statement of the relation licenses acceptance"
+        support, objection = ex["evidence"], (considered or None)
+    else:
+        relation_check = f"no licensing form: {reason}" if reason else "no direct span or licensing form"
+        support, objection = None, (reason or "evidence does not support the exact claim")
+    assistant = json.dumps(
+        {"relation_check": relation_check, "support": support, "objection": objection,
          "verdict": ex["verdict"], "confidence": ex.get("confidence", "high")},
         ensure_ascii=True,
     )

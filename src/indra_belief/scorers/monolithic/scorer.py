@@ -56,28 +56,36 @@ from indra_belief.scorers.monolithic._prompts import (
 #   "" / other           baseline prompt, byte-for-byte
 import os as _os  # noqa: E402
 
-_VARIANT = _os.environ.get("MONO_VARIANT", "disconfirm_relnature").strip().lower()
-if _VARIANT in ("disconfirm", "disconfirm_relnature"):
+_VARIANT = _os.environ.get("MONO_VARIANT", "disconfirm_relnature_rf").strip().lower()
+if _VARIANT in ("disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf"):
     from indra_belief.scorers.monolithic._prompts_disconfirm import (
         DISCONFIRM_SYSTEM_PROMPT,
-        render_example as _variant_render,
+        REASONFIRST_SYSTEM_PROMPT,
+        render_example as _variant_render_base,
+        render_example_reasonfirst as _variant_render_rf,
         parse_structured as _variant_parse,
         derive_verdict as _variant_derive,
     )
-    ACTIVE_SYSTEM_PROMPT = DISCONFIRM_SYSTEM_PROMPT
-    if _VARIANT == "disconfirm_relnature":
+    if _VARIANT == "disconfirm_relnature_rf":
+        ACTIVE_SYSTEM_PROMPT = REASONFIRST_SYSTEM_PROMPT
+        _variant_render = _variant_render_rf
+    else:
+        ACTIVE_SYSTEM_PROMPT = DISCONFIRM_SYSTEM_PROMPT
+        _variant_render = _variant_render_base
+    # relnature Complex two-step fires for both relnature variants.
+    if _VARIANT in ("disconfirm_relnature", "disconfirm_relnature_rf"):
         from indra_belief.scorers.monolithic._prompts_relation import resolve_relation_nature
 else:
     ACTIVE_SYSTEM_PROMPT = SYSTEM_PROMPT
 
 # Variants that use the structured commit-first parse/derive + render.
-_STRUCTURED_VARIANTS = {"disconfirm", "disconfirm_relnature"}
+_STRUCTURED_VARIANTS = {"disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf"}
 
 
 def _relation_note(client, record) -> str:
     """Relation-nature rejection note for [Complex] claims (relnature variant);
     empty for other variants or when the evidence supports a direct physical bind."""
-    if _VARIANT != "disconfirm_relnature":
+    if _VARIANT not in ("disconfirm_relnature", "disconfirm_relnature_rf"):
         return ""
     try:
         return resolve_relation_nature(
@@ -103,11 +111,19 @@ ROOT = Path(__file__).resolve().parents[4]
 
 # Type-specific example bank (loaded from JSON)
 # Bank keys can be exact types ("Activation") or sub-keys ("Activation_no_relation")
-_EXAMPLE_BANK_PATH = Path(__file__).parent.parent / "data" / "example_bank.json"
+_EXAMPLE_BANK_PATH = Path(__file__).resolve().parents[2] / "data" / "example_bank.json"
 _RAW_BANK: dict[str, list[dict]] = {}
 if _EXAMPLE_BANK_PATH.exists():
     with open(_EXAMPLE_BANK_PATH) as _f:
         _RAW_BANK = json.load(_f)
+else:
+    # A missing bank silently strips all few-shot examples — degrading scoring
+    # quality without any error. Surface it loudly so packaging/path bugs are caught.
+    log.warning(
+        "few-shot example bank not found at %s — scorer will run with NO type-specific "
+        "examples; check package data layout",
+        _EXAMPLE_BANK_PATH,
+    )
 
 # Build type → list of pairs mapping from bank
 # Keys like "Activation_no_relation" contribute to "Activation"
