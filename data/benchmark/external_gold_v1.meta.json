@@ -1,0 +1,95 @@
+{
+  "seed": 20260623,
+  "source": "db.indra.bio /curation/list (keyed list-all)",
+  "output": "data/benchmark/external_gold_v1.jsonl",
+  "n": 154,
+  "n_incorrect": 77,
+  "n_correct": 77,
+  "balance": "1:1 forced",
+  "matching": "stratified 1:1 by stmt_type; source_api matched within type",
+  "gold_rule": "any-incorrect-wins (curation.aggregate_gold) over NON-PAIR tags only",
+  "pair_excluded": [
+    "bachmanjohn",
+    "bachmanjohn@gmail.com",
+    "ben.gyori",
+    "ben.gyori@gmail.com"
+  ],
+  "n_curators_contributing": 16,
+  "curators_contributing": {
+    "imke.ditters@gmail.com": 59,
+    "cthoyt@gmail.com": 18,
+    "anthonywu92@gmail.com": 15,
+    "wu.anthon@northeastern.edu": 14,
+    "klas_karis@hms.harvard.edu": 14,
+    "sachskaren@gmail.com": 6,
+    "chai.molina@gmail.com": 6,
+    "manuel.munoz.g@ug.uchile.cl": 5,
+    "keats.jiang@gmail.com": 4,
+    "jschaul@ppmlab.net": 2,
+    "ca3261@nyu.edu": 2,
+    "patrick_greene@hms.harvard.edu": 2,
+    "diana_kolusheva@hms.harvard.edu": 2,
+    "kshthakkar11@gmail.com": 2,
+    "karis.klas@gmail.com": 2,
+    "y.chau@northeastern.edu": 1
+  },
+  "fresh_pool_size": 562,
+  "fresh_pool_correct": 92,
+  "fresh_pool_incorrect": 470,
+  "materialized_pairs": 569,
+  "dropped_pair_overlap": 7,
+  "dropped_fewshot_universe": 0,
+  "exclude_globs": [
+    "holdout*.jsonl",
+    "eval_set*.jsonl",
+    "eval_curation*.jsonl",
+    "fewshot*.jsonl",
+    "belief_benchmark.jsonl",
+    "rasmachine*.jsonl",
+    "probe_*.jsonl",
+    "calibration_*.jsonl"
+  ],
+  "exclude_pairs_total": 6194,
+  "exclude_per_file": {
+    "holdout.jsonl": 200,
+    "holdout_large.jsonl": 3368,
+    "holdout_v15_sample.jsonl": 482,
+    "holdout_v5.jsonl": 96,
+    "holdout_v7_original.jsonl": 200,
+    "eval_set_v4.jsonl": 98,
+    "eval_curation_v1.jsonl": 1606,
+    "eval_curation_v1_clean.jsonl": 1600,
+    "fewshot_pool.jsonl": 19,
+    "fewshot_pool_v4.jsonl": 20,
+    "belief_benchmark.jsonl": 5709,
+    "rasmachine_curations.jsonl": 639,
+    "rasmachine_v1_curations.jsonl": 77,
+    "rasmachine_v1_gold.jsonl": 0,
+    "rasmachine_v1_gold_unfiltered.jsonl": 0,
+    "probe_relation_logic.jsonl": 199
+  },
+  "stratification": {
+    "types_used": 7,
+    "types_dropped": [
+      "Desumoylation",
+      "Deubiquitination",
+      "Methylation",
+      "Ubiquitination"
+    ],
+    "per_type_pairs_each_class": {
+      "Activation": 24,
+      "Inhibition": 19,
+      "Phosphorylation": 16,
+      "Complex": 11,
+      "DecreaseAmount": 3,
+      "IncreaseAmount": 3,
+      "Dephosphorylation": 1
+    }
+  },
+  "evidence_source": "inline ev_json (text/source_api/pmid) + pa_json (subj/obj/type) from the list payload; no second fetch",
+  "contamination_check": {
+    "checker": "scripts/check_contamination.py (find_contamination)",
+    "overlaps": 0,
+    "result": "CLEAN"
+  }
+}
