@@ -15,13 +15,19 @@ between hard and soft (a vacuous pass). The gate's "error-detection F1" must be
 measured on a BELIEF threshold to test the thing that changed:
 
     positive class = ERROR (gold == incorrect)
-    pred_error     = belief < tau          (primary tau = 0.5; {0.4,0.5,0.6} swept)
+    pred_error     = belief < tau*         (tau* = each arm's OWN optimal threshold,
+                                            argmax err-F1 over TAU_GRID on the full
+                                            sample; the adopted 'clean' weight is
+                                            self-calibrating and shifts the belief
+                                            scale, so a fixed 0.5 cutoff would
+                                            penalize it for relocating its boundary)
     err-F1         = metrics.confusion_metrics over (gold_error, pred_error).f1
 
-G2 SHIP GATE (all four legs, per reader; lead = err-F1):
-  1. ECE        : ECE(soft) < ECE(hard)                       [confirmed C1.2]
-  2. AUROC      : AUROC(soft) >= AUROC(hard) - EPS            [confirmed C1.2]
-  3. err-F1     : lower 95% bootstrap bound of ΔerrF1 >= -NOISE_FLOOR (non-inferior)
+G2 SHIP GATE (all four legs, per reader; lead = err-F1; soft arm = 'clean'):
+  1. ECE        : ECE(clean) < ECE(hard)
+  2. AUROC      : AUROC(clean) >= AUROC(hard) - EPS
+  3. err-F1     : lower 95% bootstrap bound of ΔerrF1 >= -NOISE_FLOOR (non-inferior),
+                  each arm at its own tau*
   4. E4 identity: tests/test_soft_belief.py byte-identity green  [asserted elsewhere]
   Brier-resolution is reported as a diagnostic, NOT gated (noise-dominated at n~342).
 
@@ -50,8 +56,14 @@ import calibration_stage1 as c1  # noqa: E402
 from indra_belief.metrics import confusion_metrics, ece  # noqa: E402
 
 EPS = 0.0  # AUROC tolerance (must not drop)
-TAU_PRIMARY = 0.5
-TAU_SWEEP = (0.4, 0.5, 0.6)
+# err-F1 is measured at EACH ARM'S OWN optimal threshold, not a fixed 0.5: the
+# 'clean' soft weight shifts the belief scale (it is self-calibrating, so beliefs
+# move toward their true rates), and a fixed cutoff would penalize a better-
+# calibrated arm purely for relocating its error boundary. We pick tau* per arm on
+# the full sample (argmax err-F1 over TAU_GRID), then bootstrap err-F1 at that
+# frozen per-arm tau* — no per-bootstrap re-selection (which would bias upward).
+TAU_GRID = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70)
+TAU_SWEEP = (0.4, 0.5, 0.6)  # reported diagnostic sweep
 # medpsy-4B identical-run err-F1 spread (0.717-0.871); a Δ inside this band is noise.
 NOISE_FLOOR = 0.154
 N_BOOT = 2000
@@ -68,10 +80,20 @@ def err_f1(beliefs, gold_correct, tau) -> float:
     return confusion_metrics(pairs)["f1"]
 
 
-def bootstrap_errf1(beliefs_hard, beliefs_soft, gold_correct, tau,
+def best_tau(beliefs, gold_correct, grid=TAU_GRID) -> tuple[float, float]:
+    """The threshold maximizing err-F1 on the full sample, and that err-F1.
+    The operating threshold for a deployed belief is derived, never assumed 0.5."""
+    scored = [(err_f1(beliefs, gold_correct, t), t) for t in grid]
+    f1, tau = max(scored, key=lambda x: x[0])
+    return tau, f1
+
+
+def bootstrap_errf1(beliefs_hard, beliefs_soft, gold_correct, tau_hard, tau_soft,
                     n_boot=N_BOOT, seed=BOOT_SEED) -> dict:
     """Percentile bootstrap over statements (paired resample) for err-F1(hard),
-    err-F1(soft), and ΔerrF1 = soft - hard."""
+    err-F1(soft), and ΔerrF1 = soft - hard. Each arm is evaluated at its OWN
+    frozen optimal threshold (tau_hard / tau_soft), so the comparison is invariant
+    to the belief-scale shift the clean weight introduces."""
     bh = np.asarray(beliefs_hard, float)
     bs = np.asarray(beliefs_soft, float)
     gc = np.asarray(gold_correct, bool)
@@ -83,8 +105,8 @@ def bootstrap_errf1(beliefs_hard, beliefs_soft, gold_correct, tau,
     for i in range(n_boot):
         idx = rng.integers(0, n, n)
         gc_b = gc[idx]
-        fh = err_f1(bh[idx], gc_b, tau)
-        fs = err_f1(bs[idx], gc_b, tau)
+        fh = err_f1(bh[idx], gc_b, tau_hard)
+        fs = err_f1(bs[idx], gc_b, tau_soft)
         f_hard[i] = fh
         f_soft[i] = fs
         f_delta[i] = fs - fh
@@ -93,9 +115,10 @@ def bootstrap_errf1(beliefs_hard, beliefs_soft, gold_correct, tau,
         return [float(np.percentile(a, 2.5)), float(np.percentile(a, 97.5))]
 
     return {
-        "f1_hard": err_f1(bh, gc, tau),
-        "f1_soft": err_f1(bs, gc, tau),
-        "delta": err_f1(bs, gc, tau) - err_f1(bh, gc, tau),
+        "tau_hard": tau_hard, "tau_soft": tau_soft,
+        "f1_hard": err_f1(bh, gc, tau_hard),
+        "f1_soft": err_f1(bs, gc, tau_soft),
+        "delta": err_f1(bs, gc, tau_soft) - err_f1(bh, gc, tau_hard),
         "ci_hard": ci(f_hard),
         "ci_soft": ci(f_soft),
         "ci_delta": ci(f_delta),
@@ -104,7 +127,7 @@ def bootstrap_errf1(beliefs_hard, beliefs_soft, gold_correct, tau,
 
 
 def eval_reader(test_run_path, by_pair, by_sh, w) -> dict:
-    """Recompute hard/parametric/guard beliefs on holdout_cc + the err-F1 leg."""
+    """Recompute hard/parametric/clean beliefs on holdout_cc + the err-F1 leg."""
     rows = c0.load_jsonl(ROOT / test_run_path)
     joined, _, miss = c0.join_model(rows, by_pair, by_sh)
     stmts = c1.statements_from_joined(joined)
@@ -112,14 +135,17 @@ def eval_reader(test_run_path, by_pair, by_sh, w) -> dict:
 
     bel_hard = [c1.hard_belief(s["ev"])[0] for s in stmts]
     bel_param = [c1.hard_belief(s["ev"])[1] for s in stmts]
-    bel_soft = [c1.soft_belief(s["ev"], w["w_correct"], w["w_incorrect"], "guard")
+    bel_soft = [c1.soft_belief(s["ev"], w["w_correct"], w["w_incorrect"], "clean")
                 for s in stmts]
 
-    arms = {"hard": bel_hard, "parametric": bel_param, "guard": bel_soft}
+    arms = {"hard": bel_hard, "parametric": bel_param, "clean": bel_soft}
     metrics = {name: c1.metric_block(scores, labels) for name, scores in arms.items()}
 
-    # err-F1 (lead leg) on the belief threshold, hard vs soft, + bootstrap CIs.
-    boot = bootstrap_errf1(bel_hard, bel_soft, labels, TAU_PRIMARY)
+    # err-F1 (lead leg) at each arm's OWN optimal threshold (the clean weight
+    # shifts the belief scale; a fixed cutoff is no longer comparable), + bootstrap.
+    tau_h, _ = best_tau(bel_hard, labels)
+    tau_s, _ = best_tau(bel_soft, labels)
+    boot = bootstrap_errf1(bel_hard, bel_soft, labels, tau_h, tau_s)
     sweep = {
         f"{tau}": {"hard": err_f1(bel_hard, labels, tau),
                    "soft": err_f1(bel_soft, labels, tau)}
@@ -137,15 +163,15 @@ def gate(ev) -> dict:
     """The four-leg G2 gate, per reader. E4 identity is asserted by the test suite
     (reported here as an external green dependency, not recomputed)."""
     hard = ev["metrics"]["hard"]
-    guard = ev["metrics"]["guard"]
+    clean = ev["metrics"]["clean"]
     boot = ev["errf1_boot"]
-    ece_pass = bool(guard["ece"] < hard["ece"])
-    auroc_pass = bool(guard["auroc"] >= hard["auroc"] - EPS)
+    ece_pass = bool(clean["ece"] < hard["ece"])
+    auroc_pass = bool(clean["auroc"] >= hard["auroc"] - EPS)
     # Non-inferiority: lower 95% bound of ΔerrF1 must clear -NOISE_FLOOR.
     errf1_pass = bool(boot["ci_delta"][0] >= -NOISE_FLOOR)
     return {
-        "ece": {"pass": ece_pass, "hard": hard["ece"], "soft": guard["ece"]},
-        "auroc": {"pass": auroc_pass, "hard": hard["auroc"], "soft": guard["auroc"]},
+        "ece": {"pass": ece_pass, "hard": hard["ece"], "soft": clean["ece"]},
+        "auroc": {"pass": auroc_pass, "hard": hard["auroc"], "soft": clean["auroc"]},
         "errf1": {"pass": errf1_pass, "hard": boot["f1_hard"], "soft": boot["f1_soft"],
                   "delta": boot["delta"], "ci_delta": boot["ci_delta"],
                   "noise_floor": NOISE_FLOOR},
@@ -167,8 +193,10 @@ def render(results) -> str:
     e("")
     e("The lead leg — **error-detection F1 with bootstrap CIs** — plus the consolidated "
       "G2 verdict. A DETERMINISTIC recompute of belief from the stored holdout_cc verdicts "
-      "(no new LLM spend). err-F1 is measured on a BELIEF threshold (positive class = error, "
-      f"pred_error = belief < τ, primary τ={TAU_PRIMARY}); the production `verdict_statement` "
+      "(no new LLM spend). The soft arm is the adopted **clean** form. err-F1 is measured on a "
+      "BELIEF threshold (positive class = error, pred_error = belief < τ*, where τ* is EACH "
+      "arm's own optimal threshold over TAU_GRID — the clean weight shifts the belief scale, "
+      "so a fixed 0.5 cutoff is not comparable across arms); the production `verdict_statement` "
       "is tier-driven and untouched by the soft weight, so measuring err-F1 on it would be "
       "vacuous. ECE + AUROC legs confirmed in C1.2 (`calibration_confirm.md`); E4 byte-identity "
       "green in `tests/test_soft_belief.py`. Generated by `scripts/calibration_ship_gate.py`.")
@@ -223,13 +251,14 @@ def render(results) -> str:
               f"{_fmt(mm['brier'])} | {_fmt(mm['resolution'])} |")
         e("")
         b = ev["errf1_boot"]
-        e(f"### Error-detection F1 (LEAD leg) — belief threshold τ={TAU_PRIMARY}, "
+        e(f"### Error-detection F1 (LEAD leg) — each arm at its own optimal threshold "
+          f"(hard τ*={b['tau_hard']}, clean τ*={b['tau_soft']}), "
           f"{N_BOOT} bootstrap resamples (seed {BOOT_SEED})")
         e("")
         e("| arm | err-F1 | 95% CI |")
         e("|---|---|---|")
         e(f"| hard | {_fmt(b['f1_hard'])} | [{_fmt(b['ci_hard'][0])}, {_fmt(b['ci_hard'][1])}] |")
-        e(f"| soft (guard) | {_fmt(b['f1_soft'])} | [{_fmt(b['ci_soft'][0])}, {_fmt(b['ci_soft'][1])}] |")
+        e(f"| soft (clean) | {_fmt(b['f1_soft'])} | [{_fmt(b['ci_soft'][0])}, {_fmt(b['ci_soft'][1])}] |")
         e(f"| **Δ (soft−hard)** | {_fmt(b['delta'])} | [{_fmt(b['ci_delta'][0])}, {_fmt(b['ci_delta'][1])}] |")
         e("")
         e(f"Non-inferiority: lower 95% bound {_fmt(b['ci_delta'][0])} "

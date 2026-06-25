@@ -54,7 +54,7 @@ def test_default_is_hard_gate():
 
 # ── soft path reproduces the validated reference (scripts/calibration_stage1) ──
 
-@pytest.mark.parametrize("variant", ["guard", "replace"])
+@pytest.mark.parametrize("variant", ["clean", "guard", "replace"])
 def test_soft_matches_stage1_reference(variant):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
     import calibration_stage1 as c1  # noqa: E402
@@ -111,7 +111,7 @@ def test_contradiction_forwards_soft_kwargs():
 def test_calibration_resolver():
     from indra_belief.calibration_constants import calibration_for
     assert calibration_for("remote-gemma-4-26b")["w_correct"] == 0.183
-    assert calibration_for("gemma-26B")["variant"] == "guard"
+    assert calibration_for("gemma-26B")["variant"] == "clean"
     assert calibration_for("local-gemma-4-26b")["w_correct"] == 0.183          # 26B weights inherit
     assert calibration_for("google-gemma-4-26b")["w_correct"] == 0.183   # 26B weights inherit
     assert calibration_for("remote-medpsy-4b")["w_correct"] == 0.243
@@ -135,16 +135,38 @@ def _ev(source_api, verdict, **kw):
 
 def test_statement_belief_soft_lifts_confirmed_single_read():
     """A gemma-confirmed single reach read: hard gives 1-(0.05+0.462)=0.488; the
-    calibrated soft weight gives 1-(0.05+min(0.183,0.462))=0.767, near its true
-    ~82% reliability — the single-evidence calibration fix."""
+    adopted 'clean' soft weight gives 1 - min(0.183, 0.05+0.462) = 1-0.183 = 0.817,
+    which IS the measured P(correct | confirmed gemma read) — self-calibrating at
+    n=1 (the legacy 'guard' form gave 0.767, ~syst under-confident)."""
     from indra_belief.statement_belief import statement_belief
     from indra_belief.calibration_constants import calibration_for
     rows = [_ev("reach", "correct", evidence_text="a")]
     hard = statement_belief(rows, RECALIBRATED_PRIORS).belief
     soft = statement_belief(rows, RECALIBRATED_PRIORS, soft=calibration_for("remote-gemma-4-26b")).belief
     assert math.isclose(hard, 0.488, abs_tol=1e-3)
-    assert math.isclose(soft, 0.767, abs_tol=1e-3)
+    assert math.isclose(soft, 0.817, abs_tol=1e-3)
     assert soft > hard
+
+
+def test_clean_is_self_calibrating_at_n1():
+    """The clean variant's defining property: a single-read belief equals the
+    empirical 1 - P(read wrong | verdict). Confirmed -> 1-w_correct, rejected ->
+    1-w_incorrect, for any source noisier than the verdict rate (reach)."""
+    confirmed = _soft([{"source_api": "reach", "verdict": "correct"}], variant="clean").belief
+    rejected = _soft([{"source_api": "reach", "verdict": "incorrect"}], variant="clean").belief
+    assert math.isclose(confirmed, 1 - W_CORRECT, abs_tol=1e-9)
+    assert math.isclose(rejected, 1 - W_INCORRECT, abs_tol=1e-9)
+
+
+def test_clean_drops_the_syst_double_count():
+    """clean belief > guard belief on a confirmed read by exactly the syst the
+    guard form added back on top (the de-confliction), and clean needs no clamp."""
+    ev = [{"source_api": "reach", "verdict": "correct"}]
+    clean = _soft(ev, variant="clean").belief
+    guard = _soft(ev, variant="guard").belief
+    assert clean > guard
+    # reach syst = 0.05; guard factor = 0.05 + 0.183, clean factor = 0.183
+    assert math.isclose(clean - guard, 0.05, abs_tol=1e-9)
 
 
 def test_statement_belief_soft_preserves_undefined_contract():

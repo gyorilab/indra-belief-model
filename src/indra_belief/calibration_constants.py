@@ -1,18 +1,30 @@
 """Per-reader soft-survival-weight constants (calibration C2 / E5).
 
-Fitted on eval_curation_v1 (n=1606, balanced), verified in
-``research/calibration_task_hypergraph.md``:
+Two numbers per reader, each a plain conditional wrong-rate (intuitive by design):
 
-    w_correct   = rand_corr        = P(read wrong | verdict=correct)
-    w_incorrect = 1 - rand_rej     = P(read wrong | verdict=incorrect)
-    variant     = guard            (confirmation can only lower a read's error,
-                                    rejection only raise it — the C1 form that
-                                    beat the hard gate without flattening)
+    w_correct   = P(read wrong | verdict=correct)    # confirmed-but-wrong rate
+    w_incorrect = P(read wrong | verdict=incorrect)   # rejected-and-indeed-wrong rate
+    variant     = clean
+
+Fitted on eval_curation_v1 (n=1606, balanced); see
+``research/calibration_task_hypergraph.md``. ``w_incorrect`` is stored as
+``1 - rand_rej`` only because the fit reports ``rand_rej = P(correct|incorrect)``;
+the value IS the per-read wrong-rate.
+
+The ``clean`` variant (adopted, ``noise_model._soft_gated_belief``) uses these
+directly as per-read wrong-rates in INDRA's noisy-OR: a source's factor is the
+geometric mean of its reads' rates (no additive ``syst``, no clamp). This is
+self-calibrating at n=1 — a single confirmed gemma read gives belief
+``1 - 0.183 = 0.817`` = the measured P(correct | confirmed gemma read). The older
+``guard`` form added ``syst`` on top, leaving belief ~``syst`` under-confident
+(0.767); ``clean`` removes that double-count and de-conflates syst/rand.
 
 A source's repeated reads are correlated (same reader), so they don't compound —
-a source contributes one aggregate per-read wrong-rate (the geometric mean of its
-reads' ``w``). This was confirmed on the held-out ``holdout_cc`` and is baked into
-the model directly; there is NO correlation-exponent parameter.
+the geometric mean is the source's single aggregate per-read rate (the κ=0
+finding, confirmed on the held-out ``holdout_cc``); there is NO correlation
+exponent. Because ``clean`` shifts the belief scale, the error-detection
+threshold must be derived per reader (see ``calibration_ship_gate``), never
+hardcoded to 0.5.
 
 These are the ONLY hardcoded calibration numbers; they are resolved per run by
 the reader's model name and baked into that run's export (they travel with the
@@ -22,11 +34,11 @@ resolves to None, and the caller stays on the hard gate.
 from __future__ import annotations
 
 # reader family -> fitted soft-weight pair. rand_corr / rand_rej anchors:
-#   gemma-26B : rand_corr 0.183, rand_rej 0.131
-#   medpsy-4B : rand_corr 0.243, rand_rej 0.127
+#   gemma-26B : w_correct (rand_corr) 0.183, rand_rej 0.131
+#   medpsy-4B : w_correct (rand_corr) 0.243, rand_rej 0.127
 _CALIBRATION: dict[str, dict] = {
-    "gemma": {"w_correct": 0.183, "w_incorrect": 1 - 0.131, "variant": "guard"},
-    "medpsy": {"w_correct": 0.243, "w_incorrect": 1 - 0.127, "variant": "guard"},
+    "gemma": {"w_correct": 0.183, "w_incorrect": 1 - 0.131, "variant": "clean"},
+    "medpsy": {"w_correct": 0.243, "w_incorrect": 1 - 0.127, "variant": "clean"},
 }
 
 

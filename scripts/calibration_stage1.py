@@ -117,15 +117,24 @@ def fit_weights(train_stmts) -> dict:
             "cells": {"cc": cc, "ci": ci, "ic": ic, "ii": ii}}
 
 
-def soft_belief(evidence, w_correct, w_incorrect, variant="guard", priors=PRIORS) -> float:
+def soft_belief(evidence, w_correct, w_incorrect, variant="clean", priors=PRIORS) -> float:
     by_source: dict[str, list[float]] = defaultdict(list)
     syst_of: dict[str, float] = {}
     for ev in evidence:
         src = (ev["source_api"] or "").lower()
         rand_s, syst_s = priors.get(src, _DEFAULT_PRIOR)
         syst_of[src] = syst_s
+        base_s = min(1.0, syst_s + rand_s)  # INDRA single-read per-read wrong rate
         v = ev["verdict"]
-        if v == "correct":
+        if variant == "clean":
+            # per-read-rate space: syst folded into base, no additive syst, no clamp
+            if v == "correct":
+                w = min(w_correct, base_s)
+            elif v == "incorrect":
+                w = w_incorrect
+            else:
+                w = base_s
+        elif v == "correct":
             w = w_correct if variant == "replace" else min(w_correct, rand_s)
         elif v == "incorrect":
             w = w_incorrect if variant == "replace" else max(w_incorrect, rand_s)
@@ -136,7 +145,7 @@ def soft_belief(evidence, w_correct, w_incorrect, variant="guard", priors=PRIORS
     for src, ws in by_source.items():
         n = len(ws)
         geomean = math.exp(sum(math.log(w) for w in ws) / n)
-        f_s = min(1.0, syst_of[src] + geomean)
+        f_s = geomean if variant == "clean" else min(1.0, syst_of[src] + geomean)
         p_inc *= f_s
     return max(0.0, min(1.0, 1.0 - p_inc))
 

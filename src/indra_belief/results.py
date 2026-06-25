@@ -483,7 +483,7 @@ def build_run_metrics(
                                 "calibration arc → cross-checks calibration_ship_gate)"),
         "soft_calibration": (
             {"status": "available", "w_correct": soft["w_correct"],
-             "w_incorrect": soft["w_incorrect"], "variant": soft.get("variant", "guard")}
+             "w_incorrect": soft["w_incorrect"], "variant": soft.get("variant", "clean")}
             if soft else {"status": "unavailable"}),
         "definitions": ("ece/BINS_8/confusion_metrics + auroc/auprc/brier_murphy/"
                         "reliability_bins all from src/indra_belief/metrics.py"),

@@ -202,7 +202,7 @@ def statement_belief(
             res = compute_gated_belief(
                 gated, priors, soft_weights=True,
                 w_correct=soft["w_correct"], w_incorrect=soft["w_incorrect"],
-                variant=soft.get("variant", "guard"),
+                variant=soft.get("variant", "clean"),
             )
         else:
             res = compute_gated_belief(gated, priors)

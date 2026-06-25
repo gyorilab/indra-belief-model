@@ -252,9 +252,18 @@ def _soft_gated_belief(
     sources multiply (the product below). Mirrors
     ``scripts/calibration_stage1.soft_belief`` — the holdout-confirmed form.
 
-    ``variant='guard'`` clamps the weight so a confirmation can only *lower* a
-    read's error (``min(w_correct, rand_s)``) and a rejection only *raise* it
-    (``max(w_incorrect, rand_s)``); ``'replace'`` uses the pooled per-verdict rate.
+    ``variant='clean'`` (the adopted form) drops the additive ``syst`` and the
+    overflow clamp on scored reads: it works in per-read-rate space where each
+    read's wrong-rate is ``min(w_correct, base_s)`` / ``w_incorrect`` / ``base_s``
+    with ``base_s = syst_s + rand_s``, and the source factor is just the geomean.
+    This de-conflates syst/rand (no overlapping floors) and is self-calibrating at
+    n=1 (belief = 1 - w_verdict = empirical P(correct|verdict)).
+    ``variant='guard'`` (legacy) clamps the weight so a confirmation can only
+    *lower* a read's error (``min(w_correct, rand_s)``) and a rejection only
+    *raise* it (``max(w_incorrect, rand_s)``), then adds ``syst`` back
+    (``syst + geomean``) — which double-counts the systematic floor and leaves the
+    belief ~``syst`` under-confident; ``'replace'`` uses the pooled per-verdict
+    rate. ``clean`` is what the fitted constants resolve to.
     """
     if w_correct is None or w_incorrect is None:
         raise ValueError(
@@ -271,8 +280,24 @@ def _soft_gated_belief(
             )
         src = src_raw.lower()
         rand_s, syst_s = priors.get(src, _DEFAULT_PRIOR)
+        # base_s = INDRA's single-read per-read wrong rate (syst + rand). The
+        # 'clean' variant works in this per-read-rate space: syst is folded into
+        # the unscored base, NOT added a second time on top of the verdict rate.
+        base_s = min(1.0, syst_s + rand_s)
         v = ev.get("verdict")
-        if v == "correct":
+        if variant == "clean":
+            # Source-scoped, verdict-conditioned per-read wrong rate. No additive
+            # syst, no clamp. Confirmation helps only sources noisier than the
+            # confirm-rate (min vs base_s); rejection sets the source-independent
+            # reject-rate; unscored reads keep the source's own base rate. At n=1
+            # this gives belief = 1 - w_verdict = the empirical P(correct|verdict).
+            if v == "correct":
+                w = min(w_correct, base_s)
+            elif v == "incorrect":
+                w = w_incorrect
+            else:
+                w = base_s
+        elif v == "correct":
             w = w_correct if variant == "replace" else min(w_correct, rand_s)
         elif v == "incorrect":
             w = w_incorrect if variant == "replace" else max(w_incorrect, rand_s)
@@ -308,7 +333,10 @@ def _soft_gated_belief(
         n_total += d["total"]
         n_surviving += d["n_included"]
         geomean = math.exp(sum(math.log(w) for w in ws) / n)
-        factor = min(1.0, d["syst"] + geomean)
+        # 'clean': syst is already inside base_s (per-read space) so it is NOT
+        # added again — the factor IS the geomean of per-read rates, provably in
+        # (0,1] (no overflow, no clamp). guard/replace keep the additive form.
+        factor = geomean if variant == "clean" else min(1.0, d["syst"] + geomean)
         p_incorrect *= factor
         breakdowns.append(SourceBreakdown(
             source=src, n_total=d["total"], n_surviving=d["n_included"],
@@ -330,7 +358,7 @@ def compute_gated_belief(
     soft_weights: bool = False,
     w_correct: float | None = None,
     w_incorrect: float | None = None,
-    variant: str = "guard",
+    variant: str = "clean",
 ) -> GatedBeliefResult:
     """Compute belief with per-evidence gating from LLM verdicts.
 
@@ -353,7 +381,8 @@ def compute_gated_belief(
             False = today's hard gate, byte-identical.
         w_correct, w_incorrect: per-read wrong-rates P(read wrong | verdict),
             required when soft_weights=True.
-        variant: 'guard' (default) | 'replace' (soft path only).
+        variant: 'clean' (adopted; the fitted constants resolve to it) |
+            'guard' (legacy additive form) | 'replace' (soft path only).
 
     Returns:
         GatedBeliefResult with belief, parametric-only, and per-source breakdown.
@@ -448,7 +477,7 @@ def compute_gated_belief_with_contradiction(
     soft_weights: bool = False,
     w_correct: float | None = None,
     w_incorrect: float | None = None,
-    variant: str = "guard",
+    variant: str = "clean",
 ) -> tuple[GatedBeliefResult, str, bool]:
     """Compute gated belief with contradiction penalty across regulation directions.
 
