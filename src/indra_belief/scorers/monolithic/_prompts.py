@@ -106,12 +106,14 @@ CONTRASTIVE_EXAMPLES = [
         "evidence": "RAGE blockade reduced MMP-2 activity to control level.",
         "verdict": "correct", "confidence": "high",
         "reason": "Logical inversion: blocking RAGE reduces MMP-2 activity, so RAGE activates MMP-2.",
+        "considered": "wrong-direction: blocking RAGE REDUCES MMP-2 activity reads as RAGE inhibiting MMP-2 — but by inverse inference, blockade lowering the target means RAGE activates it, so this objection does not stand.",
     },
     {
         "claim": "TP53 [Inhibition] MDM2",
         "evidence": "TP53 knockdown increased MDM2 protein levels in these cells.",
         "verdict": "correct", "confidence": "high",
         "reason": "Logical inversion: knockdown of TP53 increases MDM2, so TP53 normally decreases MDM2.",
+        "considered": "wrong-direction: TP53 knockdown RAISES MDM2, which looks like TP53 increasing it — but by inverse inference, knockdown raising the target means TP53 normally decreases MDM2, so this objection does not stand.",
     },
 
     # --- Pair 4: Hedging scope — same word "could", opposite scope ---
@@ -120,6 +122,7 @@ CONTRASTIVE_EXAMPLES = [
         "evidence": "However, we found that the cyclophilin Cyp-40 could interact with c-Myb to inhibit its DNA binding activity.",
         "verdict": "correct", "confidence": "high",
         "reason": "'we found that...could interact' reports a discovered result. 'Could' scopes over the consequence (inhibiting DNA binding), not the interaction itself.",
+        "considered": "hypothesis-only: the word 'could' appears — but here it scopes the consequence (inhibiting DNA binding), not the interaction, which 'we found' reports as a result, so this objection does not stand.",
     },
     {
         "claim": "MYB + PPID [Complex]",

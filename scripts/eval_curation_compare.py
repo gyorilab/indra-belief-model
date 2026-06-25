@@ -26,6 +26,8 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -33,6 +35,96 @@ from indra_belief.curation import is_gold_correct  # noqa: E402
 from indra_belief.metrics import confusion_pr, ece  # noqa: E402
 
 MASK = (1 << 64) - 1
+
+# Bootstrap/permutation conventions, shared with calibration_ship_gate.bootstrap_errf1.
+N_BOOT = 2000
+N_PERM = 2000
+BOOT_SEED = 0
+# medpsy-4B Arm A run-to-run err-F1 spread observed at n=60 (entity-reading pilot).
+# A between-model ΔerrF1 smaller than this is below the *small-sample* single-model
+# noise band — which is precisely why model comparisons are made at n=1606, where the
+# paired CI/permutation test below resolves effects the n=60 spread would have buried.
+NOISE_FLOOR = 0.154
+
+
+def _errf1_from_pairs(gold_err, pred_err) -> float:
+    """Error-detection F1 over arrays of (gold_error, pred_error) booleans.
+
+    Positive class = curator-flagged INCORRECT. Same definition confusion_pr
+    consumes in model_block (ed_pairs), so the POINT estimate computed over the
+    full keyset equals the f1 already emitted there.
+    """
+    return confusion_pr(list(zip([bool(x) for x in gold_err],
+                                 [bool(x) for x in pred_err])))["f1"]
+
+
+def bootstrap_errf1(gold_err, pred_err_a, pred_err_b,
+                    n_boot=N_BOOT, seed=BOOT_SEED) -> dict:
+    """Paired percentile bootstrap over the SHARED keyset for err-F1(A), err-F1(B),
+    and ΔerrF1 = B − A.
+
+    Mirrors calibration_ship_gate.bootstrap_errf1's structure but over the
+    verdict-grain error-detection pairs: each statement carries one gold-error
+    label and one pred-error per model; a resample picks statements (paired, so
+    A and B see the same draw) and recomputes all three. Percentiles are 2.5/97.5.
+    The POINT estimates returned are the full-keyset values (unchanged).
+    """
+    ge = np.asarray(gold_err, bool)
+    pa = np.asarray(pred_err_a, bool)
+    pb = np.asarray(pred_err_b, bool)
+    n = len(ge)
+    rng = np.random.default_rng(seed)
+    f_a = np.empty(n_boot)
+    f_b = np.empty(n_boot)
+    f_d = np.empty(n_boot)
+    for i in range(n_boot):
+        idx = rng.integers(0, n, n)
+        ge_b = ge[idx]
+        fa = _errf1_from_pairs(ge_b, pa[idx])
+        fb = _errf1_from_pairs(ge_b, pb[idx])
+        f_a[i] = fa
+        f_b[i] = fb
+        f_d[i] = fb - fa
+
+    def ci(a):
+        return [float(np.percentile(a, 2.5)), float(np.percentile(a, 97.5))]
+
+    return {
+        "f1_a": _errf1_from_pairs(ge, pa),
+        "f1_b": _errf1_from_pairs(ge, pb),
+        "delta": _errf1_from_pairs(ge, pb) - _errf1_from_pairs(ge, pa),
+        "ci_a": ci(f_a),
+        "ci_b": ci(f_b),
+        "ci_delta": ci(f_d),
+        "n": n,
+    }
+
+
+def permutation_errf1(gold_err, pred_err_a, pred_err_b,
+                      n_perm=N_PERM, seed=BOOT_SEED) -> float:
+    """Paired permutation p-value on |ΔerrF1| over the shared keyset.
+
+    On each permutation, randomly swap the A/B pred-error labels per statement
+    (exchangeability under H0: the two models are interchangeable), recompute
+    |ΔerrF1| = |errF1(B') − errF1(A')|, and return the fraction of permuted |Δ|
+    that meet or exceed the observed |Δ|. p is always in [0, 1].
+    """
+    ge = np.asarray(gold_err, bool)
+    pa = np.asarray(pred_err_a, bool)
+    pb = np.asarray(pred_err_b, bool)
+    n = len(ge)
+    obs = abs(_errf1_from_pairs(ge, pb) - _errf1_from_pairs(ge, pa))
+    rng = np.random.default_rng(seed)
+    ge_dummy = ge  # gold labels are fixed under the swap
+    hits = 0
+    for _ in range(n_perm):
+        swap = rng.integers(0, 2, n).astype(bool)
+        pa_p = np.where(swap, pb, pa)
+        pb_p = np.where(swap, pa, pb)
+        d = abs(_errf1_from_pairs(ge_dummy, pb_p) - _errf1_from_pairs(ge_dummy, pa_p))
+        if d >= obs:
+            hits += 1
+    return hits / n_perm
 
 
 def umask(x) -> int:
@@ -185,6 +277,14 @@ def main() -> int:
                 aibc.append(rec)
     p = mcnemar_p(a_only, b_only)
 
+    # Paired err-F1 inference over the SAME shared keyset McNemar uses.
+    # positive class = curator-flagged INCORRECT; pred = verdict == 'incorrect'.
+    gold_err = [not is_gold_correct(by_pair[k]["tag"]) for k in shared]
+    a_perr = [Akv[k]["verdict"] == "incorrect" for k in shared]
+    b_perr = [Bkv[k]["verdict"] == "incorrect" for k in shared]
+    errf1_boot = (bootstrap_errf1(gold_err, a_perr, b_perr) if shared else None)
+    errf1_perm = (permutation_errf1(gold_err, a_perr, b_perr) if shared else None)
+
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as out:
@@ -204,13 +304,40 @@ def main() -> int:
         emit(out, "")
 
         emit(out, "## Error detection (positive class = curator-flagged INCORRECT)")
-        emit(out, "| model | precision | recall | F1 | TP | FP | FN | TN |")
-        emit(out, "|---|---|---|---|---|---|---|---|")
-        for M in (A, B):
+        # LEAD: paired ΔerrF1 95% CI + permutation p over the shared keyset.
+        if errf1_boot is not None:
+            d = errf1_boot["delta"]; cd = errf1_boot["ci_delta"]
+            sig = "significant" if errf1_perm < 0.05 else "not significant"
+            direction = (f"{B['name']}" if d > 0 else f"{A['name']}") if d != 0 else "tie"
+            emit(out, f"**ΔerrF1 ({B['name']} − {A['name']}) = {d:+.3f}  "
+                      f"[95% CI {cd[0]:+.3f}, {cd[1]:+.3f}]  "
+                      f"(paired bootstrap, {N_BOOT} resamples, seed {BOOT_SEED}; "
+                      f"n={errf1_boot['n']} shared)**")
+            emit(out, f"**Permutation p (err-F1, two-sided, {N_PERM} perms) = {errf1_perm:.4f}  "
+                      f"({sig} at α=0.05; favors {direction})** — this is the PRIMARY paired test.")
+            vs_floor = ("below" if abs(d) < NOISE_FLOOR else "above")
+            emit(out, f"_Context: |ΔerrF1| = {abs(d):.3f} is {vs_floor} the n=60 single-model "
+                      f"run-to-run spread (NOISE_FLOOR = {NOISE_FLOOR:.3f}, medpsy-4B Arm A). "
+                      f"A gap can be {vs_floor} that small-sample floor yet still {sig} here, "
+                      f"because the paired test is at n={errf1_boot['n']} — situate the effect "
+                      f"against the CI, not the n=60 band._")
+            emit(out, "")
+        emit(out, "| model | precision | recall | F1 | F1 95% CI (paired n) | TP | FP | FN | TN |")
+        emit(out, "|---|---|---|---|---|---|---|---|---|")
+        for M, ci_key in ((A, "ci_a"), (B, "ci_b")):
             e = M["ed"]
-            emit(out, f"| {M['name']} | {e['p']:.3f} | {e['r']:.3f} | **{e['f1']:.3f}** | "
+            if errf1_boot is not None:
+                lo, hi = errf1_boot[ci_key]
+                ci_cell = f"[{lo:.3f}, {hi:.3f}]"
+            else:
+                ci_cell = "—"
+            emit(out, f"| {M['name']} | {e['p']:.3f} | {e['r']:.3f} | **{e['f1']:.3f}** | {ci_cell} | "
                       f"{e['tp']} | {e['fp']} | {e['fn']} | {e['tn']} |")
-        emit(out, "\n_Recall = fraction of real errors caught; precision = of flagged, how many were truly wrong._\n")
+        emit(out, "\n_Recall = fraction of real errors caught; precision = of flagged, how many were truly wrong._")
+        emit(out, "_F1 point estimate is over each model's full join; the 95% CI (and the "
+                  "ΔerrF1/permutation test above) are over the shared paired keyset, so the F1 "
+                  "the CI brackets is the paired-subset value, which can differ slightly from the "
+                  "full-join point._\n")
 
         emit(out, "## Calibration (ECE, 8-bin)")
         for M in (A, B):
@@ -242,7 +369,10 @@ def main() -> int:
                  if an and bn else f"| {t} | {max(an,bn)} | — | — |")
         emit(out, "")
 
-        emit(out, "## Paired comparison (McNemar)")
+        emit(out, "## Paired comparison (McNemar on accuracy — SECONDARY)")
+        emit(out, "_Lead with the paired ΔerrF1 CI + permutation p in the Error-detection "
+                  "section above; this McNemar-on-accuracy test is reported as the secondary "
+                  "paired check._")
         emit(out, f"- both right: {both_r}   both wrong: {both_w}")
         emit(out, f"- {A['name']} right & {B['name']} wrong (b): **{a_only}**")
         emit(out, f"- {B['name']} right & {A['name']} wrong (c): **{b_only}**")
@@ -268,7 +398,12 @@ def main() -> int:
     # console headline
     print(f"\n{A['name']}: acc {A['acc']:.1%}  error-F1 {A['ed']['f1']:.3f}  ECE {A['ece']:.3f}")
     print(f"{B['name']}: acc {B['acc']:.1%}  error-F1 {B['ed']['f1']:.3f}  ECE {B['ece']:.3f}")
-    print(f"McNemar p={p:.4f}  (b={a_only} {A['name']}-only, c={b_only} {B['name']}-only)")
+    if errf1_boot is not None:
+        cd = errf1_boot["ci_delta"]
+        print(f"ΔerrF1 ({B['name']}−{A['name']})={errf1_boot['delta']:+.3f} "
+              f"[95% CI {cd[0]:+.3f},{cd[1]:+.3f}]  permutation p={errf1_perm:.4f}  "
+              f"(PRIMARY; n={errf1_boot['n']} shared)")
+    print(f"McNemar p={p:.4f}  (b={a_only} {A['name']}-only, c={b_only} {B['name']}-only)  [secondary]")
     return 0
 
 

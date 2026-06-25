@@ -56,13 +56,35 @@ def _short(s: str, n: int = 80) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+class SourceImportError(RuntimeError):
+    """A declared fewshot source could not be imported.
+
+    This is distinct from a source that imports fine but is legitimately
+    empty. An import failure means the contamination scan is BLIND to a
+    source the model actually sees — it must fail loudly, never silently
+    contribute zero examples (the bug that let a wrong module path go
+    unnoticed because the ModuleNotFoundError was swallowed)."""
+
+
 def _load_legacy_examples() -> list[dict]:
-    """Sources 1 + 2: legacy CONTRASTIVE_EXAMPLES + example_bank."""
+    """Sources 1 + 2: legacy CONTRASTIVE_EXAMPLES + example_bank.
+
+    The CONTRASTIVE_EXAMPLES import is intentionally NOT wrapped in a
+    swallowing try/except: if the module path is wrong, we want a loud
+    failure, not a silently empty source. A source that imports but is
+    genuinely empty (e.g. CONTRASTIVE_EXAMPLES == []) is tolerated.
+    """
     out = []
     try:
-        from indra_belief.scorers._prompts import CONTRASTIVE_EXAMPLES
-    except Exception:
-        CONTRASTIVE_EXAMPLES = []
+        from indra_belief.scorers.monolithic._prompts import (
+            CONTRASTIVE_EXAMPLES,
+        )
+    except ImportError as e:  # import failed → fail loudly, do not swallow
+        raise SourceImportError(
+            "Source 1 (CONTRASTIVE_EXAMPLES) could not be imported from "
+            "indra_belief.scorers.monolithic._prompts — the contamination "
+            f"scan would be blind to it. Original error: {e}"
+        ) from e
     for ex in CONTRASTIVE_EXAMPLES:
         out.append({"source": "CONTRASTIVE_EXAMPLES",
                     "claim": ex.get("claim", ""),
@@ -96,9 +118,13 @@ def _load_probe_fewshots() -> list[dict]:
                 f"indra_belief.scorers.probes.{probe_name}",
                 fromlist=["_FEW_SHOTS"],
             )
-            shots = getattr(mod, "_FEW_SHOTS", [])
-        except Exception:
-            continue
+        except ImportError as e:  # import failed → fail loudly
+            raise SourceImportError(
+                f"Source 3 probe module probes.{probe_name} could not be "
+                f"imported — contamination scan would miss its few-shots. "
+                f"Original error: {e}"
+            ) from e
+        shots = getattr(mod, "_FEW_SHOTS", [])  # missing attr → tolerated
         for user_msg, _assistant_json in shots:
             # The "evidence" in a probe shot is the EVIDENCE: line of
             # the user message (the few-shot's exemplar text).
@@ -135,9 +161,13 @@ def _load_prompt_inline_examples() -> list[dict]:
                 f"indra_belief.scorers.probes.{probe_name}",
                 fromlist=["_SYSTEM_PROMPT"],
             )
-            sysprompt = getattr(mod, "_SYSTEM_PROMPT", "")
-        except Exception:
-            continue
+        except ImportError as e:  # import failed → fail loudly
+            raise SourceImportError(
+                f"Source 4 probe module probes.{probe_name} could not be "
+                f"imported — contamination scan would miss its inline "
+                f"examples. Original error: {e}"
+            ) from e
+        sysprompt = getattr(mod, "_SYSTEM_PROMPT", "")  # missing attr → tolerated
         for m in _INLINE_EXAMPLE.finditer(sysprompt):
             text = m.group(1).strip()
             out.append({"source": f"probes.{probe_name}._SYSTEM_PROMPT (inline)",
@@ -355,7 +385,11 @@ def main():
                                     / "holdout_large.jsonl"))
     args = parser.parse_args()
 
-    examples = load_all_examples()
+    try:
+        examples = load_all_examples()
+    except SourceImportError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
     paths = _default_eval_paths(args.holdout)
 
     # Source breakdown for the report
