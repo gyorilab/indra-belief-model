@@ -219,6 +219,20 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 32000,         # CoT + answer share the budget
         "timeout": 600,
     },
+    # Reasoning-isolation twin of bedrock-gemma-4-26b: identical full-precision
+    # serving, reasoning_effort="none" (no reasoning item) — to de-confound the
+    # +0.025 gap into reasoning-mode vs quant vs width. Compare to the high run.
+    "bedrock-gemma-4-26b-noreason": {
+        "backend": "bedrock_responses",
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+        "model_id": "google.gemma-4-26b-a4b",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "reasoning_in_content": False,
+        "reasoning_effort": "none",
+        "typical_tokens": 400,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
     # ── AWS Bedrock mantle — additional open-weight models on the /v1 route ──
     # Verified 2026-06-19 with AWS_BEARER_TOKEN_BEDROCK: each returns 200 on
     # `.../api.aws/v1/chat/completions` and 400 "isn't supported on this route"
