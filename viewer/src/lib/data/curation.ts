@@ -15,6 +15,25 @@ import type { CurationRow, GoldVerdict, EvidenceRow } from './types';
 /** The one tag denoting a correct extraction. Everything else is "incorrect". */
 export const CORRECT_TAG = 'correct';
 
+/** Every curation tag the INDRA DB accepts — the twin of curation.py's
+ *  CURATION_TAGS, in the same order. Exactly one ("correct") means the reader's
+ *  extraction is supported; each of the rest names a way it is wrong. Used by the
+ *  /curate page to offer the curator a tag. */
+export const CURATION_TAGS: readonly string[] = [
+	'correct',
+	'no_relation',
+	'wrong_relation',
+	'grounding',
+	'polarity',
+	'act_vs_amt',
+	'hypothesis',
+	'negative_result',
+	'entity_boundaries',
+	'agent_conditions',
+	'mod_site',
+	'other'
+];
+
 /** The gold atom: a single curation tag is correct iff it is exactly "correct". */
 export function isGoldCorrect(tag: string | null | undefined): boolean {
 	return tag === CORRECT_TAG;

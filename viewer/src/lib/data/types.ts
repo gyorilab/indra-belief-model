@@ -362,3 +362,41 @@ export interface GoldVerdict {
 	/** non-empty free-text notes. */
 	notes: string[];
 }
+
+/** A statement rendered to a human-readable subject/relation/object triple for
+ *  display on the curate page. `full` is the flat fallback string. */
+export interface Claim {
+	subject: string;
+	relation: string;
+	object: string;
+	full: string;
+}
+
+/** One (statement, evidence) pair sampled live from the INDRA DB for curation.
+ *
+ *  CRITICAL: matchesHash and sourceHash are kept as STRINGS, not numbers. INDRA
+ *  hashes are 64-bit ints that exceed Number.MAX_SAFE_INTEGER (e.g.
+ *  -2318097519188363613), so coercing them to a JS number silently corrupts the
+ *  low digits — which would curate the WRONG evidence. The INDRA REST API returns
+ *  them already quoted as strings; we preserve that all the way to submission,
+ *  where sourceHash is injected into the POST body as a bare integer literal.
+ *  (CurationRow above uses number because that read path only ever joins
+ *  same-lossy-to-same-lossy and never submits.) */
+export interface EvidenceSample {
+	/** statement pa_hash / matches_hash — exact digits as a string. */
+	matchesHash: string;
+	/** evidence source_hash — exact digits as a string. */
+	sourceHash: string;
+	/** the evidence sentence the curator judges the extraction against. */
+	text: string;
+	pmid: string | null;
+	pmcid: string | null;
+	sourceApi: string | null;
+	stmtType: string;
+	belief: number | null;
+	claim: Claim;
+	/** which agent query surfaced this statement (sampling provenance). */
+	agentQuery: string;
+	/** total evidence supporting this statement (context for the curator). */
+	evCount: number;
+}
