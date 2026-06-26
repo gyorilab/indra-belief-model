@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 
 	const path = $derived(page.url.pathname);
+	const user = $derived(page.data.user as { email: string } | null);
 
 	function isActive(prefix: string): boolean {
 		if (prefix === '/') return path === '/';
@@ -18,7 +19,14 @@
 		<li><a href="/frontier" class:active={isActive('/frontier')}>frontier</a></li>
 		<li><a href="/adjudicate" class:active={isActive('/adjudicate')}>adjudicate</a></li>
 		<li><a href="/review" class:active={isActive('/review')}>review</a></li>
+		<li><a href="/curate" class:active={isActive('/curate')}>curate</a></li>
 	</ul>
+	{#if user}
+		<form method="POST" action="/logout" class="who">
+			<span class="who-email" title={user.email}>{user.email}</span>
+			<button type="submit" class="who-out">sign out</button>
+		</form>
+	{/if}
 </nav>
 
 <style>
@@ -54,6 +62,33 @@
 	.sections a.active {
 		color: var(--ink, #1a1a1a);
 		font-weight: 500;
+	}
+	.who {
+		display: flex;
+		align-items: baseline;
+		gap: 0.6rem;
+		margin: 0;
+	}
+	.who-email {
+		color: var(--ink-faint, #727272);
+		max-width: 14rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.who-out {
+		font-family: inherit;
+		font-size: inherit;
+		color: var(--ink-muted, #6a6a6a);
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+	}
+	.who-out:hover {
+		color: var(--accent, #7d2a1a);
+		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 	@media (max-width: 720px) {
 		.site-nav {
