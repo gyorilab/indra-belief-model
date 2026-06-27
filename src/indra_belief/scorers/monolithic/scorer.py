@@ -48,9 +48,11 @@ from indra_belief.scorers.monolithic._prompts import (
     verdict_to_score,
 )
 
-# MONO_VARIANT selects the scoring prompt. Unset uses disconfirm_relnature (the
-# validated default); set MONO_VARIANT="" (or any other value) for the baseline.
-#   disconfirm_relnature disconfirm + a focused relation-nature step that rejects
+# MONO_VARIANT selects the scoring prompt. Unset uses disconfirm_relnature_rf
+# (the validated default); set MONO_VARIANT="" (or any other value) for the baseline.
+#   disconfirm_relnature_rf reasoning-first disconfirm + the relation-nature step
+#                        (the default)
+#   disconfirm_relnature base disconfirm + a focused relation-nature step that rejects
 #                        [Complex] claims whose evidence is not a direct physical bind
 #   disconfirm           commit-first prompt + structured parse + decision backstop
 #   "" / other           baseline prompt, byte-for-byte
