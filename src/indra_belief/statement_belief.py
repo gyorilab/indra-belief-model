@@ -132,10 +132,14 @@ def statement_belief(
     ``tier``; optionally ``evidence_text`` / ``evidence_hash`` (for de-dup).
 
     ``soft`` (calibration C2): when given a per-reader weight pair
-    ``{w_correct, w_incorrect, variant}`` (see ``calibration_constants``),
+    ``{w_correct, w_incorrect}`` (see ``calibration_constants``),
     the belief uses the soft survival weight instead of the hard gate — an
     incorrect read is down-weighted (residual penalty ``w_incorrect``) rather
     than source-removed. None ⇒ today's hard gate.
+
+    The canonical production per-statement belief scalar is the clean soft form
+    (``soft=calibration_for(model)``) for a fitted reader, with the hard gate
+    (``soft=None``) as the fallback for an unfitted reader.
     """
     if priors is None:
         priors = RECALIBRATED_PRIORS
@@ -202,7 +206,6 @@ def statement_belief(
             res = compute_gated_belief(
                 gated, priors, soft_weights=True,
                 w_correct=soft["w_correct"], w_incorrect=soft["w_incorrect"],
-                variant=soft.get("variant", "clean"),
             )
         else:
             res = compute_gated_belief(gated, priors)

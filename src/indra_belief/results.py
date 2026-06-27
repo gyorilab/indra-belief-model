@@ -483,7 +483,7 @@ def build_run_metrics(
                                 "calibration arc → cross-checks calibration_ship_gate)"),
         "soft_calibration": (
             {"status": "available", "w_correct": soft["w_correct"],
-             "w_incorrect": soft["w_incorrect"], "variant": soft.get("variant", "clean")}
+             "w_incorrect": soft["w_incorrect"]}
             if soft else {"status": "unavailable"}),
         "definitions": ("ece/BINS_8/confusion_metrics + auroc/auprc/brier_murphy/"
                         "reliability_bins all from src/indra_belief/metrics.py"),
@@ -905,13 +905,16 @@ def build_run_export(
         noisy_or = 1 - math.prod(1 - s for s in sc) if sc else None
         dominant = a["buckets"].most_common(1)[0][0] if a["buckets"] else None
         indra_ids = sorted(a["indra_ids"])
-        # Three-way belief (NEW; additive — never touches our_noisy_or/mean above).
-        # hard = production gated noisy-OR; parametric = ungated; soft = survival-
-        # weight recalibration (None when the reader has no fit). verdict_statement
-        # is tier-driven — the soft weight moves the scalar, not the decision.
-        sb = statement_belief(a["belief_rows"], RECALIBRATED_PRIORS)
-        soft_belief = (statement_belief(a["belief_rows"], RECALIBRATED_PRIORS, soft=calib).belief
-                       if calib else None)
+        # Canonical + three-way belief (additive — never touches our_noisy_or/mean
+        # above). The canonical `belief` is the CLEAN soft form for a fitted reader
+        # (calib non-None) and the HARD gate for an unfitted reader (calib None):
+        # sb_canon = statement_belief(..., soft=calib) is identical to the hard call
+        # when calib is None. `belief_hard` is the explicit hard comparison arm
+        # (always soft=None). `belief_soft` is the clean arm (None when unfitted —
+        # named-empty). verdict_statement is tier-driven (identical across both
+        # calls) — the soft weight moves the scalar, not the decision.
+        hard = statement_belief(a["belief_rows"], RECALIBRATED_PRIORS)
+        sb_canon = statement_belief(a["belief_rows"], RECALIBRATED_PRIORS, soft=calib)
         # Statement-grain gold (I4): any-incorrect-wins over THIS statement's
         # per-evidence gold tags (gold_map is source_hash-keyed + pre-aggregated
         # per source). None when no evidence is curated. This is the source_hash-
@@ -954,11 +957,12 @@ def build_run_export(
             "bucket_counts": dict(a["buckets"]),
             "pmids": sorted(a["pmids"]),
             "sources": sorted(a["sources"]),
-            # ── E5: three-way calibrated belief (NEW; purely additive) ─────────
-            "belief_hard": _r3(sb.belief),               # gated noisy-OR (production hard gate)
-            "belief_parametric": _r3(sb.parametric_only),  # no gating — all surviving evidence
-            "belief_soft": _r3(soft_belief),             # soft survival weight; None = no fit
-            "belief_verdict_statement": sb.verdict_statement,  # correct|review|incorrect (tier-driven)
+            # ── E5/K1: canonical + three-way calibrated belief (purely additive) ─
+            "belief": _r3(sb_canon.belief),              # CANONICAL: clean-for-fitted / hard-for-unfitted
+            "belief_hard": _r3(hard.belief),             # gated noisy-OR (explicit hard comparison arm)
+            "belief_parametric": _r3(hard.parametric_only),  # no gating — all surviving evidence
+            "belief_soft": _r3(sb_canon.belief) if calib else None,  # clean arm; None = no fit (named-empty)
+            "belief_verdict_statement": sb_canon.verdict_statement,  # correct|review|incorrect (tier-driven)
             # ── I4 + E10 (schema v7; purely additive) ──────────────────────────
             # gold_statement: aggregated statement-grain gold {verdict,n,tags} | null.
             # coherence_summary: the multi-evidence depth behind the belief (post-
@@ -971,15 +975,15 @@ def build_run_export(
                 # n_incorrect are included so the post-dedup correct/incorrect split
                 # the belief actually rests on is reconstructable, not just its
                 # credible-incorrect subset.
-                "n_dedup_groups": sb.n_dedup_groups,
-                "n_distinct_sources": sb.n_distinct_sources,
-                "n_correct": sb.n_correct,
-                "n_incorrect": sb.n_incorrect,
-                "n_no_text": sb.n_no_text,
-                "n_parse_fail": sb.n_parse_fail,
-                "n_null_source": sb.n_null_source,
-                "n_credible_incorrect_det": sb.n_credible_incorrect_det,
-                "n_credible_incorrect_llm": sb.n_credible_incorrect_llm,
+                "n_dedup_groups": sb_canon.n_dedup_groups,
+                "n_distinct_sources": sb_canon.n_distinct_sources,
+                "n_correct": sb_canon.n_correct,
+                "n_incorrect": sb_canon.n_incorrect,
+                "n_no_text": sb_canon.n_no_text,
+                "n_parse_fail": sb_canon.n_parse_fail,
+                "n_null_source": sb_canon.n_null_source,
+                "n_credible_incorrect_det": sb_canon.n_credible_incorrect_det,
+                "n_credible_incorrect_llm": sb_canon.n_credible_incorrect_llm,
             },
         })
 

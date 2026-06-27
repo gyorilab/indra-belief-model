@@ -75,7 +75,7 @@ export interface RunMeta {
 	soft_calibration?: {
 		status: 'available' | 'unavailable';
 		model: string | null;
-		soft_weights: { w_correct: number; w_incorrect: number; variant: string } | null;
+		soft_weights: { w_correct: number; w_incorrect: number } | null;
 		reason?: string;
 	};
 }
@@ -104,7 +104,10 @@ export interface StatementRollup {
 	sources: string[];
 	// ── E5/E11 three-way belief + statement gold (schema v7; optional: legacy
 	//    exports pre-v7 lack them, so the viewer narrows on presence) ───────────
-	/** Gated noisy-OR (production hard gate). */
+	/** Canonical production belief: the clean soft form for fitted readers, the
+	 *  hard gate as fallback for unfitted. The promoted production scalar. */
+	belief?: number | null;
+	/** Gated noisy-OR (always the hard gate; the comparison arm). */
 	belief_hard?: number | null;
 	/** Ungated belief — all surviving evidence counted. */
 	belief_parametric?: number | null;

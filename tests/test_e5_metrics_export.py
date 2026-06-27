@@ -289,6 +289,11 @@ def test_e5_crosscheck_ship_gate(model):
 
     # soft: matches within the frozen-constant 3-dp rounding (documented in
     # calibration_constants — the ship gate re-fits the SAME values unrounded).
+    # ARM KEY: the committed data/results/calibration_ship_gate.json is the STALE
+    # pre-clean artifact whose soft arm is keyed "guard"; the LIVE ship_gate now
+    # emits the "clean" arm. This whole test is skipped while holdout_cc gold is
+    # absent (cannot rerun the gate). When holdout_cc.jsonl returns, regenerate the
+    # JSON (`python scripts/calibration_ship_gate.py`) and switch this to sg["clean"].
     a = stmt["arms"]["soft"]
     assert a["ece"] == pytest.approx(sg["guard"]["ece"], abs=2e-4)
     assert a["auroc"] == pytest.approx(sg["guard"]["auroc"], abs=2e-3)

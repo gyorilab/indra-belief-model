@@ -447,3 +447,42 @@ def test_build_run_export_legacy_row_has_null_reasoning_trace(tmp_path):
     per_ev, _ps, meta, _m = _one_row(tmp_path, [{"finish_reason": "stop", "out_tokens": 50}])
     assert per_ev[0]["reasoning_trace"] is None
     assert meta["reasoning_quality"]["trace_status"].get("no_trace") == 1
+
+
+def _confirmed_read_export(tmp_path, model):
+    # A statement with one CONFIRMED read (verdict='correct'): on a confirmed
+    # read the clean soft form shifts the belief scale (1 - w_correct) vs the
+    # hard gate, so belief != belief_hard is observable for a fitted reader.
+    corpus = [{"matches_hash": "mh1", "id": "id1", "belief": 0.9,
+               "evidence": [{"text": "MEK phosphorylates ERK in cells.", "source_hash": 1}]}]
+    rows = [{"stmt_i": 0, "evidence_i": 0, "stmt_hash": "hc", "evidence_hash": "e0", "source_hash": 1,
+             "subject": "MAP2K1", "stmt_type": "Phosphorylation", "object": "MAPK1", "source_api": "reach",
+             "pmid": "111", "text_len": 32, "belief": 0.9, "score": 0.95, "verdict": "correct",
+             "confidence": "high", "raw_text_preview": '[TIER 2 LLM]\nYes.',
+             "grounding_status": "all_match", "tier": "llm_comprehension", "provenance_triggered": False,
+             "error": None, "latency_s": 1.0, "tokens": 50, "call_log": [{"finish_reason": "stop", "out_tokens": 50}]}]
+    _pe, per_stmt, _meta, _m = build_run_export(
+        str(_write_run(tmp_path, rows)), str(_write_corpus(tmp_path, corpus)),
+        run_id="k1", model=model)
+    return per_stmt
+
+
+def test_canonical_belief_is_clean_for_fitted_reader(tmp_path):
+    # K1: a FITTED reader (calibration_for resolves) → canonical `belief` is the
+    # clean soft arm and shifts off the hard gate on a confirmed read.
+    per_stmt = _confirmed_read_export(tmp_path, model="remote-gemma-4-26b")
+    assert len(per_stmt) == 1
+    s = per_stmt[0]
+    assert s["belief_soft"] is not None
+    assert s["belief"] == s["belief_soft"]          # canonical == clean arm
+    assert s["belief"] != s["belief_hard"]          # clean shifts the scale on a confirmed read
+
+
+def test_canonical_belief_falls_back_to_hard_for_unfitted_reader(tmp_path):
+    # K1: an UNFITTED reader (bedrock → calibration_for None) → canonical `belief`
+    # IS the hard gate and belief_soft stays None (named-empty preserved).
+    per_stmt = _confirmed_read_export(tmp_path, model="bedrock-gemma-4-26b")
+    assert len(per_stmt) == 1
+    s = per_stmt[0]
+    assert s["belief_soft"] is None
+    assert s["belief"] == s["belief_hard"]          # canonical == hard gate

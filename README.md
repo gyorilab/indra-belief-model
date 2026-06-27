@@ -217,26 +217,31 @@ model. The two layers chain directly:
 
 ```python
 from indra_belief import score_statement
-from indra_belief.composed_scorer import ComposedBeliefScorer, EvidenceRecord
+from indra_belief.statement_belief import statement_belief
 from indra_belief.noise_model import RECALIBRATED_PRIORS
+from indra_belief.calibration_constants import calibration_for
 
 verdicts = score_statement(stmt, client)  # list[dict], one per stmt.evidence
-records = [
-    EvidenceRecord(source_api=ev.source_api, verdict=v["verdict"])
+rows = [
+    {"source_api": ev.source_api, "verdict": v["verdict"],
+     "confidence": v.get("confidence"), "tier": v.get("tier")}
     for ev, v in zip(stmt.evidence, verdicts)
 ]
-belief = ComposedBeliefScorer(priors=RECALIBRATED_PRIORS).score_edge(records)
-# belief.belief           → composed edge belief
-# belief.parametric_only  → belief before LLM gating (for ablation)
-# belief.n_gated          → evidence removed by the gate
+# Canonical edge belief. Pass a calibrated reader's soft weights (gemma-26B /
+# medpsy-4B) so the belief is the "clean" calibrated form; an unfitted reader
+# (calibration_for → None) falls back to the hard gate.
+sb = statement_belief(rows, RECALIBRATED_PRIORS, soft=calibration_for("gemma-4-26b"))
+# sb.belief             → canonical edge belief (clean-for-fitted / hard-for-unfitted)
+# sb.parametric_only    → belief before any LLM gating (ablation)
+# sb.verdict_statement  → tiered decision: correct | review | incorrect
 ```
 
-Gate semantics: `verdict="correct"` passes; unscored evidence
-(`verdict=None`) passes by default (`gate_unscored=True` to tighten);
-`"incorrect"` and any other string — including `"ambiguous"` or parse
-failures — are removed. Priors live in `noise_model.py` (`INDRA_PRIORS`,
-`RECALIBRATED_PRIORS`). See `scripts/benchmark_composition.py` for the
-benchmark used to pick them.
+Gate semantics: a `correct` verdict keeps its evidence; `incorrect` (and any
+other string, including parse failures) down-weights it; unscored evidence
+(`verdict=None`) is kept on the source's prior. The tiered `verdict_statement`
+is the production decision (deterministic hard-flag → `incorrect`; else any LLM
+`incorrect` → `review`; else `correct`) and is independent of the belief scalar.
+Priors live in `noise_model.py` (`INDRA_PRIORS`, `RECALIBRATED_PRIORS`).
 
 ### Score a corpus + browse the results
 
@@ -321,7 +326,7 @@ Contributor-facing rules to keep the repository legible:
 src/indra_belief/
   model_client.py          # Model transport (OpenAI-compat + Anthropic)
   noise_model.py           # INDRA SimpleScorer (parametric belief from source priors)
-  composed_scorer.py       # LLM verdict → hard gate over the parametric noise model
+  statement_belief.py      # per-evidence verdicts → statement belief (gated noisy-OR + calibrated soft)
   curation.py              # INDRA-curation gold rule + hash bridge + index
   metrics.py               # Binary confusion P/R/F1 + ECE calibration
   sampling.py              # Two-stage / priority sampling + Wilson half-width

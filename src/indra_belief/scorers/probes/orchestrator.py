@@ -4,7 +4,7 @@ LLM probes (where escalated) → ProbeBundle → adjudicate → output dict.
 The output dict preserves the same keys monolithic + decomposed callers
 consumed (score, verdict, confidence, raw_text, tokens, tier,
 grounding_status, provenance_triggered, reasons, rationale, call_log) so
-downstream composed_scorer code requires no change.
+downstream monolithic/decomposed callers require no change.
 
 Latency contract:
   - Substrate-resolved probes never call the LLM

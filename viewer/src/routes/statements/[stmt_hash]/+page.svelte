@@ -114,6 +114,7 @@
 					{/if}
 				</div>
 				<dl class="belief-scores">
+					<div class="canonical"><dt>belief</dt><dd>{fmtBelief(r.belief ?? r.belief_hard)}</dd></div>
 					<div><dt>hard gate</dt><dd>{fmtBelief(r.belief_hard)}</dd></div>
 					<div><dt>parametric</dt><dd>{fmtBelief(r.belief_parametric)}</dd></div>
 					<div><dt>soft</dt><dd>{fmtBelief(r.belief_soft)}</dd></div>
@@ -405,6 +406,14 @@
 		font-size: 0.92rem;
 		font-variant-numeric: tabular-nums;
 		color: var(--ink);
+	}
+	.belief-scores .canonical dt {
+		color: var(--ink);
+		font-weight: 600;
+	}
+	.belief-scores .canonical dd {
+		font-size: 1.05rem;
+		font-weight: 600;
 	}
 	.bb-gold-tags {
 		font-family: var(--mono);
