@@ -47,6 +47,10 @@
 		return f.runs.find((r) => r.run_id === id)?.model ?? id.slice(0, 8);
 	}
 
+	// f.runs is now one row PER MODEL (repeat runs folded in); the raw run total
+	// is the sum of reps, shown alongside so "models" vs "runs" stays honest.
+	const totalRuns = $derived(f.runs.reduce((a, r) => a + r.n_reps, 0));
+
 	function rank(i: number): string {
 		return String(i + 1);
 	}
@@ -89,7 +93,10 @@
 
 		<!-- headline scalars -->
 		<dl class="scalars">
-			<div><dt>runs</dt><dd>{f.runs.length}</dd></div>
+			<div><dt>models</dt><dd>{f.runs.length}</dd></div>
+			{#if totalRuns > f.runs.length}
+				<div><dt>runs</dt><dd>{totalRuns}</dd></div>
+			{/if}
 			<div><dt>on frontier</dt><dd>{onFrontierN}</dd></div>
 			<div><dt>gold n</dt><dd>{f.n_gold}</dd></div>
 			<div>
@@ -158,6 +165,13 @@
 						</td>
 						<td class="r-model">
 							<a href="/runs/{r.run_id}" onclick={(e) => e.stopPropagation()}>{r.model}</a>
+							{#if r.n_reps > 1}
+								<span
+									class="reps"
+									title="mean of {r.n_reps} repeat runs; err-F1 and CI fold their spread. Drill opens the typical run."
+									>×{r.n_reps}</span
+								>
+							{/if}
 							<span class="date">{r.generated_date ?? ''}</span>
 						</td>
 						<td class="r-num strong">{r.err_f1.toFixed(2)}</td>
@@ -183,6 +197,9 @@
 			Click a row or dot to add it to the pair; the rank is by error-F1 on n={f.n_gold} gold —
 			treat it as indicative where the CIs overlap. † marks a run another beats on both
 			{axis === 'cost' ? 'cost' : 'model size'} and F1.
+			Repeat runs of one model fold into a single point (×N): err-F1 and cost are the across-run
+			mean and the CI band spans their spread — so a model is never plotted, labelled, or ranked
+			more than once.
 			{axis === 'cost'
 				? 'Cost is read verbatim from each run’s baked block; the viewer holds no price table. No model is free to run: self-hosted models have no observed spend, so they carry a Bedrock-grounded estimate — marked ~ and drawn as a hollow dot.'
 				: 'Model size is baked per run from a ground-truth registry. A hollow dot marks an estimated/inferred size (exact count undisclosed, or inferred from the base version); closed-weight models have no disclosed size and are not plotted.'}
@@ -415,6 +432,13 @@
 	}
 	.r-model a:hover {
 		border-bottom-color: var(--accent);
+	}
+	.r-model .reps {
+		color: var(--accent);
+		font-size: 0.66rem;
+		margin-left: 0.4rem;
+		cursor: help;
+		font-variant-numeric: tabular-nums;
 	}
 	.r-model .date {
 		color: var(--ink-faint);

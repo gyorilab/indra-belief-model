@@ -278,8 +278,11 @@
 
 	const nFrontier = $derived(plotRuns.filter((r) => onFront(r)).length);
 	const maxGold = $derived(plotRuns.length ? Math.max(...plotRuns.map((r) => r.n_gold)) : 0);
+	const nReps = $derived(plotRuns.reduce((a, r) => a + (r.n_reps ?? 1), 0));
 	const ariaLabel = $derived(
-		`${ax.xName} versus error-detection F1 for ${plotRuns.length} runs; ${nFrontier} on the frontier. ` +
+		`${ax.xName} versus error-detection F1 for ${plotRuns.length} models` +
+			(nReps > plotRuns.length ? ` (${nReps} runs; repeat runs of a model fold into one point)` : '') +
+			`; ${nFrontier} on the frontier. ` +
 			`Hollow dots = estimated ${ax.xName}; 95% confidence intervals shown as soft bands; gold n=${maxGold}, so bands overlap and rank is indicative.`
 	);
 </script>

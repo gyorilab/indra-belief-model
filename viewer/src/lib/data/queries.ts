@@ -1404,6 +1404,13 @@ export interface FrontierRun {
 	dominated_by_cost: string | null;
 	on_frontier_size: boolean;
 	dominated_by_size: string | null;
+	/** Repeat runs of the SAME model on this substrate are one model measured N
+	 *  times, not N models — they fold into ONE point. n_reps>1 ⇒ err_f1 etc. are
+	 *  the across-rep mean and the CI band spans the reps' spread. */
+	n_reps: number;
+	/** run_ids of every rep (sorted); `run_id` above is the representative rep
+	 *  (closest to the model mean) that carries the /runs and /compare drills. */
+	rep_run_ids: string[];
 }
 
 export interface FrontierSubstrate {
@@ -1506,7 +1513,7 @@ export function frontier(substrateKey?: string | null): Frontier {
 		(substrateKey && bySub.has(substrateKey) ? substrateKey : null) ?? substrates[0]?.key ?? null;
 	const runsMeta = selected ? bySub.get(selected) ?? [] : [];
 
-	const runs: FrontierRun[] = [];
+	const perRun: FrontierRun[] = [];
 	for (const meta of runsMeta) {
 		const pairs = errorPairs(meta);
 		const nGold = pairs.length;
@@ -1519,7 +1526,7 @@ export function frontier(substrateKey?: string | null): Frontier {
 		const known = !!c && c.status !== 'unavailable';
 		const perK = known ? c!.usd_per_1k_evidence : null;
 		const mm = meta.model_meta;
-		runs.push({
+		perRun.push({
 			run_id: meta.run_id,
 			model: meta.model,
 			generated_date: meta.generated_date,
@@ -1546,7 +1553,69 @@ export function frontier(substrateKey?: string | null): Frontier {
 			on_frontier_cost: false,
 			dominated_by_cost: null,
 			on_frontier_size: false,
-			dominated_by_size: null
+			dominated_by_size: null,
+			n_reps: 1,
+			rep_run_ids: [meta.run_id]
+		});
+	}
+
+	// Fold repeat runs of the SAME model (same substrate) into one per-model
+	// point. Reps are repeated MEASUREMENTS of one model, not separate models;
+	// plotting each as its own point put a model on the frontier several times
+	// (duplicate labels, phantom staircase steps) and let a lucky rep define the
+	// front. Central tendency = the across-rep mean; the rep spread WIDENS the CI
+	// band (honest variance), never narrows it. Single-run models pass through
+	// unchanged. Group by the EXACT model string so cross-host deployments
+	// (bedrock- vs remote-) stay distinct points.
+	const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+	const byModel = new Map<string, FrontierRun[]>();
+	for (const r of perRun) (byModel.get(r.model) ?? byModel.set(r.model, []).get(r.model)!).push(r);
+	const runs: FrontierRun[] = [];
+	for (const reps of byModel.values()) {
+		if (reps.length === 1) {
+			runs.push(reps[0]);
+			continue;
+		}
+		const f1 = mean(reps.map((r) => r.err_f1));
+		// representative = the rep whose F1 is closest to the model mean (the
+		// "typical" run); it carries run_id for the /runs + /compare drill-throughs.
+		const rep = reps
+			.slice()
+			.sort((a, b) => Math.abs(a.err_f1 - f1) - Math.abs(b.err_f1 - f1) || a.run_id.localeCompare(b.run_id))[0];
+		const priced = reps.filter((r) => r.cost_known && r.usd_per_1k != null);
+		const perK = priced.length ? mean(priced.map((r) => r.usd_per_1k!)) : null;
+		const totals = priced.map((r) => r.cost?.total_usd).filter((v): v is number => v != null);
+		// Cost STATUS tracks the PRICED subset, not the F1-representative rep: a
+		// folded point must never carry a mean cost (usd_per_1k != null) while
+		// reading cost_known=false, which would silently drop it from the cost
+		// frontier (applyDominance keys off cost_known && usd_per_1k != null). Base
+		// the cost block on a priced rep when one exists; mark estimated only if NO
+		// rep had observed spend.
+		const costRep = priced[0] ?? rep;
+		// band spans BOTH the widest within-run CI and the across-rep spread of the
+		// point estimates, so it never reads tighter than the reps actually disagree.
+		const lo = Math.min(...reps.map((r) => Math.min(r.err_f1_lo, r.err_f1)));
+		const hi = Math.max(...reps.map((r) => Math.max(r.err_f1_hi, r.err_f1)));
+		const dates = reps.map((r) => r.generated_date ?? '').filter(Boolean).sort();
+		runs.push({
+			...rep,
+			err_f1: f1,
+			err_precision: mean(reps.map((r) => r.err_precision)),
+			err_recall: mean(reps.map((r) => r.err_recall)),
+			accuracy: mean(reps.map((r) => r.accuracy)),
+			err_f1_lo: lo,
+			err_f1_hi: hi,
+			cost_known: priced.length > 0,
+			cost_estimated: priced.length > 0 && priced.every((r) => r.cost_estimated),
+			is_free: priced.length > 0 && perK === 0,
+			usd_per_1k: perK,
+			cost: costRep.cost
+				? { ...costRep.cost, total_usd: totals.length ? mean(totals) : costRep.cost.total_usd, usd_per_1k_evidence: perK }
+				: costRep.cost,
+			generated_date: dates.length ? dates[dates.length - 1] : rep.generated_date,
+			n_gold: Math.max(...reps.map((r) => r.n_gold)),
+			n_reps: reps.length,
+			rep_run_ids: reps.map((r) => r.run_id).slice().sort()
 		});
 	}
 
