@@ -375,6 +375,13 @@ export interface Claim {
 	full: string;
 }
 
+export interface EvidenceAgent {
+	role: 'subject' | 'object' | 'member' | 'agent';
+	name: string;
+	rawText: string | null;
+	dbRefs: Record<string, string>;
+}
+
 /** One (statement, evidence) pair sampled live from the INDRA DB for curation.
  *
  *  CRITICAL: matchesHash and sourceHash are kept as STRINGS, not numbers. INDRA
@@ -398,6 +405,8 @@ export interface EvidenceSample {
 	stmtType: string;
 	belief: number | null;
 	claim: Claim;
+	/** Statement agents plus evidence surface strings, when INDRA provides them. */
+	agents: EvidenceAgent[];
 	/** which agent query surfaced this statement (sampling provenance). */
 	agentQuery: string;
 	/** total evidence supporting this statement (context for the curator). */

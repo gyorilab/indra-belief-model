@@ -18,7 +18,7 @@
 import { AGENT_POOL } from './agents';
 import { CURATION_TAGS } from '$lib/data/curation';
 import { indraBaseUrl } from './session';
-import type { Claim, EvidenceSample } from '$lib/data/types';
+import type { Claim, EvidenceAgent, EvidenceSample } from '$lib/data/types';
 
 /** Per-request budget for live INDRA calls. Without a signal, undici waits ~5 min
  *  for a stalled response, which would hang the SSR load across all retries. */
@@ -58,6 +58,48 @@ function agentName(a: unknown): string | null {
 	if (typeof a === 'string') return a;
 	const o = a as { name?: string; db_refs?: Record<string, string> };
 	return o.name ?? o.db_refs?.HGNC ?? o.db_refs?.TEXT ?? null;
+}
+
+function dbRefs(a: unknown): Record<string, string> {
+	if (!a || typeof a === 'string') return {};
+	const refs = (a as { db_refs?: Record<string, unknown> }).db_refs ?? {};
+	const out: Record<string, string> = {};
+	for (const [k, v] of Object.entries(refs)) {
+		if (v != null) out[k] = String(v);
+	}
+	return out;
+}
+
+function agentEntries(stmt: Record<string, unknown>): Array<{ role: EvidenceAgent['role']; agent: unknown }> {
+	if (Array.isArray(stmt.members)) return stmt.members.map((agent) => ({ role: 'member', agent }));
+	const out: Array<{ role: EvidenceAgent['role']; agent: unknown }> = [];
+	const subj = stmt.enz ?? stmt.subj ?? stmt.gef ?? stmt.agent ?? stmt.sub_obj;
+	const obj = stmt.sub ?? stmt.obj ?? stmt.obj_to ?? stmt.ras;
+	if (subj) out.push({ role: 'subject', agent: subj });
+	if (obj) out.push({ role: 'object', agent: obj });
+	if (!out.length) {
+		const a = stmt.agent ?? stmt.sub_obj;
+		if (a) out.push({ role: 'agent', agent: a });
+	}
+	return out;
+}
+
+function rawAgentTexts(ev: Record<string, unknown>): string[] {
+	const ann = ev.annotations as { agents?: { raw_text?: unknown } } | undefined;
+	const raw = ann?.agents?.raw_text;
+	return Array.isArray(raw) ? raw.map((x) => (x == null ? '' : String(x))) : [];
+}
+
+function evidenceAgents(stmt: Record<string, unknown>, ev: Record<string, unknown>): EvidenceAgent[] {
+	const raws = rawAgentTexts(ev);
+	return agentEntries(stmt)
+		.map(({ role, agent }, i) => {
+			const name = agentName(agent);
+			if (!name) return null;
+			const rawText = raws[i] && raws[i] !== name ? raws[i] : (raws[i] || null);
+			return { role, name, rawText, dbRefs: dbRefs(agent) };
+		})
+		.filter((a): a is EvidenceAgent => !!a);
 }
 
 function humanType(t: string): string {
@@ -163,6 +205,7 @@ function toSample(resp: Record<string, unknown>, pair: Pair, agentQuery: string)
 		stmtType: (stmt.type as string) ?? 'Statement',
 		belief: typeof beliefScores[mh] === 'number' ? beliefScores[mh] : ((stmt.belief as number) ?? null),
 		claim: renderStatement(stmt),
+		agents: evidenceAgents(stmt, ev),
 		agentQuery,
 		evCount: typeof evCounts[mh] === 'number' ? evCounts[mh] : 0
 	};

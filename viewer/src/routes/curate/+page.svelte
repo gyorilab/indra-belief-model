@@ -47,6 +47,52 @@
 	let submittedKey = $state<string | null>(null);
 	const currentKey = $derived(current ? `${current.matchesHash}:${current.sourceHash}` : null);
 	const alreadySubmitted = $derived(currentKey != null && currentKey === submittedKey);
+	type EvidenceSegment = { text: string; agentIndex: number | null };
+
+	const evidenceSegments = $derived.by((): EvidenceSegment[] => {
+		if (!current) return [];
+		const text = current.text;
+		const mentions = current.agents
+			.map((a, i) => ({ needle: (a.rawText || a.name || '').trim(), i }))
+			.filter((m) => m.needle.length >= 2)
+			.sort((a, b) => b.needle.length - a.needle.length);
+		const spans: Array<{ start: number; end: number; i: number }> = [];
+		const occupied = new Array(text.length).fill(false);
+		for (const m of mentions) {
+			const lowerText = text.toLowerCase();
+			const lowerNeedle = m.needle.toLowerCase();
+			let pos = 0;
+			while ((pos = lowerText.indexOf(lowerNeedle, pos)) !== -1) {
+				const end = pos + m.needle.length;
+				if (!occupied.slice(pos, end).some(Boolean)) {
+					spans.push({ start: pos, end, i: m.i });
+					for (let j = pos; j < end; j += 1) occupied[j] = true;
+				}
+				pos = end;
+			}
+		}
+		spans.sort((a, b) => a.start - b.start);
+		const out: EvidenceSegment[] = [];
+		let cursor = 0;
+		for (const s of spans) {
+			if (s.start > cursor) out.push({ text: text.slice(cursor, s.start), agentIndex: null });
+			out.push({ text: text.slice(s.start, s.end), agentIndex: s.i });
+			cursor = s.end;
+		}
+		if (cursor < text.length) out.push({ text: text.slice(cursor), agentIndex: null });
+		return out.length ? out : [{ text, agentIndex: null }];
+	});
+
+	function agentTitle(i: number): string {
+		const a = current?.agents[i];
+		if (!a) return '';
+		const refs = Object.entries(a.dbRefs)
+			.filter(([k]) => k !== 'TEXT')
+			.map(([k, v]) => `${k}:${v}`)
+			.join(' · ');
+		const raw = a.rawText && a.rawText !== a.name ? `${a.rawText} → ` : '';
+		return `${raw}${a.name}${refs ? ` · ${refs}` : ''}`;
+	}
 
 	// Draw a new sample, replacing the current card in place. Does NOT touch
 	// lastResult, so a "✓ submitted" banner survives an auto-advance to the next
@@ -129,7 +175,22 @@
 				<span class="cur-rel">{current.claim.relation}</span>
 				<span class="cur-obj">{current.claim.object}</span>
 			</div>
-			<p class="cur-evidence">{current.text}</p>
+			<p class="cur-evidence">
+				{#each evidenceSegments as seg}
+					{#if seg.agentIndex == null}
+						{seg.text}
+					{:else}
+						<span
+							class="cur-entity"
+							class:subj={current.agents[seg.agentIndex]?.role === 'subject'}
+							class:obj={current.agents[seg.agentIndex]?.role === 'object'}
+							class:member={current.agents[seg.agentIndex]?.role === 'member'}
+							style={`--agent-i: ${seg.agentIndex}`}
+							data-tip={agentTitle(seg.agentIndex)}>{seg.text}</span
+						>
+					{/if}
+				{/each}
+			</p>
 			<p class="cur-prov">
 				[{current.sourceApi ?? 'no source'}]
 				{#if current.pmid}
@@ -228,6 +289,22 @@
 	.cur-evidence {
 		font-size: 1.05rem; line-height: 1.55; color: var(--ink);
 		border-left: 3px solid var(--rule); padding: 0.4rem 0 0.4rem 1rem; margin: 0.4rem 0;
+	}
+	.cur-entity {
+		position: relative; border-radius: 2px; padding: 0 0.12rem; cursor: help;
+		background: color-mix(in srgb, #d8b13f 26%, transparent);
+		box-shadow: inset 0 -2px 0 color-mix(in srgb, #d8b13f 55%, transparent);
+	}
+	.cur-entity.subj { background: color-mix(in srgb, #3a7f77 22%, transparent); box-shadow: inset 0 -2px 0 color-mix(in srgb, #3a7f77 55%, transparent); }
+	.cur-entity.obj { background: color-mix(in srgb, #9c4f33 20%, transparent); box-shadow: inset 0 -2px 0 color-mix(in srgb, #9c4f33 52%, transparent); }
+	.cur-entity.member:nth-of-type(2n) { background: color-mix(in srgb, #4f6fa8 20%, transparent); box-shadow: inset 0 -2px 0 color-mix(in srgb, #4f6fa8 52%, transparent); }
+	.cur-entity[data-tip]:hover::after,
+	.cur-entity[data-tip]:focus-visible::after {
+		content: attr(data-tip); position: absolute; z-index: 10; left: 0; bottom: calc(100% + 0.35rem);
+		width: max-content; max-width: min(28rem, 80vw); white-space: normal;
+		font-family: var(--mono); font-size: 0.68rem; line-height: 1.35; color: var(--paper);
+		background: var(--ink); border: 1px solid var(--ink); border-radius: 2px;
+		padding: 0.35rem 0.45rem; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
 	}
 	.cur-prov { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-faint); margin: 0 0 0.2rem; }
 	.cur-prov a { color: var(--accent); text-decoration: none; }
