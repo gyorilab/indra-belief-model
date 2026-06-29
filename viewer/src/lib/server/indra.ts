@@ -15,6 +15,8 @@
  * API returns them as quoted strings; we keep them as strings everywhere and
  * inject ev_hash into the POST body as a bare integer literal — never Number().
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { AGENT_POOL } from './agents';
 import { CURATION_TAGS } from '$lib/data/curation';
 import { indraBaseUrl } from './session';
@@ -22,7 +24,7 @@ import type { Claim, EvidenceAgent, EvidenceSample } from '$lib/data/types';
 
 /** Per-request budget for live INDRA calls. Without a signal, undici waits ~5 min
  *  for a stalled response, which would hang the SSR load across all retries. */
-const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 // ── statement rendering (INDRA JSON → subject/relation/object) ───────────────────
 
 /** Humanised relation verbs for the common INDRA statement types; anything else
@@ -255,6 +257,134 @@ export interface SubmitResult {
 	result?: string;
 	status?: number;
 	error?: string;
+}
+
+export interface CuratorStats {
+	status: 'available' | 'unavailable';
+	total: number;
+	correct: number;
+	incorrect: number;
+	reason?: string;
+}
+
+let _curatorStatsCache: { email: string; until: number; stats: CuratorStats } | null = null;
+let _indraApiKey: string | null | undefined;
+type CurationListRow = { curator: string; tag: string };
+
+function indraApiKey(): string | null {
+	if (_indraApiKey !== undefined) return _indraApiKey;
+	let key = process.env.INDRA_DB_REST_API_KEY ?? '';
+	if (!key) {
+		try {
+			const txt = readFileSync(resolve(process.cwd(), '..', '.env'), 'utf8');
+			for (const raw of txt.split('\n')) {
+				const m = raw.match(/^\s*INDRA_DB_REST_API_KEY\s*=(.*)$/);
+				if (!m) continue;
+				let v = m[1].trim();
+				if (v.length >= 2 && ((v[0] === '"' && v.at(-1) === '"') || (v[0] === "'" && v.at(-1) === "'")))
+					v = v.slice(1, -1);
+				key = v;
+				break;
+			}
+		} catch {
+			/* no repo env file */
+		}
+	}
+	_indraApiKey = key || null;
+	return _indraApiKey;
+}
+
+async function fetchCurationListRows(jwt: string): Promise<CurationListRow[]> {
+	let r: Response;
+	const key = indraApiKey();
+	const url = key
+		? `${indraBaseUrl()}/curation/list?api_key=${encodeURIComponent(key)}`
+		: `${indraBaseUrl()}/curation/list`;
+	const headers: Record<string, string> = { 'User-Agent': 'indra-belief-curate/1' };
+	// The definitive stats interface is the API-keyed list-all endpoint. Do not
+	// mix a curator JWT into that request; an invalid/expired cookie can change the
+	// auth path. JWT is only a fallback when no server API key is configured.
+	if (!key) headers.Cookie = `access_token_cookie=${jwt}`;
+	try {
+		r = await fetch(url, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+	} catch (e) {
+		throw new Error(`could not load curation counts: ${e instanceof Error ? e.message : String(e)}`);
+	}
+	if (!r.ok) {
+		throw new Error(`could not load curation counts: HTTP ${r.status}`);
+	}
+
+	const text = await r.text();
+	let rows: unknown;
+	try {
+		rows = JSON.parse(text);
+	} catch {
+		const prefix = text.replace(/\s+/g, ' ').slice(0, 80);
+		throw new Error(`curation counts were not JSON (${r.headers.get('content-type') ?? 'no content-type'}; ${prefix})`);
+	}
+	if (!Array.isArray(rows)) {
+		throw new Error('unexpected curation counts payload');
+	}
+	return rows
+		.filter((row): row is { curator?: unknown; tag?: unknown } => row != null && typeof row === 'object')
+		.map((row) => ({
+			curator: typeof row.curator === 'string' ? row.curator : '',
+			tag: typeof row.tag === 'string' ? row.tag : ''
+		}));
+}
+
+/** Count the signed-in curator's full INDRA curation history. Confirmed
+ *  interface: keyed GET /curation/list returns a JSON array whose rows contain
+ *  at least {curator, tag}; correct is tag === "correct", every other tag is an
+ *  incorrect/error flag. */
+export async function getCuratorStats(jwt: string, email: string): Promise<CuratorStats> {
+	if (!jwt || !email) return { status: 'unavailable', total: 0, correct: 0, incorrect: 0, reason: 'not signed in' };
+	const now = Date.now();
+	if (_curatorStatsCache && _curatorStatsCache.email === email && _curatorStatsCache.until > now) {
+		return _curatorStatsCache.stats;
+	}
+
+	let rows: CurationListRow[];
+	try {
+		rows = await fetchCurationListRows(jwt);
+	} catch (e) {
+		return {
+			status: 'unavailable',
+			total: 0,
+			correct: 0,
+			incorrect: 0,
+			reason: e instanceof Error ? e.message : String(e)
+		};
+	}
+
+	const emailKey = email.toLowerCase();
+	const mine = rows.filter((row) => row.curator.toLowerCase() === emailKey);
+	const correct = mine.filter((row) => row.tag === 'correct').length;
+	const stats = {
+		status: 'available' as const,
+		total: mine.length,
+		correct,
+		incorrect: mine.length - correct
+	};
+	_curatorStatsCache = { email, until: now + 60_000, stats };
+	return stats;
+}
+
+export function noteCuratorSubmission(email: string, tag: string): void {
+	if (!_curatorStatsCache || _curatorStatsCache.email !== email || _curatorStatsCache.stats.status !== 'available') {
+		return;
+	}
+	const stats = _curatorStatsCache.stats;
+	_curatorStatsCache = {
+		email,
+		until: _curatorStatsCache.until,
+		stats: {
+			...stats,
+			total: stats.total + 1,
+			correct: stats.correct + (tag === 'correct' ? 1 : 0),
+			incorrect: stats.incorrect + (tag === 'correct' ? 0 : 1)
+		}
+	};
 }
 
 /** Submit one human curation to the live INDRA DB under the curator's own JWT. The

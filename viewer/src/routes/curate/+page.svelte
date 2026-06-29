@@ -37,6 +37,8 @@
 		sampleErrorOverride !== undefined ? sampleErrorOverride : data.sampleError
 	);
 	let lastResult = $state<{ id: number | null; tag: string } | { error: string } | null>(null);
+	let statsOverride = $state<typeof data.stats | null>(null);
+	const stats = $derived(statsOverride ?? data.stats);
 	let sampleFormEl: HTMLFormElement | null = $state(null);
 	// Note is controlled state so it resets per sample — an uncontrolled textarea
 	// keeps its DOM value across in-place sample swaps and would post a stale note
@@ -126,6 +128,14 @@
 			if (result.type === 'success' && result.data?.submitted) {
 				const s = result.data.submitted as { id: number | null; tag: string };
 				lastResult = { id: s.id, tag: s.tag };
+				if (stats.status === 'available') {
+					statsOverride = {
+						...stats,
+						total: stats.total + 1,
+						correct: stats.correct + (s.tag === 'correct' ? 1 : 0),
+						incorrect: stats.incorrect + (s.tag === 'correct' ? 0 : 1)
+					};
+				}
 				submittedKey = currentKey; // lock this exact pair against a duplicate write
 				sampleFormEl?.requestSubmit(); // auto-advance to a fresh sample
 			} else if (result.type === 'failure') {
@@ -147,10 +157,15 @@
 			· <span class="cur-host">{data.dbHost}</span>
 		</span>
 		{#if data.user}
-			<span class="cur-as"
-				>curating as <strong>{data.user.email}</strong> — your INDRA account; each curation is
-				submitted under and attributed to you</span
-			>
+			<span class="cur-as">curating as <strong>{data.user.email}</strong></span>
+		{/if}
+		{#if stats.status === 'available'}
+			<span class="cur-as">
+				your curations: <strong>{stats.total}</strong> total · {stats.correct} correct · {stats.incorrect}
+				incorrect
+			</span>
+		{:else if stats.reason}
+			<span class="cur-as">curation counts unavailable · {stats.reason}</span>
 		{/if}
 	</header>
 
@@ -159,7 +174,7 @@
 			<div class="cur-banner bad">✗ {lastResult.error}</div>
 		{:else}
 			<div class="cur-banner ok">
-				✓ submitted curation{#if lastResult.id != null} <strong>#{lastResult.id}</strong>{/if}
+				✓ submitted curation{#if lastResult.id != null} <strong> #{lastResult.id}</strong>{/if}
 				· <span class="cur-tagchip" class:ok={lastResult.tag === 'correct'}>{lastResult.tag}</span> to INDRA
 			</div>
 		{/if}

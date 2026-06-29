@@ -11,15 +11,18 @@
  */
 import { fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { sampleEvidence, submitCuration } from '$lib/server/indra';
+import { getCuratorStats, noteCuratorSubmission, sampleEvidence, submitCuration } from '$lib/server/indra';
 import { indraBaseUrl } from '$lib/server/session';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
 	const dbHost = indraBaseUrl();
+	const stats = locals.session
+		? await getCuratorStats(locals.session.jwt, locals.session.email)
+		: { status: 'unavailable' as const, total: 0, correct: 0, incorrect: 0, reason: 'not signed in' };
 	try {
-		return { dbHost, sample: await sampleEvidence(), sampleError: null };
+		return { dbHost, stats, sample: await sampleEvidence(), sampleError: null };
 	} catch (e) {
-		return { dbHost, sample: null, sampleError: e instanceof Error ? e.message : String(e) };
+		return { dbHost, stats, sample: null, sampleError: e instanceof Error ? e.message : String(e) };
 	}
 };
 
@@ -48,6 +51,7 @@ export const actions: Actions = {
 		if (!res.ok) {
 			return fail(res.status ?? 400, { submitError: res.error ?? 'submission failed', tag: args.tag });
 		}
+		noteCuratorSubmission(locals.session.email, args.tag);
 		return {
 			submitted: {
 				id: res.id ?? null,
