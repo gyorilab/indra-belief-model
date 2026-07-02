@@ -1688,3 +1688,105 @@ export function frontier(substrateKey?: string | null): Frontier {
 		note
 	};
 }
+
+// ── Generalization across gold benchmarks — the dataset-size dimension ───────
+// frontier() reads ONE substrate. generalization() reads the SAME models ACROSS
+// substrates: each model's error-F1 (+CI) at every gold it was scored on, ordered
+// by gold size. This is how the small-gold mirage shows: a model measured on a
+// small, narrow gold (rasmachine_v1, n=60) vs a large, de-biased one
+// (external-578) MOVES, and its CI band visibly NARROWS as n grows — generalization
+// and precision in one read. HONEST CAVEAT (carried into the UI): the substrates
+// differ in COMPOSITION, not only size, so a shift conflates "more data" with
+// "different (less curator-captured) data" — it's "across benchmarks", x-ordered
+// by n, not a within-dataset learning curve (which would be flat — predetermined).
+
+export interface GenPoint {
+	sub_key: string;
+	sub_label: string;
+	gold_n: number;
+	f1: number;
+	lo: number;
+	hi: number;
+	n_reps: number;
+}
+export interface GenModel {
+	model: string;
+	is_open: boolean | null;
+	points: GenPoint[]; // sorted ascending by gold_n
+	delta: number; // f1(largest gold) − f1(smallest gold): negative = small gold overrated it
+}
+export interface Generalization {
+	models: GenModel[];
+	substrates: Array<{ key: string; label: string; gold_n: number }>;
+	gold_min: number;
+	gold_max: number;
+	f1_min: number;
+	f1_max: number;
+}
+
+export function generalization(): Generalization {
+	const all = listRuns();
+	type Cell = { f1: number; lo: number; hi: number; n: number };
+	const byKey = new Map<string, Cell[]>(); // `${model}${substrate}` → reps
+	const subN = new Map<string, number>(); // substrate → max gold_n observed
+	const openOf = new Map<string, boolean | null>();
+	for (const m of all) {
+		const sub = m.substrate ?? `run:${m.run_id}`;
+		const pairs = errorPairs(m);
+		if (!pairs.length) continue;
+		const n = pairs.length;
+		const stats = prf(pairs);
+		const ci = bootstrapF1CI(pairs, seedFromRunId(m.run_id));
+		const k = `${m.model}${sub}`;
+		(byKey.get(k) ?? byKey.set(k, []).get(k)!).push({ f1: stats.f1, lo: ci.lo, hi: ci.hi, n });
+		subN.set(sub, Math.max(subN.get(sub) ?? 0, n));
+		if (!openOf.has(m.model)) openOf.set(m.model, m.model_meta ? m.model_meta.is_open : null);
+	}
+
+	// Fold (model, substrate) repeats: mean F1; band widened to the rep union
+	// (min lo, max hi) so repeated measurement never narrows uncertainty.
+	const byModel = new Map<string, GenPoint[]>();
+	for (const [k, cells] of byKey) {
+		const sep = k.indexOf('');
+		const model = k.slice(0, sep);
+		const sub = k.slice(sep + 1);
+		const f1 = cells.reduce((a, c) => a + c.f1, 0) / cells.length;
+		(byModel.get(model) ?? byModel.set(model, []).get(model)!).push({
+			sub_key: sub,
+			sub_label: substrateLabel(sub),
+			gold_n: Math.max(...cells.map((c) => c.n)),
+			f1,
+			lo: Math.min(...cells.map((c) => c.lo)),
+			hi: Math.max(...cells.map((c) => c.hi)),
+			n_reps: cells.length
+		});
+	}
+
+	const models: GenModel[] = [];
+	for (const [model, pts] of byModel) {
+		if (pts.length < 2) continue; // need ≥2 substrates to draw a line
+		pts.sort((a, b) => a.gold_n - b.gold_n);
+		models.push({
+			model,
+			is_open: openOf.get(model) ?? null,
+			points: pts,
+			delta: pts[pts.length - 1].f1 - pts[0].f1
+		});
+	}
+	models.sort((a, b) => a.delta - b.delta); // steepest droppers first
+
+	const pts = models.flatMap((m) => m.points);
+	const substrates = [...subN.entries()]
+		.filter(([k]) => pts.some((p) => p.sub_key === k))
+		.map(([key, n]) => ({ key, label: substrateLabel(key), gold_n: n }))
+		.sort((a, b) => a.gold_n - b.gold_n);
+
+	return {
+		models,
+		substrates,
+		gold_min: pts.length ? Math.min(...pts.map((p) => p.gold_n)) : 0,
+		gold_max: pts.length ? Math.max(...pts.map((p) => p.gold_n)) : 1,
+		f1_min: pts.length ? Math.min(...pts.map((p) => p.lo)) : 0,
+		f1_max: pts.length ? Math.max(...pts.map((p) => p.hi)) : 1
+	};
+}

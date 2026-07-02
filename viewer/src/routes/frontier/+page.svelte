@@ -1,11 +1,27 @@
 <script lang="ts">
 	import FrontierStrip from '$lib/components/FrontierStrip.svelte';
+	import GeneralizationStrip from '$lib/components/GeneralizationStrip.svelte';
 	import { fmtCost, fmtCostFull } from '$lib/format';
 	import { page } from '$app/state';
 	import type { FrontierRun } from '$lib/data/queries';
 
 	let { data } = $props();
 	const f = $derived(data.frontier);
+	const gen = $derived(data.generalization);
+
+	// top-level view: the per-substrate cost/size frontier, or the cross-substrate
+	// generalization — how each model moves as the gold grows. ?view= keeps it shareable.
+	let view = $state<'frontier' | 'datasets'>(
+		page.url.searchParams.get('view') === 'datasets' ? 'datasets' : 'frontier'
+	);
+	function setView(v: 'frontier' | 'datasets') {
+		view = v;
+		const u = new URL(page.url);
+		if (v === 'datasets') u.searchParams.set('view', v);
+		else u.searchParams.delete('view');
+		history.replaceState(history.state, '', u);
+	}
+	const stripHostName = (m: string) => m.replace(/^(bedrock|remote|local|google)-/, '');
 
 	// the x-axis lens: economic frontier (cost) or scaling frontier (model size).
 	// Client state so switching MORPHS the plot rather than reloading; seeded from
@@ -67,6 +83,17 @@
 		<p class="lede">Every run scored on one substrate, read as cost against error-detection F1.</p>
 	</header>
 
+	<!-- top-level view: per-substrate cost/size frontier vs cross-substrate generalization -->
+	<div class="view-switch" role="group" aria-label="view">
+		<button type="button" class:on={view === 'frontier'} aria-pressed={view === 'frontier'} onclick={() => setView('frontier')}
+			>the frontier</button
+		>
+		<button type="button" class:on={view === 'datasets'} aria-pressed={view === 'datasets'} onclick={() => setView('datasets')}
+			>across dataset size</button
+		>
+	</div>
+
+	{#if view === 'frontier'}
 	<!-- substrate selector: the join boundary -->
 	<nav class="subs" aria-label="substrate">
 		{#each f.substrates as s}
@@ -206,6 +233,51 @@
 			A hollow dot always means the x-value is an estimate, not an observation — on either axis.
 		</p>
 	{/if}
+	{:else}
+		<!-- the dataset-size dimension: the same models read across gold benchmarks -->
+		{#if gen.models.length === 0}
+			<p class="empty">Need a model scored on ≥2 gold benchmarks to show a generalization line.</p>
+		{:else}
+			<p class="lede gen-lede">
+				The same {gen.models.length} models, read <em>across</em> gold benchmarks (n={gen.gold_min} → {gen.gold_max}).
+				A model rated high on a small, single-curator gold settles lower on a large, de-biased one —
+				the small-gold mirage — and its error bar tightens as n grows.
+			</p>
+
+			<GeneralizationStrip data={gen} />
+
+			<table class="ledger shift">
+				<thead>
+					<tr>
+						<th class="r-model">model</th>
+						<th class="r-num">smallest gold</th>
+						<th class="r-num">largest gold</th>
+						<th class="r-num">Δ F1</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each gen.models as m (m.model)}
+						{@const a = m.points[0]}
+						{@const b = m.points[m.points.length - 1]}
+						<tr>
+							<td class="r-model">{stripHostName(m.model)}</td>
+							<td class="r-num">{a.f1.toFixed(3)}<span class="at">@{a.gold_n}</span></td>
+							<td class="r-num">{b.f1.toFixed(3)}<span class="at">@{b.gold_n}</span></td>
+							<td class="r-num" class:drop={m.delta < -0.02} class:rise={m.delta > 0.02}
+								>{m.delta >= 0 ? '+' : '−'}{Math.abs(m.delta).toFixed(3)}</td
+							>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+			<p class="note gen-note">
+				Δ F1 = error-F1 on the largest gold minus the smallest. Negative (most rows) = the model
+				looked better on the small gold than it holds up on the large, de-biased one. Sorted
+				steepest-drop first. CIs overlap at small n, so ranks there are indicative — the large-gold
+				column is the trustworthy read.
+			</p>
+		{/if}
+	{/if}
 </main>
 
 <style>
@@ -288,6 +360,59 @@
 	.axis-switch button:focus-visible {
 		outline: 1.5px solid var(--accent);
 		outline-offset: 2px;
+	}
+	.view-switch {
+		display: flex;
+		gap: 1.4rem;
+		margin: 0 0 1.2rem;
+		font-family: var(--mono);
+		border-bottom: 1px solid var(--rule);
+	}
+	.view-switch button {
+		background: none;
+		border: none;
+		padding: 0 0 0.4rem;
+		margin-bottom: -1px;
+		font-family: var(--mono);
+		font-size: 0.95rem;
+		color: var(--ink-faint);
+		cursor: pointer;
+		border-bottom: 2px solid transparent;
+	}
+	.view-switch button:hover {
+		color: var(--ink);
+	}
+	.view-switch button.on {
+		color: var(--ink);
+		border-bottom-color: var(--accent);
+	}
+	.view-switch button:focus-visible {
+		outline: 1.5px solid var(--accent);
+		outline-offset: 2px;
+	}
+	.gen-lede,
+	.gen-note {
+		max-width: 70ch;
+	}
+	.shift {
+		margin-top: 1.2rem;
+	}
+	.shift .r-num {
+		text-align: right;
+		font-family: var(--mono);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.shift .at {
+		color: var(--ink-faint);
+		font-size: 0.78em;
+		margin-left: 0.1em;
+	}
+	.shift .drop {
+		color: var(--accent);
+	}
+	.shift .rise {
+		color: #2a6a3a;
 	}
 	.scalars {
 		display: flex;
