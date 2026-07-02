@@ -23,8 +23,9 @@ from html import escape
 import plotly.colors as pcolors
 import plotly.graph_objects as go
 
-SUBSTRATE = "rasmachine_v1_statements.json"
-OUT = "reports/frontier_scatter.html"
+SUBSTRATE = os.environ.get("FRONTIER_SUBSTRATE", "rasmachine_v1_statements.json")
+OUT = os.environ.get("FRONTIER_OUT", "reports/frontier_scatter.html")
+SUBSTRATE_LABEL = os.environ.get("FRONTIER_LABEL", "rasmachine_v1")
 
 INK, INK_MUTED, INK_FAINT = "#1a1a1a", "#6a6a6a", "#727272"
 PAPER, RULE, ACCENT = "#fdfcf8", "#e6e2d6", "#7d2a1a"
@@ -213,7 +214,7 @@ def main():
     add_panel(fig, runs, "size", 2, color_of, (ylo, yhi), show_legend=False)
     fig.update_layout(
         template="plotly_white", width=1080, height=900,
-        title_text=f"Error-detection F1 over cost and model size — rasmachine_v1 (gold n={n})",
+        title_text=f"Error-detection F1 over cost and model size — {SUBSTRATE_LABEL} (gold n={n})",
         title_x=0.5, margin=dict(l=70, r=240, t=70, b=60),
         legend=dict(font=dict(size=10), x=1.015, xanchor="left", y=1, yanchor="top",
                     itemsizing="constant", tracegroupgap=2,

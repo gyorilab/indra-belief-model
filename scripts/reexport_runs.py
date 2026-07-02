@@ -26,6 +26,7 @@ from indra_belief.results import write_run_export
 CORPUS_GOLD = {
     "rasmachine_v1_statements.json": "data/benchmark/rasmachine_v1_gold.jsonl",
     "eval_curation_v1_statements.json": "data/benchmark/eval_curation_v1.jsonl",
+    "external_curator_gold_v1_statements.json": "data/benchmark/external_curator_gold_v1.jsonl",
 }
 
 # The default re-export set: the rasmachine_v1 model fleet (cost spread) + the
