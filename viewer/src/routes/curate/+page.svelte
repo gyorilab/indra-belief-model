@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { PageData } from './$types';
@@ -40,6 +41,32 @@
 	let statsOverride = $state<typeof data.stats | null>(null);
 	const stats = $derived(statsOverride ?? data.stats);
 	let sampleFormEl: HTMLFormElement | null = $state(null);
+
+	// The universes /curate can draw from (the selector rail). `pendingDataset` is
+	// set the instant a curator clicks a row (before the fresh sample lands); once
+	// the sample returns, its own `dataset` id drives the active state and pending
+	// clears. So the active universe is: an in-flight choice, else the current
+	// sample's origin, else the first dataset.
+	const datasets = $derived(data.datasets);
+	let selectorOpen = $state(false);
+	let pendingDataset = $state<string | null>(null);
+	const activeDatasetId = $derived(pendingDataset ?? current?.dataset ?? datasets[0]?.id);
+	const activeDataset = $derived(datasets.find((d) => d.id === activeDatasetId) ?? datasets[0]);
+
+	// Switch universes: mark the choice, collapse the rail, and draw a fresh sample
+	// from it. `tick()` flushes the hidden dataset input's new value to the DOM
+	// BEFORE requestSubmit reads it — otherwise the form would post the old id.
+	async function selectDataset(id: string) {
+		if (id === activeDatasetId) {
+			selectorOpen = false;
+			return;
+		}
+		pendingDataset = id;
+		selectorOpen = false;
+		lastResult = null;
+		await tick();
+		sampleFormEl?.requestSubmit();
+	}
 	// Note is controlled state so it resets per sample — an uncontrolled textarea
 	// keeps its DOM value across in-place sample swaps and would post a stale note
 	// with the next curation.
@@ -109,6 +136,7 @@
 				note = '';
 				submittedKey = null;
 				sampleErrorOverride = null;
+				pendingDataset = null; // the returned sample now carries its own dataset
 			} else if (result.type === 'failure') {
 				sampleErrorOverride = (result.data?.sampleError as string) ?? 'sampling failed';
 			} else if (result.type === 'error') {
@@ -180,44 +208,94 @@
 		{/if}
 	{/if}
 
+	{#snippet datasetRail()}
+		<p class="cur-label">sample from</p>
+		<div class="cur-rail">
+			{#each datasets as d}
+				<button
+					type="button"
+					class="cur-ds"
+					class:on={d.id === activeDatasetId}
+					onclick={() => selectDataset(d.id)}
+					disabled={busy}
+				>
+					<span class="cur-mk">{d.id === activeDatasetId ? '●' : '○'}</span>
+					<span class="cur-dsbody">
+						<span class="cur-nm">{d.label}</span>
+						<span class="cur-bl">{d.blurb}</span>
+					</span>
+					<span class="cur-sc">
+						<span class="cur-n">{d.sizeLabel} ev</span>
+						<span
+							class="cur-bar"
+							class:rep={d.character === 'representative'}
+							class:bd={d.character !== 'representative'}
+						></span>
+					</span>
+				</button>
+			{/each}
+		</div>
+	{/snippet}
+
 	{#if current}
 		<section class="cur-item">
 			{#if sampleError}
 				<div class="cur-banner bad">⚠ {sampleError} — try “sample another”.</div>
 			{/if}
-			<div class="cur-claim">
-				<span class="cur-subj">{current.claim.subject}</span>
-				<span class="cur-rel">{current.claim.relation}</span>
-				<span class="cur-obj">{current.claim.object}</span>
-			</div>
-			<p class="cur-evidence">
-				{#each evidenceSegments as seg}
-					{#if seg.agentIndex == null}
-						{seg.text}
-					{:else}
-						<span
-							class="cur-entity"
-							class:subj={current.agents[seg.agentIndex]?.role === 'subject'}
-							class:obj={current.agents[seg.agentIndex]?.role === 'object'}
-							class:member={current.agents[seg.agentIndex]?.role === 'member'}
-							style={`--agent-i: ${seg.agentIndex}`}
-							data-tip={agentTitle(seg.agentIndex)}>{seg.text}</span
-						>
-					{/if}
-				{/each}
-			</p>
-			<p class="cur-prov">
-				[{current.sourceApi ?? 'no source'}]
-				{#if current.pmid}
-					· <a href="https://pubmed.ncbi.nlm.nih.gov/{current.pmid}" target="_blank" rel="noreferrer"
-						>PMID {current.pmid}</a
+
+			{#if selectorOpen}
+				{@render datasetRail()}
+			{:else}
+				<div class="cur-frame">
+					<span class="cur-dot">●</span> drawing from
+					<span class="cur-fnm">{activeDataset?.label}</span> ·
+					{activeDataset?.character === 'representative' ? 'uniform' : 'fixed set'} ·
+					{activeDataset?.sizeLabel}
+					<button type="button" class="cur-switch" onclick={() => (selectorOpen = true)} disabled={busy}
+						>switch ⌄</button
 					>
-				{/if}
-				· {current.stmtType}
-				{#if current.belief != null} · belief {current.belief.toFixed(2)}{/if}
-				· {current.evCount} evidence · via {current.agentQuery}
-			</p>
-			<p class="cur-hash muted">stmt {current.matchesHash} · ev {current.sourceHash}</p>
+				</div>
+			{/if}
+
+			{#key currentKey}
+				<div class="cur-swap">
+					<div class="cur-claim">
+						<span class="cur-subj">{current.claim.subject}</span>
+						<span class="cur-rel">{current.claim.relation}</span>
+						<span class="cur-obj">{current.claim.object}</span>
+					</div>
+					<p class="cur-evidence">
+						{#each evidenceSegments as seg}
+							{#if seg.agentIndex == null}
+								{seg.text}
+							{:else}
+								<span
+									class="cur-entity"
+									class:subj={current.agents[seg.agentIndex]?.role === 'subject'}
+									class:obj={current.agents[seg.agentIndex]?.role === 'object'}
+									class:member={current.agents[seg.agentIndex]?.role === 'member'}
+									style={`--agent-i: ${seg.agentIndex}`}
+									data-tip={agentTitle(seg.agentIndex)}>{seg.text}</span
+								>
+							{/if}
+						{/each}
+					</p>
+					<p class="cur-prov">
+						[{current.sourceApi ?? 'no source'}]
+						{#if current.pmid}
+							· <a
+								href="https://pubmed.ncbi.nlm.nih.gov/{current.pmid}"
+								target="_blank"
+								rel="noreferrer">PMID {current.pmid}</a
+							>
+						{/if}
+						· {current.stmtType}
+						{#if current.belief != null} · belief {current.belief.toFixed(2)}{/if}
+						· {current.evCount} evidence
+					</p>
+					<p class="cur-hash muted">stmt {current.matchesHash} · ev {current.sourceHash}</p>
+				</div>
+			{/key}
 
 			<form method="POST" action="?/submit" use:enhance={submitEnhance} class="cur-form">
 				<input type="hidden" name="matches_hash" value={current.matchesHash} />
@@ -255,6 +333,7 @@
 				bind:this={sampleFormEl}
 				class="cur-skip"
 			>
+				<input type="hidden" name="dataset" value={activeDatasetId} />
 				<button type="submit" class="cur-skip-btn" disabled={busy} onclick={() => (lastResult = null)}>
 					skip · sample another →
 				</button>
@@ -262,8 +341,10 @@
 		</section>
 	{:else}
 		<div class="cur-empty">
+			{@render datasetRail()}
 			<p class="cur-err">{sampleError ?? 'No evidence sampled.'}</p>
 			<form method="POST" action="?/sample" use:enhance={sampleEnhance} bind:this={sampleFormEl}>
+				<input type="hidden" name="dataset" value={activeDatasetId} />
 				<button type="submit" class="cur-go" disabled={busy}>{busy ? 'working…' : 'try again →'}</button>
 			</form>
 		</div>
@@ -367,4 +448,80 @@
 	.cur-empty { padding: 2rem 0; }
 	.cur-err { font-family: var(--mono); font-size: 0.82rem; color: var(--accent); margin-bottom: 1rem; }
 	.muted { color: var(--ink-faint); }
+
+	/* ── the SELECTOR rail (choosing moment) — one row per universe ─────────────
+	 * kind (unbounded uniform whole vs a bounded named set) and scale (≈1000×) are
+	 * made perceivable, not labelled: representative's bar runs full width and fades
+	 * off the right edge (the whole goes on); rasmachine's is short with a hard cap. */
+	.cur-label {
+		font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.14em;
+		text-transform: uppercase; color: var(--ink-faint); margin: 0 0 0.5rem;
+	}
+	.cur-rail {
+		border: 1px solid var(--rule); border-radius: 2px; padding: 0.15rem 0;
+		margin-bottom: 1.4rem; background: var(--paper);
+	}
+	.cur-ds {
+		display: grid; grid-template-columns: 18px minmax(150px, 1fr) 150px; align-items: center;
+		gap: 0.75rem; width: 100%; padding: 0.62rem 0.9rem; cursor: pointer; text-align: left;
+		background: none; border: none; border-left: 2px solid transparent; font: inherit; color: inherit;
+		transition: background 200ms ease, border-color 200ms ease;
+	}
+	.cur-ds + .cur-ds { border-top: 1px solid var(--rule); }
+	.cur-ds:disabled { cursor: default; }
+	.cur-mk { font-family: var(--mono); color: var(--rule); font-size: 0.9rem; text-align: center; }
+	.cur-dsbody { display: flex; flex-direction: column; min-width: 0; }
+	.cur-nm { font-family: var(--mono); font-size: 0.9rem; color: var(--ink-muted); }
+	.cur-bl { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-faint); margin-top: 0.12rem; }
+	.cur-sc { justify-self: end; text-align: right; width: 100%; }
+	.cur-n {
+		display: block; font-family: var(--mono); font-size: 0.82rem; color: var(--ink-muted);
+		font-variant-numeric: tabular-nums;
+	}
+	.cur-bar {
+		display: block; height: 4px; margin-top: 0.28rem; margin-left: auto;
+		background: var(--ink-faint); opacity: 0.5; border-radius: 1px;
+	}
+	.cur-ds.on { border-left-color: var(--accent); background: var(--accent-wash); }
+	.cur-ds.on .cur-mk { color: var(--accent); }
+	.cur-ds.on .cur-nm { color: var(--accent); font-weight: 600; }
+	.cur-ds.on .cur-n { color: var(--ink); }
+	.cur-ds.on .cur-bar { background: var(--accent); opacity: 1; }
+	/* representative: unbounded → the bar fades off the right edge (goes on) */
+	.cur-bar.rep {
+		width: 100%;
+		-webkit-mask-image: linear-gradient(90deg, #000 74%, transparent);
+		mask-image: linear-gradient(90deg, #000 74%, transparent);
+	}
+	/* rasmachine: bounded → hard right cap */
+	.cur-bar.bd { width: 35%; position: relative; }
+	.cur-bar.bd::after {
+		content: ''; position: absolute; right: -1px; top: -2px; height: 8px; width: 1.5px; background: var(--accent);
+	}
+	.cur-ds:not(.on) .cur-bar.bd::after { background: var(--ink-faint); }
+
+	/* ── the PERSISTENT frame (dwelling moment) — the active universe stays present */
+	.cur-frame {
+		display: flex; align-items: center; gap: 0.5rem; font-family: var(--mono); font-size: 0.72rem;
+		color: var(--ink-faint); border-bottom: 1px dashed var(--rule); padding-bottom: 0.5rem; margin-bottom: 0.9rem;
+	}
+	.cur-dot { color: var(--accent); }
+	.cur-fnm { color: var(--accent); font-weight: 600; }
+	.cur-switch {
+		margin-left: auto; font-family: var(--mono); font-size: 0.72rem; color: var(--ink-faint);
+		background: none; border: none; padding: 0; cursor: pointer;
+	}
+	.cur-switch:hover:not(:disabled) { color: var(--ink); }
+	.cur-switch:disabled { cursor: default; opacity: 0.5; }
+
+	/* the sample swap — a fresh draw arrives as a "different room" */
+	.cur-swap { animation: cur-enter 300ms ease-out; }
+	@keyframes cur-enter {
+		from { opacity: 0; transform: translateY(4px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.cur-ds { transition: none; }
+		.cur-swap { animation: none; }
+	}
 </style>

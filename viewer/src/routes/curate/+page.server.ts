@@ -6,31 +6,39 @@
  * under that curator's own INDRA JWT (locals.session.jwt), never a shared key.
  *
  * Verified live contracts:
- *   sample → GET  db.indra.bio/statements/from_agents (public)
+ *   sample → uniform-random line from data/corpora/cogex_evidence_sample.jsonl,
+ *            materialized unbiased by matches_hash via
+ *            POST db.indra.bio/statements/from_hashes (public)
  *   submit → POST db.indra.bio/curation/submit/<matches_hash> (curator JWT cookie)
  */
 import { fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { getCuratorStats, noteCuratorSubmission, sampleEvidence, submitCuration } from '$lib/server/indra';
+import { datasetsForClient } from '$lib/server/datasets';
 import { indraBaseUrl } from '$lib/server/session';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	const dbHost = indraBaseUrl();
+	const datasets = datasetsForClient();
+	const datasetId = url.searchParams.get('dataset');
 	const stats = locals.session
 		? await getCuratorStats(locals.session.jwt, locals.session.email)
 		: { status: 'unavailable' as const, total: 0, correct: 0, incorrect: 0, reason: 'not signed in' };
 	try {
-		return { dbHost, stats, sample: await sampleEvidence(), sampleError: null };
+		return { dbHost, stats, datasets, sample: await sampleEvidence(datasetId), sampleError: null };
 	} catch (e) {
-		return { dbHost, stats, sample: null, sampleError: e instanceof Error ? e.message : String(e) };
+		return { dbHost, stats, datasets, sample: null, sampleError: e instanceof Error ? e.message : String(e) };
 	}
 };
 
 export const actions: Actions = {
-	/** Draw a fresh random sample (used by "sample another" + post-submit "next"). */
-	sample: async () => {
+	/** Draw a fresh random sample from the chosen dataset (used by "sample another",
+	 *  the post-submit auto-advance, and a dataset switch in the selector rail). */
+	sample: async ({ request }) => {
+		const fd = await request.formData();
+		const datasetId = String(fd.get('dataset') ?? '') || null;
 		try {
-			return { sampled: await sampleEvidence() };
+			return { sampled: await sampleEvidence(datasetId) };
 		} catch (e) {
 			return fail(502, { sampleError: e instanceof Error ? e.message : String(e) });
 		}

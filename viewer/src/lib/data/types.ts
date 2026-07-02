@@ -407,8 +407,9 @@ export interface EvidenceSample {
 	claim: Claim;
 	/** Statement agents plus evidence surface strings, when INDRA provides them. */
 	agents: EvidenceAgent[];
-	/** which agent query surfaced this statement (sampling provenance). */
-	agentQuery: string;
+	/** id of the dataset (universe) this pair was drawn from — the active universe
+	 *  threaded to the persistent frame header on /curate (see datasets.ts). */
+	dataset: string;
 	/** total evidence supporting this statement (context for the curator). */
 	evCount: number;
 }

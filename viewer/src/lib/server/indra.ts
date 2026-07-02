@@ -3,9 +3,16 @@
  * submit a human curation back. SERVER-ONLY ($lib/server, never bundled to the
  * browser).
  *
+ * Sampling is UNIFORM over the local CoGEx pool: pick a random line from
+ * data/corpora/cogex_evidence_sample.jsonl (5,000 rows reservoir-sampled uniformly
+ * from CoGEx), then materialize that statement UNBIASED by matches_hash via
+ * POST /statements/from_hashes (public) and select the evidence whose source_hash
+ * matches the pool row. No agent-pool bias, no from_agents.
+ *
  * Two endpoints (verified against db.indra.bio):
- *   GET  /statements/from_agents?agent=…&format=json-js&ev_limit&max_stmts&offset
- *        → INDRA JSON; statements carry inline evidence. PUBLIC, no auth.
+ *   POST /statements/from_hashes?format=json-js&ev_limit  body {hashes:[<int>]}
+ *        → INDRA JSON: results{} keyed by matches_hash + belief_scores +
+ *        evidence_counts; each statement carries inline evidence. PUBLIC, no auth.
  *   POST /curation/submit/<matches_hash>   body {tag, text, ev_hash:<int>, source}
  *        Authenticated by the CURATOR's own INDRA JWT (forwarded as the
  *        access_token_cookie). No shared api_key, no self-declared email — INDRA
@@ -17,8 +24,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { AGENT_POOL } from './agents';
 import { CURATION_TAGS } from '$lib/data/curation';
+import { getDataset, type Dataset } from './datasets';
 import { indraBaseUrl } from './session';
 import type { Claim, EvidenceAgent, EvidenceSample } from '$lib/data/types';
 
@@ -143,100 +150,188 @@ function pick<T>(xs: readonly T[]): T {
 	return xs[Math.floor(Math.random() * xs.length)];
 }
 
-async function fetchFromAgent(
+/** The load-bearing part of one local CoGEx pool line: the statement + evidence
+ *  hashes that select the pair to materialize from the DB (which then supplies the
+ *  assembled claim, agents, belief, text). Both are 64-bit ints that OVERFLOW JS
+ *  Number, so they are kept as EXACT-DIGIT STRINGS — never JSON.parse'd (which
+ *  would silently round e.g. …258 → …256 and break the by-hash join). */
+interface PoolPair {
+	stmtHash: string;
+	sourceHash: string;
+}
+
+/** Resolve a dataset's file (e.g. 'corpora/…') under the viewer's DATA_DIR via the
+ *  same pattern runs.ts uses (viewer/ cwd → ../data). dataset.file already carries
+ *  the 'corpora/…' prefix. */
+function dataPath(file: string): string {
+	return resolve(process.cwd(), '..', 'data', file);
+}
+
+const _lineCache = new Map<string, string[]>();
+
+/** Read + cache a JSONL's non-empty lines, keyed by resolved path (one dataset
+ *  file per key). Reads each file once per server process; throws if the file is
+ *  missing (caught upstream → sampleError, same graceful UX as a live DB failure). */
+function linesOf(path: string): string[] {
+	const cached = _lineCache.get(path);
+	if (cached) return cached;
+	const txt = readFileSync(path, 'utf8');
+	const lines = txt.split('\n').filter((l) => l.trim().length > 0);
+	_lineCache.set(path, lines);
+	return lines;
+}
+
+/** Extract the top-level stmt_hash + source_hash from a raw pool line as exact
+ *  digit strings (the top-level source_hash is this row's evidence hash). Returns
+ *  null if either is missing/malformed. Regex, not JSON.parse — see PoolPair. */
+function poolPairOf(line: string): PoolPair | null {
+	const sm = line.match(/"stmt_hash"\s*:\s*(-?\d+)/);
+	const sh = line.match(/"source_hash"\s*:\s*(-?\d+)/);
+	if (!sm || !sh) return null;
+	const stmtHash = sm[1];
+	const sourceHash = sh[1];
+	if (!HASH_RE.test(stmtHash) || !HASH_RE.test(sourceHash)) return null;
+	return { stmtHash, sourceHash };
+}
+
+/** Materialize a statement (and all its evidence) UNBIASED by its matches_hash.
+ *  A generous ev_limit ensures the target source_hash's evidence is in the set.
+ *  stmtHash is HASH_RE-validated (digits only), so injecting it as a bare integer
+ *  literal in the body is precision-safe — JSON.stringify of a Number would round
+ *  the 64-bit hash. */
+async function fetchFromHashes(
 	baseUrl: string,
-	agent: string,
-	offset: number,
-	evLimit: number,
-	maxStmts: number
+	stmtHash: string,
+	evLimit: number
 ): Promise<Record<string, unknown> | null> {
-	const url =
-		`${baseUrl}/statements/from_agents?agent=${encodeURIComponent(agent)}` +
-		`&format=json-js&ev_limit=${evLimit}&max_stmts=${maxStmts}&offset=${offset}`;
+	const url = `${baseUrl}/statements/from_hashes?format=json-js&ev_limit=${evLimit}`;
 	const r = await fetch(url, {
-		headers: { 'User-Agent': 'indra-belief-curate/1' },
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'User-Agent': 'indra-belief-curate/1' },
+		body: `{"hashes":[${stmtHash}]}`,
 		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
 	});
 	if (!r.ok) return null;
 	return (await r.json()) as Record<string, unknown>;
 }
 
-interface Pair {
-	stmt: Record<string, unknown>;
-	ev: Record<string, unknown>;
-}
-
-/** Flatten a from_agents response into (statement, evidence) pairs that have a
- *  usable sentence and valid string hashes. */
-function pairsOf(resp: Record<string, unknown>): Pair[] {
-	const statements = (resp.statements as Record<string, Record<string, unknown>>) ?? {};
-	const out: Pair[] = [];
-	for (const stmt of Object.values(statements)) {
-		const mh = stmt.matches_hash;
-		if (typeof mh !== 'string' || !HASH_RE.test(mh)) continue;
-		const evs = Array.isArray(stmt.evidence) ? (stmt.evidence as Record<string, unknown>[]) : [];
-		for (const ev of evs) {
-			const sh = ev.source_hash;
-			const text = ev.text;
-			if (typeof sh !== 'string' || !HASH_RE.test(sh)) continue;
-			if (typeof text !== 'string' || text.trim().length < 12) continue;
-			// Skip publisher-redacted text — INDRA truncates restricted full-text
-			// (e.g. Elsevier) to ~200 chars and tacks on a credentials placeholder.
-			// A curator can't judge an extraction against a chopped sentence.
-			if (/MISSING\/INVALID CREDENTIALS|limited to \d+ char/i.test(text)) continue;
-			out.push({ stmt, ev });
-		}
-	}
-	return out;
-}
-
-function toSample(resp: Record<string, unknown>, pair: Pair, agentQuery: string): EvidenceSample {
-	const { stmt, ev } = pair;
-	const mh = stmt.matches_hash as string;
-	const beliefScores = (resp.belief_scores as Record<string, number>) ?? {};
-	const evCounts = (resp.evidence_counts as Record<string, number>) ?? {};
+/** Assemble an EvidenceSample from an already-selected (statement, evidence) pair.
+ *  Shared by the pool sampler (belief/evCount from the DB response) and the inline
+ *  sampler (belief/evCount from the statement itself). `datasetId` records which
+ *  universe the draw came from — threaded to the /curate frame header. Hashes are
+ *  passed through as STRINGS, never Number(). */
+function buildSample(
+	stmt: Record<string, unknown>,
+	ev: Record<string, unknown>,
+	belief: number | null,
+	evCount: number,
+	datasetId: string
+): EvidenceSample {
 	const refs = (ev.text_refs as Record<string, string>) ?? {};
 	const pmid = (ev.pmid as string) ?? refs.PMID ?? null;
 	return {
-		matchesHash: mh,
+		matchesHash: stmt.matches_hash as string,
 		sourceHash: ev.source_hash as string,
 		text: (ev.text as string).trim(),
 		pmid: pmid ? String(pmid) : null,
 		pmcid: refs.PMCID ? String(refs.PMCID) : null,
 		sourceApi: (ev.source_api as string) ?? null,
 		stmtType: (stmt.type as string) ?? 'Statement',
-		belief: typeof beliefScores[mh] === 'number' ? beliefScores[mh] : ((stmt.belief as number) ?? null),
+		belief,
 		claim: renderStatement(stmt),
 		agents: evidenceAgents(stmt, ev),
-		agentQuery,
-		evCount: typeof evCounts[mh] === 'number' ? evCounts[mh] : 0
+		dataset: datasetId,
+		evCount
 	};
 }
 
-/** Sample one (statement, evidence) pair broadly from the live DB: random agent
- *  from the pool × random offset × random statement × random evidence. Retries a
- *  few agents/offsets if a draw dead-ends (sparse agent or offset past the end),
- *  with the final attempt pinned to offset 0 so a pool agent always yields. */
-export async function sampleEvidence(maxAttempts = 8): Promise<EvidenceSample> {
-	const baseUrl = indraBaseUrl();
-	let lastErr = 'no evidence found';
+/** A usable curation sentence: long enough and not publisher-redacted. Shared by
+ *  both samplers so the card never renders an empty or credential-limited body. */
+function usableText(text: unknown): text is string {
+	if (typeof text !== 'string' || text.trim().length < 12) return false;
+	return !/MISSING\/INVALID CREDENTIALS|limited to \d+ char/i.test(text);
+}
+
+/** Sample one (statement, evidence) pair from a dataset, dispatching on its kind:
+ *   'cogex-pool'        → uniform-random pool line materialized via the live DB.
+ *   'inline-statements' → random statement × random evidence from a local JSONL.
+ *  Unknown/empty datasetId falls back to the representative draw (DATASETS[0]). */
+/** Sample one (statement, evidence) pair UNIFORMLY at random from a dataset — ONE
+ *  strategy for every dataset kind. Pick a random pool line, resolve it into a
+ *  candidate (the ONLY kind-specific step, `resolverFor`), apply the shared guards
+ *  (exact-digit STRING hashes + a usable, non-redacted sentence), and retry another
+ *  random line on any dead-end (version skew, text-less DB rows ~10-16%, redacted
+ *  text) up to maxAttempts. New dataset kind = one new branch in resolverFor only. */
+export async function sampleEvidence(datasetId?: string | null, maxAttempts = 8): Promise<EvidenceSample> {
+	const ds = getDataset(datasetId);
+	const lines = linesOf(dataPath(ds.file));
+	const resolve = resolverFor(ds);
+	let lastErr = 'no usable evidence found';
 	for (let i = 0; i < maxAttempts; i++) {
-		const agent = pick(AGENT_POOL);
-		const offset = i === maxAttempts - 1 ? 0 : Math.floor(Math.random() * 90);
 		try {
-			const resp = await fetchFromAgent(baseUrl, agent, offset, 8, 20);
-			if (!resp) {
-				lastErr = `INDRA DB error for ${agent}`;
-				continue;
-			}
-			const pairs = pairsOf(resp);
-			if (pairs.length === 0) continue;
-			return toSample(resp, pick(pairs), agent);
+			const r = await resolve(pick(lines));
+			if (!r) continue; // dead-end draw — retry another random line
+			const mh = r.stmt.matches_hash;
+			const sh = r.ev.source_hash;
+			if (typeof mh !== 'string' || !HASH_RE.test(mh)) continue;
+			if (typeof sh !== 'string' || !HASH_RE.test(sh)) continue;
+			if (!usableText(r.ev.text)) continue;
+			return buildSample(r.stmt, r.ev, r.belief, r.evCount, ds.id);
 		} catch (e) {
 			lastErr = e instanceof Error ? e.message : String(e);
 		}
 	}
-	throw new Error(`could not sample evidence from INDRA DB (${lastErr})`);
+	throw new Error(`could not sample evidence from ${ds.id} (${lastErr})`);
+}
+
+/** A resolved candidate: the (statement, evidence) pair plus the belief +
+ *  evidence-count the dataset's materialization exposes. `null` ⇒ dead-end, retry. */
+interface Resolved {
+	stmt: Record<string, unknown>;
+	ev: Record<string, unknown>;
+	belief: number | null;
+	evCount: number;
+}
+
+/** The ONLY per-dataset-kind step: turn one random pool line into a materialized
+ *  candidate. Everything around it (the uniform draw, the guards, the retry loop,
+ *  buildSample) is shared in sampleEvidence.
+ *   - 'inline-statements' — the line IS the statement (evidence inline, hashes already
+ *       quoted strings by build_curate_pool.py): no network, skew-free; pick one of
+ *       its evidences.
+ *   - 'cogex-pool' — the line carries only hashes: materialize the statement UNBIASED
+ *       by matches_hash via /statements/from_hashes, then select the row's evidence
+ *       (null on version skew / re-hashed evidence → retry). */
+function resolverFor(ds: Dataset): (line: string) => Promise<Resolved | null> {
+	if (ds.kind === 'inline-statements') {
+		return async (line) => {
+			const stmt = JSON.parse(line) as Record<string, unknown>;
+			const evs = Array.isArray(stmt.evidence) ? (stmt.evidence as Record<string, unknown>[]) : [];
+			if (!evs.length) return null;
+			const belief = typeof stmt.belief === 'number' ? (stmt.belief as number) : null;
+			return { stmt, ev: pick(evs), belief, evCount: evs.length };
+		};
+	}
+	const baseUrl = indraBaseUrl();
+	return async (line) => {
+		const pair = poolPairOf(line);
+		if (!pair) return null;
+		const resp = await fetchFromHashes(baseUrl, pair.stmtHash, 10_000);
+		if (!resp) return null; // INDRA DB error — retry another row
+		const results = resp.results as Record<string, Record<string, unknown>> | undefined;
+		const stmt = results?.[pair.stmtHash];
+		if (!stmt) return null; // version skew: hash didn't materialize — retry
+		const evs = Array.isArray(stmt.evidence) ? (stmt.evidence as Record<string, unknown>[]) : [];
+		const ev = evs.find((e) => String(e.source_hash) === pair.sourceHash);
+		if (!ev) return null; // evidence re-hashed / dropped by ev_limit — retry
+		const mh = stmt.matches_hash as string;
+		const beliefScores = (resp.belief_scores as Record<string, number>) ?? {};
+		const evCounts = (resp.evidence_counts as Record<string, number>) ?? {};
+		const belief =
+			typeof beliefScores[mh] === 'number' ? beliefScores[mh] : ((stmt.belief as number) ?? null);
+		const evCount = typeof evCounts[mh] === 'number' ? evCounts[mh] : 0;
+		return { stmt, ev, belief, evCount };
+	};
 }
 
 // ── submission ──────────────────────────────────────────────────────────────
