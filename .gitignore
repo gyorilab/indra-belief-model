@@ -56,3 +56,6 @@ Thumbs.db
 
 # Environment
 .env
+
+# Slidev presentation (local-only build; leverages ../biomolecular-clique-finding theme)
+presentations/

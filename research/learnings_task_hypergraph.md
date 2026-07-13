@@ -184,6 +184,14 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **E2-ext-2 (D2 per-model gate + D2→E2 edge):** rewrite D2's gate from a single aggregate to **per-model** non-inferiority — err-F1 non-inferior at n=1606 for **both** gemma-26B **and** medpsy-4B; a 26B regression fails even if the 4B is neutral. D2's "minimize context" is the *inverse* of the 26B's measured context-synthesis win (entity-reading pilot 0.794→0.836), so a model-blind aggregate gate could silently regress the production model against its own strength. **New edge D2→E2:** D2's shipped-model verdict isn't final until E2's per-model cell confirms no 26B harm.
 
 ### Closed — do NOT reintroduce
+
+> **Scope note (2026-07-13):** the noisy-OR row below closed a structural
+> redesign proposed as a fix for the 13.3% aggregation residual. It did not
+> evaluate the later confusion-derived hybrid log-odds calibration model, which
+> replaces the fitted-reader scalar while leaving the tiered review decision
+> separate. Keep the row as the June 23 decision record, not as a description of
+> the current calibrated belief.
+
 | Item | Why closed |
 |---|---|
 | LoRA / DAPT / distillation (fine-tune the verifier) | already-tried-failed (V-phase/V9 < trivial baseline) + out-of-scope for a prompt/substrate program |

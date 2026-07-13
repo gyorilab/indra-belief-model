@@ -1,22 +1,61 @@
 # LLM-Verifier Calibration — Task Hypergraph
 
-**Status:** Drafted 2026-06-17. **C0 executed 2026-06-17 → G0 = GO** for both readers (`scripts/calibration_stage0.py` → `data/results/calibration_stage0.md`): per-statement gated belief AUROC 0.77 (MedPsy) / 0.81 (gemma), AUPRC 0.74 / 0.77 vs base 0.51 — real discrimination AND real miscalibration (mid-range under-confidence). **C1 done + CONFIRMED OOD 2026-06-17**: soft weight works; committed `replace` over-flattens; the **`guard` variant** (confirmation can only lower a read's error) at **κ=0 (adopted via κ-sweep; κ=0.5 was the pre-registered value)** improves ECE AND AUROC. **C1.2 authoritative confirmation on the independent `holdout_cc` (scored on noot-1) PASSES both readers at κ=0** (MedPsy ECE 0.159→0.126/AUROC 0.717→0.759; gemma 0.171→0.129/0.740→0.768) → **G1 cleared, C2 greenlit.** Decision-driven by **G0** (the go/no-go gate): Stage C0 is a zero-model-change diagnostic that tells us whether C1–C3 are worth doing at all. The architecture is settled (soft survival weight = recalibration of the existing per-read `rand`, not a new error term); the empirical anchors are fit + verified (below). This hypergraph turns the calibration plan into do→review cycles. **Math arc** (C0–C3, gated G0–G3) lives here; the **presentation arc** (C4/C5, gated G4/G5v — making products navigable as run-on-its-own vs run-comparison) hands off via substrate edge **E5** to `research/belief_instrument_task_graph.md`.
-**Last update:** 2026-06-17 (+ E5 presentation seam + C4/C5 handoff: viewer is NOT calibration-ready today)
+> **Current implementation (2026-07-13; supersedes the survival-weight design
+> below).** This file preserves the June 17 experiment and decision trail; its
+> `w_correct` / `w_incorrect`, `guard`, `κ`, geometric-mean wrong-rate, and
+> noisy-OR formulas are historical candidates, not the live belief contract.
+> The current fitted-reader path stores the four measured verdict×gold confusion
+> cells and derives prevalence-free reader likelihoods from them:
+>
+> ```text
+> sensitivity = P(confirm | correct)       false-positive rate = P(confirm | incorrect)
+> log_lr_confirm = log(sensitivity / false-positive rate)
+> log_lr_reject  = log(P(reject | correct) / P(reject | incorrect))
+> source_logit(s) = log(P(correct | source=s) / P(incorrect | source=s))
+> evidence(confirm,s) = max(log_lr_confirm, source_logit(s))
+> evidence(reject,s)  = log_lr_reject       evidence(unscored,s) = source_logit(s)
+> logit(belief) = prior_logodds + Σ_sources mean_reads_from_source(evidence(verdict,s))
+> ```
+>
+> Reads from one source are averaged because they are correlated; independent
+> sources add evidence. The source reliability is a posterior logit from a
+> separate 9,342-curation fit, not a likelihood ratio, so the result is an
+> explicit hybrid score rather than a pure Bayesian posterior. An unscored read
+> contributes that source logit, and an unfitted reader falls back to the hard gate. The arm name
+> `soft` and the export key `soft_weights` survive for schema compatibility, but
+> their payload is now this measured confusion profile / likelihood-ratio model.
+> Resolution is keyed by canonical model **and the exact monolithic system-prompt
+> SHA-256**, never model name alone. Production enables remote Gemma at
+> `b44638216740…` (matched holdout 4/4) and reasoning-first Bedrock Gemma at
+> `07377e338ff2…` (external curator gold 4/4). Remote MedPsy at `b44638216740…`
+> remains a measured candidate but is disabled because its matched holdout failed
+> ECE (3/4); its external run used `07377e338ff2…`, so transferring the fitted
+> profile there is invalid. Missing/mixed/mismatched provenance stays hard-gate.
+> The June 17 confusion counts and held-out findings remain valid evidence; only
+> the candidate mechanism derived from them was superseded.
+
+**Historical status (June 17 record):** **C0 executed 2026-06-17 → G0 = GO** for both readers (`scripts/calibration_stage0.py` → `data/results/calibration_stage0.md`): per-statement gated belief AUROC 0.77 (MedPsy) / 0.81 (gemma), AUPRC 0.74 / 0.77 vs base 0.51 — real discrimination AND real miscalibration (mid-range under-confidence). **C1 done + CONFIRMED OOD 2026-06-17**: the then-candidate soft weight worked; committed `replace` over-flattened; the **`guard` variant** at **κ=0** improved ECE and AUROC. **C1.2 authoritative confirmation on independent `holdout_cc` PASSED both readers at κ=0** (MedPsy ECE 0.159→0.126/AUROC 0.717→0.759; gemma 0.171→0.129/0.740→0.768), clearing G1 for the historical C2 experiment. Those results motivated the later measurement model; they do not make the survival-weight architecture current.
+**Last update:** 2026-07-13 (current likelihood-ratio contract documented; June 17 evidence retained as historical provenance)
 **Owner question:** "Consider INDRA's existing error mode `1 − ∏ₛ[syst(s) + rand(s)^nₛ]`. How do we arrive at a coherent, useful, accurate heuristic to inform calibration?"
 
 ---
 
-## Frame
+## Frame (historical C1 framing; mechanism superseded)
 
 The LLM emits a **binary verdict** (`correct`/`incorrect`); its 3-level confidence has **collapsed** (gemma 1596/1606 `high`, zero `low`; medpsy 1522/73/11 — verified against `data/results/eval_curation_v1_{gemma,medpsy}.jsonl`). So classical probability calibration over the `VERDICT_SCORE_GRID` is degenerate — the score axis occupies ~2 values, and `metrics.ece` over it is a coarse accuracy check, not a reliability curve.
 
-The coherent move is **not** to add the LLM as a new probability. `rand_s` was fit as `rand = 1 − accuracy − syst` against per-read correctness on the 9,342-statement benchmark (`noise_model.py:48-49`) — the *same latent event* ("did this read get the relation right?") that the LLM verdict judges. Therefore the LLM is **not an independent source**: it conditions the per-read error that already exists. The heuristic recalibrates `rand_s` keyed on the verdict; it never multiplies a second reader-error factor on top of it (that double-counts).
+The June 17 candidate treated the LLM as a replacement for `rand_s`. That was a
+useful guard against double-counting, but it is not the current implementation.
+The current model treats each verdict as a noisy measurement of the same latent
+truth and adds its measured log-likelihood ratio once; it does not multiply a
+second noisy-OR reader-error term.
 
-**The radical simplification this frame buys us:** two parameters per reader model. That is the entire fit.
+**What survived:** one measured 2×2 confusion matrix per reader model. All live
+parameters are arithmetic functions of those four counts.
 
 ---
 
-## Decisions (locked 2026-06-17)
+## Decisions (locked 2026-06-17; historical)
 
 | # | Decision | Rationale |
 |---|---|---|
@@ -29,18 +68,48 @@ The coherent move is **not** to add the LLM as a new probability. `rand_s` was f
 | D7 | **Invariant:** with all `verdict=None`, the new path reproduces `compute_gated_belief` **byte-for-byte**. | The identity gate. Same golden-output discipline used for the metrics extraction; it backs shipped F1. |
 | D8 | The lever is **reader/grounding quality**, not the calibration map. If C0 shows no AUPRC headroom, **stop and ship nothing.** | A monotone post-hoc `g(belief)` cannot fix a resolution-limited score; it lowers ECE while collapsing resolution. |
 
+Decisions D1–D3 and the `(rand_corr, rand_rej, κ)` representation in D5 describe
+the superseded survival-weight candidate. D4 (drop confidence), D6 (no
+per-stratum fit), and D8 (preserve discrimination) remain useful constraints.
+D7 survives in a narrower, explicit form: the default-off / unfitted-reader
+hard path is byte-identical to the pre-calibration call. The calibrated path with
+unscored reads uses source-reliability log-odds and is not asserted equal to the
+hard noisy-OR.
+
 ---
 
 ## Verified facts (the anchors C1 fits)
 
-Joined `data/benchmark/eval_curation_v1.jsonl` (gold, n=1606, balanced 801/803) to run outputs by `source_hash` (0 missing). Confusion cells (verified 2026-06-17):
+The current fit joins `data/benchmark/eval_curation_v1.jsonl` to run outputs by
+the exact `(matches_hash, source_hash)` pair, aggregates duplicate curator labels
+with any-incorrect-wins, and counts each pair once. That leaves **n=1604 unique
+pairs (801 correct / 803 incorrect)** with zero missing rows. The remote and
+reasoning-first Bedrock Gemma configurations are fitted separately:
+
+The current calibration stores these cells directly:
+
+| reader | confirmed & correct (`cc`) | confirmed & incorrect (`ci`) | rejected & correct (`ic`) | rejected & incorrect (`ii`) |
+|---|---:|---:|---:|---:|
+| **remote medpsy-4B** | 718 | 230 | 83 | 573 |
+| **remote gemma-26B** | 704 | 157 | 97 | 646 |
+| **reasoning-first Bedrock gemma-26B** | 662 | 81 | 139 | 722 |
+
+The following posterior wrong-rate summaries were the historical C1
+parameterization. They remain useful diagnostics, but the current model derives
+`log_lr_confirm` / `log_lr_reject` from the confusion columns (conditioned on
+gold truth), rather than consuming these values as weights.
 
 | reader | `rand_corr` = P(gold=incorrect \| verdict=**correct**) — confirmed read is wrong | `rand_rej` = P(gold=correct \| verdict=**incorrect**) — rejected read is wrong |
 |---|---|---|
-| **medpsy-4B** | 231/950 = **0.243** | 83/656 = **0.127** |
-| **gemma-26B** | 158/863 = **0.183** | 97/743 = **0.131** |
+| **remote medpsy-4B** | 230/948 = **0.243** | 83/656 = **0.127** |
+| **remote gemma-26B** | 157/861 = **0.182** | 97/743 = **0.131** |
+| **reasoning-first Bedrock gemma-26B** | 81/743 = **0.109** | 139/861 = **0.161** |
 
-> **Correction folded in:** the original synthesis crossed these two columns. The verified reading: **confirmations are the bigger leak** — medpsy is wrong on ~24% of reads it confirms vs ~13% of reads it rejects (gemma 18% vs 13%). medpsy over-confirms; gemma is more balanced. The soft-weight on `verdict=correct` reads therefore does more work than first framed.
+> **Correction folded in:** the original synthesis crossed these two columns. For
+> the remote readers, confirmations are the bigger leak: medpsy is wrong on ~24%
+> of reads it confirms vs ~13% of reads it rejects; remote Gemma is ~18% vs ~13%.
+> Bedrock Gemma is a different measurement configuration (~11% vs ~16%) and must
+> not inherit the remote profile.
 
 `rand_s`, `syst_s` are **not fit** — they stay `RECALIBRATED_PRIORS` (`noise_model.py:52-76`, e.g. `reach (0.462, 0.05)`).
 
@@ -52,7 +121,7 @@ Joined `data/benchmark/eval_curation_v1.jsonl` (gold, n=1606, balanced 801/803) 
 
 ---
 
-## The heuristic (target of C2)
+## Historical heuristic (the C2 target at the time; superseded)
 
 ```
 Per source s, per read j, verdict v_j ∈ {correct, incorrect, none}:
@@ -67,7 +136,7 @@ source factor:      f_s = syst_s + geomean_j w_j   (a source's reads are correla
 statement belief:   1 − ∏_s f_s   (only INDEPENDENT sources multiply; contradiction split unchanged)
 ```
 
-Reduce-to-current check: `v_j=None` ∀j and κ=1 ⇒ `f_s = syst_s + rand_s^{n_s}` (today, `noise_model.py:108`). This replaces today's *hard deletion* of `verdict=incorrect` evidence (which drops a lone-evidence source to factor 1.0) with a measured residual penalty.
+Historical reduce-to-then-current check: `v_j=None` ∀j and κ=1 ⇒ `f_s = syst_s + rand_s^{n_s}`. The live fitted-reader path no longer computes this wrong-rate product; see the current-implementation block above. The hard-gate fallback still uses the parametric noisy-OR.
 
 ---
 
@@ -77,13 +146,17 @@ Reduce-to-current check: `v_j=None` ∀j and κ=1 ⇒ `f_s = syst_s + rand_s^{n_
 Reuse shipped `metrics.ece` + `BINS_8` (`src/indra_belief/metrics.py`) so every number is comparable to existing ECE (medpsy 0.139 / gemma 0.108). Add **Brier with Murphy decomposition** (`Brier = reliability − resolution + uncertainty`) and a reliability-diagram emitter. Unlocks: C0 curves, C1 Tier-1, C2 ship gate.
 
 ### E2 — Gold-join layer
-Join `data/benchmark/eval_curation_v1.jsonl` (`gold`, `source_hash`, `pa_hash`) to run outputs `data/results/eval_curation_v1_{model}.jsonl` (verdict lives only here — gold file has no verdict column). Verified 1606/1606 join. Unlocks: C0, C1.
+Join `data/benchmark/eval_curation_v1.jsonl` (`gold`, `source_hash`, `pa_hash`) to run outputs `data/results/eval_curation_v1_{model}.jsonl` (verdict lives only here — gold file has no verdict column). All 1606 raw rows join; multi-curator aggregation leaves 1604 unique exact pairs for calibration. Unlocks: C0, C1.
 
 ### E3 — Held-out split + contamination gate
 Group-split by `pa_hash` (no statement straddles train/test). Held-out: `data/benchmark/holdout_cc.jsonl` (primary, n≈453, McNemar-powered; removed post-validation — git history), `holdout_v15_sample.jsonl` (secondary), `rasmachine_v1_gold.jsonl` (n=60, external direction check, **never a fit**). Gate with `scripts/check_contamination.py` (eval_curation_v1.meta.json already excludes 3515 leakage pairs). Unlocks: C1, C2.
 
-### E4 — `verdict=None` byte-identity fixture
-A golden-output test asserting the new `compute_gated_belief` path equals today's output when all verdicts are `None`. Same discipline that gated the metrics/sampling extractions. Unlocks: C2 (it cannot ship without this), C3.
+### E4 — Historical `verdict=None` byte-identity fixture
+The historical plan proposed equality when every verdict was `None`. The live
+golden test instead pins the compatibility boundary that matters: calling the
+hard path normally and with the calibration flag explicitly off is byte-identical.
+This preserves existing callers without imposing the noisy-OR formula on the
+fitted-reader likelihood-ratio path.
 
 ### E5 — Per-run calibration-product export (the presentation seam)
 Bump `export_meta.json` to `schema_version: 4` and write a `metrics.json` alongside `per_evidence.jsonl`/`per_statement.json` (`results.py:565-570`), keyed by `run_id`: `BINS_8` reliability bins `{lo, hi, n, mean_pred, empirical}` at Tier-1 and Tier-2, `ece`, Brier `{reliability, resolution, uncertainty}`, and per-run confusion `{tp, fp, fn, tn}` vs baked gold. Reuse E1's emitter so the persisted numbers are **byte-identical** to the C0 figures (golden-output check; a no-gold / all-`verdict=None` run writes a *named-empty* metrics block, per the doctrine — no imputed zeros). This executes the doc's own **D5 / C3.2** "travels with the run" commitment for the calibration products themselves — the reliability curve must travel with the run, not be a global figure file the viewer points at. Unlocks: the viewer presentation stages **C4 / C5** (which live in `research/belief_instrument_task_graph.md`).
@@ -94,13 +167,13 @@ Bump `export_meta.json` to `schema_version: 4` and write a `metrics.json` alongs
 
 **Aim:** produce the reliability curve we don't have today, and **decide whether C1–C3 are worth doing.** Pure analysis; no production code path touched. (~0.5 day)
 
-- [x] **C0.1** Joined `eval_curation_v1_{medpsy,gemma}` to gold on the canonical (matches_hash, source_hash) pair (1606/1606, 0 missing). Anchors reproduce the verified table: MedPsy `rand_corr` 0.243 / `rand_rej` 0.127; gemma 0.183 / 0.131. Confidence mix degenerate (not fit).
+- [x] **C0.1** Joined `eval_curation_v1_{medpsy,gemma}` to gold on the canonical (matches_hash, source_hash) pair (1606/1606 raw rows, 0 missing; 1604 unique pairs after conservative duplicate-curator aggregation). Anchors reproduce the verified table: MedPsy `rand_corr` 0.243 / `rand_rej` 0.127; remote Gemma `rand_corr` 0.182 / `rand_rej` 0.131. Confidence mix degenerate (not fit).
 - [x] **C0.2** Tier-1 per-evidence reliability of the grid `score` vs `gold==correct`: MedPsy ECE 0.139 / gemma 0.108; AUROC 0.810 / 0.843. Degenerate ~2 occupied bins, as expected (confidence collapse).
-- [x] **C0.3** Tier-2 per-statement raw belief (gated belief over scored evidences, hard gate + RECALIBRATED_PRIORS, grouped by `pa_hash`, gold any-incorrect-wins): **AUROC 0.772 / 0.805, AUPRC 0.740 / 0.771 (base 0.514)** — clear headroom. **Finding that overturns the D8 premise:** the saturated, no-headroom belief was the **INDRA prior** (`indra_prior_reference` AUROC 0.710, ECE 0.385, mean 0.96/0.91), NOT our gated belief (mean belief 0.60 correct / 0.24 incorrect — well separated, ECE 0.15, resolution ~0.07–0.09). Reliability diagram shows systematic mid-range under-confidence (single correct reach/sparser reads → belief ~0.46 but ~65–72% correct) — a real recalibration target.
+- [x] **C0.3** Historical Tier-2 raw belief (hard gate + RECALIBRATED_PRIORS, grouped by gold `pa_hash`, gold any-incorrect-wins; not the current run-`stmt_hash` production grain): **AUROC 0.771 / 0.804, AUPRC 0.737 / 0.768 (base 0.513)** after the unique-pair correction — clear headroom. The saturated, no-headroom belief was the **INDRA prior reference** (AUROC 0.717, ECE 0.393), not the hard-gated belief (ECE ~0.14–0.16, resolution ~0.07–0.09). Reliability bins still show systematic mid-range under-confidence — a real recalibration target. Current production-grain metrics are the schema-v3 export and ship-gate artifacts, not this retained C0 baseline.
 - [x] **C0.4** Shipped `scripts/calibration_stage0.py` (analysis-only, numpy + shared libs; implements AUROC/AUPRC/Brier-Murphy not in `metrics.py`) → `data/results/calibration_stage0.{md,json}`.
 - [x] **G0** — **GO** (2026-06-17). Raw-belief AUPRC has headroom (Δ +0.226 MedPsy / +0.257 gemma over base; AUROC Δ +0.27 / +0.31). Discrimination is real and the belief is miscalibrated → C1–C3 have both signal to preserve and error to fix. Proceed to C1.
 
-## Stage C1 — Two-parameter fit + Tier-1 validation  ·  do→review with **G1**
+## Stage C1 — Historical survival-weight fit + Tier-1 validation  ·  do→review with **G1**
 
 **Aim:** empirical proof the soft weights are calibrated, before any wiring. Still no production code change. (~0.5 day)
 
@@ -117,9 +190,13 @@ Bump `export_meta.json` to `schema_version: 4` and write a `metrics.json` alongs
 >
 > **Proposed gate refinement (G1/G2):** replace the brittle "Brier-resolution not reduced" sub-criterion with **"AUROC not reduced"** — at n≈430 / 8 bins the per-bin resolution term is noise-dominated, whereas rank-based AUROC is stable. Under an AUROC-guarded criterion, **guard_k0.5 passes both readers**. (Keep resolution as a reported diagnostic, not the gate.)
 
-## Stage C2 — Wire soft survival weight behind a flag  ·  do→review with **G2** (ship gate)
+## Stage C2 — Historical survival-weight wiring plan  ·  do→review with **G2** (superseded)
 
 **Aim:** the actual model change, contained by E4 + a three-way baseline. (~1 day) Edits the formula that backs shipped numbers — risk is real, the golden test + ship gate contain it.
+
+> These unchecked nodes record the plan as written; they were not silently
+> completed. The current implementation reached the same validation surface via
+> confusion-derived log-likelihood ratios instead of `w_j` / `κ`.
 
 - [ ] **C2.1** Add `w_j` / `n_eff` into `compute_gated_belief` (`noise_model.py:299-326`) behind a flag; default off.
 - [ ] **C2.2** Land E4 (`verdict=None` byte-identity golden test) — **blocks merge.**
@@ -149,7 +226,7 @@ Bump `export_meta.json` to `schema_version: 4` and write a `metrics.json` alongs
 
 ---
 
-## Review gates
+## Review gates (historical definitions)
 
 | Gate | Cycle | Tool | What it checks |
 |---|---|---|---|
@@ -162,9 +239,9 @@ Bump `export_meta.json` to `schema_version: 4` and write a `metrics.json` alongs
 
 ---
 
-## Open questions
+## Open questions from the historical plan
 
-- **Q1** `κ` parameterization: geometric-mean-then-exponentiate vs an explicit effective-count discount — settle empirically at C2.3, or fix κ=1 (no correlation guard) if held-out shows no overconfidence from multi-read sources.
+- **Q1 — resolved by supersession.** The live model has no `κ`: it averages verdict log-likelihood ratios within a correlated source and sums across independent sources.
 - **Q2** Per-statement gold synthesis (any-incorrect-wins) is honest but mostly a no-op on singletons. Is the ~20–40% multi-evidence subset large enough on holdout_cc to power a Tier-2 claim, or is Tier-2 reporting-only?
 - **Q3** Do we fit a third reader (`bedrock-*`) now, or only the two locally-served models until Bedrock inference is paid-for?
 

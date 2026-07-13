@@ -212,14 +212,15 @@ To score just one evidence of a Statement (skipping the rest of `stmt.evidence`)
 
 `score_statement` is the per-sentence comprehension layer. The edge-level
 question — *given all evidence for a statement, what is the belief?* — is
-answered by composing per-sentence verdicts with INDRA's parametric noise
-model. The two layers chain directly:
+answered by a calibrated score that operationally treats those verdicts as noisy
+measurements of one latent fact: whether the statement is correct. The mixed-
+evidence limitation of that assumption is stated below. The two layers chain directly:
 
 ```python
 from indra_belief import score_statement
 from indra_belief.statement_belief import statement_belief
 from indra_belief.noise_model import RECALIBRATED_PRIORS
-from indra_belief.calibration_constants import calibration_for
+from indra_belief.calibration_constants import calibration_for_run
 
 verdicts = score_statement(stmt, client)  # list[dict], one per stmt.evidence
 rows = [
@@ -227,21 +228,55 @@ rows = [
      "confidence": v.get("confidence"), "tier": v.get("tier")}
     for ev, v in zip(stmt.evidence, verdicts)
 ]
-# Canonical edge belief. Pass a calibrated reader's soft weights (gemma-26B /
-# medpsy-4B) so the belief is the "clean" calibrated form; an unfitted reader
-# (calibration_for → None) falls back to the hard gate.
-sb = statement_belief(rows, RECALIBRATED_PRIORS, soft=calibration_for("gemma-4-26b"))
-# sb.belief             → canonical edge belief (clean-for-fitted / hard-for-unfitted)
+# Canonical edge belief for verdicts loaded from a persisted scoring run.
+# Resolve model + scorer-prompt identity from that same run's call logs; a
+# model name alone is deliberately insufficient.
+profile = calibration_for_run("data/results/my_run.jsonl")
+sb = statement_belief(rows, RECALIBRATED_PRIORS, soft=profile)
+# sb.belief             → hybrid log-odds score (fitted) / hard gate (unfitted)
 # sb.parametric_only    → belief before any LLM gating (ablation)
 # sb.verdict_statement  → tiered decision: correct | review | incorrect
 ```
 
-Gate semantics: a `correct` verdict keeps its evidence; `incorrect` (and any
-other string, including parse failures) down-weights it; unscored evidence
-(`verdict=None`) is kept on the source's prior. The tiered `verdict_statement`
-is the production decision (deterministic hard-flag → `incorrect`; else any LLM
-`incorrect` → `review`; else `correct`) and is independent of the belief scalar.
-Priors live in `noise_model.py` (`INDRA_PRIORS`, `RECALIBRATED_PRIORS`).
+For a ship-approved reader configuration, `calibration_for_run` returns the reader's measured
+verdict-by-gold confusion matrix and quantities derived from it—never hand-set
+weights. Its `log_lr_confirm` field is
+`log(P(confirm|correct) / P(confirm|incorrect))`; `log_lr_reject` is the
+analogous rejection log-likelihood ratio. A confirmed read contributes the
+stronger of the reader's confirm log-LR and its INDRA source-reliability
+log-odds, so the confirmation contribution cannot undercut an already stronger
+curated-source contribution; a
+rejected read contributes `log_lr_reject`, and an unscored direct input uses
+source reliability alone. Correlated reads from the same source are averaged,
+independent sources are summed with the explicit fit-set prior, and a sigmoid
+converts the resulting log-odds to belief.
+
+Production currently enables two exact configurations: remote Gemma with prompt
+fingerprint `b44638216740…` (4/4 on the independent holdout) and reasoning-first
+Bedrock Gemma with `07377e338ff2…` (4/4 on external curator gold). Remote MedPsy's
+`b44638216740…` profile remains a measured diagnostic candidate but is disabled:
+its matched holdout failed the ECE leg (3/4), while its external run used the
+different `07377e338ff2…` prompt and cannot validate that fit. Missing, mixed, or
+mismatched prompt provenance therefore returns `None` and retains the hard gate.
+
+That source term is a posterior reliability estimate from a separate 9,342-row
+source-prior fit, not another likelihood ratio. The fitted-reader scalar is
+therefore an explicit hybrid calibration score, not a pure Bayesian posterior;
+changing the prior anchor is a global score shift, not a clean deployment-
+prevalence correction. The evaluation target is also conservative: evidence
+labels roll up to statement gold with any-incorrect-wins. It is a useful review
+proxy, not a literal observation of one latent statement truth when evidence is
+mixed.
+
+The `soft=` argument name is retained for API compatibility; it now accepts this
+measurement profile, not survival weights.
+
+For an unfitted reader, the hard-gate fallback retains confirmed/unscored
+evidence and removes rejected evidence before applying the parametric noisy-OR.
+The tiered `verdict_statement` is the production decision (deterministic
+hard-flag → `incorrect`; else any LLM `incorrect` → `review`; else `correct`)
+and is independent of the belief scalar. Source priors live in `noise_model.py`
+(`INDRA_PRIORS`, `RECALIBRATED_PRIORS`).
 
 ### Score a corpus + browse the results
 
@@ -262,9 +297,14 @@ Estimate cost first: `from indra_belief.corpus import estimate_cost` returns
 projected LLM-call counts and USD per model before you spend.
 
 The `viewer/` SvelteKit app browses finished runs. It is a read-only,
-in-memory projection over the per-run JSONL exports under `data/exports/<run>/`
-(`per_statement.json` + `per_evidence.jsonl` + `export_meta.json`), loaded by
-SvelteKit server load functions (`+page.server.ts`) — no database:
+in-memory projection over the per-run exports under `data/exports/<run>/`
+(`per_statement.json` + `per_evidence.jsonl` + `export_meta.json` +
+`metrics.json`), loaded by SvelteKit server load functions (`+page.server.ts`) —
+no database. Current calibration comparisons fail closed unless both products
+carry matching byte-level corpus and gold digests, the same exact evaluated
+evidence- and statement-key sets, and a compatible metrics contract. Temporal deltas are
+stricter still: they require the same exact reader configuration. Fit-set
+results are labeled in-sample and are never presented as external validation.
 
 ```bash
 cd viewer && npm install && npm run dev  # http://127.0.0.1:5173
@@ -326,7 +366,7 @@ Contributor-facing rules to keep the repository legible:
 src/indra_belief/
   model_client.py          # Model transport (OpenAI-compat + Anthropic)
   noise_model.py           # INDRA SimpleScorer (parametric belief from source priors)
-  statement_belief.py      # per-evidence verdicts → statement belief (gated noisy-OR + calibrated soft)
+  statement_belief.py      # verdicts → hybrid log-odds score (hard-gate fallback)
   curation.py              # INDRA-curation gold rule + hash bridge + index
   metrics.py               # Binary confusion P/R/F1 + ECE calibration
   sampling.py              # Two-stage / priority sampling + Wilson half-width
