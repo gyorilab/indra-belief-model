@@ -31,10 +31,14 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			model: validity.model,
 			status: null,
 			generated_date: null,
+			export_schema_version: null,
+			source_run: null,
+			provenance: null,
 			n_statements: 0,
 			n_evidences: 0,
 			bucket_counts: {},
-			cost: null
+			cost: null,
+			soft_calibration: undefined
 		} satisfies RunSummary);
 
 	return { run, validity, residual, calibration, tier };

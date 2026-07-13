@@ -7,6 +7,11 @@
 	import ReliabilityDiagram from '$lib/components/ReliabilityDiagram.svelte';
 	import BrierBar from '$lib/components/BrierBar.svelte';
 	import { armAvailable, type MetricArm, type TierBlock } from '$lib/data/types';
+	import {
+		calibrationArmLabel,
+		calibrationContractLabel,
+		HYBRID_METRICS_SCHEMA
+	} from '$lib/data/calibration';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -129,13 +134,12 @@
 		ev: ['score'],
 		stmt: ['hard', 'parametric', 'soft']
 	};
-	const CAL_HEADLINE_ARM: Record<CalTier, string> = { ev: 'score', stmt: 'hard' };
-	const CAL_ARM_LABEL: Record<string, string> = {
-		score: 'per-evidence score',
-		hard: 'hard gate (production)',
-		parametric: 'parametric (ablation)',
-		soft: 'soft survival (calibrated)'
-	};
+	function calArmLabel(arm: string): string {
+		return calibrationArmLabel(cal?.a_metrics ?? cal?.b_metrics ?? null, arm);
+	}
+	function hybridCalibrationContract(): boolean {
+		return (cal?.compatibility.schema_version ?? 0) === HYBRID_METRICS_SCHEMA;
+	}
 	function calTierBlock(m: typeof cal extends null ? never : NonNullable<typeof cal>['a_metrics'], t: CalTier): TierBlock | null {
 		return m?.tiers?.[t] ?? null;
 	}
@@ -148,6 +152,11 @@
 		if (!block || block.status !== 'available') return null;
 		const a = block.arms[arm];
 		return a && 'status' in a ? a.reason : null;
+	}
+	function calHeadlineArm(t: CalTier): string {
+		// The server's compatibility gate chooses a semantically common arm.
+		// In particular, schema-v2 soft survival can never become the v3 hybrid.
+		return cal?.compatibility.tiers[t].arm ?? (t === 'ev' ? 'score' : 'hard');
 	}
 	function f3c(n: number | null | undefined): string {
 		return n == null ? '—' : n.toFixed(3);
@@ -542,20 +551,78 @@
 						     The verdict 2×2 is SWAPPED for the two models' confessions read
 						     against one shared diagonal. Drill skeleton below is untouched —
 						     only this L0 payload changes. -->
-						{#if !cal || (!cal.a_present && !cal.b_present)}
+						{#if !cal || !cal.a_present || !cal.b_present}
 							<div class="cal-empty">
 								<p class="ce-head">no calibration products for this pair</p>
 								<p class="ce-why">
-									One or both runs predate the calibration arc (no <code>metrics.json</code>).
+									Both runs need a <code>metrics.json</code>; one or both are missing it.
 									Re-export with baked gold to populate the overlaid reliability curves. The
 									verdict matrix is available with calibration off.
 								</p>
 							</div>
+						{:else if !cal.compatibility.compatible}
+							<div class="cal-empty">
+								<p class="ce-head">calibration products are not comparable</p>
+								<p class="ce-why">
+									A calibration delta is only meaningful on the same content-addressed corpus,
+									gold, exact evaluated keysets, metrics schema, and metric-definition contract.
+									This pair is withheld because:
+								</p>
+								<ul class="cal-reasons">
+									{#each cal.compatibility.reasons as reason}
+										<li>{reason}</li>
+									{/each}
+								</ul>
+							</div>
+						{:else if !cal.compatibility.tiers[calTier].compatible}
+							<div class="cal-empty">
+								<p class="ce-head">no common canonical arm for {CAL_TIER_LABEL[calTier]}</p>
+								<p class="ce-why">
+									{cal.compatibility.tiers[calTier].reason}. A legacy schema-v2
+									<code>soft</code> value is never substituted for the schema-v3 hybrid.
+								</p>
+								<div class="cal-tier-toggle" role="group" aria-label="calibration tier">
+									<button class:active={calTier === 'ev'} onclick={() => setCalTier('ev')}>Tier 1 · evidence</button>
+									<button class:active={calTier === 'stmt'} onclick={() => setCalTier('stmt')}>Tier 2 · statement</button>
+								</div>
+							</div>
 						{:else}
-							{@const ab = calArm(calTierBlock(cal.a_metrics, calTier), CAL_HEADLINE_ARM[calTier])}
-							{@const bb = calArm(calTierBlock(cal.b_metrics, calTier), CAL_HEADLINE_ARM[calTier])}
+							{@const headlineArm = calHeadlineArm(calTier)}
+							{@const ab = calArm(calTierBlock(cal.a_metrics, calTier), headlineArm)}
+							{@const bb = calArm(calTierBlock(cal.b_metrics, calTier), headlineArm)}
 							{@const d = cal.delta[calTier]}
 							<div class="cal-l0">
+								<p class="cal-contract-note">
+									<strong>{calibrationContractLabel(cal.a_metrics)}</strong> · substrate
+									<code>{cal.compatibility.substrate}</code> · gold
+										<code>{cal.compatibility.gold_source?.split('/').pop()}</code> · common arm
+										<strong>{calArmLabel(headlineArm)}</strong> · evaluated-set digest
+										<code>{cal.compatibility.provenance?.evaluation_set_sha256?.slice(0, 12)}</code>.
+									</p>
+									<p class="cal-contract-note">
+										<span class="mA">A</span> <strong>{cal.a_evaluation.label}</strong>
+										{#if cal.a_evaluation.fit_gold} · fit <code>{cal.a_evaluation.fit_gold.split('/').pop()}</code>
+											(SHA <code>{cal.a_evaluation.fit_gold_sha256?.slice(0, 12) ?? '—'}</code>){/if};
+										<span class="mB">B</span> <strong>{cal.b_evaluation.label}</strong>
+										{#if cal.b_evaluation.fit_gold} · fit <code>{cal.b_evaluation.fit_gold.split('/').pop()}</code>
+											(SHA <code>{cal.b_evaluation.fit_gold_sha256?.slice(0, 12) ?? '—'}</code>){/if}.
+										{#if cal.a_evaluation.validation_gold}
+											<br /><span class="mA">A recorded gate</span> {cal.a_evaluation.validation_result?.toUpperCase() ?? '—'}
+											{cal.a_evaluation.validation_gate ?? ''} · <code>{cal.a_evaluation.validation_run}</code> +
+											<code>{cal.a_evaluation.validation_gold}</code> (SHA
+											<code>{cal.a_evaluation.validation_gold_sha256?.slice(0, 12) ?? '—'}</code>).
+										{/if}
+										{#if cal.b_evaluation.validation_gold}
+											<br /><span class="mB">B recorded gate</span> {cal.b_evaluation.validation_result?.toUpperCase() ?? '—'}
+											{cal.b_evaluation.validation_gate ?? ''} · <code>{cal.b_evaluation.validation_run}</code> +
+											<code>{cal.b_evaluation.validation_gold}</code> (SHA
+											<code>{cal.b_evaluation.validation_gold_sha256?.slice(0, 12) ?? '—'}</code>).
+										{/if}
+										{#if cal.a_evaluation.kind === 'in-sample-fit' || cal.b_evaluation.kind === 'in-sample-fit'}
+											At least one side is evaluated on its fit gold: treat this as an in-sample diagnostic,
+											not validation or causal evidence.
+										{/if}
+									</p>
 								<!-- ΔECE/ΔBrier scalars: B − A, lower-is-better → negative = B wins -->
 								<div class="cal-deltas">
 									<div class="cal-d">
@@ -580,10 +647,10 @@
 										</div>
 										<div class="cd-lbl">Brier score · A → B</div>
 									</div>
-									<p class="cal-d-note hint">
-										lower is better — a <strong>negative</strong> Δ means
-										<span class="mB">{cal.run_b.model}</span> is the more honest of the two on
-										{calTier === 'stmt' ? 'rolled-up statement belief' : 'per-evidence belief'}.
+										<p class="cal-d-note hint">
+											lower is better — a <strong>negative</strong> Δ means
+											<span class="mB">{cal.run_b.model}</span> has lower ECE on this exact
+											{calTier === 'stmt' ? 'statement' : 'evidence'} evaluation set.
 									</p>
 								</div>
 
@@ -609,26 +676,30 @@
 									</div>
 								{:else}
 									<p class="cal-empty-inline hint">
-										{calArmReason(calTierBlock(cal.a_metrics, calTier), CAL_HEADLINE_ARM[calTier]) ??
-											calArmReason(calTierBlock(cal.b_metrics, calTier), CAL_HEADLINE_ARM[calTier]) ??
+										{calArmReason(calTierBlock(cal.a_metrics, calTier), headlineArm) ??
+											calArmReason(calTierBlock(cal.b_metrics, calTier), headlineArm) ??
 											'this tier is unavailable for one of the runs'}
 									</p>
 								{/if}
 
-								<!-- RESONANCE: the three-way G2 series (hard / parametric / soft).
-								     soft pulling toward the diagonal = the calibration lever made
+								<!-- RESONANCE: the three-way G2 series (hard / parametric / calibrated).
+								     calibrated belief pulling toward the diagonal = the lever made
 								     visible as motion-toward-honesty. Only Tier-2 carries the arms. -->
 								{#if calTier === 'stmt'}
 									<div class="cal-threeway">
 										<p class="ctw-lab">
-											the calibration lever (G2 ship gate) — ECE per arm, both models.
-											<strong>soft survival</strong> is the recalibrated arm; lower ECE = closer to the diagonal.
+											{#if hybridCalibrationContract()}
+												the calibration lever (G2 ship gate) — ECE per arm, both models.
+												<strong>calibrated hybrid log-odds</strong> is the fitted-configuration arm; lower ECE = closer to the diagonal.
+											{:else}
+												Legacy schema v{cal.compatibility.schema_version}: <strong>soft</strong> is the historical survival-weight arm, shown for audit only. The common headline remains hard.
+											{/if}
 										</p>
 										<div class="ctw-grid">
 											<div class="ctw-head mono">
 												<span></span>
 												{#each CAL_TIER_ARMS.stmt as armKey}
-													<span class="ctw-arm">{CAL_ARM_LABEL[armKey]}</span>
+													<span class="ctw-arm">{calArmLabel(armKey)}</span>
 												{/each}
 											</div>
 											{#each [{ m: cal.a_metrics, name: cal.run_a.model, cls: 'mA' }, { m: cal.b_metrics, name: cal.run_b.model, cls: 'mB' }] as row}
@@ -637,7 +708,7 @@
 													<span class="ctw-model {row.cls}">{row.name}</span>
 													{#each CAL_TIER_ARMS.stmt as armKey}
 														{@const arm = calArm(blk, armKey)}
-														<span class="ctw-cell mono" class:soft={armKey === 'soft'}>
+														<span class="ctw-cell mono" class:soft={armKey === 'soft' && hybridCalibrationContract()} class:legacy-soft={armKey === 'soft' && !hybridCalibrationContract()}>
 															{#if arm}ECE {f3c(arm.ece)}{:else}—{/if}
 														</span>
 													{/each}
@@ -645,8 +716,8 @@
 											{/each}
 										</div>
 										<p class="ctw-note hint">
-											read each row left→right: hard gate → parametric ablation → soft survival.
-											where <strong>soft</strong> &lt; hard, the lever bought honesty without flattening.
+											read each row left→right: hard gate → parametric ablation → {calArmLabel('soft')}.
+											{#if hybridCalibrationContract()}where <strong>hybrid</strong> &lt; hard, the hybrid arm has lower ECE on this evaluated set; that is descriptive unless the run is identified above as independent validation.{/if}
 										</p>
 									</div>
 								{/if}
@@ -658,7 +729,7 @@
 										{@const bArm = calArm(calTierBlock(cal.b_metrics, calTier), armKey)}
 										{#if aArm || bArm}
 											<div class="cal-arm-block">
-												<p class="cab-h">{CAL_ARM_LABEL[armKey] ?? armKey}</p>
+												<p class="cab-h">{calArmLabel(armKey)}</p>
 												<div class="cab-pair">
 													<div class="cab-side">
 														<p class="cab-model mA">{cal.run_a.model}</p>
@@ -681,7 +752,8 @@
 								<p class="matrix-hint hint">
 									{CAL_TIER_LABEL[calTier]} · every number served byte-exact from each run's
 									<code>metrics.json</code> — the viewer recomputes nothing; Δ is the difference of
-									the two served values. Turn calibration off to dig into a verdict cohort.
+									the two compatible served values under one visible contract. Turn calibration
+									off to dig into a verdict cohort.
 								</p>
 							</div>
 						{/if}
@@ -1513,8 +1585,25 @@
 		max-width: 66ch;
 		line-height: 1.45;
 	}
+	.cal-reasons {
+		margin: 0.55rem 0 0;
+		padding-left: 1.2rem;
+		color: var(--ink-muted);
+		font-family: var(--mono);
+		font-size: 0.75rem;
+		line-height: 1.5;
+	}
 	.cal-l0 {
 		margin: 0 0 1rem;
+	}
+	.cal-contract-note {
+		max-width: 78ch;
+		margin: 0 0 1rem;
+		padding: 0.55rem 0.75rem;
+		border-left: 3px solid var(--rule);
+		color: var(--ink-muted);
+		font-size: 0.8rem;
+		line-height: 1.45;
 	}
 	.cal-deltas {
 		display: flex;
@@ -1642,6 +1731,10 @@
 	.ctw-cell.soft {
 		color: var(--ok-green);
 		font-weight: 600;
+	}
+	.ctw-cell.legacy-soft {
+		color: var(--ink-muted);
+		font-style: italic;
 	}
 	.ctw-note {
 		margin: 0.6rem 0 0;

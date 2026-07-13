@@ -22,11 +22,19 @@ import type {
 	EvidenceRow,
 	GoldVerdict,
 	ReasoningTrace,
-	RunMetrics,
-	MetricArm,
-	ArmSlot
+	RunMetrics
 } from './types';
-import { armAvailable } from './types';
+import {
+	calibrationArtifactConsistency,
+	calibrationCompatibility,
+	classifyCalibrationEvaluation,
+	metricArm,
+	selectCalibrationPredecessor,
+	type CalibrationArtifactConsistency,
+	type CalibrationCompatibility,
+	type CalibrationEvaluation,
+	type CalibrationTier
+} from './calibration';
 
 // ── Shared shapes ───────────────────────────────────────────────────────────
 
@@ -35,11 +43,15 @@ export interface RunSummary {
 	model: string;
 	status: string | null;
 	generated_date: string | null;
+	export_schema_version: number | null;
+	source_run: string | null;
+	provenance: RunMeta['provenance'];
 	n_statements: number;
 	n_evidences: number;
 	bucket_counts: Record<string, number>;
 	/** Run-level observed cost (null on legacy exports / no exporter cost). */
 	cost: RunMeta['cost'];
+	soft_calibration: RunMeta['soft_calibration'];
 }
 
 function runSummary(m: RunMeta): RunSummary {
@@ -48,10 +60,14 @@ function runSummary(m: RunMeta): RunSummary {
 		model: m.model,
 		status: m.status,
 		generated_date: m.generated_date,
+		export_schema_version: m.export_schema_version,
+		source_run: m.source_run,
+		provenance: m.provenance ?? null,
 		n_statements: m.counts.statements ?? 0,
 		n_evidences: m.counts.unique_evidence_rows ?? 0,
 		bucket_counts: m.bucket_counts,
-		cost: m.cost ?? null
+		cost: m.cost ?? null,
+		soft_calibration: m.soft_calibration
 	};
 }
 
@@ -228,13 +244,14 @@ export function getResidualDistribution(runId?: string): ResidualDistribution | 
 // (a different measure than gold-ECE; see getValidity.byIndraType), surfaced
 // here to retire the `unavailable` apology.
 
-export type Tier = 'ev' | 'stmt';
+export type Tier = CalibrationTier;
 
 /** P5 delta: this run's headline ECE minus the previous run's (same tier+arm),
  *  both read byte-exact from metrics.json. null when there's no comparable prev. */
 export interface EceDelta {
 	prev_run_id: string;
 	prev_model: string;
+	arm: string;
 	prev_ece: number;
 	delta: number; // this_ece − prev_ece (negative = improved)
 }
@@ -246,21 +263,19 @@ export interface RunCalibration {
 	metrics: RunMetrics | null;
 	/** Whether a metrics.json was present at all (drives the named-empty copy). */
 	present: boolean;
-	/** P5: ECE delta vs the previous run, per tier, for the headline arm
-	 *  (Tier-1 → 'score'; Tier-2 → 'hard', the production gate). null when the
-	 *  prior run has no comparable available arm. */
+	/** End-to-end export/metrics/profile contract validation. */
+	consistency: CalibrationArtifactConsistency;
+	/** Whether these numbers are fit diagnostics or independent validation. */
+	evaluation: CalibrationEvaluation;
+	/** P5: ECE delta vs the previous run, per tier, for a common canonical arm
+	 *  on the same model/substrate/gold/schema/contract. Tier-2 promotes the v3+
+	 *  hybrid only when both runs carry it; v2 remains on its legacy hard arm.
+	 *  null when no unique, genuinely earlier comparable run exists. */
 	delta: { ev: EceDelta | null; stmt: EceDelta | null };
 }
 
-/** The headline arm of a tier: Tier-1 has one realized arm (score); Tier-2's
- *  headline is the production hard gate. */
-const HEADLINE_ARM: Record<Tier, string> = { ev: 'score', stmt: 'hard' };
-
-function armEce(m: RunMetrics | null, tier: Tier): number | null {
-	const t = m?.tiers?.[tier];
-	if (!t || t.status !== 'available') return null;
-	const arm: ArmSlot | undefined = t.arms[HEADLINE_ARM[tier]];
-	return armAvailable(arm) ? arm.ece : null;
+function armEce(m: RunMetrics | null, tier: Tier, arm: string): number | null {
+	return metricArm(m, tier, arm)?.ece ?? null;
 }
 
 export function getRunCalibration(runId?: string): RunCalibration | null {
@@ -268,19 +283,29 @@ export function getRunCalibration(runId?: string): RunCalibration | null {
 	if (!meta) return null;
 	const metrics = getRunMetrics(meta);
 
-	// Previous run = the next-older run in the registry (newest-first list).
+	// A predecessor is selected independently per tier. It must be the same
+	// model on the same substrate/gold/metrics contract, have a
+	// common canonical arm, and be uniquely earlier by run timestamp. Directory
+	// or same-day registry order is never used as chronology.
 	const runs = listRuns();
-	const idx = runs.findIndex((r) => r.run_id === meta.run_id);
-	const prev = idx >= 0 && idx + 1 < runs.length ? runs[idx + 1] : null;
-	const prevMetrics = prev ? getRunMetrics(prev) : null;
 
 	const deltaFor = (tier: Tier): EceDelta | null => {
-		const here = armEce(metrics, tier);
-		const there = armEce(prevMetrics, tier);
-		if (here == null || there == null || !prev) return null;
+		const predecessor = selectCalibrationPredecessor(
+			meta,
+			runs,
+			metrics,
+			tier,
+			getRunMetrics
+		);
+		if (!predecessor) return null;
+		const { run: prev, metrics: prevMetrics, arm } = predecessor;
+		const here = armEce(metrics, tier, arm);
+		const there = armEce(prevMetrics, tier, arm);
+		if (here == null || there == null) return null;
 		return {
 			prev_run_id: prev.run_id,
 			prev_model: prev.model,
+			arm,
 			prev_ece: there,
 			delta: here - there
 		};
@@ -291,6 +316,8 @@ export function getRunCalibration(runId?: string): RunCalibration | null {
 		model: meta.model,
 		metrics,
 		present: metrics != null,
+		consistency: calibrationArtifactConsistency(meta, metrics),
+		evaluation: classifyCalibrationEvaluation(meta, metrics),
 		delta: { ev: deltaFor('ev'), stmt: deltaFor('stmt') }
 	};
 }
@@ -323,15 +350,14 @@ export interface CompareCalibration {
 	b_metrics: RunMetrics | null;
 	a_present: boolean;
 	b_present: boolean;
-	/** Headline ΔECE/ΔBrier per tier (Tier-1 → 'score'; Tier-2 → 'hard'). */
+	a_evaluation: CalibrationEvaluation;
+	b_evaluation: CalibrationEvaluation;
+	/** Provenance/contract gate. Deltas and overlays render only when the base
+	 *  contract and the selected tier's common canonical arm are compatible. */
+	compatibility: CalibrationCompatibility;
+	/** Headline ΔECE/ΔBrier per tier. Tier-2 compares calibrated arms when
+	 *  both v3+ products carry one, otherwise their common hard fallback. */
 	delta: { ev: CalibDelta | null; stmt: CalibDelta | null };
-}
-
-function armOfMetrics(m: RunMetrics | null, tier: Tier, arm: string): MetricArm | null {
-	const t = m?.tiers?.[tier];
-	if (!t || t.status !== 'available') return null;
-	const a: ArmSlot | undefined = t.arms[arm];
-	return armAvailable(a) ? a : null;
 }
 
 export function compareCalibration(runIdA: string, runIdB: string): CompareCalibration | null {
@@ -340,24 +366,27 @@ export function compareCalibration(runIdA: string, runIdB: string): CompareCalib
 	if (!a || !b) return null;
 	const am = getRunMetrics(a);
 	const bm = getRunMetrics(b);
+	const compatibility = calibrationCompatibility(a, b, am, bm);
 
 	const deltaFor = (tier: Tier): CalibDelta | null => {
-		const arm = HEADLINE_ARM[tier];
-		const aa = armOfMetrics(am, tier, arm);
-		const ba = armOfMetrics(bm, tier, arm);
-		if (!aa && !ba) return null;
-		const aE = aa?.ece ?? null;
-		const bE = ba?.ece ?? null;
-		const aB = aa?.brier ?? null;
-		const bB = ba?.brier ?? null;
+		const tierCompatibility = compatibility.tiers[tier];
+		const arm = tierCompatibility.arm;
+		if (!compatibility.compatible || !tierCompatibility.compatible || !arm) return null;
+		const aa = metricArm(am, tier, arm);
+		const ba = metricArm(bm, tier, arm);
+		if (!aa || !ba) return null;
+		const aE = aa.ece;
+		const bE = ba.ece;
+		const aB = aa.brier;
+		const bB = ba.brier;
 		return {
 			arm,
 			a_ece: aE,
 			b_ece: bE,
-			delta_ece: aE != null && bE != null ? bE - aE : null,
+			delta_ece: bE - aE,
 			a_brier: aB,
 			b_brier: bB,
-			delta_brier: aB != null && bB != null ? bB - aB : null
+			delta_brier: bB - aB
 		};
 	};
 
@@ -368,6 +397,9 @@ export function compareCalibration(runIdA: string, runIdB: string): CompareCalib
 		b_metrics: bm,
 		a_present: am != null,
 		b_present: bm != null,
+		a_evaluation: classifyCalibrationEvaluation(a, am),
+		b_evaluation: classifyCalibrationEvaluation(b, bm),
+		compatibility,
 		delta: { ev: deltaFor('ev'), stmt: deltaFor('stmt') }
 	};
 }

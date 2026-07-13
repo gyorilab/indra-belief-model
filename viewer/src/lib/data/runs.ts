@@ -44,6 +44,7 @@ function toRunMeta(dir: string, m: Record<string, unknown>): RunMeta {
 		export_dir: dir,
 		model: String(m.model ?? 'unknown'),
 		generated_date: (m.generated_date as string) ?? null,
+		export_schema_version: typeof m.schema_version === 'number' ? m.schema_version : null,
 		counts: (m.counts as RunMeta['counts']) ?? {},
 		bucket_counts: (m.bucket_counts as Record<string, number>) ?? {},
 		// Pass the baked cost block through verbatim (numbers only, no compute).
@@ -53,8 +54,39 @@ function toRunMeta(dir: string, m: Record<string, unknown>): RunMeta {
 		substrate,
 		gold_coverage,
 		model_meta: (m.model_meta as RunMeta['model_meta']) ?? null,
+		provenance: (m.provenance as RunMeta['provenance']) ?? null,
+		soft_calibration: (m.soft_calibration as RunMeta['soft_calibration']) ?? undefined,
 		...readSourceMeta(sourceRun)
 	};
+}
+
+function runMoment(run: Pick<RunMeta, 'finished_at' | 'started_at' | 'generated_date'>): number | null {
+	for (const raw of [run.finished_at, run.started_at]) {
+		if (!raw) continue;
+		const value = Date.parse(raw);
+		if (Number.isFinite(value)) return value;
+	}
+	if (run.generated_date) {
+		const value = Date.parse(`${run.generated_date}T00:00:00Z`);
+		if (Number.isFinite(value)) return value;
+	}
+	return null;
+}
+
+/** Newest-first ordering with a deterministic tie-break.
+ *
+ * Full run-event timestamps win when present. Day-only or exactly tied artifacts
+ * cannot be ordered chronologically, so their run id (then export directory) is
+ * the explicit stable order rather than filesystem enumeration state.
+ */
+export function compareRunRecency(a: RunMeta, b: RunMeta): number {
+	const am = runMoment(a);
+	const bm = runMoment(b);
+	if (am != null && bm != null && am !== bm) return bm - am;
+	if (am != null && bm == null) return -1;
+	if (am == null && bm != null) return 1;
+	const byId = b.run_id.localeCompare(a.run_id);
+	return byId || a.export_dir.localeCompare(b.export_dir);
 }
 
 let _cache: { mtimeKey: string; runs: RunMeta[] } | null = null;
@@ -82,7 +114,7 @@ export function listRuns(): RunMeta[] {
 			// skip malformed exports
 		}
 	}
-	runs.sort((a, b) => (b.generated_date ?? '').localeCompare(a.generated_date ?? ''));
+	runs.sort(compareRunRecency);
 	_cache = { mtimeKey, runs };
 	return runs;
 }

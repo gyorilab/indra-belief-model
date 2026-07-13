@@ -8,6 +8,12 @@
 	import ConfusionMosaic from '$lib/components/ConfusionMosaic.svelte';
 	import DriverMosaic from '$lib/components/DriverMosaic.svelte';
 	import { armAvailable, type MetricArm, type TierBlock } from '$lib/data/types';
+	import {
+		calibrationArmLabel,
+		calibrationContractLabel,
+		canonicalCalibrationArm,
+		HYBRID_METRICS_SCHEMA
+	} from '$lib/data/calibration';
 	import type { Tier } from '$lib/data/queries';
 
 	let { data }: { data: PageData } = $props();
@@ -16,6 +22,7 @@
 	const residual = $derived(data.residual);
 	const cal = $derived(data.calibration);
 	const tier = $derived(data.tier);
+	const profileState = $derived(run?.soft_calibration ?? null);
 
 	// ── Calibration surface (C4) — every number served byte-exact from
 	// metrics.json; the page derives nothing but display strings + the toggle. ──
@@ -45,16 +52,12 @@
 	}
 
 	// The arms to show per tier, headline first. Tier-1 has one realized arm
-	// (score); Tier-2 has three (hard = production, parametric, soft).
+	// (score); Tier-2 preserves all historical slots but labels/selects them by
+	// metrics schema so v2 survival weights never masquerade as the v3 hybrid.
 	const TIER_ARMS: Record<Tier, string[]> = { ev: ['score'], stmt: ['hard', 'parametric', 'soft'] };
-	const ARM_LABEL: Record<string, string> = {
-		score: 'per-evidence score',
-		hard: 'hard gate (production)',
-		parametric: 'parametric (ablation)',
-		soft: 'soft survival (calibrated)'
-	};
-	const HEADLINE_ARM: Record<Tier, string> = { ev: 'score', stmt: 'hard' };
-
+	function armLabel(arm: string): string {
+		return calibrationArmLabel(metrics, arm);
+	}
 	function armOf(block: TierBlock | null, arm: string): MetricArm | null {
 		if (!block || block.status !== 'available') return null;
 		const a = block.arms[arm];
@@ -65,13 +68,17 @@
 		const a = block.arms[arm];
 		return a && 'status' in a ? a.reason : null;
 	}
+	function headlineArm(t: Tier): string {
+		return canonicalCalibrationArm(metrics, t) ?? (t === 'ev' ? 'score' : 'hard');
+	}
 
 	// P5 delta string for the headline arm of a tier.
 	function deltaStr(t: Tier): string | null {
 		const d = cal?.delta?.[t];
 		if (!d) return null;
 		const sign = d.delta <= 0 ? '▼' : '▲'; // ECE: lower is better
-		return `${sign}${Math.abs(d.delta).toFixed(3)} vs ${d.prev_model} (${d.prev_run_id.slice(0, 8)})`;
+		const arm = t === 'stmt' ? ` ${armLabel(d.arm)}` : '';
+		return `${sign}${Math.abs(d.delta).toFixed(3)}${arm} vs ${d.prev_model} (${d.prev_run_id.slice(0, 8)})`;
 	}
 	function deltaImproved(t: Tier): boolean {
 		const d = cal?.delta?.[t];
@@ -238,6 +245,15 @@
 					mosaic. The residual-vs-INDRA view below is unaffected.
 				</p>
 			</div>
+		{:else if !cal.consistency.valid}
+			<div class="named-empty">
+				<p class="ne-head">calibration artifact contract is inconsistent</p>
+				<p class="ne-why">
+					No headline, hybrid promotion, or temporal delta is shown because the export and
+					<code>metrics.json</code> do not establish one trusted contract:
+					{cal.consistency.reasons.join(' · ')}.
+				</p>
+			</div>
 		{:else if !metrics?.gold}
 			<div class="named-empty">
 				<p class="ne-head">no gold baked for this run</p>
@@ -249,28 +265,74 @@
 			</div>
 		{:else}
 			{@const headBlock = tierBlock(tier)}
-			{@const headArm = armOf(headBlock, HEADLINE_ARM[tier])}
+			{@const headArmKey = headlineArm(tier)}
+			{@const headArm = armOf(headBlock, headArmKey)}
 			<p class="sec-sub">
-				The reliability diagram is the instrument's confession: where the model's stated belief
-				and its real correct-rate part ways. Read on
-				{metrics.gold.covered.toLocaleString('en-US')} gold-labelled rows
-				(<code>{metrics.gold.source?.split('/').pop()}</code>). Every number is served from
-				<code>metrics.json</code> — the viewer computes none of it.
-			</p>
+					The reliability diagram shows where stated belief and observed correct-rate differ on
+					this evaluation set. The selected {tier === 'stmt' ? 'statement' : 'evidence'} tier plots
+					{(headBlock && headBlock.status === 'available' ? headBlock.n : 0).toLocaleString('en-US')}
+					evaluated units; the baked gold covers {metrics.gold.covered.toLocaleString('en-US')}
+					evidence rows (<code>{metrics.gold.source?.split('/').pop()}</code>). Every number is served from
+				<code>metrics.json</code> — the viewer computes none of it. Contract:
+					<strong>{calibrationContractLabel(metrics)}</strong>.
+				</p>
+				<p class="contract-note" class:legacy={cal.evaluation.kind !== 'independent-validation-pass'}>
+					Displayed evaluation: <strong>{cal.evaluation.label}</strong>.
+					{#if cal.evaluation.kind === 'in-sample-fit'}
+						These are descriptive fit diagnostics, not independent validation evidence.
+					{:else if cal.evaluation.kind === 'independent-validation-pass'}
+						This exact run and gold source match the profile's recorded held-out validation.
+					{:else if cal.evaluation.kind === 'out-of-sample'}
+						The profile was frozen elsewhere, but this run is not its recorded validation gate.
+					{:else if cal.evaluation.kind === 'unprofiled'}
+						No fitted-profile provenance is available; do not read this surface as validation.
+					{:else}
+						The recorded independent gate did not pass.
+					{/if}
+				</p>
+			{#if metrics.schema_version < HYBRID_METRICS_SCHEMA}
+				<p class="contract-note legacy">
+					Legacy schema v{metrics.schema_version}: its <code>soft</code> slot is the historical
+					survival-weight score. It is shown for audit only; the canonical statement headline
+					remains the hard gate and is never treated as the current hybrid.
+				</p>
+			{/if}
+			{#if profileState}
+					<p class="contract-note" class:legacy={profileState.status !== 'available'}>
+						{#if profileState.status === 'available' && profileState.soft_weights && 'profile_id' in profileState.soft_weights}
+							Profile <strong>{profileState.soft_weights.profile_id}</strong> · exact configuration
+							<code>{profileState.reader_configuration?.id ?? profileState.soft_weights.reader_configuration}</code>.<br />
+							Fit: <code>{profileState.soft_weights.fit_run}</code> on
+							<code>{profileState.soft_weights.fit_gold}</code>
+							(n={profileState.soft_weights.fit_unique_pairs.toLocaleString('en-US')}, SHA
+							<code>{profileState.soft_weights.fit_gold_sha256?.slice(0, 12) ?? '—'}</code>).
+							Recorded validation:
+							<strong>{profileState.soft_weights.validation?.result?.toUpperCase() ?? 'UNRECORDED'}</strong>
+							{profileState.soft_weights.validation?.gate ?? ''} on
+							<code>{profileState.soft_weights.validation?.run ?? '—'}</code> +
+							<code>{profileState.soft_weights.validation?.gold ?? '—'}</code> (SHA
+							<code>{profileState.soft_weights.validation?.gold_sha256?.slice(0, 12) ?? '—'}</code>).
+					{:else}
+						Hybrid profile unavailable for
+						<code>{profileState.reader_configuration?.id ?? run?.model ?? 'unknown configuration'}</code>:
+						{profileState.reason ?? 'no ship-approved exact configuration profile'}.
+					{/if}
+				</p>
+			{/if}
 
 			<!-- P1: ECE as the HEADLINE number, with P5 delta -->
 			<div class="headline">
 				<div class="ece">
 					<span class="ece-lab">ECE</span>
 					<span class="ece-val">{f3c(headArm?.ece)}</span>
-					<span class="ece-tier">{TIER_LABEL[tier]} · {ARM_LABEL[HEADLINE_ARM[tier]]}</span>
+					<span class="ece-tier">{TIER_LABEL[tier]} · {armLabel(headArmKey)}</span>
 				</div>
 				{#if deltaStr(tier)}
 					<span class="ece-delta" class:improved={deltaImproved(tier)} class:worse={!deltaImproved(tier)}>
 						{deltaStr(tier)}
 					</span>
 				{:else}
-					<span class="ece-delta none">no prior run to compare</span>
+					<span class="ece-delta none">no compatible earlier run to compare</span>
 				{/if}
 			</div>
 
@@ -302,7 +364,8 @@
 							</p>
 						</div>
 					{:else}
-						{@const headline = armOf(block, HEADLINE_ARM[t])}
+						{@const headlineKey = headlineArm(t)}
+						{@const headline = armOf(block, headlineKey)}
 						<!-- reliability diagram (strong center) + confusion mosaic side by side -->
 						{#if headline}
 							<div class="diag-row">
@@ -310,7 +373,7 @@
 									<ReliabilityDiagram
 										bins={headline.bins}
 										n={headline.n}
-										label="reliability — {ARM_LABEL[HEADLINE_ARM[t]]}"
+										label="reliability — {armLabel(headlineKey)}"
 									/>
 								</div>
 								<div class="diag-cell">
@@ -330,9 +393,9 @@
 						<div class="arm-grid">
 							{#each TIER_ARMS[t] as armKey}
 								{@const arm = armOf(block, armKey)}
-								<div class="arm-card" class:head={armKey === HEADLINE_ARM[t]}>
+								<div class="arm-card" class:head={armKey === headlineKey}>
 									<div class="arm-head">
-										<span class="arm-name">{ARM_LABEL[armKey] ?? armKey}</span>
+										<span class="arm-name">{armLabel(armKey)}</span>
 										{#if arm}
 											<span class="arm-metrics"
 												>ECE {f3c(arm.ece)} · AUROC {f3c(arm.auroc)} · AUPRC {f3c(arm.auprc)}</span
@@ -786,6 +849,18 @@
 	.cal-surface {
 		border-top: 2px solid var(--ink);
 		padding-top: 1.2rem;
+	}
+	.contract-note {
+		max-width: 760px;
+		margin: -0.15rem 0 0.9rem;
+		padding: 0.55rem 0.75rem;
+		border-left: 3px solid var(--rule);
+		color: var(--ink-muted);
+		font-size: 0.82rem;
+		line-height: 1.45;
+	}
+	.contract-note.legacy {
+		border-left-color: var(--ink-muted);
 	}
 	.headline {
 		display: flex;

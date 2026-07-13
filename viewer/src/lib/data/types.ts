@@ -8,6 +8,67 @@
  * thing joined from the source corpus is agent db_refs + the supports graph.
  */
 
+/** Gold-measured reader profile used by the fitted-reader belief model.
+ *  Profile fields are derived from the verdict×gold confusion matrix; the final
+ *  hybrid score additionally uses the separately fitted source-reliability bank. */
+export interface ReaderCalibrationProfile {
+	profile_id: string;
+	reader_configuration: string;
+	reader_model?: string;
+	prompt_sha256?: string;
+	deployment_status?: 'enabled' | 'disabled';
+	validation?: {
+		result: 'pass' | 'fail';
+		gold: string;
+		gold_sha256?: string;
+		run: string;
+		gate: string;
+		note?: string;
+	};
+	fit_run: string;
+	fit_gold: string;
+	fit_gold_sha256?: string;
+	fit_unique_pairs: number;
+	gold_rule: string;
+	confusion: {
+		/** confirmed and gold-correct */
+		cc: number;
+		/** confirmed and gold-incorrect */
+		ci: number;
+		/** rejected and gold-correct */
+		ic: number;
+		/** rejected and gold-incorrect */
+		ii: number;
+	};
+	sensitivity: number;
+	false_positive_rate: number;
+	specificity: number;
+	miss_rate: number;
+	/** log(P(confirm|correct) / P(confirm|incorrect)) */
+	log_lr_confirm: number;
+	/** log(P(reject|correct) / P(reject|incorrect)) */
+	log_lr_reject: number;
+	/** Correct evidence-pair prevalence in the profile fit; used as score anchor. */
+	prior_correct: number;
+	prior_logodds: number;
+}
+
+/** Content-addressed identity of the inputs and exact Tier-1 + Tier-2 evaluation sets.
+ * These digests are baked when an export is created; the viewer must never
+ * re-hash a mutable source path and pretend it describes an older artifact. */
+export interface CalibrationProvenance {
+	corpus_sha256: string | null;
+	gold_sha256: string | null;
+	evaluation_set_sha256: string | null;
+}
+
+/** Pre-v8 survival-weight payload retained so old schema-v7 exports still load. */
+export interface LegacySoftWeights {
+	w_correct: number;
+	w_incorrect: number;
+	variant?: string;
+}
+
 /** One scoring run, discovered from `data/exports/<dir>/export_meta.json`. */
 export interface RunMeta {
 	run_id: string;
@@ -15,6 +76,8 @@ export interface RunMeta {
 	export_dir: string;
 	model: string;
 	generated_date: string | null;
+	/** export_meta.json contract version; null on legacy exports. */
+	export_schema_version: number | null;
 	counts: {
 		unique_evidence_rows?: number;
 		statements?: number;
@@ -24,10 +87,12 @@ export interface RunMeta {
 	bucket_counts: Record<string, number>;
 	/** Raw run JSONL this export was generated from. */
 	source_run: string | null;
-	/** The corpus this run was scored against (`generated_from.corpus`, basename).
-	 *  The JOIN BOUNDARY for cross-run comparison: runs are only comparable —
-	 *  content-hash-joinable, frontier-plottable — within one substrate. `null` on
-	 *  legacy exports that did not record it. */
+	/** Content digests mirrored from metrics.json for end-to-end inspection.
+	 * `undefined` on exports created before schema v8. */
+	provenance?: CalibrationProvenance | null;
+	/** Display name of the corpus this run was scored against
+	 * (`generated_from.corpus`, basename). Cross-run calibration compatibility uses
+	 * baked provenance digests, never this mutable/path-derived label. */
 	substrate: string | null;
 	/** Run-level gold coverage from `export_meta.gold` (how many evidences carry a
 	 *  human curation). Read at discovery, no evidence load. `null` on runs with no
@@ -65,17 +130,28 @@ export interface RunMeta {
 		models: string[];
 		usd_per_1k_evidence: number | null;
 	} | null;
-	/** Per-run soft-weight calibration (E5): the fitted triple that applies to
-	 *  this reader, baked at export so it travels with the run. `status:
-	 *  'unavailable'` (with a reason) when the reader has no fit; `undefined` ⇒
-	 *  legacy export (schema < 4). The soft path is default-off — this records
-	 *  which calibration *applies*, not that it was used. Named `soft_calibration`
+	/** Per-run reader measurement calibration (E5), baked at export so it travels
+	 *  with the run. `status:
+	 *  'unavailable'` (with a reason) when no ship-approved exact model+prompt
+	 *  profile applies; `undefined` ⇒ a legacy export without this field. This records which confusion-derived profile
+	 *  applies, not that it was used. Named `soft_calibration`
 	 *  (not `calibration`) to stay distinct from `Validity.calibration`, the
-	 *  separate belief-vs-INDRA residual measure. */
+	 *  separate belief-vs-INDRA residual measure. `soft_weights` is a legacy JSON
+	 *  key: schema v8 carries a likelihood-ratio profile; schema v7 carried two
+	 *  survival weights. */
 	soft_calibration?: {
 		status: 'available' | 'unavailable';
 		model: string | null;
-		soft_weights: { w_correct: number; w_incorrect: number } | null;
+		reader_configuration?: {
+			status: 'identified' | 'mixed' | 'mismatch' | 'missing_prompt';
+			id: string | null;
+			model: string | null;
+			prompt_sha256: string | null;
+			prompt_fingerprint_source?: 'call_log' | 'run_metadata' | null;
+			declared_prompt_sha256?: string | null;
+			prompt_fingerprints?: Record<string, number>;
+		};
+		soft_weights: ReaderCalibrationProfile | LegacySoftWeights | null;
 		reason?: string;
 	};
 }
@@ -104,14 +180,14 @@ export interface StatementRollup {
 	sources: string[];
 	// ── E5/E11 three-way belief + statement gold (schema v7; optional: legacy
 	//    exports pre-v7 lack them, so the viewer narrows on presence) ───────────
-	/** Canonical production belief: the clean soft form for fitted readers, the
-	 *  hard gate as fallback for unfitted. The promoted production scalar. */
+	/** Canonical production belief (schema v8): configuration-specific hybrid
+	 *  log-odds score for fitted readers, with hard-gate fallback for unfitted. */
 	belief?: number | null;
-	/** Gated noisy-OR (always the hard gate; the comparison arm). */
+	/** Hard-gated parametric noisy-OR: comparison arm and unfitted-reader fallback. */
 	belief_hard?: number | null;
-	/** Ungated belief — all surviving evidence counted. */
+	/** Ungated parametric noisy-OR — all evidence counted. */
 	belief_parametric?: number | null;
-	/** Soft survival-weight recalibration; null = reader has no fit. */
+	/** Configuration-specific hybrid log-odds score; null = reader has no fit. */
 	belief_soft?: number | null;
 	/** Tier-driven decision: deterministic reject hard-flags incorrect; credible
 	 *  LLM incorrect routes to review; else correct. */
@@ -227,8 +303,14 @@ export interface EvidenceRow {
 	gold?: GoldVerdict | null;
 }
 
-// ── Calibration products (E5 metrics.json, schema_version 2) ────────────────
+// ── Calibration products (E5 metrics.json, schema_version 2+) ───────────────
 //
+// Current contract is schema v3. Statement-decision/stratification fields were
+// introduced in v2; v3 aligns Tier-2 gold, statement grain, de-dup/no-text
+// handling, and calibration with the production export and configuration-
+// specific hybrid score. The JSON arm key remains `soft` across both contracts,
+// but its semantics do NOT: v2 = historical survival-weight score, v3+ = hybrid
+// log-odds. Consumers must gate canonical selection on schema_version.
 // Written alongside per_evidence.jsonl by results.build_run_metrics. The viewer
 // READS these byte-exact and never recomputes (gate G4). Two tiers (ev/stmt),
 // each either named-empty (status 'unavailable' + reason) or a block of arms.
@@ -318,12 +400,16 @@ export type TierBlock =
 			stratified?: StratificationLayer;
 	  };
 
-/** The per-run metrics.json contract (E5). */
+/** The per-run metrics.json contract (E5). `metrics_basis` is part of the
+ * comparison identity; only its reader-specific `soft_calibration` profile may
+ * differ between otherwise compatible reader runs. */
 export interface RunMetrics {
 	schema_version: number;
 	run_id: string | null;
 	model: string | null;
 	generated_date: string;
+	/** Immutable artifact/evaluation identity. Required by the v3 hybrid contract. */
+	provenance?: CalibrationProvenance;
 	metrics_basis: Record<string, unknown>;
 	gold: { source: string | null; covered: number; total: number } | null;
 	tiers: { ev: TierBlock; stmt: TierBlock };
