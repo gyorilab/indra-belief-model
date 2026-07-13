@@ -15,8 +15,8 @@ Two recorded baselines:
 
   2. BELIEF DISCRIMINATION (statement grain) — INDRA's parametric belief is a
      pure function of source + evidence count (no text read). We roll the gold
-     up to statements (majority vote, mirroring the viewer's granularity=statement
-     rule) and measure how well that belief separates gold-correct from
+     up to statements with the calibration arc's conservative
+     any-incorrect-wins rule and measure how well that belief separates gold-correct from
      gold-incorrect statements: AUROC (positive class = correct) and the 8-bin
      ECE. We report the belief as STORED on the gold rows, and as recomputed from
      source_counts under both INDRA_PRIORS and RECALIBRATED_PRIORS.
@@ -39,6 +39,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.metrics import ece  # noqa: E402
+from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
 from indra_belief.noise_model import (  # noqa: E402
     INDRA_PRIORS,
     RECALIBRATED_PRIORS,
@@ -116,12 +117,13 @@ def main() -> None:
         })
 
     # ── (2) belief discrimination at statement grain ─────────────────────────
-    # roll pairs up to statements by matches_hash; majority-vote the gold
-    by_stmt: dict[str, dict] = defaultdict(lambda: {"golds": [], "belief": None, "source_counts": None})
+    # Roll pairs up to statements under the same conservative gold used by the
+    # calibration/metrics path: one incorrect evidence makes the rollup incorrect.
+    by_stmt: dict[str, dict] = defaultdict(lambda: {"tags": [], "belief": None, "source_counts": None})
     for p in pairs:
         h = str(p.get("matches_hash"))
         s = by_stmt[h]
-        s["golds"].append(p.get("gold") == "correct")
+        s["tags"].append(p.get("gold") or p.get("tag"))
         if s["belief"] is None and isinstance(p.get("belief"), (int, float)):
             s["belief"] = p["belief"]
         if s["source_counts"] is None and isinstance(p.get("source_counts"), dict):
@@ -129,9 +131,8 @@ def main() -> None:
 
     stmts = []
     for h, s in by_stmt.items():
-        n = len(s["golds"])
-        nc = sum(s["golds"])
-        gold_correct = nc * 2 > n  # strict majority, mirrors viewer maj()
+        n = len(s["tags"])
+        gold_correct = is_gold_correct(aggregate_gold(s["tags"]))
         sc = s["source_counts"] or {}
         stmts.append({
             "matches_hash": h,
@@ -180,7 +181,7 @@ def main() -> None:
         "belief_discrimination": belief_baselines,
         "notes": [
             "positive class for AUROC = gold-correct (belief should rank correct > incorrect)",
-            "statement gold = strict majority vote of its evidence-pair gold (viewer maj() rule)",
+            "statement gold = conservative any-incorrect-wins over evidence-pair gold",
             "belief_stored = INDRA belief as written on the statement (incl. supports-graph propagation)",
             "belief_indra / belief_recal = recomputed from source_counts (no propagation)",
             "this is the pre-LLM floor: no text is read; belief is a function of source + count only",
@@ -198,7 +199,7 @@ def main() -> None:
     st = artifact["statements"]
     L.append(f"Evidence pairs: **{ep['n']}** ({ep['n_correct']} correct / {ep['n_incorrect']} incorrect, "
              f"balance {ep['balance']:.1%}).  ")
-    L.append(f"Statements (majority-vote rollup): **{st['n']}** "
+    L.append(f"Statements (any-incorrect-wins rollup): **{st['n']}** "
              f"({st['n_gold_correct']} gold-correct; {st['n_single_evidence']} single-evidence, "
              f"{st['n_multi_evidence']} multi-evidence).\n")
 

@@ -221,7 +221,9 @@ class SourceBreakdown:
     n_surviving: int
     rand: float
     syst: float
-    incorrectness_factor: float  # syst + rand^n_surviving, or None if removed
+    # Hard path: syst + rand^n_surviving (None if removed). Hybrid path: the
+    # source contribution's implied error score sigmoid(-mean contribution).
+    incorrectness_factor: float | None
 
 
 @dataclass
@@ -235,33 +237,55 @@ class GatedBeliefResult:
     per_source: list[SourceBreakdown]
 
 
+def _sigmoid(x: float) -> float:
+    """Numerically stable logistic transform."""
+    if x >= 0:
+        z = math.exp(-x)
+        return 1.0 / (1.0 + z)
+    z = math.exp(x)
+    return z / (1.0 + z)
+
+
 def _soft_gated_belief(
     evidence: list[dict],
     priors: dict[str, tuple[float, float]],
-    w_correct: float | None,
-    w_incorrect: float | None,
+    log_lr_confirm: float,
+    log_lr_reject: float,
+    prior_logodds: float = 0.0,
 ) -> GatedBeliefResult:
-    """Soft survival-weight belief (calibration C2): the LLM verdict recalibrates
-    the per-read random error instead of hard-deleting the read.
+    """LLM-verdict belief as a source-aware hybrid log-odds score.
 
-    Per source, each read j contributes a wrong-rate ``w_j`` keyed on its verdict;
-    the source factor is ``geomean_j(w_j)``. A source's repeated reads are
-    correlated (same reader, shared bias), so they do NOT compound — the geometric
-    mean is the source's single aggregate per-read wrong-rate. Only INDEPENDENT
-    sources multiply (the product below). Mirrors
-    ``scripts/calibration_stage1.soft_belief`` — the holdout-confirmed form.
+    A statement has a latent truth Y; each read is a noisy measurement of Y via its
+    LLM verdict. Each verdict carries a fixed log-LIKELIHOOD-RATIO for "correct":
+    ``log_lr_confirm`` = log(P(confirm|correct) / P(confirm|incorrect)),
+    ``log_lr_reject`` similarly (derived in ``calibration_constants`` from the
+    reader's confusion matrix — reader properties, base-rate-free). A confirmation
+    carries the stronger of the reader log-LR and the source's reliability logit;
+    this conservative floor preserves stronger curated-source evidence instead of
+    allowing a generic reader profile to lower it. The source term is a posterior
+    reliability score from a separate curation fit, not itself a likelihood ratio.
+    Consequently the combined value is an explicit hybrid/power-likelihood
+    heuristic, not a pure Bayesian posterior. A rejection uses the reader log-LR.
+    Direct callers may also pass an unscored read, which contributes source
+    reliability alone. ``statement_belief`` deliberately omits unread/no-text rows
+    and returns ``None`` when nothing was read.
 
-    The adopted ``clean`` form works in per-read-rate space: each read's wrong-rate
-    is ``min(w_correct, base_s)`` / ``w_incorrect`` / ``base_s`` with
-    ``base_s = syst_s + rand_s`` (no additive ``syst``, no overflow clamp), and the
-    source factor is just the geomean. This de-conflates syst/rand (no overlapping
-    floors) and is self-calibrating at n=1 (belief = 1 - w_verdict = empirical
-    P(correct|verdict)).
+    Aggregation is in LOG-ODDS space, not a noisy-OR product:
+
+        logit(belief) = prior_logodds + Σ_sources ( mean_j ℓ(v_j) )
+
+    Within a source the reads are correlated (same reader) so we AVERAGE their
+    contributions — the source is counted once; across sources we SUM. The
+    ``prior_logodds`` value is the fit/deployment anchor (default 0 = balanced),
+    but changing it is a global score shift rather than a clean Bayesian prevalence
+    correction because the source floor is not an LR. When the floor does not bind,
+    Bayes' rule still makes an n=1 reader-only score reproduce the measured verdict
+    accuracy at the fit prior.
     """
-    if w_correct is None or w_incorrect is None:
+    if log_lr_confirm is None or log_lr_reject is None:
         raise ValueError(
-            "soft_weights=True requires w_correct and w_incorrect "
-            "(per-read wrong-rates P(read wrong | verdict))"
+            "soft_weights=True requires log_lr_confirm and log_lr_reject "
+            "(per-verdict log-likelihood-ratios; see calibration_constants)"
         )
 
     by_source: dict[str, dict] = {}
@@ -273,33 +297,27 @@ def _soft_gated_belief(
             )
         src = src_raw.lower()
         rand_s, syst_s = priors.get(src, _DEFAULT_PRIOR)
-        # base_s = INDRA's single-read per-read wrong rate (syst + rand). The soft
-        # form works in this per-read-rate space: syst is folded into the unscored
-        # base, NOT added a second time on top of the verdict rate.
-        base_s = min(1.0, syst_s + rand_s)
+        base_s = min(1.0 - 1e-9, max(1e-9, syst_s + rand_s))
         v = ev.get("verdict")
-        # Source-scoped, verdict-conditioned per-read wrong rate. No additive
-        # syst, no clamp. Confirmation helps only sources noisier than the
-        # confirm-rate (min vs base_s); rejection sets the source-independent
-        # reject-rate; unscored reads keep the source's own base rate. At n=1
-        # this gives belief = 1 - w_verdict = the empirical P(correct|verdict).
+        source_logodds = math.log((1.0 - base_s) / base_s)  # logit(source reliability)
+        # Per-read hybrid contribution for "correct". A confirmation is worth the
+        # stronger of the reader confirm-LR and the source reliability logit (a
+        # confirmed curated-DB read outweighs a confirmed noisy-reader read); a
+        # rejection is the reader reject-LR; an unscored read carries the source
+        # reliability logit. Do not reinterpret the source logit as an LR.
         if v == "correct":
-            w = min(w_correct, base_s)
+            ell = max(log_lr_confirm, source_logodds)
         elif v == "incorrect":
-            w = w_incorrect
+            ell = log_lr_reject
         else:
-            w = base_s
-        # Counts report the GATE decision ('included', same coercion as the hard
-        # path) so n_surviving / n_gated mean the same on both paths — only the
-        # belief differs. The soft belief itself weights ALL reads (an incorrect
-        # read is down-weighted via w_incorrect, not removed from the product).
+            ell = source_logodds
         included = ev.get("included", True)
         if isinstance(included, str):
             included = included.strip().lower() == "true"
         d = by_source.setdefault(
-            src, {"ws": [], "total": 0, "n_included": 0, "syst": syst_s, "rand": rand_s}
+            src, {"ls": [], "total": 0, "n_included": 0, "syst": syst_s, "rand": rand_s}
         )
-        d["ws"].append(min(max(w, 1e-9), 1.0))
+        d["ls"].append(ell)
         d["total"] += 1
         if included:
             d["n_included"] += 1
@@ -310,26 +328,25 @@ def _soft_gated_belief(
         p_parametric *= d["syst"] + d["rand"] ** d["total"]
     parametric_only = max(0.0, min(1.0, 1.0 - p_parametric))
 
-    p_incorrect = 1.0
+    # Hybrid log-odds aggregation: average each source's correlated read
+    # contributions, sum sources, add the anchor, sigmoid.
+    total_logodds = prior_logodds
     breakdowns = []
     n_total = n_surviving = 0
     for src, d in sorted(by_source.items()):
-        ws = d["ws"]
-        n = len(ws)
+        ls = d["ls"]
         n_total += d["total"]
         n_surviving += d["n_included"]
-        geomean = math.exp(sum(math.log(w) for w in ws) / n)
-        # syst is already inside base_s (per-read space) so it is NOT added again
-        # — the factor IS the geomean of per-read rates, provably in (0,1] (no
-        # overflow, no clamp).
-        factor = geomean
-        p_incorrect *= factor
+        src_logodds = sum(ls) / len(ls)
+        total_logodds += src_logodds
+        # diagnostic: the source's implied aggregate wrong-rate (for the breakdown)
+        factor = _sigmoid(-src_logodds)
         breakdowns.append(SourceBreakdown(
             source=src, n_total=d["total"], n_surviving=d["n_included"],
             rand=d["rand"], syst=d["syst"], incorrectness_factor=factor,
         ))
 
-    belief = max(0.0, min(1.0, 1.0 - p_incorrect))
+    belief = _sigmoid(total_logodds)
     return GatedBeliefResult(
         belief=belief, parametric_only=parametric_only,
         n_total_evidence=n_total, n_surviving_evidence=n_surviving,
@@ -342,8 +359,9 @@ def compute_gated_belief(
     priors: dict[str, tuple[float, float]] | None = None,
     *,
     soft_weights: bool = False,
-    w_correct: float | None = None,
-    w_incorrect: float | None = None,
+    log_lr_confirm: float | None = None,
+    log_lr_reject: float | None = None,
+    prior_logodds: float = 0.0,
 ) -> GatedBeliefResult:
     """Compute belief with per-evidence gating from LLM verdicts.
 
@@ -360,12 +378,14 @@ def compute_gated_belief(
         evidence: List of evidence dicts with 'source_api' and 'included'
             (hard gate). For the soft path each dict also carries 'verdict'.
         priors: Optional custom priors.
-        soft_weights: When True, use the calibration soft survival weight
-            (verdict-conditioned per-read wrong-rate, see ``_soft_gated_belief``)
-            instead of the hard gate; requires w_correct/w_incorrect. Default
-            False = today's hard gate, byte-identical.
-        w_correct, w_incorrect: per-read wrong-rates P(read wrong | verdict),
-            required when soft_weights=True.
+        soft_weights: When True, use the hybrid log-odds measurement score
+            (per-verdict log-likelihood-ratios, see ``_soft_gated_belief``) instead
+            of the hard gate. Default False = today's hard gate, byte-identical.
+        log_lr_confirm, log_lr_reject: per-verdict log-likelihood-ratios for
+            "correct" (from ``calibration_constants``), required when soft_weights=True.
+        prior_logodds: fit/deployment log-odds anchor (default 0); because the
+            source floor is a reliability logit rather than an LR, changing this
+            is not a pure Bayesian prevalence correction.
 
     Returns:
         GatedBeliefResult with belief, parametric-only, and per-source breakdown.
@@ -373,16 +393,23 @@ def compute_gated_belief(
     if priors is None:
         priors = INDRA_PRIORS
 
+    if soft_weights and (log_lr_confirm is None or log_lr_reject is None):
+        raise ValueError(
+            "soft_weights=True requires log_lr_confirm and log_lr_reject "
+            "(per-verdict log-likelihood-ratios; see calibration_constants)"
+        )
+
     if not evidence:
         return GatedBeliefResult(
-            belief=0.0, parametric_only=0.0,
+            belief=_sigmoid(prior_logodds) if soft_weights else 0.0,
+            parametric_only=0.0,
             n_total_evidence=0, n_surviving_evidence=0, n_gated=0,
             per_source=[],
         )
 
     if soft_weights:
         return _soft_gated_belief(
-            evidence, priors, w_correct, w_incorrect,
+            evidence, priors, log_lr_confirm, log_lr_reject, prior_logodds,
         )
 
     # Group evidence by source
@@ -458,8 +485,9 @@ def compute_gated_belief_with_contradiction(
     priors: dict[str, tuple[float, float]] | None = None,
     *,
     soft_weights: bool = False,
-    w_correct: float | None = None,
-    w_incorrect: float | None = None,
+    log_lr_confirm: float | None = None,
+    log_lr_reject: float | None = None,
+    prior_logodds: float = 0.0,
 ) -> tuple[GatedBeliefResult, str, bool]:
     """Compute gated belief with contradiction penalty across regulation directions.
 
@@ -487,12 +515,13 @@ def compute_gated_belief_with_contradiction(
         combined counts across all directions, and per_source from the dominant.
     """
     if not evidence:
+        empty = compute_gated_belief(
+            [], priors, soft_weights=soft_weights,
+            log_lr_confirm=log_lr_confirm, log_lr_reject=log_lr_reject,
+            prior_logodds=prior_logodds,
+        )
         return (
-            GatedBeliefResult(
-                belief=0.0, parametric_only=0.0,
-                n_total_evidence=0, n_surviving_evidence=0, n_gated=0,
-                per_source=[],
-            ),
+            empty,
             "unknown",
             False,
         )
@@ -509,8 +538,8 @@ def compute_gated_belief_with_contradiction(
     for direction, dir_evidence in by_direction.items():
         dir_results[direction] = compute_gated_belief(
             dir_evidence, priors,
-            soft_weights=soft_weights, w_correct=w_correct,
-            w_incorrect=w_incorrect,
+            soft_weights=soft_weights, log_lr_confirm=log_lr_confirm,
+            log_lr_reject=log_lr_reject, prior_logodds=prior_logodds,
         )
 
     if not dir_results:

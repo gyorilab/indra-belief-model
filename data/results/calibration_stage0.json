@@ -1,35 +1,35 @@
 [
   {
     "name": "MedPsy-4B",
-    "joined": 1606,
+    "joined": 1604,
     "parse_null": 0,
     "missed": 0,
     "confidence_mix": {
-      "high": 1522,
+      "high": 1520,
       "medium": 73,
       "low": 11
     },
     "anchors": {
       "cells": {
-        "correct_correct": 719,
-        "correct_incorrect": 231,
+        "correct_correct": 718,
+        "correct_incorrect": 230,
         "incorrect_correct": 83,
         "incorrect_incorrect": 573
       },
-      "rand_corr": 0.2431578947368421,
+      "rand_corr": 0.24261603375527427,
       "rand_rej": 0.12652439024390244
     },
     "tier1_per_evidence": {
-      "ece": 0.13888542963885422,
-      "auroc": 0.8101349549013039,
-      "auprc_correct": 0.7484079842334979,
-      "base_rate_correct": 0.49937733499377335,
+      "ece": 0.13849750623441393,
+      "auroc": 0.8105271586108895,
+      "auprc_correct": 0.748434813947434,
+      "base_rate_correct": 0.4993765586034913,
       "brier": {
-        "brier": 0.17613480697384803,
-        "reliability": 0.023548188768781276,
-        "resolution": 0.09741299408322329,
-        "uncertainty": 0.24999961228829,
-        "n": 1606
+        "brier": 0.1757902119700748,
+        "reliability": 0.023409415197463274,
+        "resolution": 0.09761881454821364,
+        "uncertainty": 0.24999961132082513,
+        "n": 1604
       },
       "bins": [
         {
@@ -84,29 +84,29 @@
         {
           "lo": 0.95,
           "hi": 1.001,
-          "n": 941,
-          "mean_pred": 0.9499999999999998,
-          "empirical": 0.7598299681190224
+          "n": 939,
+          "mean_pred": 0.9499999999999997,
+          "empirical": 0.7603833865814696
         }
       ],
-      "n": 1606
+      "n": 1604
     },
     "tier2_per_statement": {
       "all": {
-        "n": 862,
-        "base_rate_correct": 0.5139211136890951,
-        "auroc": 0.7718285501866747,
-        "auprc_correct": 0.7402393202839325,
-        "ece": 0.14375295940591917,
+        "n": 861,
+        "base_rate_correct": 0.5133565621370499,
+        "auroc": 0.7706103737621357,
+        "auprc_correct": 0.7369689231425742,
+        "ece": 0.14421533101963102,
         "brier": {
-          "brier": 0.19846494026297995,
-          "reliability": 0.022958563012764884,
-          "resolution": 0.07347267776399272,
-          "uncertainty": 0.2498062025936553,
-          "n": 862
+          "brier": 0.1990770218735049,
+          "reliability": 0.022988312275115844,
+          "resolution": 0.07297774493443308,
+          "uncertainty": 0.24982160224787914,
+          "n": 861
         },
-        "mean_belief_when_correct": 0.6277227782586372,
-        "mean_belief_when_incorrect": 0.2812741294494655
+        "mean_belief_when_correct": 0.6270070582999464,
+        "mean_belief_when_incorrect": 0.2817476855353843
       },
       "bins": [
         {
@@ -147,16 +147,16 @@
         {
           "lo": 0.65,
           "hi": 0.8,
-          "n": 91,
-          "mean_pred": 0.7146771098901099,
-          "empirical": 0.5604395604395604
+          "n": 90,
+          "mean_pred": 0.714434011111111,
+          "empirical": 0.5666666666666667
         },
         {
           "lo": 0.8,
           "hi": 0.95,
           "n": 217,
-          "mean_pred": 0.8924258734189046,
-          "empirical": 0.7926267281105991
+          "mean_pred": 0.8923839609765084,
+          "empirical": 0.7880184331797235
         },
         {
           "lo": 0.95,
@@ -170,11 +170,11 @@
         "n": 501,
         "base_rate_correct": 0.5668662674650699,
         "auroc": 0.7917018238463036,
-        "auprc_correct": 0.7852760675391959,
+        "auprc_correct": 0.7853857479719915,
         "ece": 0.20078842315369264,
         "brier": {
           "brier": 0.20729390618762475,
-          "reliability": 0.051097104962451075,
+          "reliability": 0.05109710496245107,
           "resolution": 0.09008808246300869,
           "uncertainty": 0.24552890227528973,
           "n": 501
@@ -183,77 +183,77 @@
         "mean_belief_when_incorrect": 0.185963133640553
       },
       "multi_evidence": {
-        "n": 361,
-        "base_rate_correct": 0.4404432132963989,
-        "auroc": 0.8346254436764431,
-        "auprc_correct": 0.7548974057067881,
-        "ece": 0.14472036290277643,
+        "n": 360,
+        "base_rate_correct": 0.4388888888888889,
+        "auroc": 0.8320121569118937,
+        "auprc_correct": 0.7492605072361289,
+        "ece": 0.1458288889108398,
         "brier": {
-          "brier": 0.18621199863348672,
-          "reliability": 0.02628665516642404,
-          "resolution": 0.08353058171668593,
-          "uncertainty": 0.24645298915754177,
-          "n": 361
+          "brier": 0.1876418578696881,
+          "reliability": 0.026656264523179884,
+          "resolution": 0.08239522532887214,
+          "uncertainty": 0.24626543209876542,
+          "n": 360
         },
-        "mean_belief_when_correct": 0.790843967097964,
-        "mean_belief_when_incorrect": 0.38366267445210905
+        "mean_belief_when_correct": 0.7898741757504828,
+        "mean_belief_when_incorrect": 0.3846449516798318
       },
       "indra_prior_reference": {
-        "n": 862,
-        "base_rate_correct": 0.5139211136890951,
-        "auroc": 0.7165211160615677,
-        "auprc_correct": 0.7059066503498472,
-        "ece": 0.3929135420448337,
+        "n": 861,
+        "base_rate_correct": 0.5133565621370499,
+        "auroc": 0.7168165962915366,
+        "auprc_correct": 0.7058615229350667,
+        "ece": 0.3933817815246907,
         "brier": {
-          "brier": 0.3900908022615597,
-          "reliability": 0.1645123210994891,
-          "resolution": 0.02286958707895999,
-          "uncertainty": 0.2498062025936553,
-          "n": 862
+          "brier": 0.3905437475941344,
+          "reliability": 0.16488586918592302,
+          "resolution": 0.022799285126187997,
+          "uncertainty": 0.24982160224787914,
+          "n": 861
         },
-        "mean_belief_when_correct": 0.9478492930681479,
+        "mean_belief_when_correct": 0.9477544739350713,
         "mean_belief_when_incorrect": 0.8634707312970339
       },
-      "n_statements": 862,
+      "n_statements": 861,
       "n_singletons": 501,
-      "n_multi": 361
+      "n_multi": 360
     },
     "g0": {
-      "headroom_auroc": 0.27182855018667473,
-      "headroom_auprc": 0.22631820659483737,
+      "headroom_auroc": 0.2706103737621357,
+      "headroom_auprc": 0.22361236100552428,
       "go": true
     }
   },
   {
     "name": "gemma-26B",
-    "joined": 1606,
+    "joined": 1604,
     "parse_null": 0,
     "missed": 0,
     "confidence_mix": {
-      "high": 1596,
+      "high": 1594,
       "medium": 10
     },
     "anchors": {
       "cells": {
-        "correct_correct": 705,
-        "correct_incorrect": 158,
+        "correct_correct": 704,
+        "correct_incorrect": 157,
         "incorrect_correct": 97,
         "incorrect_incorrect": 646
       },
-      "rand_corr": 0.18308227114716108,
+      "rand_corr": 0.18234610917537747,
       "rand_rej": 0.13055181695827725
     },
     "tier1_per_evidence": {
-      "ece": 0.1078455790784558,
-      "auroc": 0.8434371161648119,
-      "auprc_correct": 0.802554808680119,
-      "base_rate_correct": 0.49937733499377335,
+      "ece": 0.10741895261845383,
+      "auroc": 0.8438665553487779,
+      "auprc_correct": 0.8026324013718509,
+      "base_rate_correct": 0.4993765586034913,
       "brier": {
-        "brier": 0.1447011207970112,
-        "reliability": 0.012558349408304569,
-        "resolution": 0.1178568408995834,
-        "uncertainty": 0.24999961228829,
-        "n": 1606
+        "brier": 0.14431733167082292,
+        "reliability": 0.012449569014253606,
+        "resolution": 0.1181318486642558,
+        "uncertainty": 0.24999961132082513,
+        "n": 1604
       },
       "bins": [
         {
@@ -308,29 +308,29 @@
         {
           "lo": 0.95,
           "hi": 1.001,
-          "n": 856,
-          "mean_pred": 0.9499999999999997,
-          "empirical": 0.8200934579439252
+          "n": 854,
+          "mean_pred": 0.95,
+          "empirical": 0.8208430913348946
         }
       ],
-      "n": 1606
+      "n": 1604
     },
     "tier2_per_statement": {
       "all": {
-        "n": 862,
-        "base_rate_correct": 0.5139211136890951,
-        "auroc": 0.8052387442960505,
-        "auprc_correct": 0.771258156963547,
-        "ece": 0.15545474144133456,
+        "n": 861,
+        "base_rate_correct": 0.5133565621370499,
+        "auroc": 0.8041096556118317,
+        "auprc_correct": 0.7680215787945903,
+        "ece": 0.15593070397494815,
         "brier": {
-          "brier": 0.1870192988823253,
-          "reliability": 0.029603156877608495,
-          "resolution": 0.09206512827790671,
-          "uncertainty": 0.2498062025936553,
-          "n": 862
+          "brier": 0.18761808706499813,
+          "reliability": 0.02968501438950493,
+          "resolution": 0.09163260760635603,
+          "uncertainty": 0.24982160224787914,
+          "n": 861
         },
-        "mean_belief_when_correct": 0.613531551844274,
-        "mean_belief_when_incorrect": 0.21241192095326256
+        "mean_belief_when_correct": 0.6127837250384919,
+        "mean_belief_when_incorrect": 0.2128854770391814
       },
       "bins": [
         {
@@ -371,16 +371,16 @@
         {
           "lo": 0.65,
           "hi": 0.8,
-          "n": 72,
-          "mean_pred": 0.7150833194444445,
-          "empirical": 0.6111111111111112
+          "n": 71,
+          "mean_pred": 0.7147808873239438,
+          "empirical": 0.6197183098591549
         },
         {
           "lo": 0.8,
           "hi": 0.95,
           "n": 211,
-          "mean_pred": 0.892950382627632,
-          "empirical": 0.8056872037914692
+          "mean_pred": 0.892907278362229,
+          "empirical": 0.8009478672985783
         },
         {
           "lo": 0.95,
@@ -394,7 +394,7 @@
         "n": 501,
         "base_rate_correct": 0.5668662674650699,
         "auroc": 0.8321623288115791,
-        "auprc_correct": 0.8155119365176348,
+        "auprc_correct": 0.8156805986616786,
         "ece": 0.22182834331337328,
         "brier": {
           "brier": 0.20366312974051898,
@@ -407,44 +407,44 @@
         "mean_belief_when_incorrect": 0.1292027649769585
       },
       "multi_evidence": {
-        "n": 361,
-        "base_rate_correct": 0.4404432132963989,
-        "auroc": 0.8499750918488075,
-        "auprc_correct": 0.7918966603723785,
-        "ece": 0.1027589670981451,
+        "n": 360,
+        "base_rate_correct": 0.4388888888888889,
+        "auroc": 0.8474746208798095,
+        "auprc_correct": 0.7861549916394543,
+        "ece": 0.10375093367341769,
         "brier": {
-          "brier": 0.16392079677718674,
-          "reliability": 0.012016151590765389,
-          "resolution": 0.0922771132528081,
-          "uncertainty": 0.24645298915754177,
-          "n": 361
+          "brier": 0.1652887360082317,
+          "reliability": 0.012454204565395945,
+          "resolution": 0.0912660352652758,
+          "uncertainty": 0.24626543209876542,
+          "n": 360
         },
-        "mean_belief_when_correct": 0.7739967136290148,
-        "mean_belief_when_incorrect": 0.3017999746505793
+        "mean_belief_when_correct": 0.7729202940950212,
+        "mean_belief_when_incorrect": 0.30278225187830204
       },
       "indra_prior_reference": {
-        "n": 862,
-        "base_rate_correct": 0.5139211136890951,
-        "auroc": 0.7165211160615677,
-        "auprc_correct": 0.7054895243414829,
-        "ece": 0.3929135420448337,
+        "n": 861,
+        "base_rate_correct": 0.5133565621370499,
+        "auroc": 0.7168165962915366,
+        "auprc_correct": 0.7054434532027014,
+        "ece": 0.3933817815246907,
         "brier": {
-          "brier": 0.3900908022615597,
-          "reliability": 0.164512321099489,
-          "resolution": 0.02286958707895999,
-          "uncertainty": 0.2498062025936553,
-          "n": 862
+          "brier": 0.3905437475941344,
+          "reliability": 0.16488586918592302,
+          "resolution": 0.022799285126187997,
+          "uncertainty": 0.24982160224787914,
+          "n": 861
         },
-        "mean_belief_when_correct": 0.9478492930681478,
+        "mean_belief_when_correct": 0.9477544739350712,
         "mean_belief_when_incorrect": 0.8634707312970338
       },
-      "n_statements": 862,
+      "n_statements": 861,
       "n_singletons": 501,
-      "n_multi": 361
+      "n_multi": 360
     },
     "g0": {
-      "headroom_auroc": 0.30523874429605047,
-      "headroom_auprc": 0.25733704327445195,
+      "headroom_auroc": 0.3041096556118317,
+      "headroom_auprc": 0.2546650166575404,
       "go": true
     }
   }

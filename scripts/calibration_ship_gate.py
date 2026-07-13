@@ -1,39 +1,36 @@
-"""Calibration C2.5 — G2 ship gate: the error-detection-F1 leg + consolidated verdict.
+"""Calibration C2.5 — hybrid log-odds belief ship gate.
 
-C1.2 already confirmed the soft survival weight on the
-independent holdout_cc for the ECE + AUROC legs. This script adds the GATE's LEAD
-leg — error-detection F1 with bootstrap CIs — and emits the consolidated G2
-verdict. It is a DETERMINISTIC recompute of belief from the stored holdout_cc
-verdicts: NO new LLM spend.
+This script derives a reader measurement profile from its training confusion
+cells, recomputes the hybrid log-odds belief on independent gold, and evaluates the
+four G2 legs. The lead leg is error-detection F1 with bootstrap CIs. This is a
+DETERMINISTIC recompute from stored verdicts: no new LLM spend.
 
 Why a belief threshold (and not the production verdict_statement)
 ----------------------------------------------------------------
-The soft weight only moves the belief SCALAR. The production statement decision
-``verdict_statement`` is tier/confidence-driven (deterministic-reject hard-flags),
-untouched by the soft path — so err-F1 measured on it is trivially identical
-between hard and soft (a vacuous pass). The gate's "error-detection F1" must be
-measured on a BELIEF threshold to test the thing that changed:
+The calibrated hybrid arm only moves the belief SCALAR. The production statement
+decision ``verdict_statement`` is tier/confidence-driven (deterministic-reject
+hard-flags), untouched by the calibrated path — so err-F1 measured on it is
+trivially identical between hard and calibrated belief (a vacuous pass). The
+gate's "error-detection F1" must be measured on a BELIEF threshold to test the
+thing that changed:
 
     positive class = ERROR (gold == incorrect)
-    pred_error     = belief < tau*         (tau* = each arm's OWN optimal threshold,
-                                            argmax err-F1 over TAU_GRID on the full
-                                            sample; the adopted 'clean' weight is
-                                            self-calibrating and shifts the belief
-                                            scale, so a fixed 0.5 cutoff would
-                                            penalize it for relocating its boundary)
+    pred_error     = belief < tau*         (tau* = each arm's OWN operating threshold,
+                                            selected on eval_curation_v1 and then
+                                            frozen before the independent test)
     err-F1         = metrics.confusion_metrics over (gold_error, pred_error).f1
 
-G2 SHIP GATE (all four legs, per reader; lead = err-F1; soft arm = 'clean'):
-  1. ECE        : ECE(clean) < ECE(hard)
-  2. AUROC      : AUROC(clean) >= AUROC(hard) - EPS
-  3. err-F1     : lower 95% bootstrap bound of ΔerrF1 >= -NOISE_FLOOR (non-inferior),
-                  each arm at its own tau*
+G2 SHIP GATE (all four legs, per reader; lead = err-F1; calibrated arm key = 'clean'):
+  1. ECE        : ECE(calibrated) < ECE(hard)
+  2. AUROC      : AUROC(calibrated) >= AUROC(hard) - EPS
+  3. err-F1     : lower 95% bootstrap bound of ΔerrF1 >= -NI_MARGIN (non-inferior),
+                  each arm at its own train-selected tau*
   4. E4 identity: tests/test_soft_belief.py byte-identity green  [asserted elsewhere]
   Brier-resolution is reported as a diagnostic, NOT gated (noise-dominated at n~342).
 
-NOISE_FLOOR honors the medpsy-4B identical-run err-F1 spread (0.717-0.871 ≈ 0.154):
-never credit a positive Δ whose CI straddles 0, never fail on a negative Δ inside
-that band.
+The 0.154 non-inferiority margin is the historically observed medpsy-4B
+identical-run err-F1 spread (0.717-0.871). It is deliberately disclosed as a
+wide, empirical margin rather than described as sampling noise.
 
     PYTHONPATH=src python scripts/calibration_ship_gate.py
 """
@@ -43,6 +40,7 @@ import argparse
 import json
 import math
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -53,21 +51,26 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import calibration_stage0 as c0  # noqa: E402
 import calibration_stage1 as c1  # noqa: E402
+from indra_belief.calibration_constants import reader_configuration_for_run  # noqa: E402
+from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
 from indra_belief.metrics import confusion_metrics, ece  # noqa: E402
+from indra_belief.noise_model import RECALIBRATED_PRIORS  # noqa: E402
+from indra_belief.results import load_gold_map  # noqa: E402
+from indra_belief.statement_belief import statement_belief  # noqa: E402
 
 EPS = 0.0  # AUROC tolerance (must not drop)
-# err-F1 is measured at EACH ARM'S OWN optimal threshold, not a fixed 0.5: the
-# 'clean' soft weight shifts the belief scale (it is self-calibrating, so beliefs
-# move toward their true rates), and a fixed cutoff would penalize a better-
-# calibrated arm purely for relocating its error boundary. We pick tau* per arm on
-# the full sample (argmax err-F1 over TAU_GRID), then bootstrap err-F1 at that
-# frozen per-arm tau* — no per-bootstrap re-selection (which would bias upward).
+# err-F1 is measured at EACH ARM'S OWN operating threshold, not a fixed 0.5.
+# Thresholds are selected once on the fit set and frozen before evaluation on a
+# disjoint test set. Bootstrap resamples never re-select them.
 TAU_GRID = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70)
 TAU_SWEEP = (0.4, 0.5, 0.6)  # reported diagnostic sweep
-# medpsy-4B identical-run err-F1 spread (0.717-0.871); a Δ inside this band is noise.
-NOISE_FLOOR = 0.154
+# Pre-specified non-inferiority margin based on the historically observed
+# medpsy-4B identical-run err-F1 spread (0.717-0.871). This is intentionally
+# wide and must not be described as a statistical noise estimate.
+NI_MARGIN = 0.154
 N_BOOT = 2000
 BOOT_SEED = 0
+HASH_MASK = (1 << 64) - 1
 
 
 def err_f1(beliefs, gold_correct, tau) -> float:
@@ -81,19 +84,210 @@ def err_f1(beliefs, gold_correct, tau) -> float:
 
 
 def best_tau(beliefs, gold_correct, grid=TAU_GRID) -> tuple[float, float]:
-    """The threshold maximizing err-F1 on the full sample, and that err-F1.
-    The operating threshold for a deployed belief is derived, never assumed 0.5."""
+    """Return the err-F1-maximizing threshold and score on a training sample."""
     scored = [(err_f1(beliefs, gold_correct, t), t) for t in grid]
     f1, tau = max(scored, key=lambda x: x[0])
     return tau, f1
+
+
+def _ukey(value) -> int | None:
+    try:
+        return int(value) & HASH_MASK
+    except (TypeError, ValueError):
+        return None
+
+
+def _run_statement_key(value) -> tuple[str, int | None]:
+    """Return a stable display key and the unsigned INDRA matches hash.
+
+    Scored runs persist ``stmt_hash`` as a 16-character hexadecimal string. The
+    unsigned integer is needed for an exact ``(matches_hash, source_hash)`` gold
+    join; the original string remains the production statement grouping key.
+    """
+    if value is None:
+        return "", None
+    display = str(value)
+    try:
+        return display, int(display, 16) & HASH_MASK
+    except (TypeError, ValueError):
+        return display, _ukey(value)
+
+
+def _run_configuration(run_path: str | Path) -> dict:
+    """Read the exact model+prompt identity persisted by a run."""
+    return reader_configuration_for_run(ROOT / run_path)
+
+
+def validate_configuration_pair(
+    train_run: str | Path, test_run: str | Path,
+) -> tuple[str | None, str | None]:
+    """Reject accidental cross-configuration profile transfer.
+
+    A profile is valid only for the serving/scorer configuration that produced
+    its fit run. Missing or mixed prompt fingerprints cannot establish
+    equivalence and are a hard provenance error, as are two different IDs.
+    """
+    train_configuration = _run_configuration(train_run)
+    test_configuration = _run_configuration(test_run)
+    if train_configuration["status"] != "identified":
+        raise ValueError(
+            f"training reader configuration is not identifiable: {train_run}: "
+            f"{train_configuration}"
+        )
+    if test_configuration["status"] != "identified":
+        raise ValueError(
+            f"test reader configuration is not identifiable: {test_run}: "
+            f"{test_configuration}"
+        )
+    if train_configuration["id"] != test_configuration["id"]:
+        raise ValueError(
+            "calibration profile transfer across reader configurations is forbidden: "
+            f"train {train_run}={train_configuration['id']!r}, "
+            f"test {test_run}={test_configuration['id']!r}"
+        )
+    return train_configuration["id"], test_configuration["id"]
+
+
+def statements_for_run(run_path: str | Path, gold_path: str | Path) -> tuple[list[dict], dict]:
+    """Join a run to gold and build production-grain statement records.
+
+    Each row prefers its exact canonical pair and otherwise uses source-hash only
+    when every context sharing that source agrees on truth. Statements are
+    grouped by the run's ``stmt_hash`` (the production grain), and statement gold
+    uses the shared conservative any-incorrect-wins rollup.
+    """
+    run_rows_by_position: dict[tuple[int, int], dict] = {}
+    for row in c0.load_jsonl(ROOT / run_path):
+        run_rows_by_position[(row.get("stmt_i"), row.get("evidence_i"))] = row
+    run_rows = list(run_rows_by_position.values())
+    gold_rows = c0.load_jsonl(ROOT / gold_path)
+    gold_map = load_gold_map(str(ROOT / gold_path))
+    by_pair: dict[tuple[int, int], list[dict]] = defaultdict(list)
+    by_source: dict[int, list[dict]] = defaultdict(list)
+    for g in gold_rows:
+        sh = _ukey(g.get("source_hash"))
+        if sh is None:
+            continue
+        by_source[sh].append(g)
+        mh = _ukey(g.get("matches_hash"))
+        if mh is not None:
+            by_pair[(mh, sh)].append(g)
+
+    grouped: dict[str, dict] = defaultdict(
+        lambda: {"ev": [], "tags": [], "stored_belief": None}
+    )
+    n_joined = n_unmatched = n_ambiguous = n_exact = n_source_fallback = 0
+    for scored in run_rows:
+        stmt_key, mh = _run_statement_key(scored.get("stmt_hash"))
+        sh = _ukey(scored.get("source_hash"))
+        exact_candidates = by_pair.get((mh, sh), [])
+        candidates = exact_candidates or by_source.get(sh, [])
+        gold = gold_map.for_row(mh, sh)
+        if not candidates:
+            n_unmatched += 1
+            continue
+        if gold is None:
+            n_ambiguous += 1
+            continue
+        pair_gold = gold.get("verdict")
+        if pair_gold is None:
+            n_ambiguous += 1
+            continue
+        if exact_candidates:
+            n_exact += 1
+        else:
+            n_source_fallback += 1
+        g0 = candidates[0]
+        rec = grouped[stmt_key]
+        rec["ev"].append({
+            "source_api": scored.get("source_api") or g0.get("source_api"),
+            "verdict": scored.get("verdict"),
+            "confidence": scored.get("confidence"),
+            "tier": scored.get("tier"),
+            "evidence_text": g0.get("evidence_text"),
+            "evidence_hash": scored.get("evidence_hash"),
+            "ev_gold_correct": is_gold_correct(pair_gold),
+        })
+        rec["tags"].append(pair_gold)
+        if rec["stored_belief"] is None and isinstance(scored.get("belief"), (int, float)):
+            rec["stored_belief"] = scored["belief"]
+        n_joined += 1
+
+    statements = []
+    for key, rec in grouped.items():
+        statement_gold = aggregate_gold(rec["tags"])
+        if statement_gold is None:
+            continue
+        statements.append({
+            "statement_key": key,
+            "ev": rec["ev"],
+            "gold_correct": is_gold_correct(statement_gold),
+            "stored_belief": rec["stored_belief"],
+        })
+    diagnostics = {
+        "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
+        "n_run_rows": len(run_rows),
+        "n_joined_rows": n_joined,
+        "n_exact_joined_rows": n_exact,
+        "n_source_fallback_rows": n_source_fallback,
+        "n_unmatched_rows": n_unmatched,
+        "n_ambiguous_rows": n_ambiguous,
+        "n_grouped_statements": len(statements),
+    }
+    return statements, diagnostics
+
+
+def score_statements(statements: list[dict], profile: dict) -> dict:
+    """Score statements through the production hard and calibrated paths."""
+    hard: list[float] = []
+    parametric: list[float] = []
+    calibrated: list[float] = []
+    labels: list[bool] = []
+    n_undefined = 0
+    for stmt in statements:
+        hard_result = statement_belief(stmt["ev"], RECALIBRATED_PRIORS)
+        soft_result = statement_belief(stmt["ev"], RECALIBRATED_PRIORS, soft=profile)
+        if hard_result.belief is None or soft_result.belief is None:
+            n_undefined += 1
+            continue
+        hard.append(hard_result.belief)
+        parametric.append(hard_result.parametric_only)
+        calibrated.append(soft_result.belief)
+        labels.append(stmt["gold_correct"])
+    return {
+        "hard": hard,
+        "parametric": parametric,
+        "calibrated": calibrated,
+        "labels": labels,
+        "n_undefined": n_undefined,
+    }
+
+
+def training_thresholds(statements: list[dict], profile: dict) -> dict:
+    """Select each arm's operating threshold on training statements only."""
+    scored = score_statements(statements, profile)
+    if not scored["labels"]:
+        raise ValueError("cannot select operating thresholds without scored training statements")
+    tau_hard, f1_hard = best_tau(scored["hard"], scored["labels"])
+    tau_soft, f1_soft = best_tau(scored["calibrated"], scored["labels"])
+    return {
+        "hard": tau_hard,
+        "calibrated": tau_soft,
+        "train_f1_hard": f1_hard,
+        "train_f1_calibrated": f1_soft,
+        "n_train": len(scored["labels"]),
+        "n_train_undefined": scored["n_undefined"],
+        "selection": "argmax error-detection F1 on train over TAU_GRID; frozen before test",
+        "grid": list(TAU_GRID),
+    }
 
 
 def bootstrap_errf1(beliefs_hard, beliefs_soft, gold_correct, tau_hard, tau_soft,
                     n_boot=N_BOOT, seed=BOOT_SEED) -> dict:
     """Percentile bootstrap over statements (paired resample) for err-F1(hard),
     err-F1(soft), and ΔerrF1 = soft - hard. Each arm is evaluated at its OWN
-    frozen optimal threshold (tau_hard / tau_soft), so the comparison is invariant
-    to the belief-scale shift the clean weight introduces."""
+    frozen train-selected threshold (tau_hard / tau_soft), so the test sample
+    never chooses its own operating point."""
     bh = np.asarray(beliefs_hard, float)
     bs = np.asarray(beliefs_soft, float)
     gc = np.asarray(gold_correct, bool)
@@ -126,25 +320,19 @@ def bootstrap_errf1(beliefs_hard, beliefs_soft, gold_correct, tau_hard, tau_soft
     }
 
 
-def eval_reader(test_run_path, by_pair, by_sh, w) -> dict:
-    """Recompute hard/parametric/clean beliefs on holdout_cc + the err-F1 leg."""
-    rows = c0.load_jsonl(ROOT / test_run_path)
-    joined, _, miss = c0.join_model(rows, by_pair, by_sh)
-    stmts = c1.statements_from_joined(joined)
-    labels = [s["gold_correct"] for s in stmts]
-
-    bel_hard = [c1.hard_belief(s["ev"])[0] for s in stmts]
-    bel_param = [c1.hard_belief(s["ev"])[1] for s in stmts]
-    bel_soft = [c1.soft_belief(s["ev"], w["w_correct"], w["w_incorrect"])
-                for s in stmts]
-
+def eval_reader(test_statements, profile, thresholds, join_diagnostics=None) -> dict:
+    """Evaluate production hard/calibrated beliefs at frozen train thresholds."""
+    scored = score_statements(test_statements, profile)
+    labels = scored["labels"]
+    bel_hard = scored["hard"]
+    bel_param = scored["parametric"]
+    bel_soft = scored["calibrated"]
     arms = {"hard": bel_hard, "parametric": bel_param, "clean": bel_soft}
     metrics = {name: c1.metric_block(scores, labels) for name, scores in arms.items()}
 
-    # err-F1 (lead leg) at each arm's OWN optimal threshold (the clean weight
-    # shifts the belief scale; a fixed cutoff is no longer comparable), + bootstrap.
-    tau_h, _ = best_tau(bel_hard, labels)
-    tau_s, _ = best_tau(bel_soft, labels)
+    # Each arm's operating threshold was selected on the disjoint training gold.
+    tau_h = thresholds["hard"]
+    tau_s = thresholds["calibrated"]
     boot = bootstrap_errf1(bel_hard, bel_soft, labels, tau_h, tau_s)
     sweep = {
         f"{tau}": {"hard": err_f1(bel_hard, labels, tau),
@@ -153,30 +341,42 @@ def eval_reader(test_run_path, by_pair, by_sh, w) -> dict:
     }
     return {
         "metrics": metrics, "errf1_boot": boot, "errf1_sweep": sweep,
-        "n_test": len(stmts), "n_unmatched": miss,
+        "thresholds": thresholds,
+        "n_test": len(labels), "n_undefined": scored["n_undefined"],
+        "join": join_diagnostics or {},
         "base_rate": float(np.mean(labels)) if labels else None,
         "error_rate": float(1 - np.mean(labels)) if labels else None,
     }
 
 
-def gate(ev) -> dict:
-    """The four-leg G2 gate, per reader. E4 identity is asserted by the test suite
-    (reported here as an external green dependency, not recomputed)."""
+def gate(ev, *, e4_identity_pass: bool = False) -> dict:
+    """The four-leg G2 gate, per reader.
+
+    E4 is an external test-suite result, so callers must assert it explicitly.
+    The default is deliberately false: a standalone metrics recompute must never
+    silently manufacture a green compatibility leg.
+    """
     hard = ev["metrics"]["hard"]
     clean = ev["metrics"]["clean"]
     boot = ev["errf1_boot"]
     ece_pass = bool(clean["ece"] < hard["ece"])
     auroc_pass = bool(clean["auroc"] >= hard["auroc"] - EPS)
-    # Non-inferiority: lower 95% bound of ΔerrF1 must clear -NOISE_FLOOR.
-    errf1_pass = bool(boot["ci_delta"][0] >= -NOISE_FLOOR)
+    # Non-inferiority: lower 95% bound of ΔerrF1 must clear -NI_MARGIN.
+    errf1_pass = bool(boot["ci_delta"][0] >= -NI_MARGIN)
     return {
         "ece": {"pass": ece_pass, "hard": hard["ece"], "soft": clean["ece"]},
         "auroc": {"pass": auroc_pass, "hard": hard["auroc"], "soft": clean["auroc"]},
         "errf1": {"pass": errf1_pass, "hard": boot["f1_hard"], "soft": boot["f1_soft"],
                   "delta": boot["delta"], "ci_delta": boot["ci_delta"],
-                  "noise_floor": NOISE_FLOOR},
-        "e4_identity": {"pass": True, "note": "tests/test_soft_belief.py (byte-identity) green"},
-        "overall": bool(ece_pass and auroc_pass and errf1_pass),
+                  "noninferiority_margin": NI_MARGIN},
+        "e4_identity": {
+            "pass": bool(e4_identity_pass),
+            "note": ("tests/test_soft_belief.py byte-identity verified"
+                     if e4_identity_pass else
+                     "not asserted; rerun after the byte-identity test and pass "
+                     "--e4-identity-pass"),
+        },
+        "overall": bool(ece_pass and auroc_pass and errf1_pass and e4_identity_pass),
     }
 
 
@@ -189,30 +389,33 @@ def _fmt(x, nd=3):
 def render(results) -> str:
     L = []
     e = L.append
-    e("# Calibration C2.5 — G2 ship gate (soft survival weight)")
+    e("# Calibration C2.5 — G2 ship gate (hybrid log-odds belief)")
     e("")
     e("The lead leg — **error-detection F1 with bootstrap CIs** — plus the consolidated "
-      "G2 verdict. A DETERMINISTIC recompute of belief from the stored holdout_cc verdicts "
-      "(no new LLM spend). The soft arm is the adopted **clean** form. err-F1 is measured on a "
-      "BELIEF threshold (positive class = error, pred_error = belief < τ*, where τ* is EACH "
-      "arm's own optimal threshold over TAU_GRID — the clean weight shifts the belief scale, "
-      "so a fixed 0.5 cutoff is not comparable across arms); the production `verdict_statement` "
-      "is tier-driven and untouched by the soft weight, so measuring err-F1 on it would be "
-      "vacuous. ECE + AUROC legs confirmed in C1.2; E4 byte-identity "
-      "green in `tests/test_soft_belief.py`. Generated by `scripts/calibration_ship_gate.py`.")
+      "G2 verdict. A DETERMINISTIC recompute of production statement belief from stored "
+      "reader verdicts (no new LLM spend). The calibrated arm is the configuration-"
+      "specific **hybrid log-odds** model: reader evidence comes from confusion-derived "
+      "likelihood ratios, while confirmations retain the separately fitted source-"
+      "reliability floor (artifact key: `clean`). It is not a pure Bayesian posterior. "
+      "err-F1 is measured on a "
+      "BELIEF threshold (positive class = error, pred_error = belief < τ*). Each arm's τ* "
+      "is selected on the training gold and frozen before the independent test; the "
+      "production `verdict_statement` "
+      "is tier-driven and untouched by the calibrated belief, so measuring err-F1 on it would be "
+      "vacuous. E4 byte identity is independently locked by `tests/test_soft_belief.py`. "
+      "Generated by `scripts/calibration_ship_gate.py`.")
     e("")
-    e(f"> **G2 = all four legs PASS, per reader.** (1) ECE(soft) < ECE(hard); "
-      f"(2) AUROC(soft) ≥ AUROC(hard) − {EPS}; (3) ΔerrF1 lower-95%-bootstrap-bound ≥ "
-      f"−{NOISE_FLOOR} (non-inferior; the noise floor honors the medpsy-4B identical-run "
+    e(f"> **G2 requires all four legs to pass, per reader.** (1) ECE(calibrated) < ECE(hard); "
+      f"(2) AUROC(calibrated) ≥ AUROC(hard) − {EPS}; (3) ΔerrF1 lower-95%-bootstrap-bound ≥ "
+      f"−{NI_MARGIN} (the pre-specified, historically observed medpsy-4B identical-run "
       f"err-F1 spread 0.717–0.871); (4) E4 byte-identity test green. Brier-resolution is a "
-      f"reported diagnostic, NOT gated (noise-dominated at n≈342). Lead metric = err-F1 on "
-      f"balanced gold, never accuracy.")
+      f"reported diagnostic, not gated. Lead metric = err-F1, never accuracy.")
     e("")
 
     # ── consolidated verdict table ──
     e("## G2 verdict (per reader)")
     e("")
-    e("| reader | n | ECE h→s | AUROC h→s | errF1 h→s | ΔerrF1 [95% CI] | E4 | **G2** |")
+    e("| reader | n | ECE hard→cal | AUROC hard→cal | errF1 hard→cal | ΔerrF1 [95% CI] | E4 | **G2** |")
     e("|---|---|---|---|---|---|---|---|")
     for r in results:
         ev, g = r["eval"], r["gate"]
@@ -229,8 +432,17 @@ def render(results) -> str:
     # ── per-reader detail ──
     for r in results:
         ev, g = r["eval"], r["gate"]
-        e(f"## {r['name']} — holdout_cc (n={ev['n_test']}, base {_fmt(ev['base_rate'])} correct / "
-          f"{_fmt(ev['error_rate'])} error, unmatched {ev['n_unmatched']})")
+        join = ev.get("join") or {}
+        e(f"## {r['name']} — {r['test_label']} (n={ev['n_test']}, "
+          f"base {_fmt(ev['base_rate'])} correct / {_fmt(ev['error_rate'])} error, "
+          f"undefined {ev['n_undefined']}, unmatched rows {join.get('n_unmatched_rows', 0)}, "
+          f"ambiguous rows {join.get('n_ambiguous_rows', 0)})")
+        e("")
+        p = r["provenance"]
+        e(f"Train: `{p['train_gold']}` + `{p['train_run']}`.  ")
+        e(f"Test: `{p['test_gold']}` + `{p['test_run']}`.  ")
+        e(f"Join: {join.get('join_mode', '—')}; statement grain = run `stmt_hash`; "
+          "statement gold = any-incorrect-wins.")
         e("")
         e(f"**G2: {'PASS' if g['overall'] else 'FAIL'}** — "
           f"ECE {_fmt(g['ece']['hard'])}→{_fmt(g['ece']['soft'])} "
@@ -239,8 +451,9 @@ def render(results) -> str:
           f"({'✓' if g['auroc']['pass'] else '✗'}); "
           f"err-F1 {_fmt(g['errf1']['hard'])}→{_fmt(g['errf1']['soft'])}, "
           f"Δ {_fmt(g['errf1']['delta'])} [95% CI {_fmt(g['errf1']['ci_delta'][0])}, "
-          f"{_fmt(g['errf1']['ci_delta'][1])}] vs −{NOISE_FLOOR} floor "
-          f"({'✓' if g['errf1']['pass'] else '✗'}); E4 byte-identity ✓.")
+          f"{_fmt(g['errf1']['ci_delta'][1])}] vs −{NI_MARGIN} margin "
+          f"({'✓' if g['errf1']['pass'] else '✗'}); E4 byte-identity "
+          f"{'✓' if g['e4_identity']['pass'] else '✗'}.")
         e("")
         e("### Calibration + discrimination (3-arm; ECE/AUROC are the C1.2 legs)")
         e("")
@@ -251,18 +464,19 @@ def render(results) -> str:
               f"{_fmt(mm['brier'])} | {_fmt(mm['resolution'])} |")
         e("")
         b = ev["errf1_boot"]
-        e(f"### Error-detection F1 (LEAD leg) — each arm at its own optimal threshold "
-          f"(hard τ*={b['tau_hard']}, clean τ*={b['tau_soft']}), "
+        e(f"### Error-detection F1 (LEAD leg) — frozen train-selected thresholds "
+          f"(hard τ*={b['tau_hard']}, hybrid τ*={b['tau_soft']}; "
+          f"training n={ev['thresholds']['n_train']}), "
           f"{N_BOOT} bootstrap resamples (seed {BOOT_SEED})")
         e("")
         e("| arm | err-F1 | 95% CI |")
         e("|---|---|---|")
         e(f"| hard | {_fmt(b['f1_hard'])} | [{_fmt(b['ci_hard'][0])}, {_fmt(b['ci_hard'][1])}] |")
-        e(f"| soft (clean) | {_fmt(b['f1_soft'])} | [{_fmt(b['ci_soft'][0])}, {_fmt(b['ci_soft'][1])}] |")
-        e(f"| **Δ (soft−hard)** | {_fmt(b['delta'])} | [{_fmt(b['ci_delta'][0])}, {_fmt(b['ci_delta'][1])}] |")
+        e(f"| calibrated (hybrid log-odds) | {_fmt(b['f1_soft'])} | [{_fmt(b['ci_soft'][0])}, {_fmt(b['ci_soft'][1])}] |")
+        e(f"| **Δ (calibrated−hard)** | {_fmt(b['delta'])} | [{_fmt(b['ci_delta'][0])}, {_fmt(b['ci_delta'][1])}] |")
         e("")
         e(f"Non-inferiority: lower 95% bound {_fmt(b['ci_delta'][0])} "
-          f"{'≥' if g['errf1']['pass'] else '<'} −{NOISE_FLOOR} (noise floor) → "
+          f"{'≥' if g['errf1']['pass'] else '<'} −{NI_MARGIN} (pre-specified margin) → "
           f"**{'PASS' if g['errf1']['pass'] else 'FAIL'}**.")
         e("")
         e("τ-sensitivity (err-F1 hard / soft):")
@@ -279,9 +493,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--train-gold", default="data/benchmark/eval_curation_v1.jsonl")
     ap.add_argument("--train-run", action="append", default=[])
-    ap.add_argument("--test-gold", default="data/benchmark/holdout_cc.jsonl")
+    ap.add_argument("--test-gold", default="data/results/cc_holdout_cc/holdout_cc.jsonl")
     ap.add_argument("--test-run", action="append", default=[])
     ap.add_argument("--name", action="append", default=[])
+    ap.add_argument("--test-label", default=None)
+    ap.add_argument(
+        "--e4-identity-pass", action="store_true",
+        help=("assert that the byte-identity compatibility test passed in this "
+              "verification run; otherwise the four-leg gate remains FAIL"),
+    )
     ap.add_argument("--out", default="data/results/calibration_ship_gate.md")
     ap.add_argument("--json", default="data/results/calibration_ship_gate.json")
     args = ap.parse_args()
@@ -291,28 +511,57 @@ def main():
         args.test_run = ["data/results/holdout_cc_medpsy.jsonl",
                          "data/results/holdout_cc_gemma.jsonl"]
         args.name = ["MedPsy-4B", "gemma-26B"]
-
-    train_gold = c0.load_jsonl(ROOT / args.train_gold)
-    tr_pair, tr_sh = c0.build_gold_index(train_gold)
-    test_gold = c0.load_jsonl(ROOT / args.test_gold)
-    te_pair, te_sh = c0.build_gold_index(test_gold)
+    if not (len(args.train_run) == len(args.test_run) == len(args.name)):
+        ap.error("--train-run, --test-run, and --name must have the same number of values")
+    test_label = args.test_label or Path(args.test_gold).stem
 
     results, pending = [], []
     for trun, terun, name in zip(args.train_run, args.test_run, args.name):
-        # Fit on ALL of eval_curation_v1 (train); evaluate on holdout_cc (test).
-        w = c1.fit_weights(
-            c1.statements_from_joined(
-                c0.join_model(c0.load_jsonl(ROOT / trun), tr_pair, tr_sh)[0]
-            )
-        )
         if not (ROOT / terun).exists():
             pending.append(terun)
             continue
-        ev = eval_reader(terun, te_pair, te_sh, w)
-        results.append({"name": name, "fitted_w": w, "eval": ev, "gate": gate(ev)})
+        train_configuration, test_configuration = validate_configuration_pair(trun, terun)
+        # Fit the reader and select operating thresholds on train only.
+        train_statements, train_join = statements_for_run(trun, args.train_gold)
+        profile = c1.fit_reader_profile(train_statements)
+        profile.update({
+            "profile_id": (
+                f"{train_configuration}@{Path(args.train_gold).stem}"
+                if train_configuration else None
+            ),
+            "reader_configuration": train_configuration,
+            "fit_run": trun,
+            "fit_gold": args.train_gold,
+            "fit_unique_pairs": sum(profile["confusion"].values()),
+            "gold_rule": (
+                "exact pair; multi-curator any-incorrect-wins; duplicate pairs removed"
+            ),
+        })
+        thresholds = training_thresholds(train_statements, profile)
+        test_statements, test_join = statements_for_run(terun, args.test_gold)
+        ev = eval_reader(test_statements, profile, thresholds, test_join)
+        results.append({
+            "name": name,
+            "test_label": test_label,
+            "provenance": {
+                "train_gold": args.train_gold,
+                "train_run": trun,
+                "train_configuration": train_configuration,
+                "test_gold": args.test_gold,
+                "test_run": terun,
+                "test_configuration": test_configuration,
+                "statement_grain": "run stmt_hash",
+                "statement_gold": "any-incorrect-wins",
+                "train_join": train_join,
+                "test_join": test_join,
+            },
+            "reader_profile": profile,
+            "eval": ev,
+            "gate": gate(ev, e4_identity_pass=args.e4_identity_pass),
+        })
 
     if pending:
-        print("PENDING — holdout_cc not scored yet: " + ", ".join(pending))
+        print("PENDING — test run not scored yet: " + ", ".join(pending))
         return 0
 
     md = render(results)

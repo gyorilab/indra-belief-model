@@ -1,4 +1,4 @@
-"""Calibration Stage C0 — honest reliability curve, zero model change.
+"""Historical Calibration Stage C0 — reliability curve, zero model change.
 
 The decision gate (G0) for the whole calibration arc. See
 ``research/calibration_task_hypergraph.md``. Touches NO production code path —
@@ -24,6 +24,9 @@ the lever is upstream (reader / grounding), and Stages C1-C3 should not fire.
 
 Join is the canonical (matches_hash, source_hash) PAIR used by
 eval_curation_compare.py (source_hash alone is not unique — version-skew lesson).
+This retained baseline groups Tier-2 by the historical gold ``pa_hash`` grain;
+the current production/formal surfaces use run ``stmt_hash`` and live in
+``results.py`` / ``calibration_ship_gate.py``.
 
     PYTHONPATH=src python scripts/calibration_stage0.py \
         --gold data/benchmark/eval_curation_v1.jsonl \
@@ -71,14 +74,40 @@ def load_jsonl(p: str | Path) -> list[dict]:
 
 
 # ---- canonical join (mirrors eval_curation_compare.py) ----------------------
+def _collapse_gold_rows(rows: list[dict]) -> dict | None:
+    """Collapse multi-curator rows without a last-write-wins label.
+
+    The canonical conservative rule is any-incorrect-wins. The representative
+    row retains the original provenance fields and carries ``all_tags`` so a
+    caller can still see that the pair was multiply curated.
+    """
+    tags = [r.get("tag") or r.get("gold") for r in rows]
+    tags = [tag for tag in tags if tag is not None]
+    verdict = aggregate_gold(tags)
+    if verdict is None:
+        return None
+    out = dict(rows[0])
+    out["tag"] = verdict
+    if any("gold" in r for r in rows):
+        out["gold"] = verdict
+    out["all_tags"] = tags
+    out["n_gold_rows"] = len(rows)
+    return out
+
+
 def build_gold_index(gold_rows: list[dict]):
+    grouped: dict[tuple[int, int], list[dict]] = defaultdict(list)
+    for r in gold_rows:
+        grouped[(umask(r["matches_hash"]), umask(r["source_hash"]))].append(r)
+
     by_pair: dict[tuple[int, int], dict] = {}
     by_sh: dict[int, list[dict]] = defaultdict(list)
-    for r in gold_rows:
-        mh = umask(r["matches_hash"])
-        sh = umask(r["source_hash"])
-        by_pair[(mh, sh)] = r
-        by_sh[sh].append(r)
+    for pair, rows in grouped.items():
+        collapsed = _collapse_gold_rows(rows)
+        if collapsed is None:
+            continue
+        by_pair[pair] = collapsed
+        by_sh[pair[1]].append(collapsed)
     return by_pair, by_sh
 
 
@@ -89,16 +118,35 @@ def gold_for(scored: dict, by_pair, by_sh) -> dict | None:
     if mh is not None and (mh, sh) in by_pair:
         return by_pair[(mh, sh)]
     cand = by_sh.get(sh, [])
-    return cand[0] if len(cand) == 1 else None
+    if not cand:
+        return None
+    # Source-only fallback is allowed only when every statement context sharing
+    # the source hash has one truth class. Conflicting contexts are ambiguous.
+    classes = {is_gold_correct(r["tag"]) for r in cand}
+    return cand[0] if len(classes) == 1 else None
 
 
 def join_model(scored_rows, by_pair, by_sh):
     joined, parse_null, missed = [], 0, 0
+    seen_pairs: dict[tuple[int | None, int], str | None] = {}
     for s in scored_rows:
         g = gold_for(s, by_pair, by_sh)
         if g is None:
             missed += 1
             continue
+        sh = umask(s["source_hash"])
+        stmt_hash_hex = s.get("stmt_hash")
+        mh = int(stmt_hash_hex, 16) if stmt_hash_hex else g.get("matches_hash")
+        pair = (umask(mh) if mh is not None else None, sh)
+        verdict = s.get("verdict")
+        if pair in seen_pairs:
+            if seen_pairs[pair] != verdict:
+                raise ValueError(
+                    f"conflicting scored verdicts for duplicate pair {pair}: "
+                    f"{seen_pairs[pair]!r} vs {verdict!r}"
+                )
+            continue
+        seen_pairs[pair] = verdict
         if s.get("verdict") is None:
             parse_null += 1
             continue
@@ -125,7 +173,7 @@ def per_statement_belief(joined) -> list[dict]:
     # of the calibration arc uses, C2.4) — not matches_hash, which is finer.
     by_stmt: dict[int, dict] = defaultdict(lambda: {"ev": [], "tags": [], "indra_belief": None})
     for g, s in joined:
-        mh = g["pa_hash"]
+        mh = g.get("pa_hash") or g.get("matches_hash")
         rec = by_stmt[mh]
         rec["ev"].append({
             "source_api": s.get("source_api") or g.get("source_api"),
@@ -264,13 +312,16 @@ def reliability_ascii(bins, width=24) -> list[str]:
 def render_md(results: list[dict], args) -> str:
     L = []
     e = L.append
-    e("# Calibration Stage C0 — reliability curve (zero model change)")
+    e("# Historical Calibration Stage C0 — reliability curve (zero model change)")
     e("")
     e("Diagnostic for **G0** (go/no-go). No production code path touched. "
       "Per-evidence join on the canonical (matches_hash, source_hash) pair; "
       "per-statement belief = `compute_gated_belief` over scored evidences with "
       "the production hard gate (`included = verdict != incorrect`) + "
-      "RECALIBRATED_PRIORS; per-statement gold = any-incorrect-wins. "
+      "RECALIBRATED_PRIORS; per-statement gold = any-incorrect-wins. This retained "
+      "C0 artifact uses the historical gold `pa_hash` statement grain; current "
+      "production/formal metrics use run `stmt_hash` in `results.py` and "
+      "`calibration_ship_gate.py`. "
       "Generated by `scripts/calibration_stage0.py`.")
     e("")
     e("## G0 — go/no-go (does per-statement raw belief have headroom?)")

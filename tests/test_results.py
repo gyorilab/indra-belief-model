@@ -5,6 +5,12 @@ the real 47k-row run; these lock the taxonomy partition and the build contract.
 """
 import json
 
+import pytest
+
+from indra_belief.calibration_constants import (
+    BASELINE_PROMPT_SHA256,
+    REASONING_FIRST_PROMPT_SHA256,
+)
 from indra_belief.results import (
     ORDER,
     build_run_export,
@@ -52,6 +58,43 @@ def _write_corpus(tmp_path, stmts):
     p = tmp_path / "corpus.json"
     p.write_text(json.dumps(stmts))
     return p
+
+
+def _minimal_scored_row(*, stmt_hash="7b", evidence_i=0, source_hash=1):
+    return {
+        "stmt_i": 0, "evidence_i": evidence_i, "stmt_hash": stmt_hash,
+        "evidence_hash": "e", "source_hash": source_hash,
+        "subject": "MEK", "stmt_type": "Phosphorylation", "object": "ERK",
+        "source_api": "reach", "pmid": "1", "text_len": 20, "belief": 0.9,
+        "score": 0.9, "verdict": "correct", "confidence": "high",
+        "raw_text_preview": "ok", "grounding_status": "all_match",
+        "tier": "llm_comprehension", "provenance_triggered": False,
+        "error": None, "latency_s": 0.1, "tokens": 1, "call_log": [],
+    }
+
+
+def test_corpus_join_recovers_unique_source_hash_and_fails_closed_on_statement_drift(tmp_path):
+    corpus = [{
+        "matches_hash": "123", "id": "id1", "belief": 0.9,
+        "evidence": [
+            {"text": "first evidence text", "source_hash": 1},
+            {"text": "second evidence text", "source_hash": 2},
+        ],
+    }]
+    corp = _write_corpus(tmp_path, corpus)
+
+    # Stale evidence_i, but the source hash uniquely identifies the correct row.
+    run = _write_run(tmp_path, [_minimal_scored_row(evidence_i=0, source_hash=2)])
+    per_ev, _ps, meta, _m = build_run_export(str(run), str(corp), run_id="recover")
+    assert per_ev[0]["evidence_text"] == "second evidence text"
+    assert meta["join_quality"]["source_hash_recoveries"] == 1
+
+    # A different statement hash must never consume positional corpus content.
+    run = _write_run(tmp_path, [_minimal_scored_row(stmt_hash="7c")])
+    per_ev, _ps, meta, _m = build_run_export(str(run), str(corp), run_id="closed")
+    assert per_ev[0]["evidence_text"] == ""
+    assert per_ev[0]["indra_matches_hash"] is None
+    assert meta["join_quality"]["statement_hash_mismatches"] == 1
 
 
 def test_build_run_export_joins_text_and_rolls_up(tmp_path):
@@ -111,7 +154,7 @@ def test_build_run_export_joins_text_and_rolls_up(tmp_path):
     assert meta["cost"]["total_usd"] is None
     assert meta["cost"]["n_evidence_unavailable"] == 2
     assert meta["cost"]["n_evidence_costed"] == 0
-    assert meta["schema_version"] == 7
+    assert meta["schema_version"] == 8
 
 
 def test_write_run_export_emits_three_files(tmp_path):
@@ -146,7 +189,7 @@ def test_write_run_export_emits_three_files(tmp_path):
     assert meta["cost"]["n_evidence_no_llm"] == 1
     assert meta["cost"]["n_evidence_costed"] == 0
     assert meta["cost"]["n_evidence_unavailable"] == 0
-    assert meta["schema_version"] == 7
+    assert meta["schema_version"] == 8
     # E5: soft_calibration block baked per run. model "m" is unfitted → named-
     # unavailable with a reason, never an imputed zero.
     assert meta["soft_calibration"]["status"] == "unavailable"
@@ -369,7 +412,7 @@ def test_export_cost_mixed_priced_and_unverified_is_partial(tmp_path):
     sonnet = round(2000 * 3 / 1e6 + 500 * 15 / 1e6, 6)  # + the gemma estimate
     assert meta["cost"]["total_usd"] == round(sonnet + by1, 4)
     assert "vendor.unlisted-7b" in meta["cost"]["models"]
-    assert meta["schema_version"] == 7
+    assert meta["schema_version"] == 8
 
 
 def test_export_cost_multi_priced_models_run_sums_and_sorts(tmp_path):
@@ -439,7 +482,7 @@ def test_build_run_export_carries_reasoning_trace(tmp_path):
     assert tr["committed_justification"]["support"] == "MEK phosphorylates ERK"
     assert tr["free_cot_chars"] == 50
     assert meta["reasoning_quality"]["trace_status"]["encrypted"] == 1
-    assert meta["schema_version"] == 7
+    assert meta["schema_version"] == 8
 
 
 def test_build_run_export_legacy_row_has_null_reasoning_trace(tmp_path):
@@ -451,8 +494,8 @@ def test_build_run_export_legacy_row_has_null_reasoning_trace(tmp_path):
 
 def _confirmed_read_export(tmp_path, model):
     # A statement with one CONFIRMED read (verdict='correct'): on a confirmed
-    # read the clean soft form shifts the belief scale (1 - w_correct) vs the
-    # hard gate, so belief != belief_hard is observable for a fitted reader.
+    # read the calibrated hybrid score shifts the belief scale vs the hard gate,
+    # so belief != belief_hard is observable for a fitted configuration.
     corpus = [{"matches_hash": "mh1", "id": "id1", "belief": 0.9,
                "evidence": [{"text": "MEK phosphorylates ERK in cells.", "source_hash": 1}]}]
     rows = [{"stmt_i": 0, "evidence_i": 0, "stmt_hash": "hc", "evidence_hash": "e0", "source_hash": 1,
@@ -461,28 +504,46 @@ def _confirmed_read_export(tmp_path, model):
              "confidence": "high", "raw_text_preview": '[TIER 2 LLM]\nYes.',
              "grounding_status": "all_match", "tier": "llm_comprehension", "provenance_triggered": False,
              "error": None, "latency_s": 1.0, "tokens": 50, "call_log": [{"finish_reason": "stop", "out_tokens": 50}]}]
+    prompt_sha256 = (
+        REASONING_FIRST_PROMPT_SHA256
+        if model == "bedrock-gemma-4-26b" else BASELINE_PROMPT_SHA256
+    )
     _pe, per_stmt, _meta, _m = build_run_export(
         str(_write_run(tmp_path, rows)), str(_write_corpus(tmp_path, corpus)),
-        run_id="k1", model=model)
+        run_id="k1", model=model, prompt_sha256=prompt_sha256)
     return per_stmt
 
 
-def test_canonical_belief_is_clean_for_fitted_reader(tmp_path):
-    # K1: a FITTED reader (calibration_for resolves) → canonical `belief` is the
-    # clean soft arm and shifts off the hard gate on a confirmed read.
+def test_canonical_belief_is_calibrated_for_remote_fitted_reader(tmp_path):
+    # K1: a FITTED reader configuration → canonical belief is the calibrated
+    # arm and shifts off the hard gate on a confirmed read.
     per_stmt = _confirmed_read_export(tmp_path, model="remote-gemma-4-26b")
     assert len(per_stmt) == 1
     s = per_stmt[0]
     assert s["belief_soft"] is not None
-    assert s["belief"] == s["belief_soft"]          # canonical == clean arm
-    assert s["belief"] != s["belief_hard"]          # clean shifts the scale on a confirmed read
+    assert s["belief"] == s["belief_soft"]
+    assert s["belief"] != s["belief_hard"]
 
 
-def test_canonical_belief_falls_back_to_hard_for_unfitted_reader(tmp_path):
-    # K1: an UNFITTED reader (bedrock → calibration_for None) → canonical `belief`
-    # IS the hard gate and belief_soft stays None (named-empty preserved).
+def test_canonical_belief_is_calibrated_for_bedrock_fitted_reader(tmp_path):
+    # Reasoning-first Bedrock Gemma has its own measured configuration profile;
+    # it must not fall back to hard or inherit the remote profile implicitly.
+    remote = _confirmed_read_export(tmp_path, model="remote-gemma-4-26b")[0]
     per_stmt = _confirmed_read_export(tmp_path, model="bedrock-gemma-4-26b")
     assert len(per_stmt) == 1
     s = per_stmt[0]
+    assert s["belief_soft"] is not None
+    assert s["belief"] == s["belief_soft"]
+    assert s["belief"] != s["belief_hard"]
+    assert s["belief"] != remote["belief"]
+
+
+@pytest.mark.parametrize("model", ["local-gemma-4-26b", "some-unrecognized-reader"])
+def test_canonical_belief_falls_back_to_hard_for_unfitted_configuration(tmp_path, model):
+    # Same weights on an unvalidated host and wholly unknown readers are both
+    # named-empty: canonical belief remains the hard-gate fallback.
+    per_stmt = _confirmed_read_export(tmp_path, model=model)
+    assert len(per_stmt) == 1
+    s = per_stmt[0]
     assert s["belief_soft"] is None
-    assert s["belief"] == s["belief_hard"]          # canonical == hard gate
+    assert s["belief"] == s["belief_hard"]

@@ -1,38 +1,47 @@
 """E5 — per-run calibration-product export (the math→viewer seam).
 
-Locks the three E5 guarantees:
+Locks the three E5 guarantees under export schema v8 / metrics schema v3:
 
-1. GOLDEN identity — the pre-existing per_evidence/per_statement output is
-   unchanged: per_evidence.jsonl is untouched (no soft belief per evidence), and
-   per_statement.json grows by EXACTLY the four additive ``belief_*`` keys (every
-   pre-existing key/value bit-for-bit identical). Proven on a synthetic run here;
-   the data-backed byte-identity (eval_curation_v1) is checked in
-   ``test_e5_crosscheck_*`` when the corpus/run are present.
+1. STATEMENT CONTRACT — calibrated belief remains statement-level, internal join
+   keys never leak, and unfitted configurations retain a named hard fallback.
 
 2. metrics.json CONTRACT — the C4/C5 schema: schema_version, two tiers
    (ev/stmt), the stable per-arm block {n, ece, auroc, auprc, brier,
    reliability, resolution, uncertainty, confusion{tp,fp,fn,tn}, bins[8]},
    named-empty tiers/arms (status+reason, no imputed zeros).
 
-3. CROSS-CHECK — metrics.json tiers.stmt.arms.{hard,parametric,soft}.{ece,auroc}
-   equal calibration_ship_gate.json's metrics.{hard,parametric,guard} for the
-   same run. hard/parametric are byte-exact (no weights); soft matches within the
-   3-dp frozen-constant rounding (documented in calibration_constants).
+3. CROSS-CHECK — metrics.json Tier-2 and the live ship-gate scorer use the same
+   current holdout path, run-``stmt_hash`` grain, truth-safe source fallback,
+   production de-dup/no-text handling, and configuration-specific profile.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
 
 import pytest
 
-from indra_belief.results import build_run_export, build_run_metrics, load_gold_map
+from indra_belief.calibration_constants import BASELINE_PROMPT_SHA256
+from indra_belief.results import (
+    build_run_export as _build_run_export,
+    build_run_metrics,
+    load_gold_map,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 NEW_KEYS = {"belief_hard", "belief_parametric", "belief_soft", "belief_verdict_statement"}
 PER_ARM_KEYS = {"n", "ece", "auroc", "auprc", "brier", "reliability",
                 "resolution", "uncertainty", "confusion", "bins"}
+
+
+def build_run_export(*args, **kwargs):
+    """Synthetic fitted-run helper with an explicit historical prompt identity."""
+    if kwargs.get("model") == "gemma":
+        kwargs["model"] = "remote-gemma-4-26b"
+        kwargs["prompt_sha256"] = BASELINE_PROMPT_SHA256
+    return _build_run_export(*args, **kwargs)
 
 
 # ── fixtures (synthetic; no large data) ──────────────────────────────────────
@@ -107,8 +116,8 @@ def test_per_statement_no_internal_join_keys_leak(tmp_path):
 
 
 def test_per_evidence_has_no_soft_belief(tmp_path):
-    # The soft weight is a statement-level recalibration; there is no per-evidence
-    # soft belief. per_evidence rows must carry no belief_* / soft key (keeps the
+    # The fitted profile is a statement-level recalibration; there is no per-evidence
+    # calibrated belief. per_evidence rows must carry no belief_* / soft key (keeps the
     # file byte-identical to pre-E5).
     rows = [_row(0, 11, "correct", 0.95)]
     run, corp = _write(tmp_path, rows, _corpus())
@@ -116,12 +125,13 @@ def test_per_evidence_has_no_soft_belief(tmp_path):
     assert not any(k.startswith("belief_") or k == "belief_soft" for k in per_ev[0])
 
 
-def test_no_soft_belief_when_reader_unfitted(tmp_path):
-    # An unfitted reader (e.g. an unknown model) → belief_soft is None (named-empty),
-    # never an imputed 0.0; hard/parametric still computed.
+@pytest.mark.parametrize("model", ["local-gemma-4-26b", "mystery-7b"])
+def test_no_soft_belief_when_reader_configuration_is_unfitted(tmp_path, model):
+    # An unvalidated host/configuration or unknown reader → belief_soft is None
+    # (named-empty), never an imputed 0.0; hard/parametric still compute.
     rows = [_row(0, 11, "correct", 0.95)]
     run, corp = _write(tmp_path, rows, _corpus())
-    _ev, per_stmt, _meta, _metrics = build_run_export(run, corp, run_id="r", model="mystery-7b")
+    _ev, per_stmt, _meta, _metrics = build_run_export(run, corp, run_id="r", model=model)
     s = per_stmt[0]
     assert s["belief_soft"] is None
     assert s["belief_hard"] is not None and s["belief_parametric"] is not None
@@ -148,14 +158,19 @@ def test_metrics_schema_with_gold(tmp_path):
         {"matches_hash": 123, "source_hash": 22, "pa_hash": 900, "tag": "wrong_relation"},
         {"matches_hash": 123, "source_hash": 33, "pa_hash": 900, "tag": "correct"},
     ])
-    _ev, _ps, _meta, m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
+    _ev, _ps, meta, m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
 
-    assert m["schema_version"] == 2
-    assert m["run_id"] == "r" and m["model"] == "gemma"
+    assert m["schema_version"] == 3
+    assert m["run_id"] == "r" and m["model"] == "remote-gemma-4-26b"
     assert set(m["tiers"]) == {"ev", "stmt"}
     assert m["metrics_basis"]["bins"] == "BINS_8"
     assert m["metrics_basis"]["tau"] == 0.5
     assert m["metrics_basis"]["soft_calibration"]["status"] == "available"
+    assert "hybrid log-odds" in m["metrics_basis"]["soft_weights_note"]
+    assert m["provenance"]["corpus_sha256"] == hashlib.sha256(Path(corp).read_bytes()).hexdigest()
+    assert m["provenance"]["gold_sha256"] == hashlib.sha256(Path(gold).read_bytes()).hexdigest()
+    assert len(m["provenance"]["evaluation_set_sha256"]) == 64
+    assert meta["provenance"] == m["provenance"]
 
     ev = m["tiers"]["ev"]
     assert ev["status"] == "available" and ev["n"] == 3
@@ -166,6 +181,63 @@ def test_metrics_schema_with_gold(tmp_path):
     assert set(st["arms"]) == {"hard", "parametric", "soft"}
     for arm in st["arms"].values():
         _assert_arm_shape(arm)
+
+
+def test_evaluation_set_digest_changes_with_evaluated_keys(tmp_path):
+    rows = [_row(0, 11, "correct", 0.95)]
+    run, corp = _write(tmp_path, rows, _corpus())
+    gold = _gold(tmp_path, [
+        {"matches_hash": 123, "source_hash": 11, "tag": "correct"},
+        {"matches_hash": 123, "source_hash": 22, "tag": "correct"},
+    ])
+    _ev, _ps, _meta, first = build_run_export(
+        run, corp, run_id="first", model="gemma", gold_path=gold
+    )
+
+    # Same statement key and same statement-level truth; only the exact Tier-1
+    # evidence member changes. The joint evaluation digest must still change.
+    changed = [dict(rows[0], evidence_i=1, source_hash=22)]
+    changed_run = tmp_path / "changed.jsonl"
+    changed_run.write_text(json.dumps(changed[0]) + "\n")
+    _ev, _ps, _meta, second = build_run_export(
+        str(changed_run), corp, run_id="second", model="gemma", gold_path=gold
+    )
+
+    assert first["provenance"]["corpus_sha256"] == second["provenance"]["corpus_sha256"]
+    assert first["provenance"]["gold_sha256"] == second["provenance"]["gold_sha256"]
+    assert first["provenance"]["evaluation_set_sha256"] != second["provenance"]["evaluation_set_sha256"]
+
+
+def test_gold_map_exact_pair_first_and_truth_safe_source_fallback(tmp_path):
+    gold = _gold(tmp_path, [
+        # The same evidence source can be correct for one statement and wrong for
+        # another. Exact pairs remain resolvable; source-only fallback is unsafe.
+        {"matches_hash": 101, "source_hash": 7, "tag": "correct", "curator": "a"},
+        {"matches_hash": 202, "source_hash": 7, "tag": "wrong_relation", "curator": "b"},
+        # Reuse across statements is safe when every context agrees on truth.
+        {"matches_hash": 303, "source_hash": 8, "tag": "correct"},
+        {"matches_hash": 404, "source_hash": 8, "tag": "correct"},
+        # Multiple curators on one exact pair use canonical any-incorrect-wins.
+        {"matches_hash": 505, "source_hash": 9, "tag": "correct", "curator": "a"},
+        {"matches_hash": 505, "source_hash": 9, "tag": "grounding", "curator": "b"},
+        # Mixed-schema file: an exact correct context plus a source-only wrong
+        # label must disable fallback rather than silently ignoring the latter.
+        {"matches_hash": 606, "source_hash": 10, "tag": "correct"},
+        {"source_hash": 10, "tag": "wrong_relation"},
+    ])
+    gold_map = load_gold_map(gold)
+
+    assert gold_map.ambiguous_sources == 2
+    assert gold_map.for_row(101, 7)["verdict"] == "correct"
+    assert gold_map.for_row(202, 7)["verdict"] == "incorrect"
+    assert gold_map.for_row(None, 7) is None
+    assert gold_map.for_row(999, 7) is None
+    assert gold_map.for_row(None, 8)["verdict"] == "correct"
+    pair = gold_map.for_row(505, 9)
+    assert pair["verdict"] == "incorrect" and pair["n"] == 2
+    assert pair["curators"] == ["a", "b"]
+    assert gold_map.for_row(606, 10)["verdict"] == "correct"
+    assert gold_map.for_row(None, 10) is None
 
 
 def test_metrics_named_empty_without_gold(tmp_path):
@@ -207,27 +279,32 @@ def test_metrics_written_to_disk_byte_exact(tmp_path):
         {"matches_hash": 123, "source_hash": 22, "pa_hash": 900, "tag": "wrong_relation"},
     ])
     out = tmp_path / "export"
-    write_run_export(run, corp, str(out), run_id="r", model="gemma", gold_path=gold)
+    write_run_export(
+        run, corp, str(out), run_id="r", model="remote-gemma-4-26b",
+        gold_path=gold, prompt_sha256=BASELINE_PROMPT_SHA256,
+    )
     assert (out / "metrics.json").exists()
     disk = json.loads((out / "metrics.json").read_text())
     _, _, _, mem = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
     assert disk == mem
 
 
-# ── 3. cross-check vs calibration_ship_gate.py (data-gated) ───────────────────
+# ── 3. cross-check vs the live ship-gate scorer (data-gated) ───────────
 
-_SHIP_GATE = ROOT / "data" / "results" / "calibration_ship_gate.json"
-_HOLDOUT_GOLD = ROOT / "data" / "benchmark" / "holdout_cc.jsonl"
+# The surviving holdout gold predates matches_hash. Both export metrics and the
+# ship gate therefore use source-hash fallback only after checking that every
+# context for the source agrees on correctness.
+_HOLDOUT_GOLD = ROOT / "data" / "results" / "cc_holdout_cc" / "holdout_cc.jsonl"
 _RUNS = {
-    "gemma": (ROOT / "data" / "results" / "holdout_cc_gemma.jsonl", "gemma-26B"),
-    "medpsy": (ROOT / "data" / "results" / "holdout_cc_medpsy.jsonl", "MedPsy-4B"),
+    "gemma": ROOT / "data" / "results" / "holdout_cc_gemma.jsonl",
+    "medpsy": ROOT / "data" / "results" / "holdout_cc_medpsy.jsonl",
 }
 
 
 def _synth_stmt_agg(run_path: Path) -> dict:
     """The minimal stmt_agg build_run_metrics needs, from a raw run — mirrors the
-    belief_rows build_run_export collects (no corpus needed; Tier-2 joins on
-    _stmt_hash + _source_hash)."""
+    production belief rows at run-stmt_hash grain. The holdout gold has no text,
+    so evidence_hash is also the ship gate's de-dup fallback."""
     rows = {}
     for line in open(run_path):
         if line.strip():
@@ -244,8 +321,7 @@ def _synth_stmt_agg(run_path: Path) -> dict:
     return agg
 
 
-def _synth_per_ev(run_path: Path, gold_map: dict) -> list[dict]:
-    mask = (1 << 64) - 1
+def _synth_per_ev(run_path: Path, gold_map) -> list[dict]:
     rows = {}
     for line in open(run_path):
         if line.strip():
@@ -253,55 +329,188 @@ def _synth_per_ev(run_path: Path, gold_map: dict) -> list[dict]:
             rows[(d["stmt_i"], d["evidence_i"])] = d
     out = []
     for d in rows.values():
-        try:
-            gk = int(d.get("source_hash")) & mask
-        except (TypeError, ValueError):
-            gk = None
         s = d.get("score")
         out.append({"our_score": round(s, 3) if isinstance(s, (int, float)) else None,
-                    "gold": gold_map.get(gk) if gk is not None else None})
+                    "gold": gold_map.for_row(None, d.get("source_hash"))})
     return out
 
 
 @pytest.mark.parametrize("model", ["gemma", "medpsy"])
 def test_e5_crosscheck_ship_gate(model):
-    run_path, sg_name = _RUNS[model]
-    if not (_SHIP_GATE.exists() and _HOLDOUT_GOLD.exists() and run_path.exists()):
-        pytest.skip("holdout_cc run / gold / ship-gate artifact not present")
+    run_path = _RUNS[model]
+    if not (_HOLDOUT_GOLD.exists() and run_path.exists()):
+        pytest.skip("current holdout_cc run / gold not present")
+
+    # scripts/ is not a package; load the live gate helpers only for this
+    # data-backed contract check.
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import calibration_ship_gate as ship_gate
+    import calibration_stage1 as calibration_stage1
+    from indra_belief.calibration_constants import (
+        calibration_for_run,
+        fitted_calibration_for_run,
+        reader_configuration_for_run,
+    )
 
     gold_map = load_gold_map(str(_HOLDOUT_GOLD))
     agg = _synth_stmt_agg(run_path)
     per_ev = _synth_per_ev(run_path, gold_map)
-    m = build_run_metrics(per_ev, agg, gold_map, model, f"holdout_cc_{model}", str(_HOLDOUT_GOLD))
+    reader_config = reader_configuration_for_run(run_path)
+    production_profile = calibration_for_run(run_path)
+    m = build_run_metrics(
+        per_ev, agg, gold_map, reader_config["model"], f"holdout_cc_{model}",
+        str(_HOLDOUT_GOLD), soft_profile=production_profile,
+        reader_configuration=reader_config,
+    )
 
-    ship = {r["name"]: r for r in json.loads(_SHIP_GATE.read_text())}[sg_name]
-    sg = ship["eval"]["metrics"]
+    statements, join = ship_gate.statements_for_run(run_path, _HOLDOUT_GOLD)
+    scored = ship_gate.score_statements(statements, fitted_calibration_for_run(run_path))
+    ship_metrics = {
+        "hard": calibration_stage1.metric_block(scored["hard"], scored["labels"]),
+        "parametric": calibration_stage1.metric_block(scored["parametric"], scored["labels"]),
+        "soft": calibration_stage1.metric_block(scored["calibrated"], scored["labels"]),
+    }
     stmt = m["tiers"]["stmt"]
 
-    # same statement set (pair-join + pa_hash grouping + dedup off)
-    assert stmt["n"] == ship["eval"]["n_test"]
+    assert not gold_map.by_pair
+    assert gold_map.ambiguous_sources == 0
+    assert join["join_mode"].startswith("per-row exact")
+    assert join["n_exact_joined_rows"] == 0
+    assert join["n_source_fallback_rows"] == join["n_joined_rows"]
+    assert stmt["n"] == len(scored["labels"])
 
-    # hard + parametric: byte-exact (no weights → identical math through src/)
-    for arm, sgkey in [("hard", "hard"), ("parametric", "parametric")]:
+    # Shared production arms are byte-exact. MedPsy's measured candidate failed
+    # its ship gate, so the production soft arm is intentionally named-empty.
+    for arm in ("hard", "parametric"):
         a = stmt["arms"][arm]
-        assert a["ece"] == pytest.approx(sg[sgkey]["ece"], abs=1e-12), arm
-        assert a["auroc"] == pytest.approx(sg[sgkey]["auroc"], abs=1e-12), arm
+        assert a["ece"] == pytest.approx(ship_metrics[arm]["ece"], abs=1e-12), arm
+        assert a["auroc"] == pytest.approx(ship_metrics[arm]["auroc"], abs=1e-12), arm
+    if model == "gemma":
+        a = stmt["arms"]["soft"]
+        assert a["ece"] == pytest.approx(ship_metrics["soft"]["ece"], abs=1e-12)
+        assert a["auroc"] == pytest.approx(ship_metrics["soft"]["auroc"], abs=1e-12)
+    else:
+        assert stmt["arms"]["soft"]["status"] == "unavailable"
 
-    # soft: matches within the frozen-constant 3-dp rounding (documented in
-    # calibration_constants — the ship gate re-fits the SAME values unrounded).
-    # ARM KEY: the committed data/results/calibration_ship_gate.json is the STALE
-    # pre-clean artifact whose soft arm is keyed "guard"; the LIVE ship_gate now
-    # emits the "clean" arm. This whole test is skipped while holdout_cc gold is
-    # absent (cannot rerun the gate). When holdout_cc.jsonl returns, regenerate the
-    # JSON (`python scripts/calibration_ship_gate.py`) and switch this to sg["clean"].
-    a = stmt["arms"]["soft"]
-    assert a["ece"] == pytest.approx(sg["guard"]["ece"], abs=2e-4)
-    assert a["auroc"] == pytest.approx(sg["guard"]["auroc"], abs=2e-3)
+
+def test_ship_gate_requires_explicit_e4_identity_assertion():
+    """A metrics-only rerun cannot silently manufacture the fourth green leg."""
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import calibration_ship_gate as ship_gate
+
+    ev = {
+        "metrics": {
+            "hard": {"ece": 0.2, "auroc": 0.7},
+            "clean": {"ece": 0.1, "auroc": 0.8},
+        },
+        "errf1_boot": {
+            "f1_hard": 0.7, "f1_soft": 0.71, "delta": 0.01,
+            "ci_delta": [-0.01, 0.03],
+        },
+    }
+    unverified = ship_gate.gate(ev)
+    assert unverified["e4_identity"]["pass"] is False
+    assert unverified["overall"] is False
+
+    verified = ship_gate.gate(ev, e4_identity_pass=True)
+    assert verified["e4_identity"]["pass"] is True
+    assert verified["overall"] is True
+
+
+def test_ship_gate_uses_exact_first_per_row_in_mixed_gold_file(tmp_path):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import calibration_ship_gate as ship_gate
+
+    run = tmp_path / "mixed.jsonl"
+    run.write_text("\n".join(json.dumps(row) for row in [
+        {"stmt_i": 0, "evidence_i": 0, "stmt_hash": f"{101:016x}",
+         "source_hash": 7, "source_api": "reach", "verdict": "correct",
+         "confidence": "high", "tier": "llm_comprehension"},
+        {"stmt_i": 1, "evidence_i": 0, "stmt_hash": f"{303:016x}",
+         "source_hash": 8, "source_api": "reach", "verdict": "incorrect",
+         "confidence": "high", "tier": "llm_comprehension"},
+    ]) + "\n")
+    gold = tmp_path / "mixed_gold.jsonl"
+    gold.write_text("\n".join(json.dumps(row) for row in [
+        {"matches_hash": 101, "source_hash": 7, "tag": "correct",
+         "evidence_text": "exact"},
+        {"source_hash": 8, "tag": "wrong_relation", "evidence_text": "fallback"},
+    ]) + "\n")
+
+    statements, diag = ship_gate.statements_for_run(run, gold)
+    assert len(statements) == 2
+    assert diag["n_exact_joined_rows"] == 1
+    assert diag["n_source_fallback_rows"] == 1
+    assert diag["n_unmatched_rows"] == 0 and diag["n_ambiguous_rows"] == 0
+
+
+def test_ship_gate_rejects_cross_configuration_profile_transfer(tmp_path):
+    import hashlib
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import calibration_ship_gate as ship_gate
+
+    train = tmp_path / "train.jsonl"
+    test = tmp_path / "test.jsonl"
+    row = {"stmt_i": 0, "evidence_i": 0,
+           "call_log": [{"kind": "monolithic", "system": "prompt"}]}
+    train.write_text(json.dumps(row) + "\n")
+    test.write_text(json.dumps(row) + "\n")
+    train.with_suffix(".meta.json").write_text(json.dumps({"model": "gemma-remote"}))
+    test.with_suffix(".meta.json").write_text(json.dumps({"model": "bedrock-gemma"}))
+
+    with pytest.raises(ValueError, match="profile transfer.*forbidden"):
+        ship_gate.validate_configuration_pair(train, test)
+
+    test.with_suffix(".meta.json").write_text(json.dumps({"model": "gemma-remote"}))
+    config = (
+        "remote-gemma-4-26b@prompt-sha256:"
+        + hashlib.sha256(b"prompt").hexdigest()
+    )
+    assert ship_gate.validate_configuration_pair(train, test) == (config, config)
+
+    changed = dict(row)
+    changed["call_log"] = [{"kind": "monolithic", "system": "changed prompt"}]
+    test.write_text(json.dumps(changed) + "\n")
+    with pytest.raises(ValueError, match="profile transfer.*forbidden"):
+        ship_gate.validate_configuration_pair(train, test)
+
+
+def test_stage0_join_collapses_duplicate_curators_and_scored_pairs():
+    """Historical baseline reruns use the same conservative unique-pair grain."""
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import calibration_stage0 as stage0
+
+    gold = [
+        {"matches_hash": 123, "source_hash": 11, "pa_hash": 9, "tag": "correct"},
+        {"matches_hash": 123, "source_hash": 11, "pa_hash": 9, "tag": "grounding"},
+    ]
+    by_pair, by_source = stage0.build_gold_index(gold)
+    collapsed = by_pair[(123, 11)]
+    assert collapsed["tag"] == "incorrect"
+    assert collapsed["n_gold_rows"] == 2
+    assert collapsed["all_tags"] == ["correct", "grounding"]
+
+    scored = {
+        "stmt_hash": f"{123:016x}", "source_hash": 11,
+        "verdict": "incorrect", "source_api": "reach",
+    }
+    joined, parse_null, missed = stage0.join_model(
+        [dict(scored), dict(scored)], by_pair, by_source
+    )
+    assert len(joined) == 1
+    assert parse_null == 0
+    assert missed == 0
+    assert joined[0][0]["tag"] == "incorrect"
 
 
 # ── 4. statement-heuristics instrument (I1–I4, E10) — additive + first-class ───
 
-V7_KEYS = {"gold_statement", "coherence_summary"}
+STATEMENT_INSTRUMENT_KEYS = {"gold_statement", "coherence_summary"}
 COHERENCE_KEYS = {"n_dedup_groups", "n_distinct_sources", "n_correct", "n_incorrect",
                   "n_no_text", "n_parse_fail", "n_null_source",
                   "n_credible_incorrect_det", "n_credible_incorrect_llm"}
@@ -323,14 +532,14 @@ def _three_ev_gold(tmp_path):
     return run, corp, gold
 
 
-def test_per_statement_v7_gold_and_coherence_additive(tmp_path):
-    # per_statement grows by EXACTLY gold_statement + coherence_summary on top of
-    # the v6 belief_* keys; every pre-existing key/value untouched.
+def test_per_statement_v8_gold_and_coherence_contract(tmp_path):
+    # Schema v8 retains the statement gold/coherence instrument while aligning
+    # its gold lookup with Tier-2 and the ship gate.
     run, corp, gold = _three_ev_gold(tmp_path)
     _ev, per_stmt, meta, _m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
     s = per_stmt[0]
-    assert meta["schema_version"] == 7
-    assert NEW_KEYS <= set(s) and V7_KEYS <= set(s)            # v6 + v7 both present
+    assert meta["schema_version"] == 8
+    assert NEW_KEYS <= set(s) and STATEMENT_INSTRUMENT_KEYS <= set(s)
     # gold_statement: any-incorrect-wins over the statement's evidence gold
     assert s["gold_statement"]["verdict"] == "incorrect"
     assert s["gold_statement"]["n"] == 3
@@ -381,17 +590,16 @@ def test_metrics_statement_stratified_shape(tmp_path):
     assert set(block["verdict_err"]) == VERDICT_ERR_KEYS
 
 
-def test_metrics_schema_version_is_2(tmp_path):
+def test_metrics_schema_version_is_3(tmp_path):
     run, corp, gold = _three_ev_gold(tmp_path)
     _ev, _ps, _meta, m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
-    assert m["schema_version"] == 2
+    assert m["schema_version"] == 3
 
 
-def test_metrics_gold_without_pa_hash_degrades(tmp_path):
-    # rasmachine-style gold (matches_hash/source_hash/tag, NO pa_hash) must NOT
-    # crash build_run_metrics — Tier-2 statement falls through to named-empty while
-    # Tier-1 (ev) still renders and per_statement still carries gold_statement
-    # (which joins on source_hash, not pa_hash).
+def test_metrics_gold_without_pa_hash_keeps_tier2_available(tmp_path):
+    # External/rasmachine-style gold needs only the authoritative exact pair;
+    # pa_hash is no longer a Tier-2 dependency because production groups on the
+    # run's stmt_hash.
     rows = [_row(0, 11, "correct", 0.95), _row(1, 22, "incorrect", 0.05)]
     run, corp = _write(tmp_path, rows, _corpus())
     gold = _gold(tmp_path, [
@@ -399,8 +607,11 @@ def test_metrics_gold_without_pa_hash_degrades(tmp_path):
         {"matches_hash": 123, "source_hash": 22, "tag": "wrong_relation"},
     ])
     _ev, per_stmt, _meta, m = build_run_export(run, corp, run_id="r", model="gemma", gold_path=gold)
-    assert m["tiers"]["ev"]["status"] == "available"        # Tier-1 unaffected
-    assert m["tiers"]["stmt"]["status"] == "unavailable"    # no pa_hash → named-empty
-    assert m["tiers"]["stmt"]["reason"]
-    # per_statement gold_statement still resolves (source_hash join)
-    assert per_stmt[0]["gold_statement"] is not None
+    assert m["tiers"]["ev"]["status"] == "available"
+    stmt = m["tiers"]["stmt"]
+    assert stmt["status"] == "available" and stmt["n"] == 1
+    for arm in stmt["arms"].values():
+        _assert_arm_shape(arm)
+    assert m["metrics_basis"]["tier2_statement_key"].startswith("run stmt_hash")
+    assert per_stmt[0]["gold_statement"]["verdict"] == "incorrect"
+    assert per_stmt[0]["gold_statement"]["n"] == 2

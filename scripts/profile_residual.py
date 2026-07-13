@@ -1,7 +1,8 @@
-"""Profile the error that REMAINS after the calibrated soft belief.
+"""Profile the error that remains after the calibrated hybrid log-odds score.
 
-Once aggregation (gated noisy-OR) + calibration (verdict-conditioned w) are
-in, the question is: what's left, and is it OURS to fix? This decomposes every
+Once verdicts are aggregated as confusion-derived log-likelihood ratios plus
+the confirmation source-reliability floor, the
+question is: what's left, and is it OURS to fix? This decomposes every
 statement-level belief error into:
 
   - verdict-driven : at least one per-evidence VERDICT disagreed with the gold on
@@ -32,7 +33,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import calibration_stage0 as c0  # noqa: E402
-from indra_belief.calibration_constants import calibration_for  # noqa: E402
+from indra_belief.calibration_constants import calibration_for_run  # noqa: E402
 from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
 from indra_belief.results import HALLUC, HEDGE, PLACEHOLDER_MAX_LEN  # noqa: E402
 from indra_belief.statement_belief import statement_belief  # noqa: E402
@@ -64,21 +65,28 @@ def main() -> None:
     ap.add_argument("--dump-n", type=int, default=60)
     args = ap.parse_args()
     label = args.label or args.model
-    calib = calibration_for(args.model)
+    calib = calibration_for_run(args.run, args.model)
+    if calib is None:
+        raise ValueError(
+            "residual profile requires a ship-approved exact model+prompt configuration"
+        )
 
     gold = c0.load_jsonl(ROOT / args.gold)
     by_pair, by_sh = c0.build_gold_index(gold)
     rows = c0.load_jsonl(ROOT / args.run)
     joined, _, _ = c0.join_model(rows, by_pair, by_sh)
 
-    # group by statement, carrying per-evidence detail
+    # Group at production run stmt_hash grain, carrying per-evidence detail.
     by_stmt: dict = defaultdict(lambda: {"ev": [], "tags": [], "claim": None})
     for g, s in joined:
-        rec = by_stmt[g["pa_hash"]]
+        statement_key = s.get("stmt_hash") or str(g.get("matches_hash"))
+        rec = by_stmt[statement_key]
+        evidence_text = g.get("evidence_text") or ""
         rec["ev"].append({
             "source_api": s.get("source_api") or g.get("source_api"),
             "verdict": s.get("verdict"), "confidence": s.get("confidence"),
-            "tier": s.get("tier"), "tag": g["tag"], "text": g.get("evidence_text") or "",
+            "tier": s.get("tier"), "tag": g["tag"], "text": evidence_text,
+            "evidence_text": evidence_text, "evidence_hash": s.get("evidence_hash"),
         })
         rec["tags"].append(g["tag"])
         if rec["claim"] is None:
@@ -86,7 +94,7 @@ def main() -> None:
                             "object": g.get("object")}
 
     stmts = []
-    for pa, rec in by_stmt.items():
+    for statement_key, rec in by_stmt.items():
         gold_agg = aggregate_gold(rec["tags"])
         if gold_agg is None:
             continue
@@ -98,7 +106,7 @@ def main() -> None:
         sys_correct = belief >= 0.5
         n_verdict_wrong = sum(1 for e in rec["ev"]
                               if (e["verdict"] == "correct") != is_gold_correct(e["tag"]))
-        stmts.append({"pa_hash": pa, "claim": rec["claim"], "ev": rec["ev"],
+        stmts.append({"stmt_hash": statement_key, "claim": rec["claim"], "ev": rec["ev"],
                       "gold_correct": gc, "belief": belief, "sys_correct": sys_correct,
                       "n_ev": len(rec["ev"]), "n_verdict_wrong": n_verdict_wrong,
                       "verdict_statement": sb.verdict_statement})
@@ -124,7 +132,7 @@ def main() -> None:
     def pct(n, d):
         return f"{100*n/d:.1f}%" if d else "—"
 
-    L = [f"# Residual profile — calibrated soft belief ({label}, in-sample eval_curation_v1)\n",
+    L = [f"# Residual profile — calibrated hybrid log-odds ({label}, in-sample eval_curation_v1)\n",
          f"Statements {len(stmts)} · belief errors **{len(errors)}** "
          f"({pct(len(errors), len(stmts))}): false-confidence (believed a wrong stmt) {len(fp)}, "
          f"false-doubt (doubted a right stmt) {len(fn)}.\n",
@@ -146,7 +154,8 @@ def main() -> None:
     L += ["", f"By depth: single-evidence {by_depth['single']}, multi-evidence {by_depth['multi']}.",
           "", "> verdict-driven = the calibration/aggregation did its job; the residual is upstream "
           "reader error (per D8, the lever is reader/grounding quality). aggregation = the part our "
-          "belief math could still recover.\n"]
+          "belief math could still recover. Statement gold is conservative any-incorrect-wins: "
+          "an evaluation/review proxy rather than literal latent truth for mixed evidence.\n"]
     (ROOT / args.out).write_text("\n".join(L))
 
     # dump most-confident errors for categorisation (claim + evidence + gold + verdict)
@@ -155,7 +164,7 @@ def main() -> None:
     for s in errors[:args.dump_n]:
         c = s["claim"]
         dump.append({
-            "pa_hash": s["pa_hash"],
+            "stmt_hash": s["stmt_hash"],
             "claim": f"{c['subject']} [{c['stmt_type']}] {c['object']}",
             "gold_correct": s["gold_correct"], "belief": round(s["belief"], 3),
             "error": "false_confidence" if s["sys_correct"] else "false_doubt",

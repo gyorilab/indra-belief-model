@@ -1,43 +1,28 @@
-"""Statement-level belief from per-evidence LLM verdicts.
+"""Statement-level belief from per-evidence reader verdicts.
 
-The scorer judges one (statement, evidence) pair at a time; this rolls a
-statement's evidence up to a single belief plus a decision-useful verdict and a
-tally. It is the "replace" design: a best-effort statement belief meant to beat
-INDRA's source-reliability belief, not a faithful reconstruction of it.
+The scorer judges one ``(statement, evidence)`` pair at a time. This module
+deduplicates those reads and emits one calibrated belief, one routing verdict,
+and the tally needed to interpret both.
 
-How a statement belief is built from evidence verdicts
-------------------------------------------------------
-The LLM verdict is a per-sentence MEMBERSHIP GATE on INDRA's own additive
-noisy-OR (``noise_model.compute_gated_belief``): a ``correct`` verdict keeps its
-evidence in the source's count, an ``incorrect`` verdict drops it. Evidence that
-was never semantically read — ``no_text`` (correct-by-default), parse failures,
-or rows with no source — contributes NOTHING (it is excluded from the numerator,
-never credited as support). Belief is then INDRA's formula over the surviving,
-de-duplicated evidence, under the recalibrated text-miner priors.
+For a fitted reader, the canonical scalar is a source-aware hybrid log-odds score:
+each verdict contributes a confusion-matrix-derived log-likelihood ratio;
+repeated reads within a source are averaged, independent sources sum, and an
+explicit fit-set anchor enters once. A confirmation retains a conservative floor
+from a stronger curated source. Because that source floor is a separately fitted
+reliability logit rather than a likelihood ratio, the result is a calibrated
+hybrid score, not a pure Bayesian posterior. It rebuilds the statement number from
+what was read rather than reusing INDRA's statement-level count belief. For an
+unfitted reader, the legacy hard gate remains the named fallback/comparison arm.
 
-Three outputs travel together, and the scalar never travels without the tally:
-  - ``belief``           the gated noisy-OR scalar (None when nothing was read)
-  - ``verdict_statement`` a tiered decision: deterministic grounding rejects are
-                          credible enough to hard-flag ``incorrect``; an LLM
-                          ``incorrect`` only routes to ``review`` (its error rate
-                          is too high to auto-condemn); else ``correct``
-  - the tally            counts that caption the scalar and disambiguate the
-                          empty set (all-unread vs genuinely-contradicted)
+Unread evidence (``no_text``), parse failures, and rows without a source are not
+credited as support. If nothing was semantically read, ``belief`` is ``None``
+(undefined) and the routing verdict is ``review``, never fabricated support.
 
-Edge cases
-----------
-- single-evidence:        gate on one read; belief is that source's 1-evidence
-                          reliability, or 0.0 if gated out.
-- all unread (no_text /   belief is None (UNDEFINED) — surface the prior alone;
-  parse-fail / no source) never 0.0 (which means "contradicted") and never 0.95.
-- mix correct+incorrect:  incorrect drops from its source count but does not
-                          poison surviving siblings; a credible contradiction is
-                          surfaced via verdict_statement + the tally, not by
-                          collapsing the scalar (different question than gold's
-                          any-incorrect-wins).
-- false corroboration:    within-source text-normalized de-dup collapses
-                          paraphrase pile-ups; the per-source systematic floor
-                          caps any single source at 1 - syst regardless of count.
+Three outputs travel together:
+  - ``belief``: calibrated hybrid log-odds for fitted readers, hard gate otherwise;
+  - ``verdict_statement``: deterministic rejects hard-flag ``incorrect`` while
+    credible LLM rejects route to ``review``;
+  - tally fields: the evidence/read counts that disambiguate the scalar.
 """
 from __future__ import annotations
 
@@ -71,7 +56,7 @@ def normalize_text(text: str | None) -> str:
 @dataclass
 class StatementBelief:
     """A statement's rolled-up belief, decision, and the tally that captions it."""
-    belief: float | None              # gated noisy-OR; None = nothing was read (UNDEFINED)
+    belief: float | None              # canonical scalar; None = nothing was read
     verdict_statement: str            # "correct" | "review" | "incorrect"
     parametric_only: float | None     # belief with NO gating (all surviving evidence counted)
     n_evidence: int                   # rows in (pre-dedup)
@@ -118,6 +103,35 @@ def _dedup_token(row: dict, i: int) -> tuple:
     return (src, "i", i)
 
 
+def _dedup_priority(row: dict) -> tuple:
+    """Deterministically choose one measurement for a duplicate evidence key.
+
+    Retry rows should agree, but historical files contain a few conflicts.  A
+    semantic read beats an unread/parse-failed row; among semantic reads the
+    conservative any-incorrect-wins rule applies.  The remaining fields only
+    break ties and deliberately exclude input position, making the result
+    invariant to JSONL row order.
+    """
+    tier = str(row.get("tier") or "").lower()
+    verdict = row.get("verdict")
+    readable = tier != _NO_TEXT_TIER and verdict in {"correct", "incorrect"}
+    verdict_rank = 0 if verdict == "incorrect" else 1 if verdict == "correct" else 2
+    tier_rank = 0 if tier in _DETERMINISTIC_TIERS else 1
+    confidence_rank = {"high": 0, "medium": 1, "low": 2}.get(
+        str(row.get("confidence") or "").lower(), 3
+    )
+    return (
+        0 if readable else 1,
+        verdict_rank,
+        tier_rank,
+        confidence_rank,
+        str(row.get("source_api") or "").casefold(),
+        tier,
+        str(row.get("evidence_text") or ""),
+        str(row.get("evidence_hash") or ""),
+    )
+
+
 def statement_belief(
     ev_rows: list[dict],
     priors: dict[str, tuple[float, float]] | None = None,
@@ -131,32 +145,26 @@ def statement_belief(
     ``verdict`` (``correct`` | ``incorrect`` | None), ``confidence``, and
     ``tier``; optionally ``evidence_text`` / ``evidence_hash`` (for de-dup).
 
-    ``soft`` (calibration C2): when given a per-reader weight pair
-    ``{w_correct, w_incorrect}`` (see ``calibration_constants``),
-    the belief uses the soft survival weight instead of the hard gate — an
-    incorrect read is down-weighted (residual penalty ``w_incorrect``) rather
-    than source-removed. None ⇒ today's hard gate.
-
-    The canonical production per-statement belief scalar is the clean soft form
-    (``soft=calibration_for(model)``) for a fitted reader, with the hard gate
-    (``soft=None``) as the fallback for an unfitted reader.
+    ``soft`` is the historical API name for a ship-approved reader profile from
+    ``calibration_for_run(run_path, model)``. When present, the canonical scalar
+    uses calibrated log-likelihood ratios; ``None`` selects the hard-gate fallback.
     """
     if priors is None:
         priors = RECALIBRATED_PRIORS
 
     n_evidence = len(ev_rows)
 
-    # Within-source text-normalized de-dup (first occurrence wins, matching the
-    # viewer's joinEvidence convention).
+    # Within-source text-normalized de-dup. Conflicting retries are reconciled
+    # conservatively and deterministically; file order never chooses the truth.
     if dedup:
-        seen: set[tuple] = set()
-        deduped: list[dict] = []
+        groups: dict[tuple, list[dict]] = {}
         for i, r in enumerate(ev_rows):
             k = _dedup_token(r, i)
-            if k in seen:
-                continue
-            seen.add(k)
-            deduped.append(r)
+            groups.setdefault(k, []).append(r)
+        deduped = [
+            min(groups[k], key=_dedup_priority)
+            for k in sorted(groups, key=repr)
+        ]
     else:
         deduped = list(ev_rows)
 
@@ -194,18 +202,18 @@ def statement_belief(
             continue
 
         sources.add(src.lower())
-        # 'verdict' is carried for the soft survival-weight path (calibration C2);
-        # the hard gate uses only 'included'.
+        # The calibrated path consumes verdict; the hard comparison consumes included.
         gated.append({"source_api": src, "included": verdict == "correct", "verdict": verdict})
 
-    # Belief: INDRA's gated noisy-OR over the surviving evidence. Empty gated set
-    # means nothing was read -> UNDEFINED (None), distinct from "all gated out"
-    # (compute_gated_belief returns 0.0 = genuinely contradicted).
+    # Empty gated set means nothing was read -> UNDEFINED (None). Otherwise a
+    # fitted profile rebuilds belief in log-odds; an unfitted reader uses hard gate.
     if gated:
         if soft is not None:
             res = compute_gated_belief(
                 gated, priors, soft_weights=True,
-                w_correct=soft["w_correct"], w_incorrect=soft["w_incorrect"],
+                log_lr_confirm=soft["log_lr_confirm"],
+                log_lr_reject=soft["log_lr_reject"],
+                prior_logodds=soft.get("prior_logodds", 0.0),
             )
         else:
             res = compute_gated_belief(gated, priors)
@@ -215,10 +223,13 @@ def statement_belief(
         belief = None
         parametric_only = None
 
-    # Tiered verdict: deterministic reject hard-flags; LLM incorrect -> review.
+    # Tiered verdict: deterministic reject hard-flags; LLM incorrect -> review;
+    # nothing read is also review (absence of a measurement is not correctness).
     if n_cred_det >= 1:
         verdict_statement = "incorrect"
     elif n_cred_llm >= 1:
+        verdict_statement = "review"
+    elif not gated:
         verdict_statement = "review"
     else:
         verdict_statement = "correct"

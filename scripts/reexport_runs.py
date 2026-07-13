@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Re-export scored runs to the current viewer schema (per_statement schema 7 +
-metrics.json schema 2), baking the observed LLM cost (from each row's call_log)
-and per-run gold. Schema 7 adds the statement-grain instrument: per_statement
-gold_statement + coherence_summary, and metrics.json tiers.stmt.verdict_err +
-stratified (the /runs statement error-detection surface + /statements belief).
+"""Re-export scored runs to the current viewer schema (export schema 8 +
+metrics schema 3), baking observed LLM cost, exact-pair-first gold, and the
+configuration-specific hybrid calibration profile. Schema 8 distinguishes the
+new confusion-derived profile payload from legacy survival weights; metrics v3
+aligns Tier-2 with production run-statement grain, de-dup, and unread handling.
 
 No rescoring: this is a pure transform over data/results/<run>.jsonl. Each run's
 sibling `.meta.json` records the corpus it was scored against (`input`); we map
@@ -29,13 +29,19 @@ CORPUS_GOLD = {
     "external_curator_gold_v1_statements.json": "data/benchmark/external_curator_gold_v1.jsonl",
 }
 
-# The default re-export set: the rasmachine_v1 model fleet (cost spread) + the
-# n=1606 balanced eval substrate (gemma vs medpsy).
+# The default re-export set: the rasmachine_v1 model fleet (cost spread), the
+# raw n=1606 eval substrate, the configuration-matched external Bedrock
+# validation, and the external MedPsy mismatch audit (which must export with no
+# soft profile). Gold calibration itself counts 1604 unique exact pairs after
+# duplicate-curator aggregation.
 DEFAULT_RUNS = sorted(glob.glob("data/results/rasmachine_v1_bedrock-*.jsonl")) + [
     "data/results/rasmachine_v1_gemma.jsonl",
     "data/results/rasmachine_v1_medpsy.jsonl",
     "data/results/eval_curation_v1_gemma.jsonl",
+    "data/results/eval_curation_v1_gemma_rf_bedrock.jsonl",
     "data/results/eval_curation_v1_medpsy.jsonl",
+    "data/results/external_curator_v1_bedrock-gemma.jsonl",
+    "data/results/external_curator_v1_medpsy-remote.jsonl",
 ]
 
 
