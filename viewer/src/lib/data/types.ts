@@ -316,8 +316,7 @@ export interface EvidenceRow {
 // each either named-empty (status 'unavailable' + reason) or a block of arms.
 // v2 adds tiers.stmt.verdict_err (statement error-detection confusion on the
 // tiered verdict) + tiers.stmt.stratified (per-type/source/evidence/bucket/driver
-// residual). Untyped here until the viewer reads them (E11); structural typing
-// tolerates the extra keys meanwhile.
+// residual).
 
 /** One reliability bin (BINS_8). Unoccupied bins carry n:0 + null pred/empirical
  *  so the x-axis is stable across runs (mirrors the n≥30 validity guard). */

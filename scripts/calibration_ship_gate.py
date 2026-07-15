@@ -32,6 +32,15 @@ The 0.154 non-inferiority margin is the historically observed medpsy-4B
 identical-run err-F1 spread (0.717-0.871). It is deliberately disclosed as a
 wide, empirical margin rather than described as sampling noise.
 
+Exit-code contract (main): the md/json report is always written and printed,
+then the process exits NON-ZERO if any requested test run is PENDING (evidence
+missing) or any evaluated reader's gate.overall is False; it exits 0 only when
+every evaluated reader PASSes and nothing is pending. A gate that returns success
+on a FAIL or a missing run cannot stop a ship. Intentionally DISABLING a failed
+candidate remains an explicit ``_PROFILE_META`` deployment_status decision in
+``calibration_constants.py``: a FAIL exit forces a conscious override, it does
+not auto-disable the reader.
+
     PYTHONPATH=src python scripts/calibration_ship_gate.py
 """
 from __future__ import annotations
@@ -518,7 +527,7 @@ def main():
     results, pending = [], []
     for trun, terun, name in zip(args.train_run, args.test_run, args.name):
         if not (ROOT / terun).exists():
-            pending.append(terun)
+            pending.append((name, terun))
             continue
         train_configuration, test_configuration = validate_configuration_pair(trun, terun)
         # Fit the reader and select operating thresholds on train only.
@@ -560,16 +569,28 @@ def main():
             "gate": gate(ev, e4_identity_pass=args.e4_identity_pass),
         })
 
-    if pending:
-        print("PENDING — test run not scored yet: " + ", ".join(pending))
-        return 0
-
     md = render(results)
     (ROOT / args.out).write_text(md)
     (ROOT / args.json).write_text(json.dumps(results, indent=2, default=float))
     print(md)
     print(f"Wrote {args.out} and {args.json}")
-    return 0
+
+    # Exit-code contract: always report (above), then fail the process if any
+    # requested test run is PENDING (evidence missing) or any evaluated reader's
+    # gate.overall is False. Exit 0 only when every evaluated reader PASSes and
+    # nothing is pending — a gate that exits success on a FAIL cannot stop a ship.
+    passed = [r["name"] for r in results if r["gate"]["overall"]]
+    failed = [r["name"] for r in results if not r["gate"]["overall"]]
+    if pending:
+        print("PENDING — test run not scored yet: "
+              + ", ".join(f"{name} ({run})" for name, run in pending))
+    print(
+        "SHIP GATE — "
+        f"PASS: {', '.join(passed) or '—'}; "
+        f"FAIL: {', '.join(failed) or '—'}; "
+        f"PENDING: {', '.join(name for name, _ in pending) or '—'}"
+    )
+    return 0 if (not pending and not failed) else 1
 
 
 if __name__ == "__main__":

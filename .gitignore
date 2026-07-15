@@ -29,6 +29,10 @@ data/benchmark/eval_curation_v1_clean.jsonl
 # run outputs, result json/md, profiles, reports, exports. A few legacy records
 # under data/results/ remain tracked from earlier commits; NEW artifacts are
 # ignored. Force-add (git add -f) if you ever truly need to track one.
+# The calibration ship-gate decision artifacts (calibration_ship_gate.md/.json)
+# ARE intentionally force-tracked for audit — they are the go/no-go record of
+# record. Raw *.jsonl run outputs stay ignored; the confusion counts that back
+# the belief math already live in tracked src/indra_belief/calibration_constants.py.
 data/results/
 reports/
 data/corpus_export/

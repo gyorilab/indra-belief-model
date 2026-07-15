@@ -159,7 +159,7 @@ This preserves existing callers without imposing the noisy-OR formula on the
 fitted-reader likelihood-ratio path.
 
 ### E5 — Per-run calibration-product export (the presentation seam)
-Bump `export_meta.json` to `schema_version: 4` and write a `metrics.json` alongside `per_evidence.jsonl`/`per_statement.json` (`results.py:565-570`), keyed by `run_id`: `BINS_8` reliability bins `{lo, hi, n, mean_pred, empirical}` at Tier-1 and Tier-2, `ece`, Brier `{reliability, resolution, uncertainty}`, and per-run confusion `{tp, fp, fn, tn}` vs baked gold. Reuse E1's emitter so the persisted numbers are **byte-identical** to the C0 figures (golden-output check; a no-gold / all-`verdict=None` run writes a *named-empty* metrics block, per the doctrine — no imputed zeros). This executes the doc's own **D5 / C3.2** "travels with the run" commitment for the calibration products themselves — the reliability curve must travel with the run, not be a global figure file the viewer points at. Unlocks: the viewer presentation stages **C4 / C5** (which live in `research/belief_instrument_task_graph.md`).
+`export_meta.json` now carries `schema_version: 8` (`results.py:1234`); a separate `metrics.json` — its own `METRICS_SCHEMA_VERSION = 3` (`results.py:489`) — is written alongside `per_evidence.jsonl`/`per_statement.json` (built by `build_run_metrics`, `results.py:570`; written to disk at `results.py:1278-1279`), keyed by `run_id`: `BINS_8` reliability bins `{lo, hi, n, mean_pred, empirical}` at Tier-1 and Tier-2, `ece`, Brier `{reliability, resolution, uncertainty}`, and per-run confusion `{tp, fp, fn, tn}` vs baked gold. Reuse E1's emitter so the persisted numbers are **byte-identical** to the C0 figures (golden-output check; a no-gold / all-`verdict=None` run writes a *named-empty* metrics block, per the doctrine — no imputed zeros). This executes the doc's own **D5 / C3.2** "travels with the run" commitment for the calibration products themselves — the reliability curve must travel with the run, not be a global figure file the viewer points at. Unlocks: the viewer presentation stages **C4 / C5** (which live in `research/belief_instrument_task_graph.md`).
 
 ---
 
@@ -198,12 +198,12 @@ Bump `export_meta.json` to `schema_version: 4` and write a `metrics.json` alongs
 > completed. The current implementation reached the same validation surface via
 > confusion-derived log-likelihood ratios instead of `w_j` / `κ`.
 
-- [ ] **C2.1** Add `w_j` / `n_eff` into `compute_gated_belief` (`noise_model.py:299-326`) behind a flag; default off.
+- [ ] **C2.1** Add `w_j` / `n_eff` into `compute_gated_belief` (`noise_model.py:357-480`) behind a flag; default off.
 - [ ] **C2.2** Land E4 (`verdict=None` byte-identity golden test) — **blocks merge.**
 - [ ] **C2.3** Grid-search `κ` on held-out (start 0.5).
 - [ ] **C2.4** Tier-2 per-statement validation: group held-out reads by `pa_hash`, synthesize per-statement gold by **any-incorrect-wins** (`curation.py` rule). **Report the multi-evidence subset separately** — 58–81% of statements are singletons and just re-test Tier-1.
-- [ ] **C2.5** Three-way baseline on identical held-out reads: `{hard-gate (production), parametric-only (ablation, composed_scorer.py:296), soft-survival (this)}`.
-- [R] **G2 — SHIP GATE.** Ship iff: Tier-1 held-out ECE(soft) < ECE(hard) **AND** Brier-resolution not worse **AND** error-detection **F1** (lead metric, never accuracy on balanced gold) non-inferior to hard on `holdout_cc` **AND** the verdict=None byte-identity test passes. **Noise-floor caveat:** medpsy-4B err-F1 varies 0.717–0.871 across identical runs (spread 0.154) — any delta inside that band on small n is not real; require n≈453 holdout_cc + report CIs.
+- [ ] **C2.5** Three-way baseline on identical held-out reads: `{hard-gate (production), parametric-only (ablation, noise_model.py:435-441), soft-survival (this)}`.
+- [x] **G2 — SHIP GATE (shipped 503d816).** Four legs, per reader: (1) Tier-1 held-out ECE(calibrated) < ECE(hard); (2) AUROC(calibrated) ≥ AUROC(hard); (3) error-detection **F1** (lead metric, never accuracy on balanced gold) non-inferior to hard on `holdout_cc` — Δerr-F1 lower-95%-bootstrap-bound ≥ −0.154; (4) the verdict=None byte-identity test passes. Brier-resolution is a reported diagnostic, not gated. Verified on `holdout_cc` (n=414): gemma **PASS**, MedPsy **FAIL** → MedPsy calibration disabled. **Noise-floor caveat:** medpsy-4B err-F1 varies 0.717–0.871 across identical runs (spread 0.154) — any delta inside that band on small n is not real; require n≈453 holdout_cc + report CIs.
 
 ## Stage C3 — (Optional) post-hoc `g` per (model, corpus)  ·  do→review with **G3**
 
@@ -232,7 +232,7 @@ Bump `export_meta.json` to `schema_version: 4` and write a `metrics.json` alongs
 |---|---|---|---|
 | G0 | after C0 | analysis + (optional) brutalist | **GO/NO-GO**: does raw-belief AUPRC have headroom? No ⇒ stop, lever is upstream. |
 | G1 | after C1 | analysis + paired bootstrap | Tier-1 held-out ECE↓ vs hard-gate AND Brier-resolution preserved, CI excludes 0. |
-| G2 | after C2 | three-way baseline + golden test | **Ship gate**: ECE↓ AND resolution≥ AND err-F1 non-inferior on holdout_cc AND verdict=None byte-identity passes; respect noise floor. |
+| G2 | after C2 | three-way baseline + golden test | **Ship gate (shipped 503d816)**: ECE(cal)<ECE(hard) AND AUROC(cal)≥AUROC(hard) AND err-F1 lower-95%-bound ≥ −0.154 (non-inferior) on holdout_cc AND verdict=None byte-identity passes; Brier-resolution reported, not gated; respect noise floor. gemma PASS, MedPsy FAIL→disabled. |
 | G3 | after C3 | analysis | post-hoc `g` improves per-statement ECE without resolution loss; else identity. |
 | G4 | after C4 *(in belief_instrument)* | svelte-check + golden | run-on-its-own surface: served numbers == `metrics.json` byte-exact; single-palette register; named-empty on no-gold. |
 | G5v | after C5 *(in belief_instrument)* | svelte-check + golden | run-comparison mode: viewer ΔECE/ΔBrier == C1/C2 held-out outputs; drill skeleton unchanged; comparison register preserved. |
@@ -249,8 +249,8 @@ Bump `export_meta.json` to `schema_version: 4` and write a `metrics.json` alongs
 
 ## Key file anchors
 
-- `src/indra_belief/noise_model.py:48-49` (`rand = 1 − accuracy − syst`), `:52-76` (`RECALIBRATED_PRIORS`), `:108` (additive factor `syst + rand^n`), `:204` (contradiction `dominant·(1−opposing)`), `:299-326` (`compute_gated_belief`)
-- `src/indra_belief/composed_scorer.py` (hard gate), `:296` (parametric-only ablation)
+- `src/indra_belief/noise_model.py:48-49` (`rand = 1 − accuracy − syst`), `:52-76` (`RECALIBRATED_PRIORS`), `:108` (additive factor `syst + rand^n`), `:204` (contradiction `dominant·(1−opposing)`), `:357-480` (`compute_gated_belief`)
+- `src/indra_belief/noise_model.py:357-480` (`compute_gated_belief` — hard gate), `:435-441` (parametric-only ablation)
 - `src/indra_belief/scorers/_shared.py:10-17` (`VERDICT_SCORE_GRID` — display-only, do not fit)
 - `src/indra_belief/metrics.py` (`ece` / `BINS_8`)
 - Gold: `data/benchmark/eval_curation_v1.jsonl` · Runs: `data/results/eval_curation_v1_{medpsy,gemma}.jsonl` · Holdouts: `data/benchmark/holdout_cc.jsonl` (removed post-validation), `holdout_v15_sample.jsonl`, `rasmachine_v1_gold.jsonl` · Contamination: `scripts/check_contamination.py`

@@ -25,8 +25,8 @@ A pairwise "A before B" dependency is the trivial case; the interesting constrai
 **Hard scope constraints (2026-06-23 directive):**
 - ❌ No parallel-voting / sample-K-aggregate lever. Removed from scope.
 - 🔌 Calibration (verdict-grain remedy, soft-guard, ECE/AUROC/Brier fitting) is **owned by another agent.**
-  We model it as an external node (`X1`) with a defined interface; we **do not** modify the belief math
-  (`noise_model.py`, `calibration_constants.py`, `statement_belief.py` rollup).
+  We model it as an external node (`X1`) with a defined interface; **non-X1 nodes do not** modify the belief math
+  (`noise_model.py`, `calibration_constants.py`, `statement_belief.py` rollup) — the `X1` owner may, and did (`503d816`, configuration-scoped hybrid calibration, shipped to origin/main).
 - 🔒 Gold labels are **immutable.** No node edits an existing gold tag. New gold is additive, separate-file,
   contamination-checked.
 
@@ -82,7 +82,7 @@ These are the "hyper" edges: each constrains a *set* of nodes, and a node may si
 |----|-----------|-------|-------------|
 | **I-PARITY** | Any change that backs a shipped number must reproduce today's `disconfirm_relnature` binding **byte-for-byte** unless the node's explicit purpose is to move it (only A5's re-run is allowed to move it). | C1, C2, C3, C4, A1, D1, D2 | REVIEW runs a golden-output diff of `score()` over a frozen fixture set before/after; non-zero diff on a parity-gated node = `fail`. |
 | **I-GOLD-IMMUTABLE** | No node mutates an existing gold tag. New gold is a new file, balance-by-construction, run through `check_contamination.py`. | A5, B1, E1, E2 | REVIEW asserts `git diff` touches no `*_gold.jsonl` / `eval_curation_v1.jsonl` / `holdout*.jsonl` lines except additions of new files. |
-| **I-CALIB-EXTERNAL** | Calibration is owned externally. Our nodes may **read** verdict/score outputs and **expose** interfaces, but must not edit `noise_model.py`, `calibration_constants.py`, or the `statement_belief` belief/rollup math. | A4, A5, B1, X1 | REVIEW asserts no diff in the three calibration-owned modules; coordination via `X1` interface contract. |
+| **I-CALIB-EXTERNAL** | Calibration is owned externally. Our nodes may **read** verdict/score outputs and **expose** interfaces, but must not edit `noise_model.py`, `calibration_constants.py`, or the `statement_belief` belief/rollup math. **Exception:** the `X1` calibration owner MAY edit those three files, and did — `503d816` shipped configuration-scoped hybrid calibration; the restriction binds only non-X1 nodes. | A4, A5, B1, X1 | REVIEW asserts no diff in the three calibration-owned modules; coordination via `X1` interface contract. |
 | **I-DETERMINISM** | Determinism = INPUT, never OUTPUT. No node may add an output-side verdict override. Substrate emits context/provenance into the prompt; only the two existing Tier-1 hard rejects flip a verdict in code. | A3, D1, D2, C4 | REVIEW greps the diff for any new write to `result["verdict"]` outside the model-derived path; presence = `fail`. |
 | **I-MEASURE-CLEAN** | No headroom/lever conclusion is valid until the substrate is repaired and re-measured. The H1→H2→re-run barrier gates every lever node. | A5 → {D1, D2, D3, E2} | The lever nodes are **blocked** in the graph until A5's REVIEW = `pass`. Drawing a lever conclusion pre-A5 = protocol violation. |
 
@@ -219,7 +219,7 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 
 ## Execution status (live — updated by /goal)
 
-**Branch:** `hypergraph/a-substrate-repair` (off main; not committed/pushed). **Full suite: 463 passed, 2 skipped.**
+**Branch:** `hypergraph/a-substrate-repair` **merged to origin/main** (`c86691c` A1/A3/A4, `295b3a4` A2 + rf-default, `ea95a53` E4 — all ancestors of `origin/main`; HEAD in sync). **Full suite: 463 passed, 2 skipped.**
 
 | Node | Status | Date | Result / finding |
 |---|---|---|---|
@@ -235,7 +235,7 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 
 **Open follow-ups (low priority):** A4's per-model table F1 point uses the full-join estimand while its CI is paired-subset (disclosed via caveat) — optionally align to one estimand.
 
-**Frontier now:** **A5 RUNNING** (background `b10z021ku`, multi-hour) — it holds the only GPU *and* the live scorer source files (`scorer.py`/`_prompts*.py`), so the program genuinely **serializes** here: the GPU-bound nodes (B2, external-gold scoring, post-A5 E3/E2/D-levers) and the `scorer.py`-mutating C-track must wait for A5 to land (not a stop-point — a resource/dependency lock; the A-cluster + E4 edits are uncommitted, so a C-track worktree would not see them cleanly). **E4 done.** The instant A5 lands → fire **E3** (~$9 bake-off) ∥ **B1** (deployment-truth reports over A5's output) ∥ score `external_gold_v1` on the repaired pair (the E4 external-validity read), then the C-track + D/E2 levers.
+**Frontier now:** **A5, E3, and E4 have all landed — E-GATE is OPEN.** A5's repair effect was NULL (the prompt/few-shot lever is spent, now VALIDATED at n=1606); E3's decisive n=1606 bake-off produced the **STICK-WITH-GEMMA** decision (kimi's +0.024 err-F1, mostly error-recall, isn't worth ~$7.87/1k vs free local gemma under the cost constraint); E4's grounded #3 read RESOLVED in the reassuring direction (the ~0.86 err-F1 ceiling generalizes to independent curators). The A-cluster + E4 are **on origin/main** (`c86691c` A1/A3/A4, `295b3a4` A2 + rf-default, `ea95a53` E4; HEAD in sync) — no GPU/worktree serialization remains. Next, all unblocked by the open E-GATE: **B1** (deployment-truth reports over the gemma pair) ∥ the `scorer.py`-mutating C-track ∥ the D/E2 levers.
 
 ---
 
@@ -518,8 +518,11 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 ### External
 
 #### X1 — Calibration verdict-grain remedy (owned by another agent)
-- **Role.** Not our work. The standing M1 gap — no verdict-grain mechanism for over-rejection; soft-guard is
-  belief-grain only (`statement_belief.py:215-221` never reads `soft`) — is the calibration agent's territory.
+- **Role.** Not our work. The standing M1 gap — no verdict-grain mechanism for over-rejection — is the
+  calibration agent's territory, and it **shipped**: `503d816` (configuration-scoped hybrid belief calibration)
+  edited all three belief-math files as the X1 owner's legitimate work. The former sub-claim that soft-guard is
+  belief-grain only (`statement_belief.py` never reads `soft`) is now stale — `statement_belief.py:211-217` **does**
+  read the soft/calibrated reader profile via the config-scoped path.
 - **Our obligation (E-CAL handoff).** A4/A5/B1 must **expose** clean per-pair and per-statement outputs
   (verdict, confidence, score, grounding_status, tier, FP/FN labels) in a stable schema the calibration agent
   consumes. We define the interface; we do not edit `noise_model.py` / `calibration_constants.py` / the rollup.

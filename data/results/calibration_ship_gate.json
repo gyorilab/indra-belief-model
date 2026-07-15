@@ -1,0 +1,380 @@
+[
+  {
+    "name": "MedPsy-4B",
+    "test_label": "holdout_cc",
+    "provenance": {
+      "train_gold": "data/benchmark/eval_curation_v1.jsonl",
+      "train_run": "data/results/eval_curation_v1_medpsy.jsonl",
+      "train_configuration": "remote-medpsy-4b@prompt-sha256:b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581",
+      "test_gold": "data/results/cc_holdout_cc/holdout_cc.jsonl",
+      "test_run": "data/results/holdout_cc_medpsy.jsonl",
+      "test_configuration": "remote-medpsy-4b@prompt-sha256:b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581",
+      "statement_grain": "run stmt_hash",
+      "statement_gold": "any-incorrect-wins",
+      "train_join": {
+        "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
+        "n_run_rows": 1606,
+        "n_joined_rows": 1606,
+        "n_exact_joined_rows": 1606,
+        "n_source_fallback_rows": 0,
+        "n_unmatched_rows": 0,
+        "n_ambiguous_rows": 0,
+        "n_grouped_statements": 913
+      },
+      "test_join": {
+        "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
+        "n_run_rows": 500,
+        "n_joined_rows": 500,
+        "n_exact_joined_rows": 0,
+        "n_source_fallback_rows": 500,
+        "n_unmatched_rows": 0,
+        "n_ambiguous_rows": 0,
+        "n_grouped_statements": 414
+      }
+    },
+    "reader_profile": {
+      "confusion": {
+        "cc": 718,
+        "ci": 230,
+        "ic": 83,
+        "ii": 573
+      },
+      "sensitivity": 0.8963795255930087,
+      "false_positive_rate": 0.286425902864259,
+      "specificity": 0.7135740971357409,
+      "miss_rate": 0.10362047440699129,
+      "log_lr_confirm": 1.1408840270034313,
+      "log_lr_reject": -1.9295513420397388,
+      "prior_correct": 0.4993765586034913,
+      "prior_logodds": -0.002493766878402462,
+      "profile_id": "remote-medpsy-4b@prompt-sha256:b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581@eval_curation_v1",
+      "reader_configuration": "remote-medpsy-4b@prompt-sha256:b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581",
+      "fit_run": "data/results/eval_curation_v1_medpsy.jsonl",
+      "fit_gold": "data/benchmark/eval_curation_v1.jsonl",
+      "fit_unique_pairs": 1604,
+      "gold_rule": "exact pair; multi-curator any-incorrect-wins; duplicate pairs removed"
+    },
+    "eval": {
+      "metrics": {
+        "hard": {
+          "n": 414,
+          "ece": 0.1286488751271111,
+          "brier": 0.2243750965720292,
+          "resolution": 0.04754631249818603,
+          "reliability": 0.02276364180710752,
+          "auroc": 0.7203947368421053,
+          "auprc": 0.7234900313062684,
+          "mean_correct": 0.5480519295753872,
+          "mean_incorrect": 0.25865335031578945
+        },
+        "parametric": {
+          "n": 414,
+          "ece": 0.1452799788797826,
+          "brier": 0.2599545512876806,
+          "resolution": 0.021730638062873696,
+          "reliability": 0.03288253608167368,
+          "auroc": 0.5863398415393322,
+          "auprc": 0.6244242253717049,
+          "mean_correct": 0.6420595849732366,
+          "mean_incorrect": 0.5558018791719649
+        },
+        "clean": {
+          "n": 414,
+          "ece": 0.14555999818887988,
+          "brier": 0.22223717787542133,
+          "resolution": 0.053056210102891785,
+          "reliability": 0.027434883411959238,
+          "auroc": 0.7446826070552726,
+          "auprc": 0.7915811904902467,
+          "mean_correct": 0.6900479593584701,
+          "mean_incorrect": 0.40737908335369666
+        }
+      },
+      "errf1_boot": {
+        "tau_hard": 0.7,
+        "tau_soft": 0.7,
+        "f1_hard": 0.7385740402193786,
+        "f1_soft": 0.6784810126582278,
+        "delta": -0.06009302756115076,
+        "ci_hard": [
+          0.6956521739130436,
+          0.7793115719720209
+        ],
+        "ci_soft": [
+          0.6246715564664007,
+          0.729936588680034
+        ],
+        "ci_delta": [
+          -0.1160393299601322,
+          -0.008249460379441407
+        ],
+        "n": 414
+      },
+      "errf1_sweep": {
+        "0.4": {
+          "hard": 0.6493506493506493,
+          "soft": 0.6528497409326426
+        },
+        "0.5": {
+          "hard": 0.7403314917127072,
+          "soft": 0.670076726342711
+        },
+        "0.6": {
+          "hard": 0.7403314917127072,
+          "soft": 0.6751269035532996
+        }
+      },
+      "thresholds": {
+        "hard": 0.7,
+        "calibrated": 0.7,
+        "train_f1_hard": 0.6921641791044777,
+        "train_f1_calibrated": 0.7769607843137254,
+        "n_train": 913,
+        "n_train_undefined": 0,
+        "selection": "argmax error-detection F1 on train over TAU_GRID; frozen before test",
+        "grid": [
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7
+        ]
+      },
+      "n_test": 414,
+      "n_undefined": 0,
+      "join": {
+        "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
+        "n_run_rows": 500,
+        "n_joined_rows": 500,
+        "n_exact_joined_rows": 0,
+        "n_source_fallback_rows": 500,
+        "n_unmatched_rows": 0,
+        "n_ambiguous_rows": 0,
+        "n_grouped_statements": 414
+      },
+      "base_rate": 0.4492753623188406,
+      "error_rate": 0.5507246376811594
+    },
+    "gate": {
+      "ece": {
+        "pass": false,
+        "hard": 0.1286488751271111,
+        "soft": 0.14555999818887988
+      },
+      "auroc": {
+        "pass": true,
+        "hard": 0.7203947368421053,
+        "soft": 0.7446826070552726
+      },
+      "errf1": {
+        "pass": true,
+        "hard": 0.7385740402193786,
+        "soft": 0.6784810126582278,
+        "delta": -0.06009302756115076,
+        "ci_delta": [
+          -0.1160393299601322,
+          -0.008249460379441407
+        ],
+        "noninferiority_margin": 0.154
+      },
+      "e4_identity": {
+        "pass": true,
+        "note": "tests/test_soft_belief.py byte-identity verified"
+      },
+      "overall": false
+    }
+  },
+  {
+    "name": "gemma-26B",
+    "test_label": "holdout_cc",
+    "provenance": {
+      "train_gold": "data/benchmark/eval_curation_v1.jsonl",
+      "train_run": "data/results/eval_curation_v1_gemma.jsonl",
+      "train_configuration": "remote-gemma-4-26b@prompt-sha256:b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581",
+      "test_gold": "data/results/cc_holdout_cc/holdout_cc.jsonl",
+      "test_run": "data/results/holdout_cc_gemma.jsonl",
+      "test_configuration": "remote-gemma-4-26b@prompt-sha256:b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581",
+      "statement_grain": "run stmt_hash",
+      "statement_gold": "any-incorrect-wins",
+      "train_join": {
+        "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
+        "n_run_rows": 1606,
+        "n_joined_rows": 1606,
+        "n_exact_joined_rows": 1606,
+        "n_source_fallback_rows": 0,
+        "n_unmatched_rows": 0,
+        "n_ambiguous_rows": 0,
+        "n_grouped_statements": 913
+      },
+      "test_join": {
+        "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
+        "n_run_rows": 500,
+        "n_joined_rows": 500,
+        "n_exact_joined_rows": 0,
+        "n_source_fallback_rows": 500,
+        "n_unmatched_rows": 0,
+        "n_ambiguous_rows": 0,
+        "n_grouped_statements": 414
+      }
+    },
+    "reader_profile": {
+      "confusion": {
+        "cc": 704,
+        "ci": 157,
+        "ic": 97,
+        "ii": 646
+      },
+      "sensitivity": 0.8789013732833958,
+      "false_positive_rate": 0.19551681195516812,
+      "specificity": 0.8044831880448319,
+      "miss_rate": 0.12109862671660421,
+      "log_lr_confirm": 1.5030263176881369,
+      "log_lr_reject": -1.893594758400817,
+      "prior_correct": 0.4993765586034913,
+      "prior_logodds": -0.002493766878402462,
+      "profile_id": "remote-gemma-4-26b@prompt-sha256:b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581@eval_curation_v1",
+      "reader_configuration": "remote-gemma-4-26b@prompt-sha256:b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581",
+      "fit_run": "data/results/eval_curation_v1_gemma.jsonl",
+      "fit_gold": "data/benchmark/eval_curation_v1.jsonl",
+      "fit_unique_pairs": 1604,
+      "gold_rule": "exact pair; multi-curator any-incorrect-wins; duplicate pairs removed"
+    },
+    "eval": {
+      "metrics": {
+        "hard": {
+          "n": 414,
+          "ece": 0.15659670761020292,
+          "brier": 0.22682066485557537,
+          "resolution": 0.052157877464727276,
+          "reliability": 0.03028714398420401,
+          "auroc": 0.7340242407093002,
+          "auprc": 0.749313007829731,
+          "mean_correct": 0.511024550650656,
+          "mean_incorrect": 0.19823885526315793
+        },
+        "parametric": {
+          "n": 414,
+          "ece": 0.1452799788797826,
+          "brier": 0.2599545512876806,
+          "resolution": 0.021730638062873696,
+          "reliability": 0.032882536081673706,
+          "auroc": 0.5863398415393322,
+          "auprc": 0.6243995354162697,
+          "mean_correct": 0.6420595849732366,
+          "mean_incorrect": 0.5558018791719649
+        },
+        "clean": {
+          "n": 414,
+          "ece": 0.14841841644713463,
+          "brier": 0.2201901822684955,
+          "resolution": 0.04984184567149684,
+          "reliability": 0.02539266520857823,
+          "auroc": 0.7449655725334843,
+          "auprc": 0.7915712004687245,
+          "mean_correct": 0.6746930383209111,
+          "mean_incorrect": 0.36146722882834664
+        }
+      },
+      "errf1_boot": {
+        "tau_hard": 0.3,
+        "tau_soft": 0.7,
+        "f1_hard": 0.7078384798099762,
+        "f1_soft": 0.7242990654205607,
+        "delta": 0.0164605856105845,
+        "ci_hard": [
+          0.656860929557008,
+          0.7555606758832565
+        ],
+        "ci_soft": [
+          0.6751885947676628,
+          0.7709763812066883
+        ],
+        "ci_delta": [
+          0.0028595449354949704,
+          0.032107085580053145
+        ],
+        "n": 414
+      },
+      "errf1_sweep": {
+        "0.4": {
+          "hard": 0.7078384798099762,
+          "soft": 0.7078384798099762
+        },
+        "0.5": {
+          "hard": 0.7499999999999999,
+          "soft": 0.72
+        },
+        "0.6": {
+          "hard": 0.7499999999999999,
+          "soft": 0.7259953161592505
+        }
+      },
+      "thresholds": {
+        "hard": 0.3,
+        "calibrated": 0.7,
+        "train_f1_hard": 0.752851711026616,
+        "train_f1_calibrated": 0.8152424942263279,
+        "n_train": 913,
+        "n_train_undefined": 0,
+        "selection": "argmax error-detection F1 on train over TAU_GRID; frozen before test",
+        "grid": [
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7
+        ]
+      },
+      "n_test": 414,
+      "n_undefined": 0,
+      "join": {
+        "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
+        "n_run_rows": 500,
+        "n_joined_rows": 500,
+        "n_exact_joined_rows": 0,
+        "n_source_fallback_rows": 500,
+        "n_unmatched_rows": 0,
+        "n_ambiguous_rows": 0,
+        "n_grouped_statements": 414
+      },
+      "base_rate": 0.4492753623188406,
+      "error_rate": 0.5507246376811594
+    },
+    "gate": {
+      "ece": {
+        "pass": true,
+        "hard": 0.15659670761020292,
+        "soft": 0.14841841644713463
+      },
+      "auroc": {
+        "pass": true,
+        "hard": 0.7340242407093002,
+        "soft": 0.7449655725334843
+      },
+      "errf1": {
+        "pass": true,
+        "hard": 0.7078384798099762,
+        "soft": 0.7242990654205607,
+        "delta": 0.0164605856105845,
+        "ci_delta": [
+          0.0028595449354949704,
+          0.032107085580053145
+        ],
+        "noninferiority_margin": 0.154
+      },
+      "e4_identity": {
+        "pass": true,
+        "note": "tests/test_soft_belief.py byte-identity verified"
+      },
+      "overall": true
+    }
+  }
+]
