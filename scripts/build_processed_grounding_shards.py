@@ -27,11 +27,9 @@ import csv
 import gzip
 import hashlib
 import json
-import os
 import signal
 import sqlite3
 import sys
-import time
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -44,6 +42,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 DEFAULT_INPUT = Path("/scratch/h.yan/data/processed_statements.tsv.gz")
 DEFAULT_OUTPUT_DIR = Path("/scratch/h.yan/data/processed_grounding_shards")
+TOTAL_PROCESSED_STATEMENTS = 60_405_451
 SCHEMA_VERSION = 1
 STOP_REQUESTED = False
 
@@ -62,29 +61,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _configure_csv_field_limit() -> None:
-    """Allow large statement JSON fields on platforms with a small CSV limit."""
-    limit = sys.maxsize
-    while True:
-        try:
-            csv.field_size_limit(limit)
-            return
-        except OverflowError:
-            limit //= 10
-
-
 def iter_processed_rows(
     path: Path,
-    *,
-    start_row: int = 0,
-) -> Iterable[tuple[int, int, dict[str, Any]]]:
-    """Yield ``(zero-based input row, statement hash, statement JSON)``."""
-    _configure_csv_field_limit()
+) -> Iterable[tuple[int, int, str]]:
+    """Yield ``(zero-based input row, statement hash, statement JSON text)``."""
     with gzip.open(path, "rt", encoding="utf-8", newline="") as fh:
         reader = csv.reader(fh, delimiter="\t")
         for row_index, row in enumerate(reader):
-            if row_index < start_row:
-                continue
             if len(row) != 2:
                 raise ValueError(
                     f"{path}: input row {row_index + 1} has {len(row)} columns; "
@@ -93,41 +76,31 @@ def iter_processed_rows(
             stmt_hash_text, stmt_json_text = row
             try:
                 stmt_hash = int(stmt_hash_text)
-                stmt_json = json.loads(stmt_json_text)
-            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
-                    f"{path}: invalid input row {row_index + 1}: {exc}"
+                    f"{path}: invalid statement hash on row "
+                    f"{row_index + 1}: {exc}"
                 ) from exc
-            if not isinstance(stmt_json, dict):
-                raise ValueError(
-                    f"{path}: statement JSON on row {row_index + 1} "
-                    "is not an object"
-                )
-            yield row_index, stmt_hash, stmt_json
+            yield row_index, stmt_hash, stmt_json_text
 
 
 def text_evidence_items(
-    stmt_json: dict[str, Any],
-) -> tuple[list[tuple[int, dict[str, Any]]], Counter[str]]:
+    statement,
+) -> tuple[list[tuple[int, Any]], Counter[str]]:
     """Return evidence entries with non-empty text plus filtering counters."""
     counts: Counter[str] = Counter()
-    evidences = stmt_json.get("evidence") or []
-    if not isinstance(evidences, list):
-        raise ValueError("statement evidence is not a list")
+    evidences = statement.evidence or []
     if not evidences:
         counts["statements_without_evidence"] = 1
         return [], counts
 
-    selected: list[tuple[int, dict[str, Any]]] = []
-    for evidence_index, evidence_json in enumerate(evidences):
-        if not isinstance(evidence_json, dict):
-            counts["malformed_evidence"] += 1
-            continue
-        text = evidence_json.get("text")
+    selected: list[tuple[int, Any]] = []
+    for evidence_index, evidence in enumerate(evidences):
+        text = evidence.text
         if not isinstance(text, str) or not text.strip():
             counts["evidences_without_text"] += 1
             continue
-        selected.append((evidence_index, evidence_json))
+        selected.append((evidence_index, evidence))
     return selected, counts
 
 
@@ -385,27 +358,16 @@ def prepare_statement_jobs(
     *,
     input_row_index: int,
     stmt_hash: int,
-    stmt_json: dict[str, Any],
-    selected_evidence: list[tuple[int, dict[str, Any]]],
+    statement,
+    selected_evidence: list[tuple[int, Any]],
     cache: GroundingCache,
 ) -> list[dict[str, Any]]:
-    """Deserialize one statement and prepare all selected evidence jobs."""
-    from indra.statements import stmt_from_json
-
+    """Prepare all selected evidence jobs for one deserialized statement."""
     from indra_belief.data.entity import GroundedEntity
     from indra_belief.data.scoring_record import ScoringRecord
 
-    statement = stmt_from_json(stmt_json)
-    if statement is None:
-        raise ValueError("INDRA could not deserialize statement JSON")
-
     jobs: list[dict[str, Any]] = []
-    for evidence_index, evidence_json in selected_evidence:
-        if evidence_index >= len(statement.evidence):
-            raise ValueError(
-                f"evidence index {evidence_index} is missing after deserialization"
-            )
-        evidence = statement.evidence[evidence_index]
+    for evidence_index, evidence in selected_evidence:
         subject_input, object_input = _entity_inputs(statement, evidence)
         subject_entity = (
             cache.resolve_entity(*subject_input, GroundedEntity)
@@ -440,10 +402,6 @@ def prepare_statement_jobs(
                 if lookup_context:
                     user_message += "\n\n" + lookup_context
 
-        source_hash = evidence_json.get("source_hash")
-        if source_hash is None:
-            source_hash = evidence.get_source_hash()
-
         jobs.append(
             {
                 "schema_version": SCHEMA_VERSION,
@@ -452,7 +410,7 @@ def prepare_statement_jobs(
                 "evidence_index": evidence_index,
                 "stmt_hash": stmt_hash,
                 "statement_uuid": getattr(statement, "uuid", None),
-                "source_hash": source_hash,
+                "source_hash": evidence.get_source_hash(),
                 "source_api": evidence.source_api or "",
                 "pmid": evidence.pmid,
                 "stmt_type": record.stmt_type,
@@ -504,7 +462,6 @@ def _build_parser() -> argparse.ArgumentParser:
         default="fail",
         help="Fail loudly or skip malformed/deserialization rows.",
     )
-    parser.add_argument("--progress-every", type=int, default=10_000)
     return parser
 
 
@@ -515,8 +472,6 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("--compresslevel must be between 0 and 9")
     if args.limit_input_rows is not None and args.limit_input_rows < 1:
         raise SystemExit("--limit-input-rows must be >= 1")
-    if args.progress_every < 1:
-        raise SystemExit("--progress-every must be >= 1")
 
 
 def main() -> int:
@@ -587,7 +542,6 @@ def main() -> int:
     counters: Counter[str] = Counter(manifest.get("counters") or {})
     writer = AtomicShardWriter(output_dir, shard_index, args.compresslevel)
     cache = GroundingCache(cache_path, identity["preparation_code_sha256"])
-    started = time.perf_counter()
     last_consumed = start_row
     durable_consumed = start_row
     durable_counters: Counter[str] = counters.copy()
@@ -633,10 +587,19 @@ def main() -> int:
     print(f"gilda_cache={cache_path}", flush=True)
 
     try:
-        for input_row_index, stmt_hash, stmt_json in iter_processed_rows(
-            input_path,
-            start_row=start_row,
-        ):
+        from indra.statements import stmt_from_json
+        from indra_db.readonly_dumping.util import clean_json_loads
+        from tqdm import tqdm
+
+        processed_rows = tqdm(
+            iter_processed_rows(input_path),
+            total=TOTAL_PROCESSED_STATEMENTS,
+            desc="Processing statements",
+            unit="stmt",
+        )
+        for input_row_index, stmt_hash, stmt_json_str in processed_rows:
+            if input_row_index < start_row:
+                continue
             if (
                 args.limit_input_rows is not None
                 and input_row_index >= args.limit_input_rows
@@ -645,13 +608,16 @@ def main() -> int:
 
             row_counts: Counter[str] = Counter(input_rows_seen=1)
             try:
-                selected, filter_counts = text_evidence_items(stmt_json)
+                stmt = stmt_from_json(clean_json_loads(stmt_json_str))
+                if stmt is None:
+                    raise ValueError("INDRA could not deserialize statement JSON")
+                selected, filter_counts = text_evidence_items(stmt)
                 row_counts.update(filter_counts)
                 if selected:
                     row_jobs = prepare_statement_jobs(
                         input_row_index=input_row_index,
                         stmt_hash=stmt_hash,
-                        stmt_json=stmt_json,
+                        statement=stmt,
                         selected_evidence=selected,
                         cache=cache,
                     )
@@ -692,20 +658,12 @@ def main() -> int:
             last_consumed = input_row_index + 1
             rows_this_invocation += 1
 
-            if (
-                rows_this_invocation == 1
-                or rows_this_invocation % args.progress_every == 0
-            ):
-                elapsed = time.perf_counter() - started
-                print(
-                    f"rows={last_consumed:,} "
-                    f"jobs={counters['evidence_jobs_written']:,} "
-                    f"needs_llm={counters['needs_llm']:,} "
-                    f"tier1={counters['tier1_resolved']:,} "
-                    f"no_evidence={counters['statements_without_evidence']:,} "
-                    f"no_text={counters['evidences_without_text']:,} "
-                    f"rate={rows_this_invocation / max(elapsed, 1e-9):.1f} rows/s",
-                    flush=True,
+            if rows_this_invocation == 1 or rows_this_invocation % 1_000 == 0:
+                processed_rows.set_postfix(
+                    jobs=counters["evidence_jobs_written"],
+                    llm=counters["needs_llm"],
+                    tier1=counters["tier1_resolved"],
+                    refresh=False,
                 )
 
             if STOP_REQUESTED:
@@ -732,6 +690,8 @@ def main() -> int:
         save_manifest("failed")
         raise
     finally:
+        if "processed_rows" in locals():
+            processed_rows.close()
         cache.close()
 
     print("\nPreparation summary")

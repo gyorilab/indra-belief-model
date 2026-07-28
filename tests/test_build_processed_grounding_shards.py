@@ -23,36 +23,43 @@ pipeline = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(pipeline)
 
 
-def test_processed_tsv_is_streamed_from_resume_row(tmp_path):
+def test_processed_tsv_is_streamed_as_raw_statement_json(tmp_path):
     path = tmp_path / "processed.tsv.gz"
     with gzip.open(path, "wt", newline="") as fh:
         writer = csv.writer(fh, delimiter="\t")
         for index in range(4):
             writer.writerow((100 + index, json.dumps({"type": f"T{index}"})))
 
-    rows = list(pipeline.iter_processed_rows(path, start_row=2))
+    rows = list(pipeline.iter_processed_rows(path))
 
     assert rows == [
-        (2, 102, {"type": "T2"}),
-        (3, 103, {"type": "T3"}),
+        (0, 100, '{"type": "T0"}'),
+        (1, 101, '{"type": "T1"}'),
+        (2, 102, '{"type": "T2"}'),
+        (3, 103, '{"type": "T3"}'),
     ]
 
 
 def test_empty_evidence_and_empty_text_are_filtered_separately():
-    selected, counts = pipeline.text_evidence_items({"evidence": []})
+    class Evidence:
+        def __init__(self, text):
+            self.text = text
+
+    class Statement:
+        def __init__(self, evidence):
+            self.evidence = evidence
+
+    selected, counts = pipeline.text_evidence_items(Statement([]))
     assert selected == []
     assert counts == {"statements_without_evidence": 1}
 
+    no_text = Evidence(None)
+    whitespace = Evidence("   ")
+    supported = Evidence("supported sentence")
     selected, counts = pipeline.text_evidence_items(
-        {
-            "evidence": [
-                {"text": None},
-                {"text": "   "},
-                {"text": "supported sentence"},
-            ]
-        }
+        Statement([no_text, whitespace, supported])
     )
-    assert selected == [(2, {"text": "supported sentence"})]
+    assert selected == [(2, supported)]
     assert counts == {"evidences_without_text": 2}
 
 
