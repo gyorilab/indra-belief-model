@@ -22,6 +22,20 @@ from dataclasses import dataclass, field
 
 # Model registry — name → (base_url, model_id, notes)
 LOCAL_MODELS: dict[str, dict] = {
+    "vllm-local": {
+        "base_url": "http://127.0.0.1:8000/v1",
+        "model_id": "google/gemma-3-27b-it",
+        "reasoning_in_content": False,
+        "max_tokens": 1000,
+        "timeout": 120,
+    },
+    "ollama-local": {
+        "base_url": "http://localhost:11434/v1",
+        "model_id": "gemma3:27b",
+        "reasoning_in_content": False,
+        "max_tokens": 1000,
+        "timeout": 120,
+    },
     "local-qwen3.5-vl-122b-a10b": {
         "base_url": "http://localhost:8082/v1",
         "model_id": "dealignai/Qwen3.5-VL-122B-A10B-4bit-MLX-CRACK",
