@@ -1,0 +1,194 @@
+{
+  "manifest_schema_version": 1,
+  "frozen_at": "2026-07-17T11:42:31Z",
+  "record": {
+    "title": "INDRA assembly Benchmark Corpus",
+    "doi": "10.5281/zenodo.7559353",
+    "record_url": "https://zenodo.org/records/7559353",
+    "api_url": "https://zenodo.org/api/records/7559353",
+    "created": "2023-01-22"
+  },
+  "paper_code": {
+    "repository": "https://github.com/sorgerlab/indra_assembly_paper",
+    "commit": "63abdf1274d2f5534ed822585775031712916c83",
+    "commit_date": "2023-01-22T23:07:06-05:00",
+    "critical_file_sha256": {
+      "notebooks/Training Belief ML Models.ipynb": "3bd1a684fdc33c0b4963dd3e0c834c5420d90703112a91773f43415e1125ad26",
+      "bioexp/curation/belief_models.py": "46b701dcac1838e3462f67f7f1467b60da05dbe5375955c8f2dc7ab82b9e2dfe",
+      "bioexp/curation/classifiers.py": "da5801702bc47ac9288cfafa8270725f4196a6c76f458e8e4adb056dc2d1a717",
+      "bioexp/curation/group_curations.py": "664eb3e135e006b9676163a621429099befd0fb6b45c256d575135edb97fc9a5"
+    }
+  },
+  "files": [
+    {
+      "filename": "indra_benchmark_corpus.pkl",
+      "content_url": "https://zenodo.org/api/records/7559353/files/indra_benchmark_corpus.pkl/content",
+      "bytes": 1587907075,
+      "md5": "30725fad35c915f042d5103c65b82f0f",
+      "sha256": "ed64a2409fc569806a5f6dbdcc72827fb5a6ea0a75cf92452839c6f60d160af2",
+      "workspace_path": "data/benchmark/indra_benchmark_corpus.pkl",
+      "storage": "downloaded_ignored_source_data",
+      "canonical_for_historical_object_and_refinement_parity": true,
+      "verification": {
+        "size": "pass",
+        "checksum": "pass",
+        "verified_at": "2026-07-17T12:15:15Z"
+      }
+    },
+    {
+      "filename": "indra_benchmark_corpus.json.gz",
+      "content_url": "https://zenodo.org/api/records/7559353/files/indra_benchmark_corpus.json.gz/content",
+      "bytes": 460045058,
+      "md5": "82c01e9e100b296ba5b8fbbb2e39f5dc",
+      "sha256": "bf048f3b485990e6d81ee0f2200ea17efe962268427b4f33af932b4f08a434de",
+      "workspace_path": "data/benchmark/indra_benchmark_corpus.json.gz",
+      "storage": "symbolic_link",
+      "resolved_path_at_verification": "/Users/noot/Documents/biomolecular-clique-finding/data/benchmark/indra_benchmark_corpus.json.gz",
+      "verification": {
+        "checksum": "pass",
+        "gzip_stream": "pass",
+        "verified_at": "2026-07-17T11:42:31Z"
+      }
+    },
+    {
+      "filename": "indra_assembly_curations.json",
+      "content_url": "https://zenodo.org/api/records/7559353/files/indra_assembly_curations.json/content",
+      "bytes": 1687078,
+      "md5": "4a5b39066458e2112607bcb19e7a4d29",
+      "sha256": "02ccca87fb4c8386ae49d420cb4c8257cf769bcaba5692a989bf295ba8d40da5",
+      "workspace_path": "data/benchmark/indra_assembly_curations.json",
+      "storage": "downloaded_ignored_source_data",
+      "verification": {
+        "checksum": "pass",
+        "byte_identical_to_paper_repository_copy": true,
+        "verified_at": "2026-07-17T11:42:31Z"
+      }
+    }
+  ],
+  "derived_paper_repository_files": [
+    {
+      "path": "data/curation/multireader_curation_dataset.pkl",
+      "bytes": 167798,
+      "md5": "e9648f9bae9ab996c388f27366760c8f",
+      "sha256": "d4a8c14efd0e1e2345ceba3fc101210eadfa25d9c1292558f150a02f4a3e90ac",
+      "git_blob": "e7c5383070e82d4f98f278e48ed780ca76921122"
+    },
+    {
+      "path": "data/curation/extended_curation_dataset.pkl",
+      "bytes": 225993,
+      "md5": "78e5e31e56e8cc72746fb53872b11377",
+      "sha256": "f235de451ddb8dc26423175ebabeac6422e299e948707e9b3bda0a4b20ab3f44",
+      "git_blob": "86495cd8ade5658cf6ab61e147d73fd712b22502"
+    }
+  ],
+  "paper_evaluation_protocol": {
+    "raw_curations": {
+      "rows": 6022,
+      "unique_statement_hashes": 1800,
+      "curators": 2
+    },
+    "extended_dataset": {
+      "source": "data/curation/extended_curation_dataset.pkl",
+      "rows": 1689,
+      "positive": 1237,
+      "negative": 452,
+      "eligibility": "exactly two real agents after group_curations.py filtering",
+      "used_by": "Table EV2 all-source arms"
+    },
+    "reader_only_dataset": {
+      "source": "runtime filter of extended_curation_dataset.pkl",
+      "reader_sources": [
+        "reach",
+        "sparser",
+        "medscan",
+        "rlimsp",
+        "trips"
+      ],
+      "rows": 1676,
+      "positive": 1236,
+      "negative": 440,
+      "positive_prevalence": 0.7374701670644391,
+      "used_by": "Table EV2 reader-only arms",
+      "not_the_multireader_pickle": true
+    },
+    "statement_gold": "correct iff at least one curated evidence is correct",
+    "split": {
+      "pre_split_shuffle": "Python random.seed(4) then random.shuffle over zipped statement/label rows",
+      "cross_validation": "StratifiedKFold(n_splits=10, shuffle=False)",
+      "grouped_by_statement_family_or_document": false,
+      "fully_deterministic": false,
+      "unseeded_components": [
+        "NumPy",
+        "RandomForestClassifier",
+        "SVC probability calibration",
+        "MCMC",
+        "set-derived feature ordering"
+      ]
+    },
+    "metric": {
+      "name": "per-fold trapezoidal precision-recall area",
+      "implementation": "precision_recall_curve followed by sklearn.metrics.auc(recall, precision)",
+      "summary": "arithmetic mean over 10 folds",
+      "plus_minus": "population standard deviation over 10 folds",
+      "not_pooled_average_precision": true,
+      "not_a_confidence_interval": true
+    },
+    "models": {
+      "orig_belief": "OrigBeliefStmt fitted separately inside each training fold and source with MCMC (100 walkers, 100 burn-in, 100 samples)",
+      "random_forest": "RandomForestClassifier(n_estimators=2000, max_depth=13, random_state=None)",
+      "logistic_regression": "custom log1p feature wrapper with solver=liblinear",
+      "svc": "SVC(probability=True)",
+      "knn": "KNeighborsClassifier defaults"
+    },
+    "historical_all_source_order": [
+      "hprd",
+      "rlimsp",
+      "bel",
+      "trips",
+      "reach",
+      "biopax",
+      "sparser",
+      "medscan",
+      "isi",
+      "trrust",
+      "signor"
+    ],
+    "parity_quirks": [
+      "More-specific support features are rebuilt inside each fold and can include support nodes outside the fold; deeper descendants depend on fold membership.",
+      "OrigBeliefStmt with supports fits direct plus indirect counts but its prediction path indexes direct count columns only.",
+      "Reader-only PMID, promoter, and sentence-length features scan all direct evidence, including database sources.",
+      "PMID sets include null; promoter is a case-insensitive substring; average length ignores missing text.",
+      "Logistic regression applies log1p to every feature.",
+      "The notebook was executed interactively and nonlinearly, so stored outputs do not prove one globally consistent source-cell state."
+    ]
+  },
+  "environment_reconstruction": {
+    "python": "3.7.4",
+    "indra_canonical_candidate": "1.22.0",
+    "sklearn_candidate_not_proven": "0.23.2",
+    "unresolved_exact_versions": [
+      "numpy",
+      "scipy",
+      "pandas",
+      "scikit-learn patch",
+      "emcee",
+      "networkx"
+    ],
+    "requirements_file_complete": false
+  },
+  "local_protocol_freeze": {
+    "status": "protocol_reconstruction_not_historical_parity",
+    "generator": "scripts/freeze_indra_paper_protocol.py",
+    "output_dir": "data/results/indra_paper_protocol_20260717",
+    "artifacts": {
+      "paper_protocol_manifest.json": "e3d0392b410ba7458663bfeb336954e52836631878d09f8f59ff213feb2725d3",
+      "paper_eligible_statements.jsonl": "82b572bfe57d23bda65611909e5f13b010dac03fd03437dcccdc3fd1e993ec4d",
+      "paper_fold_assignments.jsonl": "a4f3702f32ff9a9d645b8bda206ad017e25007701f9e46bccda7f5be1bff67f7"
+    },
+    "validation": "9 combined comparison-manifest and paper-protocol tests passed on 2026-07-17"
+  },
+  "notes": [
+    "The corpus workspace path is a pre-existing symbolic link. Reproduction must verify the content digest rather than trust the link target.",
+    "The original repository does not pin a complete runtime environment or publish fitted fold models/out-of-fold predictions; environment reconstruction is a separate parity gate."
+  ]
+}

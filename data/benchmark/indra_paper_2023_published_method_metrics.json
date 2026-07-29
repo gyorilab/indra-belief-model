@@ -1,0 +1,1221 @@
+{
+  "artifact_kind": "indra_assembly_paper_published_method_metrics",
+  "method_count": 59,
+  "methods": [
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.917,
+      "fold_population_sd": 0.019,
+      "method": "Belief Orig - readers",
+      "method_id": "paper_table_6:01",
+      "notebook_cell_index": 47,
+      "row": 1,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.893,
+      "fold_population_sd": 0.019,
+      "method": "RF 2k-d13 - readers",
+      "method_id": "paper_table_6:02",
+      "notebook_cell_index": 47,
+      "row": 2,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.91,
+      "fold_population_sd": 0.018,
+      "method": "Log LR - readers",
+      "method_id": "paper_table_6:03",
+      "notebook_cell_index": 47,
+      "row": 3,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.9,
+      "fold_population_sd": 0.017,
+      "method": "KNN - readers",
+      "method_id": "paper_table_6:04",
+      "notebook_cell_index": 47,
+      "row": 4,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.891,
+      "fold_population_sd": 0.014,
+      "method": "SVC - readers",
+      "method_id": "paper_table_6:05",
+      "notebook_cell_index": 47,
+      "row": 5,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.92,
+      "fold_population_sd": 0.018,
+      "method": "RF 2k-d13 + Type/#PMIDs - readers",
+      "method_id": "paper_table_6:06",
+      "notebook_cell_index": 47,
+      "row": 6,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.922,
+      "fold_population_sd": 0.017,
+      "method": "RF 2k-d13 + Type/#PMIDs/avglen - readers",
+      "method_id": "paper_table_6:07",
+      "notebook_cell_index": 47,
+      "row": 7,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.93,
+      "fold_population_sd": 0.014,
+      "method": "RF 2k-d13 + Type/#PMIDs/promoter - readers",
+      "method_id": "paper_table_6:08",
+      "notebook_cell_index": 47,
+      "row": 8,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.932,
+      "fold_population_sd": 0.015,
+      "method": "RF 2k-d13 + Type/#PMIDs/prom/avglen - readers",
+      "method_id": "paper_table_6:09",
+      "notebook_cell_index": 47,
+      "row": 9,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.923,
+      "fold_population_sd": 0.018,
+      "method": "Log LR + Type/#PMIDs - readers",
+      "method_id": "paper_table_6:10",
+      "notebook_cell_index": 47,
+      "row": 10,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.924,
+      "fold_population_sd": 0.017,
+      "method": "Log LR + Type/#PMIDs/avglen - readers",
+      "method_id": "paper_table_6:11",
+      "notebook_cell_index": 47,
+      "row": 11,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.926,
+      "fold_population_sd": 0.016,
+      "method": "Log LR + Type/#PMIDs/promoter - readers",
+      "method_id": "paper_table_6:12",
+      "notebook_cell_index": 47,
+      "row": 12,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.926,
+      "fold_population_sd": 0.016,
+      "method": "Log LR + Type/#PMIDs/prom/avglen - readers",
+      "method_id": "paper_table_6:13",
+      "notebook_cell_index": 47,
+      "row": 13,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.908,
+      "fold_population_sd": 0.015,
+      "method": "KNN + Type/#PMIDs - readers",
+      "method_id": "paper_table_6:14",
+      "notebook_cell_index": 47,
+      "row": 14,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.901,
+      "fold_population_sd": 0.026,
+      "method": "SVC + Type/#PMIDs - readers",
+      "method_id": "paper_table_6:15",
+      "notebook_cell_index": 47,
+      "row": 15,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.917,
+      "fold_population_sd": 0.019,
+      "method": "Belief Orig - readers, specific",
+      "method_id": "paper_table_6:16",
+      "notebook_cell_index": 47,
+      "row": 16,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.913,
+      "fold_population_sd": 0.016,
+      "method": "RF 2k-d13 - readers, specific",
+      "method_id": "paper_table_6:17",
+      "notebook_cell_index": 47,
+      "row": 17,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.912,
+      "fold_population_sd": 0.019,
+      "method": "Log LR - readers, specific",
+      "method_id": "paper_table_6:18",
+      "notebook_cell_index": 47,
+      "row": 18,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.892,
+      "fold_population_sd": 0.014,
+      "method": "KNN - readers, specific",
+      "method_id": "paper_table_6:19",
+      "notebook_cell_index": 47,
+      "row": 19,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.885,
+      "fold_population_sd": 0.015,
+      "method": "SVC - readers, specific",
+      "method_id": "paper_table_6:20",
+      "notebook_cell_index": 47,
+      "row": 20,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.929,
+      "fold_population_sd": 0.015,
+      "method": "RF 2k-d13 + Type/#PMIDs - readers, specific",
+      "method_id": "paper_table_6:21",
+      "notebook_cell_index": 47,
+      "row": 21,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.93,
+      "fold_population_sd": 0.014,
+      "method": "RF 2k-d13 + Type/#PMIDs/avglen - readers, specific",
+      "method_id": "paper_table_6:22",
+      "notebook_cell_index": 47,
+      "row": 22,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.937,
+      "fold_population_sd": 0.012,
+      "method": "RF 2k-d13 + Type/#PMIDs/promoter - readers, specific",
+      "method_id": "paper_table_6:23",
+      "notebook_cell_index": 47,
+      "row": 23,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.937,
+      "fold_population_sd": 0.012,
+      "method": "RF 2k-d13 + Type/#PMIDs/prom/avglen - readers, specific",
+      "method_id": "paper_table_6:24",
+      "notebook_cell_index": 47,
+      "row": 24,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.927,
+      "fold_population_sd": 0.016,
+      "method": "Log LR + Type/#PMIDs - readers, specific",
+      "method_id": "paper_table_6:25",
+      "notebook_cell_index": 47,
+      "row": 25,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.927,
+      "fold_population_sd": 0.015,
+      "method": "Log LR + Type/#PMIDs/avglen - readers, specific",
+      "method_id": "paper_table_6:26",
+      "notebook_cell_index": 47,
+      "row": 26,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.928,
+      "fold_population_sd": 0.014,
+      "method": "Log LR + Type/#PMIDs/promoter - readers, specific",
+      "method_id": "paper_table_6:27",
+      "notebook_cell_index": 47,
+      "row": 27,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.929,
+      "fold_population_sd": 0.014,
+      "method": "Log LR + Type/#PMIDs/prom/avglen - readers, specific",
+      "method_id": "paper_table_6:28",
+      "notebook_cell_index": 47,
+      "row": 28,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.901,
+      "fold_population_sd": 0.019,
+      "method": "KNN + Type/#PMIDs - readers, specific",
+      "method_id": "paper_table_6:29",
+      "notebook_cell_index": 47,
+      "row": 29,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.895,
+      "fold_population_sd": 0.018,
+      "method": "SVC + Type/#PMIDs - readers, specific",
+      "method_id": "paper_table_6:30",
+      "notebook_cell_index": 47,
+      "row": 30,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.923,
+      "fold_population_sd": 0.012,
+      "method": "Belief Orig - all sources, specific",
+      "method_id": "paper_table_6:31",
+      "notebook_cell_index": 47,
+      "row": 31,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.928,
+      "fold_population_sd": 0.015,
+      "method": "RF 2k-d13 - all sources, specific",
+      "method_id": "paper_table_6:32",
+      "notebook_cell_index": 47,
+      "row": 32,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.937,
+      "fold_population_sd": 0.015,
+      "method": "RF 2k-d13 + Type/#PMIDs - all sources, specific",
+      "method_id": "paper_table_6:33",
+      "notebook_cell_index": 47,
+      "row": 33,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.936,
+      "fold_population_sd": 0.014,
+      "method": "RF 2k-d13 + Type/#PMIDs/avglen - all sources, specific",
+      "method_id": "paper_table_6:34",
+      "notebook_cell_index": 47,
+      "row": 34,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.942,
+      "fold_population_sd": 0.014,
+      "method": "RF 2k-d13 + Type/#PMIDs/promoter - all sources, specific",
+      "method_id": "paper_table_6:35",
+      "notebook_cell_index": 47,
+      "row": 35,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.942,
+      "fold_population_sd": 0.015,
+      "method": "RF 2k-d13 + Type/#PMIDs/prom/avglen - all sources, specific",
+      "method_id": "paper_table_6:36",
+      "notebook_cell_index": 47,
+      "row": 36,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.924,
+      "fold_population_sd": 0.014,
+      "method": "Log LR - all sources, specific",
+      "method_id": "paper_table_6:37",
+      "notebook_cell_index": 47,
+      "row": 37,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.935,
+      "fold_population_sd": 0.012,
+      "method": "Log LR + Type/#PMIDs - all sources, specific",
+      "method_id": "paper_table_6:38",
+      "notebook_cell_index": 47,
+      "row": 38,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.935,
+      "fold_population_sd": 0.012,
+      "method": "Log LR + Type/#PMIDs/avglen - all sources, specific",
+      "method_id": "paper_table_6:39",
+      "notebook_cell_index": 47,
+      "row": 39,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.936,
+      "fold_population_sd": 0.013,
+      "method": "Log LR + Type/#PMIDs/promoter - all sources, specific",
+      "method_id": "paper_table_6:40",
+      "notebook_cell_index": 47,
+      "row": 40,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.937,
+      "fold_population_sd": 0.013,
+      "method": "Log LR + Type/#PMIDs/prom/avglen - all sources, specific",
+      "method_id": "paper_table_6:41",
+      "notebook_cell_index": 47,
+      "row": 41,
+      "table_id": "paper_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.905,
+      "fold_population_sd": 0.018,
+      "method": "RF 2k-d13 - all sources",
+      "method_id": "paper_not_table_6:01",
+      "notebook_cell_index": 48,
+      "row": 1,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.928,
+      "fold_population_sd": 0.019,
+      "method": "RF 2k-d13 + Type/#PMIDs - all sources",
+      "method_id": "paper_not_table_6:02",
+      "notebook_cell_index": 48,
+      "row": 2,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.929,
+      "fold_population_sd": 0.018,
+      "method": "RF 2k-d13 + Type/#PMIDs/avglen - all sources",
+      "method_id": "paper_not_table_6:03",
+      "notebook_cell_index": 48,
+      "row": 3,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.936,
+      "fold_population_sd": 0.018,
+      "method": "RF 2k-d13 + Type/#PMIDs/promoter - all sources",
+      "method_id": "paper_not_table_6:04",
+      "notebook_cell_index": 48,
+      "row": 4,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.938,
+      "fold_population_sd": 0.018,
+      "method": "RF 2k-d13 + Type/#PMIDs/prom/avglen - all sources",
+      "method_id": "paper_not_table_6:05",
+      "notebook_cell_index": 48,
+      "row": 5,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.919,
+      "fold_population_sd": 0.017,
+      "method": "Log LR - all sources",
+      "method_id": "paper_not_table_6:06",
+      "notebook_cell_index": 48,
+      "row": 6,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.933,
+      "fold_population_sd": 0.014,
+      "method": "Log LR + Type/#PMIDs - all sources",
+      "method_id": "paper_not_table_6:07",
+      "notebook_cell_index": 48,
+      "row": 7,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.933,
+      "fold_population_sd": 0.015,
+      "method": "Log LR + Type/#PMIDs/avglen - all sources",
+      "method_id": "paper_not_table_6:08",
+      "notebook_cell_index": 48,
+      "row": 8,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.934,
+      "fold_population_sd": 0.014,
+      "method": "Log LR + Type/#PMIDs/promoter - all sources",
+      "method_id": "paper_not_table_6:09",
+      "notebook_cell_index": 48,
+      "row": 9,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.935,
+      "fold_population_sd": 0.015,
+      "method": "Log LR + Type/#PMIDs/prom/avglen - all sources",
+      "method_id": "paper_not_table_6:10",
+      "notebook_cell_index": 48,
+      "row": 10,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.902,
+      "fold_population_sd": 0.015,
+      "method": "SVC - all sources",
+      "method_id": "paper_not_table_6:11",
+      "notebook_cell_index": 48,
+      "row": 11,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.907,
+      "fold_population_sd": 0.019,
+      "method": "SVC + Type/#PMIDs - all sources",
+      "method_id": "paper_not_table_6:12",
+      "notebook_cell_index": 48,
+      "row": 12,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.898,
+      "fold_population_sd": 0.018,
+      "method": "KNN - all sources",
+      "method_id": "paper_not_table_6:13",
+      "notebook_cell_index": 48,
+      "row": 13,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.911,
+      "fold_population_sd": 0.025,
+      "method": "KNN + Type/#PMIDs - all sources",
+      "method_id": "paper_not_table_6:14",
+      "notebook_cell_index": 48,
+      "row": 14,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.895,
+      "fold_population_sd": 0.015,
+      "method": "SVC - all sources, specific",
+      "method_id": "paper_not_table_6:15",
+      "notebook_cell_index": 48,
+      "row": 15,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.902,
+      "fold_population_sd": 0.014,
+      "method": "SVC + Type/#PMIDs - all sources, specific",
+      "method_id": "paper_not_table_6:16",
+      "notebook_cell_index": 48,
+      "row": 16,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.899,
+      "fold_population_sd": 0.016,
+      "method": "KNN - all sources, specific",
+      "method_id": "paper_not_table_6:17",
+      "notebook_cell_index": 48,
+      "row": 17,
+      "table_id": "paper_not_table_6"
+    },
+    {
+      "fold_count": 10,
+      "fold_mean_trapezoidal_pr_auc": 0.913,
+      "fold_population_sd": 0.019,
+      "method": "KNN + Type/#PMIDs - all sources, specific",
+      "method_id": "paper_not_table_6:18",
+      "notebook_cell_index": 48,
+      "row": 18,
+      "table_id": "paper_not_table_6"
+    }
+  ],
+  "metric_contract": {
+    "directly_comparable_to_pair_error_f1": false,
+    "metric_is_pooled_average_precision": false,
+    "per_fold_metric": "sklearn precision_recall_curve followed by auc(recall, precision)",
+    "positive_class": "correct assembled statement",
+    "summary": "arithmetic mean over 10 cross-validation folds",
+    "uncertainty_field": "population standard deviation over the 10 folds",
+    "uncertainty_is_confidence_interval": false,
+    "unit": "assembled_statement"
+  },
+  "schema_version": 1,
+  "source": {
+    "commit": "63abdf1274d2f5534ed822585775031712916c83",
+    "executed_output_cells": [
+      47,
+      48
+    ],
+    "notebook_path": "notebooks/Training Belief ML Models.ipynb",
+    "notebook_sha256": "3bd1a684fdc33c0b4963dd3e0c834c5420d90703112a91773f43415e1125ad26",
+    "repository": "https://github.com/sorgerlab/indra_assembly_paper"
+  },
+  "tables": [
+    {
+      "notebook_cell_index": 47,
+      "rows": [
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.917,
+          "fold_population_sd": 0.019,
+          "method": "Belief Orig - readers",
+          "method_id": "paper_table_6:01",
+          "notebook_cell_index": 47,
+          "row": 1,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.893,
+          "fold_population_sd": 0.019,
+          "method": "RF 2k-d13 - readers",
+          "method_id": "paper_table_6:02",
+          "notebook_cell_index": 47,
+          "row": 2,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.91,
+          "fold_population_sd": 0.018,
+          "method": "Log LR - readers",
+          "method_id": "paper_table_6:03",
+          "notebook_cell_index": 47,
+          "row": 3,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.9,
+          "fold_population_sd": 0.017,
+          "method": "KNN - readers",
+          "method_id": "paper_table_6:04",
+          "notebook_cell_index": 47,
+          "row": 4,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.891,
+          "fold_population_sd": 0.014,
+          "method": "SVC - readers",
+          "method_id": "paper_table_6:05",
+          "notebook_cell_index": 47,
+          "row": 5,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.92,
+          "fold_population_sd": 0.018,
+          "method": "RF 2k-d13 + Type/#PMIDs - readers",
+          "method_id": "paper_table_6:06",
+          "notebook_cell_index": 47,
+          "row": 6,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.922,
+          "fold_population_sd": 0.017,
+          "method": "RF 2k-d13 + Type/#PMIDs/avglen - readers",
+          "method_id": "paper_table_6:07",
+          "notebook_cell_index": 47,
+          "row": 7,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.93,
+          "fold_population_sd": 0.014,
+          "method": "RF 2k-d13 + Type/#PMIDs/promoter - readers",
+          "method_id": "paper_table_6:08",
+          "notebook_cell_index": 47,
+          "row": 8,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.932,
+          "fold_population_sd": 0.015,
+          "method": "RF 2k-d13 + Type/#PMIDs/prom/avglen - readers",
+          "method_id": "paper_table_6:09",
+          "notebook_cell_index": 47,
+          "row": 9,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.923,
+          "fold_population_sd": 0.018,
+          "method": "Log LR + Type/#PMIDs - readers",
+          "method_id": "paper_table_6:10",
+          "notebook_cell_index": 47,
+          "row": 10,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.924,
+          "fold_population_sd": 0.017,
+          "method": "Log LR + Type/#PMIDs/avglen - readers",
+          "method_id": "paper_table_6:11",
+          "notebook_cell_index": 47,
+          "row": 11,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.926,
+          "fold_population_sd": 0.016,
+          "method": "Log LR + Type/#PMIDs/promoter - readers",
+          "method_id": "paper_table_6:12",
+          "notebook_cell_index": 47,
+          "row": 12,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.926,
+          "fold_population_sd": 0.016,
+          "method": "Log LR + Type/#PMIDs/prom/avglen - readers",
+          "method_id": "paper_table_6:13",
+          "notebook_cell_index": 47,
+          "row": 13,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.908,
+          "fold_population_sd": 0.015,
+          "method": "KNN + Type/#PMIDs - readers",
+          "method_id": "paper_table_6:14",
+          "notebook_cell_index": 47,
+          "row": 14,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.901,
+          "fold_population_sd": 0.026,
+          "method": "SVC + Type/#PMIDs - readers",
+          "method_id": "paper_table_6:15",
+          "notebook_cell_index": 47,
+          "row": 15,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.917,
+          "fold_population_sd": 0.019,
+          "method": "Belief Orig - readers, specific",
+          "method_id": "paper_table_6:16",
+          "notebook_cell_index": 47,
+          "row": 16,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.913,
+          "fold_population_sd": 0.016,
+          "method": "RF 2k-d13 - readers, specific",
+          "method_id": "paper_table_6:17",
+          "notebook_cell_index": 47,
+          "row": 17,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.912,
+          "fold_population_sd": 0.019,
+          "method": "Log LR - readers, specific",
+          "method_id": "paper_table_6:18",
+          "notebook_cell_index": 47,
+          "row": 18,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.892,
+          "fold_population_sd": 0.014,
+          "method": "KNN - readers, specific",
+          "method_id": "paper_table_6:19",
+          "notebook_cell_index": 47,
+          "row": 19,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.885,
+          "fold_population_sd": 0.015,
+          "method": "SVC - readers, specific",
+          "method_id": "paper_table_6:20",
+          "notebook_cell_index": 47,
+          "row": 20,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.929,
+          "fold_population_sd": 0.015,
+          "method": "RF 2k-d13 + Type/#PMIDs - readers, specific",
+          "method_id": "paper_table_6:21",
+          "notebook_cell_index": 47,
+          "row": 21,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.93,
+          "fold_population_sd": 0.014,
+          "method": "RF 2k-d13 + Type/#PMIDs/avglen - readers, specific",
+          "method_id": "paper_table_6:22",
+          "notebook_cell_index": 47,
+          "row": 22,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.937,
+          "fold_population_sd": 0.012,
+          "method": "RF 2k-d13 + Type/#PMIDs/promoter - readers, specific",
+          "method_id": "paper_table_6:23",
+          "notebook_cell_index": 47,
+          "row": 23,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.937,
+          "fold_population_sd": 0.012,
+          "method": "RF 2k-d13 + Type/#PMIDs/prom/avglen - readers, specific",
+          "method_id": "paper_table_6:24",
+          "notebook_cell_index": 47,
+          "row": 24,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.927,
+          "fold_population_sd": 0.016,
+          "method": "Log LR + Type/#PMIDs - readers, specific",
+          "method_id": "paper_table_6:25",
+          "notebook_cell_index": 47,
+          "row": 25,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.927,
+          "fold_population_sd": 0.015,
+          "method": "Log LR + Type/#PMIDs/avglen - readers, specific",
+          "method_id": "paper_table_6:26",
+          "notebook_cell_index": 47,
+          "row": 26,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.928,
+          "fold_population_sd": 0.014,
+          "method": "Log LR + Type/#PMIDs/promoter - readers, specific",
+          "method_id": "paper_table_6:27",
+          "notebook_cell_index": 47,
+          "row": 27,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.929,
+          "fold_population_sd": 0.014,
+          "method": "Log LR + Type/#PMIDs/prom/avglen - readers, specific",
+          "method_id": "paper_table_6:28",
+          "notebook_cell_index": 47,
+          "row": 28,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.901,
+          "fold_population_sd": 0.019,
+          "method": "KNN + Type/#PMIDs - readers, specific",
+          "method_id": "paper_table_6:29",
+          "notebook_cell_index": 47,
+          "row": 29,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.895,
+          "fold_population_sd": 0.018,
+          "method": "SVC + Type/#PMIDs - readers, specific",
+          "method_id": "paper_table_6:30",
+          "notebook_cell_index": 47,
+          "row": 30,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.923,
+          "fold_population_sd": 0.012,
+          "method": "Belief Orig - all sources, specific",
+          "method_id": "paper_table_6:31",
+          "notebook_cell_index": 47,
+          "row": 31,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.928,
+          "fold_population_sd": 0.015,
+          "method": "RF 2k-d13 - all sources, specific",
+          "method_id": "paper_table_6:32",
+          "notebook_cell_index": 47,
+          "row": 32,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.937,
+          "fold_population_sd": 0.015,
+          "method": "RF 2k-d13 + Type/#PMIDs - all sources, specific",
+          "method_id": "paper_table_6:33",
+          "notebook_cell_index": 47,
+          "row": 33,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.936,
+          "fold_population_sd": 0.014,
+          "method": "RF 2k-d13 + Type/#PMIDs/avglen - all sources, specific",
+          "method_id": "paper_table_6:34",
+          "notebook_cell_index": 47,
+          "row": 34,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.942,
+          "fold_population_sd": 0.014,
+          "method": "RF 2k-d13 + Type/#PMIDs/promoter - all sources, specific",
+          "method_id": "paper_table_6:35",
+          "notebook_cell_index": 47,
+          "row": 35,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.942,
+          "fold_population_sd": 0.015,
+          "method": "RF 2k-d13 + Type/#PMIDs/prom/avglen - all sources, specific",
+          "method_id": "paper_table_6:36",
+          "notebook_cell_index": 47,
+          "row": 36,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.924,
+          "fold_population_sd": 0.014,
+          "method": "Log LR - all sources, specific",
+          "method_id": "paper_table_6:37",
+          "notebook_cell_index": 47,
+          "row": 37,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.935,
+          "fold_population_sd": 0.012,
+          "method": "Log LR + Type/#PMIDs - all sources, specific",
+          "method_id": "paper_table_6:38",
+          "notebook_cell_index": 47,
+          "row": 38,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.935,
+          "fold_population_sd": 0.012,
+          "method": "Log LR + Type/#PMIDs/avglen - all sources, specific",
+          "method_id": "paper_table_6:39",
+          "notebook_cell_index": 47,
+          "row": 39,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.936,
+          "fold_population_sd": 0.013,
+          "method": "Log LR + Type/#PMIDs/promoter - all sources, specific",
+          "method_id": "paper_table_6:40",
+          "notebook_cell_index": 47,
+          "row": 40,
+          "table_id": "paper_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.937,
+          "fold_population_sd": 0.013,
+          "method": "Log LR + Type/#PMIDs/prom/avglen - all sources, specific",
+          "method_id": "paper_table_6:41",
+          "notebook_cell_index": 47,
+          "row": 41,
+          "table_id": "paper_table_6"
+        }
+      ],
+      "table_id": "paper_table_6"
+    },
+    {
+      "notebook_cell_index": 48,
+      "rows": [
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.905,
+          "fold_population_sd": 0.018,
+          "method": "RF 2k-d13 - all sources",
+          "method_id": "paper_not_table_6:01",
+          "notebook_cell_index": 48,
+          "row": 1,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.928,
+          "fold_population_sd": 0.019,
+          "method": "RF 2k-d13 + Type/#PMIDs - all sources",
+          "method_id": "paper_not_table_6:02",
+          "notebook_cell_index": 48,
+          "row": 2,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.929,
+          "fold_population_sd": 0.018,
+          "method": "RF 2k-d13 + Type/#PMIDs/avglen - all sources",
+          "method_id": "paper_not_table_6:03",
+          "notebook_cell_index": 48,
+          "row": 3,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.936,
+          "fold_population_sd": 0.018,
+          "method": "RF 2k-d13 + Type/#PMIDs/promoter - all sources",
+          "method_id": "paper_not_table_6:04",
+          "notebook_cell_index": 48,
+          "row": 4,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.938,
+          "fold_population_sd": 0.018,
+          "method": "RF 2k-d13 + Type/#PMIDs/prom/avglen - all sources",
+          "method_id": "paper_not_table_6:05",
+          "notebook_cell_index": 48,
+          "row": 5,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.919,
+          "fold_population_sd": 0.017,
+          "method": "Log LR - all sources",
+          "method_id": "paper_not_table_6:06",
+          "notebook_cell_index": 48,
+          "row": 6,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.933,
+          "fold_population_sd": 0.014,
+          "method": "Log LR + Type/#PMIDs - all sources",
+          "method_id": "paper_not_table_6:07",
+          "notebook_cell_index": 48,
+          "row": 7,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.933,
+          "fold_population_sd": 0.015,
+          "method": "Log LR + Type/#PMIDs/avglen - all sources",
+          "method_id": "paper_not_table_6:08",
+          "notebook_cell_index": 48,
+          "row": 8,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.934,
+          "fold_population_sd": 0.014,
+          "method": "Log LR + Type/#PMIDs/promoter - all sources",
+          "method_id": "paper_not_table_6:09",
+          "notebook_cell_index": 48,
+          "row": 9,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.935,
+          "fold_population_sd": 0.015,
+          "method": "Log LR + Type/#PMIDs/prom/avglen - all sources",
+          "method_id": "paper_not_table_6:10",
+          "notebook_cell_index": 48,
+          "row": 10,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.902,
+          "fold_population_sd": 0.015,
+          "method": "SVC - all sources",
+          "method_id": "paper_not_table_6:11",
+          "notebook_cell_index": 48,
+          "row": 11,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.907,
+          "fold_population_sd": 0.019,
+          "method": "SVC + Type/#PMIDs - all sources",
+          "method_id": "paper_not_table_6:12",
+          "notebook_cell_index": 48,
+          "row": 12,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.898,
+          "fold_population_sd": 0.018,
+          "method": "KNN - all sources",
+          "method_id": "paper_not_table_6:13",
+          "notebook_cell_index": 48,
+          "row": 13,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.911,
+          "fold_population_sd": 0.025,
+          "method": "KNN + Type/#PMIDs - all sources",
+          "method_id": "paper_not_table_6:14",
+          "notebook_cell_index": 48,
+          "row": 14,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.895,
+          "fold_population_sd": 0.015,
+          "method": "SVC - all sources, specific",
+          "method_id": "paper_not_table_6:15",
+          "notebook_cell_index": 48,
+          "row": 15,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.902,
+          "fold_population_sd": 0.014,
+          "method": "SVC + Type/#PMIDs - all sources, specific",
+          "method_id": "paper_not_table_6:16",
+          "notebook_cell_index": 48,
+          "row": 16,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.899,
+          "fold_population_sd": 0.016,
+          "method": "KNN - all sources, specific",
+          "method_id": "paper_not_table_6:17",
+          "notebook_cell_index": 48,
+          "row": 17,
+          "table_id": "paper_not_table_6"
+        },
+        {
+          "fold_count": 10,
+          "fold_mean_trapezoidal_pr_auc": 0.913,
+          "fold_population_sd": 0.019,
+          "method": "KNN + Type/#PMIDs - all sources, specific",
+          "method_id": "paper_not_table_6:18",
+          "notebook_cell_index": 48,
+          "row": 18,
+          "table_id": "paper_not_table_6"
+        }
+      ],
+      "table_id": "paper_not_table_6"
+    }
+  ]
+}
