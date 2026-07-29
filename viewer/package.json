@@ -11,7 +11,17 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test:cost": "node --experimental-strip-types scripts/test-cost-format.mjs",
-		"test:calibration": "node --experimental-strip-types scripts/test-calibration-contract.mjs"
+		"test:calibration": "node --experimental-strip-types scripts/test-calibration-contract.mjs",
+		"test:belief": "node --experimental-strip-types scripts/test-belief-comparison-contract.mjs",
+		"test:paper-literal": "node --experimental-strip-types scripts/test-paper-literal-contract.mjs",
+		"test:paper-verdict": "node --experimental-strip-types scripts/test-paper-verdict-contract.mjs",
+		"test:paper-prose": "node --experimental-strip-types scripts/test-paper-prose-coverage.mjs",
+		"test:paper-audit": "node --experimental-strip-types scripts/test-paper-audit-trail-contract.mjs",
+		"test:paper-ladder": "node --experimental-strip-types scripts/test-belief-ladder-contract.mjs",
+		"test:per-evidence": "node --experimental-strip-types scripts/test-per-evidence-contract.mjs",
+		"test:deployed-baseline": "node --experimental-strip-types scripts/test-deployed-baseline-contract.mjs",
+		"validate:belief:publication": "node --experimental-strip-types scripts/validate-belief-comparison-publication.mjs",
+		"test:curation": "node --experimental-strip-types scripts/test-curation-sampling.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^7.0.1",

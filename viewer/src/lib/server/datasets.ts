@@ -3,7 +3,7 @@
  * (statement, evidence) sample from. Server-only ($lib/server).
  *
  * Two KINDS of universe, sampled differently:
- *  - 'cogex-pool'        a JSONL of {stmt_hash, source_hash, …} lines; a uniform
+ *  - 'cogex-pool'        a JSONL of {matches_hash, source_hash, …} lines; a uniform
  *                        random line is materialized UNBIASED by matches_hash via
  *                        /statements/from_hashes. This is the representative draw.
  *  - 'inline-statements' a PREPROCESSED JSONL (one INDRA statement per line, evidence
@@ -13,10 +13,13 @@
  *                        64-bit source_hash ints exactly; the viewer's JSON.parse would
  *                        round a bare int and curate the wrong evidence).
  *
- * `character` + `sizeN`/`sizeLabel` drive the UI's felt distinction between an
- * unbounded uniform whole (representative) and a bounded named set. Add a dataset
- * = one entry here; the selector scales to N.
+ * `character` + `sizeN`/`sizeLabel` drive the UI's distinction between an
+ * evidence-row reservoir representing a large source population and a bounded
+ * named corpus. Add a dataset = one entry here; the selector scales to N.
  */
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 export type DatasetKind = 'cogex-pool' | 'inline-statements';
 
 export interface Dataset {
@@ -28,10 +31,12 @@ export interface Dataset {
 	/** human size (e.g. '44.9M', '47.4k') and its magnitude (drives the scale bar). */
 	sizeLabel: string;
 	sizeN: number;
-	/** 'representative' = unbounded uniform whole; 'bounded' = a fixed named set. */
+	/** 'representative' = evidence-row reservoir; 'bounded' = a fixed named set. */
 	character: 'representative' | 'bounded';
 	/** path under the viewer's DATA_DIR (../data). */
 	file: string;
+	/** Operator-facing instruction when a generated local frame is absent. */
+	provisioning?: string;
 }
 
 export const DATASETS: Dataset[] = [
@@ -39,11 +44,14 @@ export const DATASETS: Dataset[] = [
 		id: 'representative',
 		label: 'representative',
 		kind: 'cogex-pool',
-		blurb: 'uniform draw over all grounded evidence · reach 70% / sparser 15%',
-		sizeLabel: '44.9M',
-		sizeN: 44_900_000,
+		blurb: '5k evidence-row reservoir from 44.94M grounded/assembled CoGEx rows',
+		sizeLabel: '44.94M',
+		sizeN: 44_944_056,
 		character: 'representative',
-		file: 'corpora/cogex_evidence_sample.jsonl'
+		// This tracked exact-key manifest is the runtime frame. The ignored 4.4 MB
+		// materialization contains extra evidence text but is not required because
+		// resolverFor fetches the statement/evidence from INDRA by exact hashes.
+		file: 'benchmark/cogex_representative_pool_manifest.jsonl'
 	},
 	{
 		id: 'rasmachine',
@@ -53,7 +61,8 @@ export const DATASETS: Dataset[] = [
 		sizeLabel: '47.4k',
 		sizeN: 47_434,
 		character: 'bounded',
-		file: 'corpora/rasmachine_curate_pool.jsonl'
+		file: 'corpora/rasmachine_curate_pool.jsonl',
+		provisioning: 'run PYTHONPATH=src python scripts/build_curate_pool.py from the repository root'
 	}
 ];
 
@@ -64,12 +73,17 @@ export function getDataset(id: string | null | undefined): Dataset {
 
 /** The selector needs only the safe, non-path fields client-side. */
 export function datasetsForClient() {
-	return DATASETS.map(({ id, label, blurb, sizeLabel, sizeN, character }) => ({
-		id,
-		label,
-		blurb,
-		sizeLabel,
-		sizeN,
-		character
-	}));
+	return DATASETS.map(({ id, label, blurb, sizeLabel, sizeN, character, file, provisioning }) => {
+		const available = existsSync(resolve(process.cwd(), '..', 'data', file));
+		return {
+			id,
+			label,
+			blurb,
+			sizeLabel,
+			sizeN,
+			character,
+			available,
+			unavailableReason: available ? null : (provisioning ?? 'dataset frame is not provisioned')
+		};
+	});
 }

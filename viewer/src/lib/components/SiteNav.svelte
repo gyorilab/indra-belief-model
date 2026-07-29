@@ -17,6 +17,7 @@
 		<li><a href="/runs" class:active={isActive('/runs')}>runs</a></li>
 		<li><a href="/compare" class:active={isActive('/compare')}>compare</a></li>
 		<li><a href="/frontier" class:active={isActive('/frontier')}>frontier</a></li>
+			<li><a href="/paper" class:active={isActive('/paper')}>paper</a></li>
 		<li><a href="/adjudicate" class:active={isActive('/adjudicate')}>adjudicate</a></li>
 		<li><a href="/review" class:active={isActive('/review')}>review</a></li>
 		<li><a href="/curate" class:active={isActive('/curate')}>curate</a></li>

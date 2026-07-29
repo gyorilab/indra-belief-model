@@ -150,6 +150,9 @@ export interface RunMeta {
 			prompt_fingerprint_source?: 'call_log' | 'run_metadata' | null;
 			declared_prompt_sha256?: string | null;
 			prompt_fingerprints?: Record<string, number>;
+			/** Served model ids counted in the run's call logs — the evidence backing the
+			 *  model half of the cross-check; optional because legacy exports predate the guard. */
+			model_fingerprints?: Record<string, number>;
 		};
 		soft_weights: ReaderCalibrationProfile | LegacySoftWeights | null;
 		reason?: string;
@@ -495,6 +498,9 @@ export interface EvidenceSample {
 	/** id of the dataset (universe) this pair was drawn from — the active universe
 	 *  threaded to the persistent frame header on /curate (see datasets.ts). */
 	dataset: string;
+	/** Opaque token proving this exact draw was atomically reserved for the signed-
+	 *  in curator. Required on submission; never coerced to a number. */
+	drawToken: string;
 	/** total evidence supporting this statement (context for the curator). */
 	evCount: number;
 }

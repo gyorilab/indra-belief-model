@@ -3,9 +3,9 @@
  * submit a human curation back. SERVER-ONLY ($lib/server, never bundled to the
  * browser).
  *
- * Sampling is UNIFORM over the local CoGEx pool: pick a random line from
- * data/corpora/cogex_evidence_sample.jsonl (5,000 rows reservoir-sampled uniformly
- * from CoGEx), then materialize that statement UNBIASED by matches_hash via
+ * Sampling is UNIFORM over the tracked CoGEx reservoir manifest: pick a random
+ * exact evidence-row key (5,000 rows reservoir-sampled uniformly from CoGEx),
+ * then materialize that statement UNBIASED by matches_hash via
  * POST /statements/from_hashes (public) and select the evidence whose source_hash
  * matches the pool row. No agent-pool bias, no from_agents.
  *
@@ -22,10 +22,19 @@
  * API returns them as quoted strings; we keep them as strings everywhere and
  * inject ev_hash into the POST body as a bare integer literal — never Number().
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { CURATION_TAGS } from '$lib/data/curation';
 import { getDataset, type Dataset } from './datasets';
+import {
+	curatorPairKeys,
+	exactPairKey,
+	parseCurationHistory,
+	poolPairOf,
+	unseenPoolLines,
+	type CurationHistoryRow
+} from './curation-history';
+import { reservedPairKeys, tryReserveDraw } from './curation-draw-ledger';
 import { indraBaseUrl } from './session';
 import type { Claim, EvidenceAgent, EvidenceSample } from '$lib/data/types';
 
@@ -155,11 +164,6 @@ function pick<T>(xs: readonly T[]): T {
  *  assembled claim, agents, belief, text). Both are 64-bit ints that OVERFLOW JS
  *  Number, so they are kept as EXACT-DIGIT STRINGS — never JSON.parse'd (which
  *  would silently round e.g. …258 → …256 and break the by-hash join). */
-interface PoolPair {
-	stmtHash: string;
-	sourceHash: string;
-}
-
 /** Resolve a dataset's file (e.g. 'corpora/…') under the viewer's DATA_DIR via the
  *  same pattern runs.ts uses (viewer/ cwd → ../data). dataset.file already carries
  *  the 'corpora/…' prefix. */
@@ -179,19 +183,6 @@ function linesOf(path: string): string[] {
 	const lines = txt.split('\n').filter((l) => l.trim().length > 0);
 	_lineCache.set(path, lines);
 	return lines;
-}
-
-/** Extract the top-level stmt_hash + source_hash from a raw pool line as exact
- *  digit strings (the top-level source_hash is this row's evidence hash). Returns
- *  null if either is missing/malformed. Regex, not JSON.parse — see PoolPair. */
-function poolPairOf(line: string): PoolPair | null {
-	const sm = line.match(/"stmt_hash"\s*:\s*(-?\d+)/);
-	const sh = line.match(/"source_hash"\s*:\s*(-?\d+)/);
-	if (!sm || !sh) return null;
-	const stmtHash = sm[1];
-	const sourceHash = sh[1];
-	if (!HASH_RE.test(stmtHash) || !HASH_RE.test(sourceHash)) return null;
-	return { stmtHash, sourceHash };
 }
 
 /** Materialize a statement (and all its evidence) UNBIASED by its matches_hash.
@@ -225,7 +216,8 @@ function buildSample(
 	ev: Record<string, unknown>,
 	belief: number | null,
 	evCount: number,
-	datasetId: string
+	datasetId: string,
+	drawToken: string
 ): EvidenceSample {
 	const refs = (ev.text_refs as Record<string, string>) ?? {};
 	const pmid = (ev.pmid as string) ?? refs.PMID ?? null;
@@ -241,6 +233,7 @@ function buildSample(
 		claim: renderStatement(stmt),
 		agents: evidenceAgents(stmt, ev),
 		dataset: datasetId,
+		drawToken,
 		evCount
 	};
 }
@@ -262,21 +255,49 @@ function usableText(text: unknown): text is string {
  *  (exact-digit STRING hashes + a usable, non-redacted sentence), and retry another
  *  random line on any dead-end (version skew, text-less DB rows ~10-16%, redacted
  *  text) up to maxAttempts. New dataset kind = one new branch in resolverFor only. */
-export async function sampleEvidence(datasetId?: string | null, maxAttempts = 8): Promise<EvidenceSample> {
+export async function sampleEvidence(
+	datasetId?: string | null,
+	curatedKeys: ReadonlySet<string> = new Set(),
+	curatorEmail = '',
+	maxAttempts = 8
+): Promise<EvidenceSample> {
 	const ds = getDataset(datasetId);
-	const lines = linesOf(dataPath(ds.file));
-	const resolve = resolverFor(ds);
+	if (!curatorEmail.trim()) throw new Error('cannot sample without an authenticated curator identity');
+	const path = dataPath(ds.file);
+	if (!existsSync(path)) {
+		throw new Error(ds.provisioning ?? `dataset frame is not provisioned: ${ds.file}`);
+	}
+	const lines = linesOf(path);
+	// Completed curations come from the shared INDRA history; all cards previously
+	// drawn (including skips and unsubmitted cards) come from the persistent local
+	// reservation ledger. Their union is the exact without-replacement boundary.
+	const blockedKeys = new Set(curatedKeys);
+	for (const key of reservedPairKeys(curatorEmail, ds.id)) blockedKeys.add(key);
+	const candidates = ds.kind === 'cogex-pool' ? unseenPoolLines(lines, blockedKeys) : [...lines];
+	if (!candidates.length) throw new Error(`every evidence pair in ${ds.id} has already been curated`);
+	const resolve = resolverFor(ds, blockedKeys);
 	let lastErr = 'no usable evidence found';
-	for (let i = 0; i < maxAttempts; i++) {
+	for (let i = 0; i < maxAttempts && candidates.length; i++) {
 		try {
-			const r = await resolve(pick(lines));
+			// Remove the attempted candidate locally too, so retries in this request
+			// cannot redraw the same dead-end line.
+			const index = Math.floor(Math.random() * candidates.length);
+			const [line] = candidates.splice(index, 1);
+			const r = await resolve(line);
 			if (!r) continue; // dead-end draw — retry another random line
 			const mh = r.stmt.matches_hash;
 			const sh = r.ev.source_hash;
 			if (typeof mh !== 'string' || !HASH_RE.test(mh)) continue;
 			if (typeof sh !== 'string' || !HASH_RE.test(sh)) continue;
+			const key = exactPairKey(mh, sh);
+			if (!key || blockedKeys.has(key)) continue;
 			if (!usableText(r.ev.text)) continue;
-			return buildSample(r.stmt, r.ev, r.belief, r.evCount, ds.id);
+			// Exclusive creation is the cross-request race boundary. If another tab or
+			// process reserved this candidate while it materialized, retry a distinct
+			// candidate rather than returning a duplicate draw.
+			const drawToken = tryReserveDraw(curatorEmail, ds.id, key);
+			if (!drawToken) continue;
+			return buildSample(r.stmt, r.ev, r.belief, r.evCount, ds.id, drawToken);
 		} catch (e) {
 			lastErr = e instanceof Error ? e.message : String(e);
 		}
@@ -302,11 +323,21 @@ interface Resolved {
  *   - 'cogex-pool' — the line carries only hashes: materialize the statement UNBIASED
  *       by matches_hash via /statements/from_hashes, then select the row's evidence
  *       (null on version skew / re-hashed evidence → retry). */
-function resolverFor(ds: Dataset): (line: string) => Promise<Resolved | null> {
+function resolverFor(
+	ds: Dataset,
+	curatedKeys: ReadonlySet<string>
+): (line: string) => Promise<Resolved | null> {
 	if (ds.kind === 'inline-statements') {
 		return async (line) => {
 			const stmt = JSON.parse(line) as Record<string, unknown>;
-			const evs = Array.isArray(stmt.evidence) ? (stmt.evidence as Record<string, unknown>[]) : [];
+			const mh = typeof stmt.matches_hash === 'string' ? stmt.matches_hash : null;
+			const evs = (Array.isArray(stmt.evidence) ? (stmt.evidence as Record<string, unknown>[]) : []).filter(
+				(ev) => {
+					const sh = typeof ev.source_hash === 'string' ? ev.source_hash : null;
+					const key = exactPairKey(mh, sh);
+					return key != null && !curatedKeys.has(key);
+				}
+			);
 			if (!evs.length) return null;
 			const belief = typeof stmt.belief === 'number' ? (stmt.belief as number) : null;
 			return { stmt, ev: pick(evs), belief, evCount: evs.length };
@@ -339,6 +370,7 @@ function resolverFor(ds: Dataset): (line: string) => Promise<Resolved | null> {
 export interface SubmitArgs {
 	matchesHash: string;
 	sourceHash: string;
+	dataset: string;
 	tag: string;
 	text: string;
 	/** The curator's INDRA JWT (from their session). INDRA authenticates it and
@@ -362,9 +394,18 @@ export interface CuratorStats {
 	reason?: string;
 }
 
-let _curatorStatsCache: { email: string; until: number; stats: CuratorStats } | null = null;
+export interface CuratorContext {
+	stats: CuratorStats;
+	curatedKeys: ReadonlySet<string>;
+}
+
+let _curatorStatsCache: {
+	email: string;
+	until: number;
+	stats: CuratorStats;
+	curatedKeys: Set<string>;
+} | null = null;
 let _indraApiKey: string | null | undefined;
-type CurationListRow = { curator: string; tag: string };
 
 function indraApiKey(): string | null {
 	if (_indraApiKey !== undefined) return _indraApiKey;
@@ -389,7 +430,7 @@ function indraApiKey(): string | null {
 	return _indraApiKey;
 }
 
-async function fetchCurationListRows(jwt: string): Promise<CurationListRow[]> {
+async function fetchCurationListRows(jwt: string): Promise<CurationHistoryRow[]> {
 	let r: Response;
 	const key = indraApiKey();
 	const url = key
@@ -410,45 +451,47 @@ async function fetchCurationListRows(jwt: string): Promise<CurationListRow[]> {
 	}
 
 	const text = await r.text();
-	let rows: unknown;
 	try {
-		rows = JSON.parse(text);
+		return parseCurationHistory(text);
 	} catch {
 		const prefix = text.replace(/\s+/g, ' ').slice(0, 80);
 		throw new Error(`curation counts were not JSON (${r.headers.get('content-type') ?? 'no content-type'}; ${prefix})`);
 	}
-	if (!Array.isArray(rows)) {
-		throw new Error('unexpected curation counts payload');
-	}
-	return rows
-		.filter((row): row is { curator?: unknown; tag?: unknown } => row != null && typeof row === 'object')
-		.map((row) => ({
-			curator: typeof row.curator === 'string' ? row.curator : '',
-			tag: typeof row.tag === 'string' ? row.tag : ''
-		}));
 }
 
 /** Count the signed-in curator's full INDRA curation history. Confirmed
  *  interface: keyed GET /curation/list returns a JSON array whose rows contain
  *  at least {curator, tag}; correct is tag === "correct", every other tag is an
  *  incorrect/error flag. */
-export async function getCuratorStats(jwt: string, email: string): Promise<CuratorStats> {
-	if (!jwt || !email) return { status: 'unavailable', total: 0, correct: 0, incorrect: 0, reason: 'not signed in' };
+export async function getCuratorContext(
+	jwt: string,
+	email: string,
+	forceRefresh = false
+): Promise<CuratorContext> {
+	if (!jwt || !email) {
+		return {
+			stats: { status: 'unavailable', total: 0, correct: 0, incorrect: 0, reason: 'not signed in' },
+			curatedKeys: new Set()
+		};
+	}
 	const now = Date.now();
-	if (_curatorStatsCache && _curatorStatsCache.email === email && _curatorStatsCache.until > now) {
-		return _curatorStatsCache.stats;
+	if (!forceRefresh && _curatorStatsCache && _curatorStatsCache.email === email && _curatorStatsCache.until > now) {
+		return { stats: _curatorStatsCache.stats, curatedKeys: _curatorStatsCache.curatedKeys };
 	}
 
-	let rows: CurationListRow[];
+	let rows: CurationHistoryRow[];
 	try {
 		rows = await fetchCurationListRows(jwt);
 	} catch (e) {
 		return {
-			status: 'unavailable',
-			total: 0,
-			correct: 0,
-			incorrect: 0,
-			reason: e instanceof Error ? e.message : String(e)
+			stats: {
+				status: 'unavailable',
+				total: 0,
+				correct: 0,
+				incorrect: 0,
+				reason: e instanceof Error ? e.message : String(e)
+			},
+			curatedKeys: new Set()
 		};
 	}
 
@@ -461,18 +504,32 @@ export async function getCuratorStats(jwt: string, email: string): Promise<Curat
 		correct,
 		incorrect: mine.length - correct
 	};
-	_curatorStatsCache = { email, until: now + 60_000, stats };
-	return stats;
+	const curatedKeys = curatorPairKeys(rows, email);
+	_curatorStatsCache = { email, until: now + 60_000, stats, curatedKeys };
+	return { stats, curatedKeys };
 }
 
-export function noteCuratorSubmission(email: string, tag: string): void {
+export async function getCuratorStats(jwt: string, email: string): Promise<CuratorStats> {
+	return (await getCuratorContext(jwt, email)).stats;
+}
+
+export function noteCuratorSubmission(
+	email: string,
+	tag: string,
+	matchesHash: string,
+	sourceHash: string
+): void {
 	if (!_curatorStatsCache || _curatorStatsCache.email !== email || _curatorStatsCache.stats.status !== 'available') {
 		return;
 	}
 	const stats = _curatorStatsCache.stats;
+	const curatedKeys = new Set(_curatorStatsCache.curatedKeys);
+	const key = exactPairKey(matchesHash, sourceHash);
+	if (key) curatedKeys.add(key);
 	_curatorStatsCache = {
 		email,
 		until: _curatorStatsCache.until,
+		curatedKeys,
 		stats: {
 			...stats,
 			total: stats.total + 1,
@@ -492,6 +549,8 @@ export async function submitCuration(a: SubmitArgs): Promise<SubmitResult> {
 	if (!a.jwt) return { ok: false, error: 'not signed in' };
 	if (!HASH_RE.test(a.matchesHash)) return { ok: false, error: 'invalid statement hash' };
 	if (!HASH_RE.test(a.sourceHash)) return { ok: false, error: 'invalid evidence hash' };
+	const dataset = getDataset(a.dataset);
+	if (!a.dataset || dataset.id !== a.dataset) return { ok: false, error: 'invalid curation dataset' };
 	// Validate the tag against the canonical vocabulary server-side — the radio
 	// list in the page is browser-only; this is the trust boundary, so a
 	// non-canonical tag must not reach the shared gold DB.
@@ -504,7 +563,7 @@ export async function submitCuration(a: SubmitArgs): Promise<SubmitResult> {
 		`{"tag":${JSON.stringify(a.tag)},` +
 		`"text":${JSON.stringify(a.text ?? '')},` +
 		`"ev_hash":${a.sourceHash},` +
-		`"source":"indra-belief viewer"}`;
+		`"source":${JSON.stringify(`indra-belief viewer/${dataset.id}`)}}`;
 
 	let r: Response;
 	try {

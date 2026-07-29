@@ -1,6 +1,8 @@
 <script lang="ts">
 	import FrontierStrip from '$lib/components/FrontierStrip.svelte';
 	import GeneralizationStrip from '$lib/components/GeneralizationStrip.svelte';
+	import BeliefComparison from '$lib/components/BeliefComparison.svelte';
+	import PaperMethodLandscape from '$lib/components/PaperMethodLandscape.svelte';
 	import { fmtCost, fmtCostFull } from '$lib/format';
 	import { page } from '$app/state';
 	import type { FrontierRun } from '$lib/data/queries';
@@ -11,16 +13,25 @@
 
 	// top-level view: the per-substrate cost/size frontier, or the cross-substrate
 	// generalization — how each model moves as the gold grows. ?view= keeps it shareable.
-	let view = $state<'frontier' | 'datasets'>(
-		page.url.searchParams.get('view') === 'datasets' ? 'datasets' : 'frontier'
+	type FrontierView = 'frontier' | 'datasets' | 'belief';
+	const requestedView = page.url.searchParams.get('view');
+	let view = $state<FrontierView>(
+		requestedView === 'datasets' || requestedView === 'belief' ? requestedView : 'frontier'
 	);
-	function setView(v: 'frontier' | 'datasets') {
+	function setView(v: FrontierView) {
 		view = v;
 		const u = new URL(page.url);
-		if (v === 'datasets') u.searchParams.set('view', v);
+		if (v !== 'frontier') u.searchParams.set('view', v);
 		else u.searchParams.delete('view');
 		history.replaceState(history.state, '', u);
 	}
+	const pageTitle = $derived(
+		view === 'belief'
+			? 'statement belief · direct comparison'
+			: view === 'datasets'
+				? 'pair frontier · dataset stability'
+				: 'pair frontier · cost × error-F1'
+	);
 	const stripHostName = (m: string) => m.replace(/^(bedrock|remote|local|google)-/, '');
 
 	// the x-axis lens: economic frontier (cost) or scaling frontier (model size).
@@ -75,12 +86,27 @@
 	}
 </script>
 
-<svelte:head><title>frontier · cost × error-F1</title></svelte:head>
+<svelte:head><title>{pageTitle}</title></svelte:head>
 
 <main id="main" class="wrap">
 	<header class="head">
-		<h1>the frontier</h1>
-		<p class="lede">Every run scored on one substrate, read as cost against error-detection F1.</p>
+		{#if view === 'belief'}
+			<h1>the statement-belief comparison</h1>
+			<p class="lede">Paper-frozen, current INDRA, and LLM belief systems on one assembled-statement contract.</p>
+			<p class="scope">
+				Only digest-matched released-label panels enter: every arm uses the same constructed paper corpus,
+				panel-specific evidence inputs, and 2023 binary label policy. Evidence-exhaustive E0 results are
+				reported separately on the strictly resolved subset.
+			</p>
+		{:else}
+			<h1>the pair frontier</h1>
+			<p class="lede">Every run scored on one evidence-pair substrate, read as cost against error-detection F1.</p>
+			<p class="scope">
+				This view evaluates exact statement/evidence pairs. It is not the paper-compatible assembled-statement
+				belief comparison, which uses the paper's released binary labels and separately discloses the
+				incomplete-negative cohort through a strict-E0 sensitivity.
+			</p>
+		{/if}
 	</header>
 
 	<!-- top-level view: per-substrate cost/size frontier vs cross-substrate generalization -->
@@ -90,6 +116,9 @@
 		>
 		<button type="button" class:on={view === 'datasets'} aria-pressed={view === 'datasets'} onclick={() => setView('datasets')}
 			>across dataset size</button
+		>
+		<button type="button" class:on={view === 'belief'} aria-pressed={view === 'belief'} onclick={() => setView('belief')}
+			>statement belief</button
 		>
 	</div>
 
@@ -125,7 +154,7 @@
 				<div><dt>runs</dt><dd>{totalRuns}</dd></div>
 			{/if}
 			<div><dt>on frontier</dt><dd>{onFrontierN}</dd></div>
-			<div><dt>gold n</dt><dd>{f.n_gold}</dd></div>
+			<div><dt>curated pairs</dt><dd>{f.n_gold}</dd></div>
 			<div>
 				<dt>{axis === 'cost' ? 'cost span /1k' : 'size span'}</dt>
 				<dd>{spanLabel}</dd>
@@ -158,7 +187,7 @@
 				<tr>
 					<th class="r-rank">#</th>
 					<th class="r-model">model</th>
-					<th class="r-num">err-F1</th>
+					<th class="r-num">pair err-F1</th>
 					<th class="r-ci">95% CI</th>
 					<th class="r-num">acc</th>
 					{#if axis === 'cost'}
@@ -221,7 +250,7 @@
 			</tbody>
 		</table>
 		<p class="foot">
-			Click a row or dot to add it to the pair; the rank is by error-F1 on n={f.n_gold} gold —
+			Click a row or dot to add it to the pair; the rank is by evidence-pair error-F1 on n={f.n_gold} curated pairs —
 			treat it as indicative where the CIs overlap. † marks a run another beats on both
 			{axis === 'cost' ? 'cost' : 'model size'} and F1.
 			Repeat runs of one model fold into a single point (×N): err-F1 and cost are the across-run
@@ -233,7 +262,7 @@
 			A hollow dot always means the x-value is an estimate, not an observation — on either axis.
 		</p>
 	{/if}
-	{:else}
+	{:else if view === 'datasets'}
 		<!-- the dataset-size dimension: the same models read across gold benchmarks -->
 		{#if gen.models.length === 0}
 			<p class="empty">Need a model scored on ≥2 gold benchmarks to show a generalization line.</p>
@@ -277,6 +306,9 @@
 				column is the trustworthy read.
 			</p>
 		{/if}
+	{:else}
+		<BeliefComparison comparison={data.beliefComparison} />
+		<PaperMethodLandscape reference={data.paperMethodLandscape} />
 	{/if}
 </main>
 
@@ -298,6 +330,16 @@
 		max-width: 62ch;
 		line-height: 1.5;
 		margin: 0 0 1.3rem;
+	}
+	.scope {
+		font-family: var(--mono);
+		font-size: 0.72rem;
+		color: var(--ink-muted);
+		max-width: 88ch;
+		line-height: 1.5;
+		border-left: 2px solid var(--rule);
+		padding-left: 0.75rem;
+		margin: -0.65rem 0 1.3rem;
 	}
 	.subs {
 		display: flex;

@@ -18,6 +18,7 @@
 -->
 <script lang="ts">
 	import type { ReliabilityBin } from '$lib/data/types';
+	import { rOf, pathOf, px, py } from '$lib/reliability-geometry';
 
 	let {
 		bins,
@@ -59,29 +60,9 @@
 	const maxBinN = $derived(Math.max(1, ...pts.map((p) => p.n), ...pts2.map((p) => p.n)));
 
 	// SVG viewbox in calibration space [0,1]×[0,1], y inverted (1 at top).
-	const PAD = 6; // % padding inside the 0..100 box for stroke breathing room
-	function px(v: number): number {
-		return PAD + v * (100 - 2 * PAD);
-	}
-	function py(v: number): number {
-		return PAD + (1 - v) * (100 - 2 * PAD);
-	}
-	// radius 1.6%..5% of the box, by bin share — sparse bins read as small.
-	function rOf(bn: number): number {
-		return 1.6 + 3.4 * Math.sqrt(bn / maxBinN);
-	}
+	// px/py/rOf/pathOf live in $lib/reliability-geometry (shared with the paper strip).
 	function fmtPct(v: number): string {
 		return `${(v * 100).toFixed(0)}%`;
-	}
-	// connect a series' occupied bins left→right into a curve, so a model's
-	// trajectory off the diagonal reads as one line (the overlay's strong center).
-	function pathOf(ps: { x: number; y: number }[]): string {
-		if (ps.length < 2) return '';
-		return ps
-			.slice()
-			.sort((a, b) => a.x - b.x)
-			.map((p, i) => `${i === 0 ? 'M' : 'L'}${px(p.x).toFixed(2)} ${py(p.y).toFixed(2)}`)
-			.join(' ');
 	}
 </script>
 
@@ -100,12 +81,12 @@
 			{#if pathOf(pts)}<path class="curve" d={pathOf(pts)} style="--hue:{hue}" />{/if}
 			{#if pathOf(pts2)}<path class="curve" d={pathOf(pts2)} style="--hue:{hue2}" />{/if}
 			{#each pts as p}
-				<circle class="mark" cx={px(p.x)} cy={py(p.y)} r={rOf(p.n)} style="--hue:{hue}">
+				<circle class="mark" cx={px(p.x)} cy={py(p.y)} r={rOf(p.n, maxBinN)} style="--hue:{hue}">
 					<title>{`${label || 'A'} · predicted ${fmtPct(p.x)} · empirical ${fmtPct(p.y)} · n=${p.n} · ${p.gap >= 0 ? 'under' : 'over'}-confident by ${fmtPct(Math.abs(p.gap))}`}</title>
 				</circle>
 			{/each}
 			{#each pts2 as p}
-				<circle class="mark mark-b" cx={px(p.x)} cy={py(p.y)} r={rOf(p.n)} style="--hue:{hue2}">
+				<circle class="mark mark-b" cx={px(p.x)} cy={py(p.y)} r={rOf(p.n, maxBinN)} style="--hue:{hue2}">
 					<title>{`${label2 || 'B'} · predicted ${fmtPct(p.x)} · empirical ${fmtPct(p.y)} · n=${p.n} · ${p.gap >= 0 ? 'under' : 'over'}-confident by ${fmtPct(Math.abs(p.gap))}`}</title>
 				</circle>
 			{/each}
@@ -120,7 +101,7 @@
 					class="mark"
 					cx={px(p.x)}
 					cy={py(p.y)}
-					r={rOf(p.n)}
+					r={rOf(p.n, maxBinN)}
 					style="--hue:{hue}"
 				>
 					<title>{`predicted ${fmtPct(p.x)} · empirical ${fmtPct(p.y)} · n=${p.n} · ${p.gap >= 0 ? 'under' : 'over'}-confident by ${fmtPct(Math.abs(p.gap))}`}</title>

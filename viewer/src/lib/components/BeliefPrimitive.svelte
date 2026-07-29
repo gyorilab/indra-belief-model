@@ -122,6 +122,19 @@
 		return 'low';
 	}
 
+	// Both numbers on this card are INDRA's: the prior is the noisy-OR belief INDRA
+	// already stores, and the other is what the same statement scores once a model
+	// has read each piece of evidence. So they are named for what they ARE —
+	// "reading" and "the INDRA prior" — never as a first-person score set against
+	// somebody else's. There is no somebody else.
+	//
+	// AND THE NAME IS ONE NAME. This comment said "INDRA prior" while seven of the
+	// nine strings below and beside it drew "INDRA's prior", which is the same
+	// possessive-as-a-name the rest of the app has been taking out: it sets a
+	// reading against an owner rather than against another measurement. The
+	// possessive is gone from every rendered string; the axis labels, the aria
+	// labels and these sentences now all say the same thing, and the note under
+	// whichever scale draws says once what the prior IS.
 	const verdictLine = $derived.by(() => {
 		if (our_score == null && indra_score == null) {
 			return 'Not yet scored. No INDRA prior.';
@@ -131,22 +144,22 @@
 		}
 		const ourP = beliefPhrase(our_score);
 		if (indra_score == null) {
-			return `We score this ${our_score.toFixed(2)} (${ourP}) · no INDRA prior to compare.`;
+			return `Reading the evidence scores this ${our_score.toFixed(2)} (${ourP}) · no INDRA prior to compare.`;
 		}
 		const d = our_score - indra_score;
 		let comparison: string;
 		if (Math.abs(d) < 0.1) {
-			comparison = `matches INDRA's ${indra_score.toFixed(2)} (${beliefPhrase(indra_score)})`;
+			comparison = `matches the INDRA prior of ${indra_score.toFixed(2)} (${beliefPhrase(indra_score)})`;
 		} else if (d < -0.4) {
-			comparison = `we doubt it strongly · INDRA was ${indra_score.toFixed(2)} (${beliefPhrase(indra_score)})`;
+			comparison = `far less confident than the INDRA prior of ${indra_score.toFixed(2)} (${beliefPhrase(indra_score)})`;
 		} else if (d < 0) {
-			comparison = `less confident than INDRA's ${indra_score.toFixed(2)} (${beliefPhrase(indra_score)})`;
+			comparison = `less confident than the INDRA prior of ${indra_score.toFixed(2)} (${beliefPhrase(indra_score)})`;
 		} else if (d > 0.4) {
-			comparison = `we believe it more strongly than INDRA's ${indra_score.toFixed(2)} (${beliefPhrase(indra_score)})`;
+			comparison = `far more confident than the INDRA prior of ${indra_score.toFixed(2)} (${beliefPhrase(indra_score)})`;
 		} else {
-			comparison = `more confident than INDRA's ${indra_score.toFixed(2)} (${beliefPhrase(indra_score)})`;
+			comparison = `more confident than the INDRA prior of ${indra_score.toFixed(2)} (${beliefPhrase(indra_score)})`;
 		}
-		return `We score this ${our_score.toFixed(2)} (${ourP}) · ${comparison}.`;
+		return `Reading the evidence scores this ${our_score.toFixed(2)} (${ourP}) · ${comparison}.`;
 	});
 
 	/**
@@ -166,15 +179,21 @@
 	/**
 	 * Adaptive label anchor for the simple two-marker axis: hug the edge when a
 	 * tick sits near the viewBox boundary so centered text doesn't clip.
+	 *
+	 * The half-width is MEASURED, not guessed: `.b-axis-label` is 8px mono at
+	 * 4.8165 user units per character, and the longest label the axis draws is
+	 * "reading 0.42" at 12 characters = 57.8 units, so half of it is 28.9. When
+	 * the label was the shorthand "ours 0.42" this constant read 26; naming the
+	 * score widened the geometry rather than truncating the name back.
 	 */
 	function labelAnchor(tx: number): { anchor: 'middle' | 'start' | 'end'; x: number } {
-		const labelHalf = 26;
+		const labelHalf = 29;
 		if (tx + labelHalf > AXIS_W) return { anchor: 'end', x: tx };
 		if (tx - labelHalf < 0) return { anchor: 'start', x: tx };
 		return { anchor: 'middle', x: tx };
 	}
 
-	// ── Evidence-spectrum "why we doubt" (progressive disclosure) ───────────────
+	// ── Evidence-spectrum "why this score" (progressive disclosure) ───────────────
 	// Level 1: the spectrum (all evidences as dots on the same doubt↔trust ruler).
 	// Level 2: the reason tally (bucket distribution — the categorical "why").
 	// Level 3: open an evidence → sentence + verdict/confidence + reasoning + tier.
@@ -244,8 +263,8 @@
 {#if mode === 'compact'}
 	{#snippet compactBody()}
 		<span class="b-sentence">{stmt.subject} <span class="b-verb">{stmt.indra_type}</span> {stmt.object}</span>
-		<span class="b-num-pair" title={delta == null ? '' : `Δ ${fmtDelta(delta)} (we ${delta < 0 ? 'doubt' : delta > 0 ? 'support' : 'match'} more than INDRA)`}>
-			<span class="b-num-pair-label">we</span>
+		<span class="b-num-pair" title={delta == null ? '' : `Δ ${fmtDelta(delta)} · reading ${delta < 0 ? 'doubts this more than' : delta > 0 ? 'supports this more than' : 'matches'} INDRA`}>
+			<span class="b-num-pair-label">reading</span>
 			<span class="b-score-compact b-{semantic}">{fmtBelief(our_score)}</span>
 			<span class="b-num-pair-label">indra</span>
 			<span class="b-num-mid-compact">{fmtBelief(indra_score)}</span>
@@ -272,12 +291,12 @@
 
 		{#if hasSpectrum}
 			<!-- Merged ruler: one 0→1 scale carrying the per-evidence distribution
-			     (dots above), our mean (caret), INDRA's prior (hollow), and the 7
-			     verdict×confidence buckets. The mean reads as the dots' centroid. -->
+			     (dots above), the reading mean (caret), the INDRA prior (hollow), and
+			     the 7 verdict×confidence buckets. The mean reads as the dots' centroid. -->
 			<div
 				class="ruler"
 				role="img"
-				aria-label={`${evidences.length} evidences on a 0-to-1 belief scale from doubt to trust; our mean ${fmtBelief(our_score)}, INDRA prior ${fmtBelief(indra_score)}`}
+				aria-label={`${evidences.length} evidences on a 0-to-1 belief scale from doubt to trust; reading mean ${fmtBelief(our_score)}, INDRA prior ${fmtBelief(indra_score)}`}
 			>
 				<svg viewBox="0 0 {AXIS_W} {specH}" class="ruler-svg" preserveAspectRatio="xMidYMid meet">
 					<line x1={AXIS_MARGIN} y1={specAxisY} x2={AXIS_W - AXIS_MARGIN} y2={specAxisY} stroke="var(--ink)" stroke-width="1" />
@@ -287,7 +306,7 @@
 					{#each SCORE_BUCKETS as b}
 						<line x1={tickX(b)} y1={specAxisY - 3} x2={tickX(b)} y2={specAxisY + 3} stroke="var(--ink-faint)" stroke-width="0.6" opacity="0.65" />
 					{/each}
-					<!-- ours: dashed guide from the cluster down to a caret on the line -->
+					<!-- the reading mean: dashed guide from the cluster down to a caret -->
 					{#if our_score != null}
 						<line x1={tickX(our_score)} y1={DOT_BASE_Y - 6} x2={tickX(our_score)} y2={specAxisY} stroke="var(--accent)" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.55" />
 						<path d={`M ${tickX(our_score)} ${specAxisY + 2} l -4.5 7 l 9 0 z`} fill="var(--accent)" />
@@ -323,19 +342,19 @@
 					<span>doubt</span>
 					<span class="ruler-legend">
 						<span class="lg lg-ev">●</span> evidence
-						<span class="lg lg-mean">▲</span> ours {fmtBelief(our_score)}
+						<span class="lg lg-mean">▲</span> reading {fmtBelief(our_score)}
 						<span class="lg lg-indra">○</span> indra {fmtBelief(indra_score)}
 					</span>
 					<span>trust</span>
 				</div>
 				<p class="ruler-note">
-					each ● is one evidence on the same 0–1 scale; ours snaps to 7 verdict×confidence buckets, INDRA's prior is continuous
+					each ● is one evidence on the same 0–1 scale; the reading score snaps to 7 verdict×confidence buckets, while the INDRA prior — the belief INDRA already stores, from which sources reported the statement and how reliable each source is — is continuous
 				</p>
 			</div>
 		{:else if our_score != null || indra_score != null}
 			{@const anyNearZero = (our_score != null && our_score <= 0.05) || (indra_score != null && indra_score <= 0.05)}
 			{@const anyNearOne = (our_score != null && our_score >= 0.95) || (indra_score != null && indra_score >= 0.95)}
-			<div class="b-axis-wrap" role="img" aria-label="belief scale 0 to 1; ours above the axis, INDRA below">
+			<div class="b-axis-wrap" role="img" aria-label="belief scale 0 to 1; the reading score above the axis, the INDRA prior below">
 				<svg viewBox="0 0 {AXIS_W} 60" class="b-axis-svg" preserveAspectRatio="xMidYMid meet">
 					<!-- axis track -->
 					<line x1={AXIS_MARGIN} y1="28" x2={AXIS_W - AXIS_MARGIN} y2="28" stroke="var(--ink)" stroke-width="1"/>
@@ -360,23 +379,23 @@
 						<circle cx={tx} cy="28" r="4.5" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"/>
 						<text x={la.x} y="44" text-anchor={la.anchor} class="b-axis-label b-axis-label-indra">indra {indra_score.toFixed(2)}</text>
 					{/if}
-					<!-- Ours lives above the axis: filled circle + label at y=14 -->
+					<!-- The reading score lives above the axis: filled circle + label at y=14 -->
 					{#if our_score != null}
 						{@const tx = tickX(our_score)}
 						{@const la = labelAnchor(tx)}
 						<circle cx={tx} cy="28" r="5" fill="var(--accent)"/>
-						<text x={la.x} y="14" text-anchor={la.anchor} class="b-axis-label b-axis-label-ours">ours {our_score.toFixed(2)}</text>
+						<text x={la.x} y="14" text-anchor={la.anchor} class="b-axis-label b-axis-label-ours">reading {our_score.toFixed(2)}</text>
 					{/if}
 				</svg>
 				<p class="b-axis-footnote">
-					ours snaps to one of 7 categorical buckets (verdict × confidence); INDRA's prior is continuous
+					the reading score snaps to one of 7 categorical buckets (verdict × confidence); the INDRA prior — the belief INDRA already stores, from which sources reported the statement and how reliable each source is — is continuous
 				</p>
 			</div>
 		{/if}
 
 		{#if hasSpectrum}
 			<section class="why">
-				<svelte:element this={subLevel} class="why-h">Why we doubt</svelte:element>
+				<svelte:element this={subLevel} class="why-h">Why this score</svelte:element>
 
 				<!-- L2 · reason tally: the categorical "why", sized by count -->
 				<ul class="reasons" aria-label="reasons across evidences">
@@ -585,7 +604,7 @@
 		color: var(--ink-faint);
 	}
 
-	/* ── Evidence-spectrum "why we doubt" ─────────────────────────────────── */
+	/* ── Evidence-spectrum "why this score" ─────────────────────────────────── */
 	.why {
 		margin-top: 1.4rem;
 	}

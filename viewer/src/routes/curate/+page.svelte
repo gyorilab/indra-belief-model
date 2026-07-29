@@ -57,6 +57,7 @@
 	// from it. `tick()` flushes the hidden dataset input's new value to the DOM
 	// BEFORE requestSubmit reads it — otherwise the form would post the old id.
 	async function selectDataset(id: string) {
+		if (!datasets.find((dataset) => dataset.id === id)?.available) return;
 		if (id === activeDatasetId) {
 			selectorOpen = false;
 			return;
@@ -217,12 +218,12 @@
 					class="cur-ds"
 					class:on={d.id === activeDatasetId}
 					onclick={() => selectDataset(d.id)}
-					disabled={busy}
+					disabled={busy || !d.available}
 				>
 					<span class="cur-mk">{d.id === activeDatasetId ? '●' : '○'}</span>
 					<span class="cur-dsbody">
 						<span class="cur-nm">{d.label}</span>
-						<span class="cur-bl">{d.blurb}</span>
+						<span class="cur-bl">{d.available ? d.blurb : `unavailable · ${d.unavailableReason}`}</span>
 					</span>
 					<span class="cur-sc">
 						<span class="cur-n">{d.sizeLabel} ev</span>
@@ -249,7 +250,7 @@
 				<div class="cur-frame">
 					<span class="cur-dot">●</span> drawing from
 					<span class="cur-fnm">{activeDataset?.label}</span> ·
-					{activeDataset?.character === 'representative' ? 'uniform' : 'fixed set'} ·
+					{activeDataset?.character === 'representative' ? '5k evidence-row reservoir from' : 'fixed set'} ·
 					{activeDataset?.sizeLabel}
 					<button type="button" class="cur-switch" onclick={() => (selectorOpen = true)} disabled={busy}
 						>switch ⌄</button
@@ -300,6 +301,8 @@
 			<form method="POST" action="?/submit" use:enhance={submitEnhance} class="cur-form">
 				<input type="hidden" name="matches_hash" value={current.matchesHash} />
 				<input type="hidden" name="source_hash" value={current.sourceHash} />
+				<input type="hidden" name="dataset" value={current.dataset} />
+				<input type="hidden" name="draw_token" value={current.drawToken} />
 				<fieldset>
 					<legend>does the sentence support this exact extraction? pick the curation tag</legend>
 					{#each CURATION_TAGS as t}
