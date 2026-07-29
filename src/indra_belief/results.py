@@ -449,6 +449,33 @@ def load_gold_map(gold_path: str) -> GoldMap:
     return GoldMap(by_source, by_pair, ambiguous_sources=ambiguous_sources)
 
 
+def _prompt_side_disagreement(reader_configuration: dict) -> bool:
+    """Did the PROMPT half produce this run's 'mixed'/'mismatch' status?
+
+    ``reader_configuration_for_run`` collapses two independent cross-checks —
+    the monolithic prompt digest and the served model id — into one status, so
+    the status alone cannot say which half disagreed. Rather than widen the
+    payload, read it back from the evidence the payload already carries:
+
+      * 'mixed'    — the prompt half is responsible iff the run persisted more
+        than one monolithic prompt digest; otherwise the served id did.
+      * 'mismatch' — the prompt half is responsible iff exactly one digest was
+        observed and it contradicts the declared one; otherwise the served id did.
+
+    This mirrors — and DEPENDS ON — the precedence encoded in
+    ``calibration_constants.reader_configuration_for_run``: a prompt-derived
+    status wins outright and a model status only ever replaces 'identified', so
+    whenever the prompt evidence above holds it is by construction the status's
+    cause. Change the two together (the precedence is pinned by
+    tests/test_reader_configuration_model_guard.py).
+    """
+    digests = reader_configuration.get("prompt_fingerprints") or {}
+    if reader_configuration.get("status") == "mixed":
+        return len(digests) > 1
+    declared = reader_configuration.get("declared_prompt_sha256")
+    return len(digests) == 1 and bool(declared) and next(iter(digests)) != declared
+
+
 def _soft_calibration_block(
     model: str | None, reader_configuration: dict, soft: dict | None,
     fitted: dict | None,
@@ -460,15 +487,25 @@ def _soft_calibration_block(
     configurations remain named-empty; profiles are never inherited by substring.
     """
     if soft is None:
+        # The prompt-side sentences are frozen prose: they are quoted verbatim in
+        # already-generated export artifacts, so only the model-side branches are new.
+        prompt_side = _prompt_side_disagreement(reader_configuration)
         if fitted is not None and fitted.get("deployment_status") == "disabled":
             reason = (
                 "measured profile is disabled because its independent ship gate failed: "
                 f"{fitted.get('validation', {}).get('gate', 'not passed')}"
             )
         elif reader_configuration.get("status") == "mixed":
-            reason = "run contains more than one monolithic prompt fingerprint"
+            reason = (
+                "run contains more than one monolithic prompt fingerprint" if prompt_side
+                else "run call logs record more than one served model id"
+            )
         elif reader_configuration.get("status") == "mismatch":
-            reason = "declared prompt fingerprint disagrees with persisted call logs"
+            reason = (
+                "declared prompt fingerprint disagrees with persisted call logs"
+                if prompt_side
+                else "declared model disagrees with the served model id in persisted call logs"
+            )
         elif reader_configuration.get("status") == "missing_prompt":
             reason = "run has no persisted monolithic system prompt fingerprint"
         else:

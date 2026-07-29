@@ -37,7 +37,7 @@ import math
 from collections import Counter
 from pathlib import Path
 
-from .model_client import canonical_model_name
+from .model_client import LOCAL_MODELS, canonical_model_name
 
 # A reader fit is scoped to both the served model and the scoring prompt.  These
 # are SHA-256 hashes of the exact monolithic ``system`` strings persisted in the
@@ -164,14 +164,27 @@ def _named_profile(name: str) -> dict:
     return profile
 
 
-def prompt_fingerprints_for_run(run_path: str | Path) -> dict[str, int]:
-    """Count monolithic system-prompt fingerprints persisted in a run.
+# Served model ids that a shipped run's call log legitimately carries even though
+# they are no longer the registry's live id.  ``remote-gemma-4-26b`` was asked for
+# as ``gemma-4-26b`` until 5e89e2c (2026-06-07) renamed the gateway id to
+# ``gemma-4-26b-ollama``; runs exported before that rename — currently
+# data/results/rasmachine_mono_gemma_remote_direct.jsonl — are honestly labelled
+# and already shipped, so their historical id must keep resolving.  This table is
+# provenance, not slack: only an id actually observed in a shipped run's call log
+# belongs here, and it widens nothing (a name still needs its own profile).
+_HISTORICAL_SERVED_MODEL_IDS: dict[str, frozenset[str]] = {
+    "remote-gemma-4-26b": frozenset({"gemma-4-26b"}),
+}
 
-    Rows handled without an LLM call legitimately have no call log and do not
-    make a run ambiguous.  More than one digest means the run mixed scorer
-    configurations and is therefore ineligible for a single calibration profile.
+
+def _call_log_fingerprints(run_path: str | Path) -> tuple[dict[str, int], dict[str, int]]:
+    """One tolerant pass over a run's call logs -> (prompt digests, served ids).
+
+    Both fingerprints come from the same walk: run files reach 500 MB and a
+    second independent pass would double the read for no new information.
     """
-    counts: Counter[str] = Counter()
+    prompts: Counter[str] = Counter()
+    models: Counter[str] = Counter()
     try:
         with Path(run_path).open() as fh:
             for line in fh:
@@ -179,19 +192,95 @@ def prompt_fingerprints_for_run(run_path: str | Path) -> dict[str, int]:
                     continue
                 row = json.loads(line)
                 for call in row.get("call_log") or []:
+                    # The two counters are deliberately scoped differently.
+                    #
+                    # PROMPT — monolithic only. A profile is keyed on the exact
+                    # monolithic ``system`` string; a probe's or adjudicator's
+                    # system prompt is a different artifact entirely, so counting
+                    # it would manufacture a spurious 'mixed' on every decomposed
+                    # run.
+                    #
+                    # MODEL — every call kind. The belief scalar is produced by
+                    # the whole call chain, not the monolithic call alone, so a
+                    # profile fitted on one homogeneous endpoint may not be
+                    # claimed by a run that served part of its chain elsewhere:
+                    # a heterogeneous-endpoint run is INTENTIONALLY refused as
+                    # 'mixed'. Scoping this to monolithic would also blind the
+                    # guard on exactly the runs with no monolithic prompt digest
+                    # to verify anything else (decomposed/probe-only runs, e.g.
+                    # data/results/eval_curation_v1_medpsy_decomp.jsonl, whose
+                    # only served-id evidence sits on probe_* / verify_grounding
+                    # calls). The asymmetry costs nothing on homogeneous runs:
+                    # across data/results, 76 of 136 runs record any model_id and
+                    # in 75 of them the monolithic-only id set equals the
+                    # all-kinds id set.
                     system = call.get("system")
                     if call.get("kind") == "monolithic" and isinstance(system, str):
-                        counts[hashlib.sha256(system.encode("utf-8")).hexdigest()] += 1
+                        prompts[hashlib.sha256(system.encode("utf-8")).hexdigest()] += 1
+                    model_id = call.get("model_id")
+                    if isinstance(model_id, str) and model_id.strip():
+                        models[model_id.strip()] += 1
     except (OSError, json.JSONDecodeError, TypeError):
-        return {}
-    return dict(sorted(counts.items()))
+        return {}, {}
+    return dict(sorted(prompts.items())), dict(sorted(models.items()))
+
+
+def prompt_fingerprints_for_run(run_path: str | Path) -> dict[str, int]:
+    """Count monolithic system-prompt fingerprints persisted in a run.
+
+    Rows handled without an LLM call legitimately have no call log and do not
+    make a run ambiguous.  More than one digest means the run mixed scorer
+    configurations and is therefore ineligible for a single calibration profile.
+    """
+    return _call_log_fingerprints(run_path)[0]
+
+
+def model_fingerprints_for_run(run_path: str | Path) -> dict[str, int]:
+    """Count served model ids persisted in a run's call logs.
+
+    The counted value is the SERVING-layer id the endpoint was asked for (the
+    registry's ``model_id``), not the canonical/registry model *name*: the same
+    weights on two hosts carry different served ids, and one served id can back
+    more than one registry name.  EVERY call kind counts, not just ``monolithic``
+    — see the scope decision at the counting site in
+    :func:`_call_log_fingerprints`.  Same tolerance as
+    :func:`prompt_fingerprints_for_run` — rows handled without an LLM call, and
+    older decomposed-phase call rows that recorded no ``model_id`` at all, are
+    simply not observations and never make a run ambiguous.
+
+    Residual limitation: this cannot separate configurations that differ only
+    below the served id.  ``bedrock-gemma-4-26b`` and its reasoning-isolation
+    twin ``bedrock-gemma-4-26b-noreason`` both serve ``google.gemma-4-26b-a4b``,
+    so the served id alone does not verify reasoning mode.
+    """
+    return _call_log_fingerprints(run_path)[1]
+
+
+def _accepted_served_model_ids(canonical: str) -> frozenset[str] | None:
+    """Served ids a run under canonical model ``canonical`` may legitimately show.
+
+    ``None`` means "no expectation on record" (unknown name, or a registry entry
+    that declares no ``model_id``) — the guard then makes no claim rather than
+    manufacturing a mismatch.
+    """
+    model_id = (LOCAL_MODELS.get(canonical) or {}).get("model_id")
+    if not isinstance(model_id, str) or not model_id:
+        return None
+    return frozenset({model_id}) | _HISTORICAL_SERVED_MODEL_IDS.get(canonical, frozenset())
 
 
 def reader_configuration_for_run(
     run_path: str | Path, model: str | None = None, *,
     prompt_sha256: str | None = None,
 ) -> dict:
-    """Return the model+prompt identity that actually produced ``run_path``."""
+    """Return the model+prompt identity that actually produced ``run_path``.
+
+    Both halves of the identity are fingerprint-verified against the run's own
+    call logs where the run recorded them.  A declared model that disagrees with
+    the served ids on disk takes the same hard gate as a prompt disagreement:
+    a mislabelled meta cannot hand an ENABLED profile to a run that a
+    ship-gate-DISABLED model actually served.
+    """
     path = Path(run_path)
     try:
         meta = json.loads(path.with_suffix(".meta.json").read_text())
@@ -205,7 +294,7 @@ def reader_configuration_for_run(
     if declared_prompt:
         declared_prompt = str(declared_prompt).lower()
     canonical = canonical_model_name(model.strip().lower()) if model else None
-    fingerprints = prompt_fingerprints_for_run(path)
+    fingerprints, model_fingerprints = _call_log_fingerprints(path)
     observed_prompt = next(iter(fingerprints)) if len(fingerprints) == 1 else None
     if len(fingerprints) > 1:
         status = "mixed"
@@ -216,6 +305,28 @@ def reader_configuration_for_run(
     else:
         resolved_prompt = observed_prompt or declared_prompt
         status = "identified" if resolved_prompt else "missing_prompt"
+    # Model cross-check. Absence is never evidence: a run with no recorded served
+    # id makes no claim, and neither do we. An unrecognized declared name has no
+    # accepted-id expectation on record, so it can never produce a MISMATCH — but
+    # it is NOT exempt from the ambiguity branch below, which fires first: a run
+    # that served more than one id is refused as 'mixed' whatever it was declared
+    # as, because "which endpoint produced this run" then has no answer at all.
+    # A prompt mixed/mismatch already hard-gates and keeps its own, more specific
+    # status — prompt precedence, pinned in tests/test_reader_configuration_model_guard.py
+    # and mirrored by results._prompt_side_disagreement.
+    observed_models = set(model_fingerprints)
+    model_status = None
+    if canonical and observed_models:
+        accepted = _accepted_served_model_ids(canonical)
+        if len(observed_models) > 1:
+            model_status = "mixed"
+        elif accepted and not observed_models <= accepted:
+            model_status = "mismatch"
+    if model_status and status == "identified":
+        status = model_status
+        # Nulling the prompt is what actually gates: calibration_for_run resolves
+        # on (model, prompt_sha256) and never reads ``id``.
+        resolved_prompt = None
     config_id = (
         f"{canonical}@prompt-sha256:{resolved_prompt}"
         if canonical and resolved_prompt else None
@@ -230,6 +341,7 @@ def reader_configuration_for_run(
         ),
         "declared_prompt_sha256": declared_prompt,
         "prompt_fingerprints": fingerprints,
+        "model_fingerprints": model_fingerprints,
     }
 
 

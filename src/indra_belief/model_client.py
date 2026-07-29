@@ -20,6 +20,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+# Formal Bedrock raw-HTTP adapters load exactly this PEM bundle.  They never
+# consult SSL_CERT_FILE/SSL_CERT_DIR or urllib's platform-default trust store.
+# The publication runtime binds these bytes separately from this source file.
+_FIXED_BEDROCK_TLS_CA_BUNDLE = "/private/etc/ssl/cert.pem"
+_FIXED_BEDROCK_TLS_CA_BUNDLE_SHA256 = (
+    "9dae8d76e55cb08991f2b672d58999ea15560d910759c16b544f843bdffbb994"
+)
+_FIXED_BEDROCK_RESPONSES_ENDPOINT = (
+    "https://bedrock-mantle.us-east-1.api.aws/openai/v1/responses"
+)
+
+
 # Model registry — name → (base_url, model_id, notes)
 LOCAL_MODELS: dict[str, dict] = {
     "local-qwen3.5-vl-122b-a10b": {
@@ -204,15 +216,21 @@ LOCAL_MODELS: dict[str, dict] = {
         # Bedrock — but the CHAT COMPLETIONS API DROPS the CoT (probed
         # 2026-06-19: zero reasoning at every reasoning_effort on
         # /chat/completions). Only the RESPONSES API surfaces it, so this entry
-        # uses backend="bedrock_responses" (POST /openai/v1/responses) with
+        # uses backend="bedrock_responses_raw" (POST /openai/v1/responses) with
         # reasoning_effort="high" (only "high" engages a reasoning item;
         # medium/none → none, verified). reasoning_in_content=False ⇒ raw_text =
         # reasoning + answer, so the verdict parse sees both. Gemma is
         # mantle-only (no Converse route) and uses the /openai/v1 path.
-        "backend": "bedrock_responses",
+        "backend": "bedrock_responses_raw",
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+        "responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
+        "expected_responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
         "model_id": "google.gemma-4-26b-a4b",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "tls_ca_bundle": _FIXED_BEDROCK_TLS_CA_BUNDLE,
+        "tls_ca_bundle_sha256": _FIXED_BEDROCK_TLS_CA_BUNDLE_SHA256,
+        "max_request_bytes": 16 * 1024 * 1024,
+        "max_response_bytes": 16 * 1024 * 1024,
         "reasoning_in_content": False,
         "reasoning_effort": "high",  # only "high" surfaces a reasoning item
         "typical_tokens": 400,
@@ -311,7 +329,24 @@ LOCAL_MODELS: dict[str, dict] = {
     # avoids truncation to verdict=None. reasoning_in_content=False ⇒ raw_text =
     # reasoning + answer for the verdict parse.
     "bedrock-glm-5": {
+        # Formal paid lane: stdlib-only transport with canonical provider-body
+        # commitments.  This deliberately excludes the OpenAI SDK/httpx/pydantic
+        # closure while preserving its strict Chat Completions JSON semantics.
+        "backend": "bedrock_chat_completions_raw",
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "chat_completions_endpoint": (
+            "https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions"
+        ),
+        "expected_chat_completions_endpoint": (
+            "https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions"
+        ),
+        # The formal runtime binds this file by byte count + SHA-256.  The raw
+        # transport loads only these PEM bytes and never consults ambient
+        # SSL_CERT_FILE/SSL_CERT_DIR or the platform default trust store.
+        "tls_ca_bundle": _FIXED_BEDROCK_TLS_CA_BUNDLE,
+        "tls_ca_bundle_sha256": _FIXED_BEDROCK_TLS_CA_BUNDLE_SHA256,
+        "max_request_bytes": 16 * 1024 * 1024,
+        "max_response_bytes": 16 * 1024 * 1024,
         "model_id": "zai.glm-5",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
         "strict_openai_compat": True,
@@ -402,13 +437,19 @@ LOCAL_MODELS: dict[str, dict] = {
     },
     # Gemma 4 31B (dense, newest Gemma) — like bedrock-gemma it reasons ONLY via
     # the Responses API (chat-completions drops the CoT, probed 2026-06-19), so
-    # backend=bedrock_responses on the /openai/v1 route. Heavier/slower dense
+    # backend=bedrock_responses_raw on the /openai/v1 route. Heavier/slower dense
     # counterpart to the gemma-4-26b-a4b MoE already wired as bedrock-gemma.
     "bedrock-gemma-4-31b": {
-        "backend": "bedrock_responses",
+        "backend": "bedrock_responses_raw",
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+        "responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
+        "expected_responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
         "model_id": "google.gemma-4-31b",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "tls_ca_bundle": _FIXED_BEDROCK_TLS_CA_BUNDLE,
+        "tls_ca_bundle_sha256": _FIXED_BEDROCK_TLS_CA_BUNDLE_SHA256,
+        "max_request_bytes": 16 * 1024 * 1024,
+        "max_response_bytes": 16 * 1024 * 1024,
         "reasoning_in_content": False,
         "reasoning_effort": "high",
         "typical_tokens": 500,
@@ -417,15 +458,21 @@ LOCAL_MODELS: dict[str, dict] = {
     },
     # Gemma 4 E2B (~2.3B effective, tiny on-device tier) — the ONLY clean sub-10B
     # reasoner on Bedrock: reasons only via the Responses API (probed rc=411,
-    # chat drops it), so backend=bedrock_responses. Extreme-cheap floor;
+    # chat drops it), so backend=bedrock_responses_raw. Extreme-cheap floor;
     # capacity-gated for subtle relation logic — validate (n=1606) before trusting.
     # (Other sub-10B mantle models — ministral-3-3b, gemma-3-4b — are non-thinking;
     # our MedPsy-4B reasoner is local-only on noot-1, not on AWS.)
     "bedrock-gemma-4-e2b": {
-        "backend": "bedrock_responses",
+        "backend": "bedrock_responses_raw",
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+        "responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
+        "expected_responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
         "model_id": "google.gemma-4-e2b",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "tls_ca_bundle": _FIXED_BEDROCK_TLS_CA_BUNDLE,
+        "tls_ca_bundle_sha256": _FIXED_BEDROCK_TLS_CA_BUNDLE_SHA256,
+        "max_request_bytes": 16 * 1024 * 1024,
+        "max_response_bytes": 16 * 1024 * 1024,
         "reasoning_in_content": False,
         "reasoning_effort": "high",
         "typical_tokens": 400,
@@ -523,10 +570,198 @@ def _parse_retry_delay(error_text: str, default: float = 30.0) -> float:
         for g in m.groups():
             if g:
                 try:
-                    return float(g)
+                    # Clamp to [0, 3600s] so a hostile/garbled 429 payload
+                    # ("retry in 999999s") can't block a scoring worker for days;
+                    # mirrors bedrock_transport_base._retry_after_seconds' cap.
+                    return min(max(0.0, float(g)), 3600.0)
                 except ValueError:
                     pass
     return default
+
+
+# ── Rate-limit classification ─────────────────────────────────────────────
+# A retry must fire on a genuine 429 and on nothing else. An unrelated failure
+# whose body merely CONTAINS the digits "429" (a request id, a token count, a
+# byte offset) is not a rate limit, and retrying it just spends the same budget
+# again on the same failure. Two precise patterns replace a bare substring test.
+#
+# The phrase set is EXACTLY the two literals the previous substring test used
+# ("rate limit", "resource_exhausted"), case-insensitively and nothing more.
+# Widening it is a live hazard, not a hypothetical one: an earlier revision added
+# "too many requests" / "quota exceeded" / a `[ _-]?` separator class, and that
+# turned a permanent HTTP 400 "Quota exceeded for this account" rejection into
+# five pointless retries of the same failure (155s of sleeps, five extra billed
+# POSTs). Those tokens are a trustworthy rate-limit signal only when the provider
+# ALSO reports 429 — via a structured status (rule 1) or in status position in the
+# text (rule 3) — both of which are already covered. As free body text they are
+# not evidence of throttling.
+_RATE_LIMIT_PHRASE_RE = __import__("re").compile(
+    r"rate limit|resource_exhausted",
+    flags=__import__("re").IGNORECASE,
+)
+# 429 only where a provider puts a STATUS, never loose inside a payload. Covers
+# "Bedrock Responses HTTP 429; retry in 30s", "Bedrock Converse HTTP 429: ...",
+# the OpenAI SDK's "Error code: 429 - {...}", urllib's "HTTP Error 429: Too Many
+# Requests", "Throttled (429)", "Server returned 429", and the gRPC/Google
+# leading-code form "429 Resource has been exhausted (e.g. check quota)." — a
+# bare 429 at the very START of the message IS the status. (No re.MULTILINE, so
+# `^` means start-of-string, not start-of-line: a payload that happens to wrap
+# onto a line beginning with 429 does not qualify.)
+#
+# This pattern may GROW toward the old substring test (every string it adds
+# already contains "429", so the old test was already True for it) but never
+# past it. The phrase set above may not grow past the old test at all.
+_RATE_LIMIT_STATUS_RE = __import__("re").compile(
+    r"(?:http(?:\s+error)?\s+|error code:\s*|status(?:[ _]code)?[\s:=]+"
+    r"|code[\s:=]+|returned\s+)429\b"
+    r"|\(429\)"
+    r"|^\s*429\b",
+    flags=__import__("re").IGNORECASE,
+)
+
+
+def _provider_http_status(error: BaseException) -> int | None:
+    """Structured HTTP status carried by a provider exception, or None.
+
+    This is the client-side twin of `spend_guard._status_from_provider_exception`,
+    which already reads the identical candidate set under the same 100..599
+    bound. The duplication is DELIBERATE and should not be read as accidental:
+    that helper is private to the spend-guard module, and the guard owns the
+    append-only WAL — importing it here would drag the ledger module onto this
+    client's error path, which the transport layer must stay free of. If either
+    provider surface grows a new status field, update BOTH lists.
+    """
+    candidates = [
+        # Stamped by this module's legacy Bedrock adapters; the name sits
+        # deliberately outside the spend-guard candidate set (see there).
+        getattr(error, "_bedrock_http_status", None),
+        getattr(error, "status_code", None),
+        getattr(error, "status", None),
+    ]
+    response = getattr(error, "response", None)
+    if isinstance(response, dict):
+        candidates += [response.get("status_code"), response.get("status")]
+    elif response is not None:
+        candidates += [
+            getattr(response, "status_code", None),
+            getattr(response, "status", None),
+        ]
+    trace = getattr(error, "transport_trace", None)
+    if isinstance(trace, dict):
+        candidates.append(trace.get("response_http_status"))
+    import urllib.error
+    if isinstance(error, urllib.error.HTTPError):
+        candidates.append(getattr(error, "code", None))
+    for value in candidates:
+        if isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 599:
+            return value
+    return None
+
+
+def _is_rate_limit_error(error: BaseException) -> bool:
+    """True only for genuine provider rate limiting. ONE contract, status-first:
+
+    1. an authoritative structured status of 429                  -> True
+    2. any OTHER authoritative structured status                  -> False
+       (the provider told us what this is; body text does not overrule it)
+    3. no structured status at all, and the text carries either an explicit
+       rate-limit PHRASE or a 429 in STATUS POSITION                -> True
+
+    Relation to the predicate this replaced (`msg = str(e).lower()`;
+    `"429" in msg or "rate limit" in msg or "resource_exhausted" in msg`):
+    the new rule is a SUBSET of it for every error our transports raise —
+    nothing the old test refused to retry is now retried. Two deliberate
+    NARROWINGS, both pinned by the differential battery in
+    tests/test_model_client_paid_lane_hardening.py:
+
+      (a) an authoritative NON-429 status is never a rate limit regardless of
+          body text — a hard 400 "quota exceeded" rejection raises on the first
+          occurrence instead of retrying the same permanent failure five times;
+      (b) a statusless "429" that is NOT in a recognized status position (a
+          request id "9f-429-77", a token count `{"input_tokens": 429}`) is not
+          a rate limit.
+
+    Rule 1 is the only text-independent rule. It cannot widen against the old
+    predicate in practice: every error these lanes raise stamps the code into
+    its own message (`Bedrock Converse HTTP 429: ...`), and provider SDK errors
+    carrying `status_code` render it too (`Error code: 429 - {...}`), so a
+    structured 429 always comes with a "429" the old substring test also saw.
+    """
+    text = str(error)
+    status = _provider_http_status(error)
+    if status == 429:
+        return True
+    # Text speaks only when the provider said nothing structured.
+    return status is None and bool(
+        _RATE_LIMIT_PHRASE_RE.search(text) or _RATE_LIMIT_STATUS_RE.search(text)
+    )
+
+
+# ── Legacy-lane absolute deadline ─────────────────────────────────────────
+class _LaneDeadlineExpired(Exception):
+    """Internal signal: a legacy Bedrock lane blew its absolute wall deadline.
+
+    Private to this module and never escapes it: `_call_bedrock_converse` /
+    `_call_bedrock_responses` catch it OUTSIDE their `with` block — so the
+    response context manager has provably already closed the billed request —
+    and convert it to the lane's existing TimeoutError message.
+    """
+
+
+def _response_socket(resp):
+    """The live socket under a urllib response, or None once it is gone."""
+    return getattr(getattr(getattr(resp, "fp", None), "raw", None), "_sock", None)
+
+
+def _read_body_within_deadline(
+    resp, *, absolute_deadline: float, lane_label: str
+) -> bytes:
+    """Read a response body under a monotonic ABSOLUTE deadline.
+
+    `urlopen(req, timeout=N)` bounds each individual socket operation, not total
+    wall time: a provider that dribbles one byte every N/2 seconds keeps every
+    operation inside the timeout while the call runs unboundedly long. This is
+    the missing outer bound for the two legacy urllib lanes, which run
+    synchronously in the scoring worker with no thread-pool wall cap.
+
+    Local twin, deliberately NOT an import of
+    `bedrock_responses_transport.RawBedrockResponsesTransport._read_response`,
+    whose loop shape this mirrors (reach the socket via `resp.fp.raw._sock`,
+    re-arm `settimeout(remaining)` before each 64KiB `read1`, re-check the
+    deadline after each chunk). That method is welded to `_ResponseReadFailure`
+    and the sealed transport-trace contract — partial-body capture, framing
+    validation, replay evidence — and importing it would drag the trace
+    machinery onto lanes that deliberately carry none of it.
+
+    Fallback: when `resp.fp.raw._sock` resolves to None there is no socket to
+    bound, so the body is read in a single `resp.read()` call. That covers every
+    non-HTTP opener, including the in-repo fakes whose `read()` takes no size
+    argument (tests/test_reasoning_trace.py, tests/test_bedrock_responses_transport.py).
+    """
+    import time as _time
+
+    if _response_socket(resp) is None:
+        return resp.read()
+    read_one = getattr(resp, "read1", None) or resp.read
+    chunks: list[bytes] = []
+    while True:
+        remaining = absolute_deadline - _time.monotonic()
+        if remaining <= 0:
+            raise _LaneDeadlineExpired(lane_label)
+        # Re-resolved every pass, exactly as the transport does it: http.client
+        # drops `resp.fp` — really closing the fd — as soon as Content-Length is
+        # exhausted, so a socket reference hoisted out of this loop would be a
+        # closed descriptor on the final (empty) read.
+        sock = _response_socket(resp)
+        if sock is not None:
+            sock.settimeout(remaining)
+        chunk = read_one(64 * 1024)
+        if _time.monotonic() >= absolute_deadline:
+            raise _LaneDeadlineExpired(lane_label)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def concurrency_hint(model_name: str) -> int:
@@ -622,6 +857,10 @@ class ModelResponse:
     reasoning_trace: dict = field(default_factory=lambda: _build_trace(
         reasoning="", reasoning_tokens=-1, status=ReasoningStatus.NONE,
         provider_source="", backend="", model_id=None, finish_reason="stop"))
+    # Bounded wire provenance for dependency-free raw transports. Complete
+    # response bytes may be retained as base64 replay evidence, but bearer
+    # material is always redacted and never appears here.
+    transport_trace: dict = field(default_factory=dict)
 
 
 class ModelClient:
@@ -633,14 +872,29 @@ class ModelClient:
     cleanly with ThreadPoolExecutor — each worker accumulates its own
     record's calls without cross-contamination.
 
-    Wall-time guard: each call is dispatched on a class-level
-    ThreadPoolExecutor and `result(timeout=N)` enforces a hard wall-time
-    cap. The OpenAI SDK's `timeout` field is a per-chunk / connection
-    timeout — for streaming generations it does not bound total wall
-    time. This wrapper raises TimeoutError after `timeout` seconds
-    regardless of underlying transport behavior. The in-flight urllib3
-    request continues until the SDK's transport timeout reaps it (a
-    transient thread leak; documented and accepted).
+    Wall-time guard: SDK/local backends (openai_compat, anthropic,
+    transformers_local) are dispatched on a class-level ThreadPoolExecutor and
+    `result(timeout=N)` enforces a hard wall-time cap. All FOUR dependency-free
+    paid Bedrock transports (bedrock_converse, bedrock_responses, and the two
+    *_raw lanes) are deliberately synchronous instead: an executor timeout
+    cannot cancel an already-running HTTP side effect, so dispatching them
+    would let a timeout abandon a still-billing request and create an
+    unobserved billed duplicate. What bounds each of them differs, and the
+    difference matters:
+      • the formal `*_raw` lanes hold a monotonic ABSOLUTE deadline spanning
+        DNS/connect/TLS/send/read, and the sealed parent additionally owns the
+        outer absolute child-process deadline;
+      • the two legacy urllib lanes (bedrock_converse, bedrock_responses) bound
+        each individual socket operation at the configured timeout (300s
+        converse, 600s responses) AND hold their own monotonic ABSOLUTE deadline
+        across the body read (`_read_body_within_deadline`), so a slow-drip
+        response cannot outlive the configured timeout. They are NOT part of the
+        sealed formal runner: `spend_guard.GuardedModelClient._provider_wire_request`
+        builds a canonical wire body only for the two *_raw backends
+        (`bedrock_responses_raw`, `bedrock_chat_completions_raw`) and returns
+        `(None, None)` for every other backend — openai_compat included — so no
+        sealed-parent deadline applies to these two lanes.
+    In every case the request settles before control returns.
     """
     # Shared across instances; each call only consumes one slot for its
     # duration. 8 max workers covers single-threaded scoring + a few
@@ -649,7 +903,25 @@ class ModelClient:
     _WALL_POOL = _cf.ThreadPoolExecutor(max_workers=8,
                                         thread_name_prefix="mc-wall")
 
-    def __init__(self, model_name: str):
+    def __init__(
+        self,
+        model_name: str,
+        *,
+        bedrock_bearer_token: str | None = None,
+        bedrock_ca_bundle: str | None = None,
+        bedrock_ca_bundle_sha256: str | None = None,
+    ):
+        """Construct a model client.
+
+        Formal Bedrock children pass the three keyword-only values directly
+        after reading the bearer token from their authenticated pipe.  This
+        avoids inherited credential/trust environment state.  Existing callers
+        remain source-compatible: absent overrides retain the registry + env
+        behavior used by legacy and interactive runs.
+        """
+        self._bedrock_bearer_token_override = bedrock_bearer_token
+        self._bedrock_ca_bundle_override = bedrock_ca_bundle
+        self._bedrock_ca_bundle_sha256_override = bedrock_ca_bundle_sha256
         # Resolve historical/abbreviated names to canonical so old --model calls
         # and recorded runs keep working; set name first so setup helpers can use
         # it in error messages.
@@ -661,6 +933,20 @@ class ModelClient:
         if model_name in LOCAL_MODELS:
             self.config = LOCAL_MODELS[model_name]
             self.backend = self.config.get("backend", "openai_compat")
+            if (
+                any(
+                    value is not None
+                    for value in (
+                        bedrock_bearer_token,
+                        bedrock_ca_bundle,
+                        bedrock_ca_bundle_sha256,
+                    )
+                )
+                and not self.backend.startswith("bedrock_")
+            ):
+                raise ValueError(
+                    "explicit Bedrock credentials/trust require a Bedrock backend"
+                )
             if self.backend == "openai_compat":
                 self._setup_openai_client()
             elif self.backend == "transformers_local":
@@ -669,6 +955,10 @@ class ModelClient:
                 self._setup_bedrock_token()
             elif self.backend == "bedrock_responses":
                 self._setup_bedrock_token()
+            elif self.backend == "bedrock_responses_raw":
+                self._setup_bedrock_responses_transport()
+            elif self.backend == "bedrock_chat_completions_raw":
+                self._setup_bedrock_chat_transport()
             else:
                 raise ValueError(
                     f"Unknown backend {self.backend!r} for model {model_name!r}"
@@ -695,6 +985,10 @@ class ModelClient:
 
     def _invoke_with_wall_timeout(self, fn, timeout: int, *args, **kwargs):
         """Run `fn(*args, **kwargs)` with a hard wall-time cap.
+
+        Only SDK and local backends are dispatched here — never a billed
+        dependency-free Bedrock transport, which runs synchronously in the
+        caller so a timeout cannot abandon a live paid request.
 
         On timeout: raise TimeoutError immediately. The in-flight thread
         is abandoned (cannot cleanly cancel a running urllib3 request);
@@ -740,10 +1034,12 @@ class ModelClient:
         import anthropic
         self._client = anthropic.Anthropic()
 
-    def _setup_bedrock_token(self):
-        """Read the Bedrock bearer token for the raw-HTTP backends
-        (bedrock_converse + bedrock_responses); both authenticate the same way."""
+    def _load_bedrock_token(self) -> str:
+        """Read one Bedrock bearer token without ever including it in errors."""
         import os
+        explicit = getattr(self, "_bedrock_bearer_token_override", None)
+        if explicit is not None:
+            return explicit
         env_var = self.config.get("api_key_env")
         token = os.environ.get(env_var) if env_var else None
         if not token:
@@ -752,7 +1048,123 @@ class ModelClient:
                 f"environment (not set). Source it from your .env or export it "
                 f"before instantiating ModelClient."
             )
-        self._bedrock_token = token
+        return token
+
+    def _setup_bedrock_token(self):
+        """Set up the explicit, proxy-free TLS transport for Responses/Converse.
+
+        Responses, Converse, and raw Chat Completions authenticate the same
+        way.  All three load only the configured CA PEM bytes; urllib's ambient
+        proxy settings, redirect behavior, and platform trust store are absent.
+        """
+        self._bedrock_token = self._load_bedrock_token()
+        from indra_belief.bedrock_chat_transport import build_pinned_https_opener
+
+        explicit_ca_bundle = getattr(self, "_bedrock_ca_bundle_override", None)
+        ca_bundle = (
+            explicit_ca_bundle
+            if explicit_ca_bundle is not None
+            else self.config.get("tls_ca_bundle", _FIXED_BEDROCK_TLS_CA_BUNDLE)
+        )
+        self._bedrock_url_opener, self._bedrock_tls_ca_bundle_sha256 = (
+            build_pinned_https_opener(ca_bundle)
+        )
+        expected_ca_sha256 = getattr(
+            self, "_bedrock_ca_bundle_sha256_override", None
+        )
+        if (
+            expected_ca_sha256 is not None
+            and self._bedrock_tls_ca_bundle_sha256 != expected_ca_sha256
+        ):
+            raise RuntimeError("explicit Bedrock CA bundle differs from its SHA-256")
+
+    def _setup_bedrock_chat_transport(self):
+        """Set up the proxy-free, redirect-free stdlib GLM-5 transport."""
+        self._bedrock_token = self._load_bedrock_token()
+        from indra_belief.bedrock_chat_transport import RawBedrockChatTransport
+
+        endpoint = self.config.get("chat_completions_endpoint")
+        expected = self.config.get("expected_chat_completions_endpoint")
+        if not isinstance(endpoint, str) or not isinstance(expected, str):
+            raise RuntimeError(
+                f"model {self.model_name!r} lacks its frozen chat-completions endpoint"
+            )
+        explicit_ca_bundle = getattr(self, "_bedrock_ca_bundle_override", None)
+        explicit_ca_sha256 = getattr(
+            self, "_bedrock_ca_bundle_sha256_override", None
+        )
+        ca_sha256 = (
+            explicit_ca_sha256
+            if explicit_ca_sha256 is not None
+            else self.config.get("tls_ca_bundle_sha256")
+        )
+        if not isinstance(ca_sha256, str):
+            raise RuntimeError(
+                f"model {self.model_name!r} lacks its frozen Chat TLS digest"
+            )
+        self._bedrock_chat_transport = RawBedrockChatTransport(
+            endpoint=endpoint,
+            expected_endpoint=expected,
+            expected_model_id=self.config["model_id"],
+            bearer_token=self._bedrock_token,
+            ca_bundle=(
+                explicit_ca_bundle
+                if explicit_ca_bundle is not None
+                else self.config.get("tls_ca_bundle")
+            ),
+            expected_ca_bundle_sha256=ca_sha256,
+            max_request_bytes=int(
+                self.config.get("max_request_bytes", 16 * 1024 * 1024)
+            ),
+            max_response_bytes=int(
+                self.config.get("max_response_bytes", 16 * 1024 * 1024)
+            ),
+        )
+
+    def _setup_bedrock_responses_transport(self):
+        """Set up the frozen stdlib transport for the formal Gemma-4 lanes."""
+        self._bedrock_token = self._load_bedrock_token()
+        from indra_belief.bedrock_responses_transport import (
+            RawBedrockResponsesTransport,
+        )
+
+        endpoint = self.config.get("responses_endpoint")
+        expected = self.config.get("expected_responses_endpoint")
+        explicit_ca_sha256 = getattr(
+            self, "_bedrock_ca_bundle_sha256_override", None
+        )
+        ca_sha256 = (
+            explicit_ca_sha256
+            if explicit_ca_sha256 is not None
+            else self.config.get("tls_ca_bundle_sha256")
+        )
+        if (
+            not isinstance(endpoint, str)
+            or not isinstance(expected, str)
+            or not isinstance(ca_sha256, str)
+        ):
+            raise RuntimeError(
+                f"model {self.model_name!r} lacks its frozen Responses transport"
+            )
+        explicit_ca_bundle = getattr(self, "_bedrock_ca_bundle_override", None)
+        self._bedrock_responses_transport = RawBedrockResponsesTransport(
+            endpoint=endpoint,
+            expected_endpoint=expected,
+            expected_model_id=self.config["model_id"],
+            bearer_token=self._bedrock_token,
+            ca_bundle=(
+                explicit_ca_bundle
+                if explicit_ca_bundle is not None
+                else self.config.get("tls_ca_bundle")
+            ),
+            expected_ca_bundle_sha256=ca_sha256,
+            max_request_bytes=int(
+                self.config.get("max_request_bytes", 16 * 1024 * 1024)
+            ),
+            max_response_bytes=int(
+                self.config.get("max_response_bytes", 16 * 1024 * 1024)
+            ),
+        )
 
     def _call_bedrock_converse(
         self, system: str, messages: list[dict], mt: int, temp: float, timeout: int,
@@ -765,6 +1177,8 @@ class ModelClient:
         bedrock-claude-* registry comment for the route/id/availability gotchas.
         """
         import json as _json
+        import socket as _socket
+        import time as _time
         import urllib.error
         import urllib.request
 
@@ -795,12 +1209,51 @@ class ModelClient:
                 "Accept": "application/json",
             },
         )
+        # Absolute wall bound, armed BEFORE the first byte leaves. `open(...,
+        # timeout=timeout)` stays the per-operation connect/header bound; the
+        # deadline is what a slow-drip body cannot outlive now that this lane
+        # runs synchronously with no thread-pool wall cap.
+        deadline = _time.monotonic() + timeout
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                payload = _json.loads(resp.read().decode("utf-8"))
+            with self._bedrock_url_opener.open(req, timeout=timeout) as resp:
+                payload = _json.loads(
+                    _read_body_within_deadline(
+                        resp, absolute_deadline=deadline, lane_label="Converse"
+                    ).decode("utf-8")
+                )
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")[:500]
-            raise RuntimeError(f"Bedrock Converse HTTP {e.code}: {detail}") from e
+            err = RuntimeError(f"Bedrock Converse HTTP {e.code}: {detail}")
+            # Authoritative status for _is_rate_limit_error, stamped under a name
+            # deliberately OUTSIDE spend_guard._status_from_provider_exception's
+            # candidate set (status / status_code / http_status / response.status*
+            # / transport_trace.response_http_status): the guard must keep
+            # classifying this lane exactly as it does today, off the unchanged
+            # message text alone.
+            err._bedrock_http_status = e.code
+            raise err from e
+        except _LaneDeadlineExpired as e:
+            # Signalled from INSIDE the `with`, handled here: the context manager
+            # already ran `resp.__exit__`, so the billed request is settled before
+            # this TimeoutError can reach the caller. Message is the lane's
+            # existing one, byte for byte.
+            raise TimeoutError(
+                f"Bedrock Converse request timed out after {timeout}s"
+            ) from e
+        except TimeoutError as e:
+            # This lane now runs in the caller (see call()), so its socket
+            # deadline IS the caller-visible deadline. Normalize to the same
+            # TimeoutError the raw transports raise, so classify_provider_failure
+            # and grounding's `type(e).__name__` abstain reason do not drift.
+            raise TimeoutError(
+                f"Bedrock Converse request timed out after {timeout}s"
+            ) from e
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, (_socket.timeout, TimeoutError)):
+                raise TimeoutError(
+                    f"Bedrock Converse request timed out after {timeout}s"
+                ) from e
+            raise
 
         blocks = payload.get("output", {}).get("message", {}).get("content", []) or []
         text = "".join(b.get("text", "") for b in blocks if isinstance(b, dict))
@@ -840,6 +1293,8 @@ class ModelClient:
         must not be relied on.
         """
         import json as _json
+        import socket as _socket
+        import time as _time
         import urllib.error
         import urllib.request
 
@@ -887,12 +1342,39 @@ class ModelClient:
                 "Accept": "application/json",
             },
         )
+        # Same absolute wall bound as _call_bedrock_converse, armed before the
+        # first byte leaves; see _read_body_within_deadline.
+        deadline = _time.monotonic() + timeout
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                payload = _json.loads(resp.read().decode("utf-8"))
+            with self._bedrock_url_opener.open(req, timeout=timeout) as resp:
+                payload = _json.loads(
+                    _read_body_within_deadline(
+                        resp, absolute_deadline=deadline, lane_label="Responses"
+                    ).decode("utf-8")
+                )
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")[:500]
-            raise RuntimeError(f"Bedrock Responses HTTP {e.code}: {detail}") from e
+            err = RuntimeError(f"Bedrock Responses HTTP {e.code}: {detail}")
+            # Same private-attribute rationale as _call_bedrock_converse: an
+            # authoritative status for the rate-limit test that the spend-guard
+            # status extractor deliberately cannot see.
+            err._bedrock_http_status = e.code
+            raise err from e
+        except _LaneDeadlineExpired as e:
+            # Handled outside the `with`: the response is already closed.
+            raise TimeoutError(
+                f"Bedrock Responses request timed out after {timeout}s"
+            ) from e
+        except TimeoutError as e:
+            raise TimeoutError(
+                f"Bedrock Responses request timed out after {timeout}s"
+            ) from e
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, (_socket.timeout, TimeoutError)):
+                raise TimeoutError(
+                    f"Bedrock Responses request timed out after {timeout}s"
+                ) from e
+            raise
 
         reasoning_parts: list[str] = []
         content_parts: list[str] = []
@@ -948,6 +1430,73 @@ class ModelClient:
                 finish_reason=finish),
         )
 
+    def _call_bedrock_responses_raw(
+        self,
+        system: str,
+        messages: list[dict],
+        mt: int,
+        temp: float,
+        timeout: int,
+        reasoning_effort: str | None = None,
+    ) -> ModelResponse:
+        """Bounded raw Responses adapter used by the formal Gemma-4 lanes.
+
+        ``temp`` remains accepted-and-ignored, matching the legacy adapter and
+        avoiding a field that reasoning models on this route can reject.
+        """
+        from indra_belief.bedrock_responses_transport import (
+            build_bedrock_responses_body,
+        )
+
+        effort = (
+            reasoning_effort
+            if reasoning_effort is not None
+            else self.config.get("reasoning_effort")
+        )
+        body = build_bedrock_responses_body(
+            model_id=self.config["model_id"],
+            system=system,
+            messages=messages,
+            max_output_tokens=mt,
+            reasoning_effort=effort,
+        )
+        result = self._bedrock_responses_transport.call(body, timeout=timeout)
+        content = result.content
+        reasoning = result.reasoning
+        if self.config.get("reasoning_in_content"):
+            raw_text = content
+        else:
+            raw_text = (reasoning + "\n" + content) if reasoning else content
+
+        if reasoning:
+            status = ReasoningStatus.PLAINTEXT
+        elif result.reasoning_item_present and result.reasoning_tokens > 0:
+            status = ReasoningStatus.ENCRYPTED
+        else:
+            status = _classify_reasoning(
+                reasoning,
+                result.reasoning_tokens,
+                inline=bool(self.config.get("reasoning_in_content")),
+            )
+        return ModelResponse(
+            content=content,
+            reasoning=reasoning,
+            tokens=result.output_tokens,
+            raw_text=raw_text,
+            finish_reason=result.finish_reason,
+            prompt_tokens=result.prompt_tokens,
+            reasoning_trace=_build_trace(
+                reasoning=reasoning,
+                reasoning_tokens=result.reasoning_tokens,
+                status=status,
+                provider_source="bedrock_responses.output[].reasoning",
+                backend=self.backend,
+                model_id=self.config.get("model_id"),
+                finish_reason=result.finish_reason,
+            ),
+            transport_trace=result.transport_trace,
+        )
+
     def call(
         self,
         system: str,
@@ -1000,7 +1549,13 @@ class ModelClient:
 
         # 429 quota retries are bounded by this counter; everything else
         # raises on first occurrence (see retry doctrine above).
-        rate_limit_retries = 5
+        # Paid corpus runs wrap this client with the append-only spend guard.
+        # Their retry budget is owned by the runner's two-attempt execution
+        # identity, so an opaque in-client retry would evade the attempt ledger.
+        # Unguarded behavior remains unchanged.
+        rate_limit_retries = (
+            0 if getattr(self, "_spend_guard_disable_internal_retries", False) else 5
+        )
         t_start = _time.time()
 
         try:
@@ -1023,20 +1578,43 @@ class ModelClient:
                             self._call_transformers, timeout,
                             system, messages, mt, temperature,
                         )
+                    # ── Dependency-free paid Bedrock lanes: synchronous ──────
+                    # A future that times out cannot cancel an already running
+                    # HTTP request.  Returning while that paid side effect is
+                    # still live would let the runner start an unobserved
+                    # duplicate attempt.  All four billed raw-HTTP transports
+                    # therefore execute in the scoring worker itself, so the
+                    # request always settles before an error can reach the retry
+                    # ledger.  The two formal *_raw lanes are bounded by their
+                    # monotonic absolute transport deadline, with the sealed
+                    # parent owning the outer child-process deadline; the two
+                    # legacy urllib lanes are bounded by their per-socket-
+                    # operation timeout PLUS their own monotonic absolute
+                    # deadline over the body read, and normalize either expiry
+                    # to TimeoutError before it escapes.
                     elif self.backend == "bedrock_converse":
-                        response = self._invoke_with_wall_timeout(
-                            self._call_bedrock_converse, timeout,
+                        response = self._call_bedrock_converse(
                             system, messages, mt, temperature, timeout,
                         )
                     elif self.backend == "bedrock_responses":
-                        response = self._invoke_with_wall_timeout(
-                            self._call_bedrock_responses, timeout,
+                        response = self._call_bedrock_responses(
                             system, messages, mt, temperature, timeout,
+                            reasoning_effort=reasoning_effort,
+                        )
+                    elif self.backend == "bedrock_responses_raw":
+                        response = self._call_bedrock_responses_raw(
+                            system, messages, mt, temperature, timeout,
+                            reasoning_effort=reasoning_effort,
+                        )
+                    elif self.backend == "bedrock_chat_completions_raw":
+                        response = self._call_bedrock_chat_completions_raw(
+                            system, messages, mt, temperature, timeout,
+                            response_format=response_format,
                             reasoning_effort=reasoning_effort,
                         )
                     else:
                         raise ValueError(f"Unknown backend: {self.backend}")
-                    self._get_call_log().append({
+                    call_row = {
                         "kind": kind,
                         "duration_s": round(_time.time() - t_start, 3),
                         "prompt_chars": prompt_chars,
@@ -1053,26 +1631,36 @@ class ModelClient:
                         "model_id": self.config.get("model_id"),
                         "content": response.content,
                         "reasoning": response.reasoning,
+                        "raw_text": response.raw_text,
                         # Uniform CoT capture (status + tokens + provenance, and
                         # committed support/objection stamped later by the
                         # structured scorer). Same dict object the scorer mutates.
                         "reasoning_trace": response.reasoning_trace,
-                    })
+                    }
+                    if response.transport_trace:
+                        call_row["transport_trace"] = response.transport_trace
+                    self._get_call_log().append(call_row)
                     return response
                 except Exception as e:
-                    msg = str(e).lower()
                     # 429 / rate-limit: respect the server's requested delay.
-                    # This is the ONLY in-client retry.
-                    if ("429" in msg or "rate limit" in msg
-                            or "resource_exhausted" in msg) and rate_limit_retries > 0:
+                    # This is the ONLY in-client retry. Classification is
+                    # status-AUTHORITATIVE (see _is_rate_limit_error): a
+                    # structured 429 retries, ANY other structured status is
+                    # final however its body reads, and message text is consulted
+                    # only when the provider reported no status at all.
+                    if _is_rate_limit_error(e) and rate_limit_retries > 0:
                         delay = _parse_retry_delay(str(e))
                         # tiny safety pad so the next request lands clean
                         _time.sleep(delay + 1)
                         rate_limit_retries -= 1
                         continue
                     raise
-        except Exception as e:
-            self._get_call_log().append({
+        except BaseException as e:
+            # The spend WAL consumes exactly one log row immediately after
+            # every return *or raise*.  Record process-control exceptions too,
+            # then re-raise them unchanged; the wrapper remains fail-closed and
+            # can persist honest evidence instead of finding an empty TLS log.
+            call_row = {
                 "kind": kind,
                 "duration_s": round(_time.time() - t_start, 3),
                 "prompt_chars": prompt_chars,
@@ -1085,8 +1673,118 @@ class ModelClient:
                 "system": system,
                 "messages": messages,
                 "model_id": self.config.get("model_id"),
-            })
+            }
+            transport_trace = getattr(e, "transport_trace", None)
+            if (
+                not isinstance(transport_trace, dict)
+                and self.backend in {
+                    "bedrock_chat_completions_raw",
+                    "bedrock_responses_raw",
+                }
+            ):
+                # Failures before a raw transport can attach its own trace still
+                # retain the exact pre-side-effect request commitment.
+                try:
+                    effort = (
+                        reasoning_effort
+                        if reasoning_effort is not None
+                        else self.config.get("reasoning_effort")
+                    )
+                    if self.backend == "bedrock_chat_completions_raw":
+                        from indra_belief.bedrock_chat_transport import (
+                            build_bedrock_chat_body,
+                        )
+
+                        body = build_bedrock_chat_body(
+                            model_id=self.config["model_id"],
+                            system=system,
+                            messages=messages,
+                            max_tokens=mt,
+                            temperature=temperature,
+                            response_format=response_format,
+                            reasoning_effort=effort,
+                        )
+                        transport_trace = (
+                            self._bedrock_chat_transport.request_trace(body)
+                        )
+                    else:
+                        from indra_belief.bedrock_responses_transport import (
+                            build_bedrock_responses_body,
+                        )
+
+                        body = build_bedrock_responses_body(
+                            model_id=self.config["model_id"],
+                            system=system,
+                            messages=messages,
+                            max_output_tokens=mt,
+                            reasoning_effort=effort,
+                        )
+                        transport_trace = (
+                            self._bedrock_responses_transport.request_trace(body)
+                        )
+                except BaseException:
+                    transport_trace = None
+            if isinstance(transport_trace, dict):
+                call_row["transport_trace"] = transport_trace
+            self._get_call_log().append(call_row)
             raise
+
+    def _call_bedrock_chat_completions_raw(
+        self,
+        system: str,
+        messages: list[dict],
+        mt: int,
+        temp: float,
+        timeout: int,
+        response_format: dict | None = None,
+        reasoning_effort: str | None = None,
+    ) -> ModelResponse:
+        """Raw stdlib Chat Completions adapter used by the formal GLM-5 lane."""
+        from indra_belief.bedrock_chat_transport import build_bedrock_chat_body
+
+        effort = (
+            reasoning_effort
+            if reasoning_effort is not None
+            else self.config.get("reasoning_effort")
+        )
+        body = build_bedrock_chat_body(
+            model_id=self.config["model_id"],
+            system=system,
+            messages=messages,
+            max_tokens=mt,
+            temperature=temp,
+            response_format=response_format,
+            reasoning_effort=effort,
+        )
+        result = self._bedrock_chat_transport.call(body, timeout=timeout)
+        content = result.content
+        reasoning = result.reasoning
+        if self.config.get("reasoning_in_content"):
+            raw_text = content
+        else:
+            raw_text = (reasoning + "\n" + content) if reasoning else content
+        return ModelResponse(
+            content=content,
+            reasoning=reasoning,
+            tokens=result.output_tokens,
+            raw_text=raw_text,
+            finish_reason=result.finish_reason,
+            prompt_tokens=result.prompt_tokens,
+            reasoning_trace=_build_trace(
+                reasoning=reasoning,
+                reasoning_tokens=result.reasoning_tokens,
+                status=_classify_reasoning(
+                    reasoning,
+                    result.reasoning_tokens,
+                    inline=bool(self.config.get("reasoning_in_content")),
+                ),
+                provider_source="bedrock_chat_completions.message.reasoning_content",
+                backend=self.backend,
+                model_id=self.config.get("model_id"),
+                finish_reason=result.finish_reason,
+            ),
+            transport_trace=result.transport_trace,
+        )
 
     def _call_openai_compat(
         self, system: str, messages: list[dict], mt: int, temp: float, timeout: int,

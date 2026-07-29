@@ -30,47 +30,13 @@ log = logging.getLogger(__name__)
 # This hard-coded table is the single source of truth — the viewer does not
 # currently compute or display cost (no client-side mirror).
 def _load_pricing_table() -> tuple[dict[str, tuple[float, float]], set[str]]:
-    """Load the LLM input/output price table (USD per million tokens).
+    """Return the code-authenticated USD-per-million token price table.
 
-    SSOT CAVEAT: this prefers `viewer/src/lib/modelPrices.json` IF that file
-    exists — a dormant hook for a future shared price source. That file does
-    NOT exist today, so the hard-coded fallback below is the effective single
-    source of truth and editing it IS effective. WARNING: if anyone ever creates
-    `modelPrices.json`, it SILENTLY OVERRIDES the Python edits below, splitting
-    the SSOT. Do not create that file — prices must stay owned by this module.
+    Paid reservations must not depend on an optional repository file read at
+    module import: that would let a create/import/remove race change prices
+    while every authenticated Python pathname still matched.  This frozen
+    table is the sole paid-run source of truth.
     """
-    import json
-    import os
-
-    here = os.path.dirname(os.path.abspath(__file__))
-    candidate_paths = [
-        os.path.normpath(os.path.join(here, "..", "..", "..", "viewer", "src", "lib", "modelPrices.json")),
-    ]
-    for path in candidate_paths:
-        if not os.path.exists(path):
-            continue
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            raw_prices = data.get("prices_per_million_tokens", {}) or {}
-            prices: dict[str, tuple[float, float]] = {}
-            for model_id, pair in raw_prices.items():
-                if (
-                    isinstance(pair, (list, tuple))
-                    and len(pair) == 2
-                    and all(isinstance(v, (int, float)) for v in pair)
-                ):
-                    prices[str(model_id)] = (float(pair[0]), float(pair[1]))
-            zero_raw = data.get("zero_cost_model_ids", []) or []
-            zero = {str(m) for m in zero_raw if isinstance(m, str)}
-            if prices:
-                return prices, zero
-        except (OSError, json.JSONDecodeError) as e:
-            log.warning(
-                "could not read pricing table from %s: %s; using fallback", path, e
-            )
-    # Hard-coded fallback so unit tests in isolated environments still work.
-    # This IS the effective single source of truth (see SSOT caveat above).
     return (
         {
             # Anthropic-API-spelled ids (estimate_cost defaults / direct calls).

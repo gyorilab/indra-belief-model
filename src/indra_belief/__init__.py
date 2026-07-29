@@ -16,12 +16,36 @@ holdout_cc, F1 0.751 vs the decomposed 0.657):
 For the decomposed four-probe path, import the same names from
 `indra_belief.scorers.decomposed`. See README for usage examples.
 """
-from indra_belief.model_client import ModelClient, ModelResponse
-from indra_belief.scorers.monolithic import score_evidence, score_statement
-
 __all__ = [
     "score_statement",
     "score_evidence",
     "ModelClient",
     "ModelResponse",
 ]
+
+
+def __getattr__(name: str):
+    """Load public conveniences lazily.
+
+    Importing a transport or spend-accounting submodule must not implicitly
+    import INDRA, Gilda, the ontology, or the monolithic scorer.  The previous
+    eager package imports made that impossible even for otherwise stdlib-only
+    paid transports.  Public ``from indra_belief import ...`` behavior is
+    preserved while submodule imports now pay only for their own closure.
+    """
+    if name in {"ModelClient", "ModelResponse"}:
+        from indra_belief.model_client import ModelClient, ModelResponse
+
+        return {"ModelClient": ModelClient, "ModelResponse": ModelResponse}[name]
+    if name in {"score_evidence", "score_statement"}:
+        from indra_belief.scorers.monolithic import score_evidence, score_statement
+
+        return {
+            "score_evidence": score_evidence,
+            "score_statement": score_statement,
+        }[name]
+    raise AttributeError(name)
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))
