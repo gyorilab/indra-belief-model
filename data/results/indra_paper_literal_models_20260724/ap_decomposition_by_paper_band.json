@@ -1,0 +1,579 @@
+{
+ "artifact_kind": "paper_ap_decomposition_by_evidence_count",
+ "schema_version": 2,
+ "metric": "pooled_average_precision",
+ "unit": "AP points (1 pt = 0.01 AP)",
+ "reference_arm": "Paper literal RF+promoter",
+ "reference_average_precision": 0.9412042789486932,
+ "n_statements": 1689,
+ "n_true": 1237,
+ "n_false": 452,
+ "banding": {
+  "kind": "power_of_two_ladder_on_evidence_count",
+  "variable": "evidence entries per statement",
+  "variable_is_exogenous": true,
+  "why_exogenous": "An integer census of the corpus, fixed before any model ran. Not a score, not fitted to any label, carrying no arm's estimation noise \u2014 so it has no mirror to reverse under. It is also the noisy-OR's own saturating input, belief = 1 - PROD_s (syst_s + rand_s^{n_s}).",
+  "why_not_the_noisy_or": "The unfitted noisy-OR belief is the other exogenous candidate and is rejected: the reader gate is purely subtractive, so no reader belief ever exceeds it (verified: 0 of 6756). It is each reader arm's own ceiling, so banding by it would condition on part of the reader's own score. It is kept as a mirror diagnostic instead.",
+  "n_bands": 7,
+  "edges": [
+   [
+    1,
+    1
+   ],
+   [
+    2,
+    2
+   ],
+   [
+    3,
+    4
+   ],
+   [
+    5,
+    8
+   ],
+   [
+    9,
+    16
+   ],
+   [
+    17,
+    32
+   ],
+   [
+    33,
+    null
+   ]
+  ],
+  "direction": "left = 1 evidence entry (the noisy-OR at its weakest); right = 33 or more (saturated)",
+  "ordering": "sorted(stmt_hash); band membership is a pure function of the evidence count, so no statement is assigned by a tie-break",
+  "n_distinct_evidence_counts": 142,
+  "evidence_min": 1,
+  "evidence_max": 771,
+  "verified_against": {
+   "execution_map_multiplicity_weighted_pairs": "data/benchmark/indra_paper_unique_pairs_20260717_execution_map.jsonl",
+   "shared_gold_field": "evidence_review.corpus_evidence_entries",
+   "paper_released_field": "sum(paper_eligibility.historical_all_source_counts)",
+   "n_statements_agreeing": 1689
+  },
+  "unique_pair_scope": {
+   "note": "The reader panel is built from UNIQUE (statement, evidence) pairs; this census counts every entry, which is what the paper's own released per-source counts do.",
+   "n_unique_pairs": 33361,
+   "n_evidence_entries": 34035,
+   "n_statements_changing_band_under_unique_pairs": 48
+  }
+ },
+ "bands": [
+  {
+   "index": 1,
+   "label": "1",
+   "evidence_low": 1,
+   "evidence_high": 1,
+   "n": 328,
+   "n_true": 155,
+   "n_false": 173,
+   "error_rate": 0.5274390243902439,
+   "evidence_entries": 328,
+   "evidence_min": 1,
+   "evidence_max": 1,
+   "reference_contribution_pts": 10.683973679460452
+  },
+  {
+   "index": 2,
+   "label": "2",
+   "evidence_low": 2,
+   "evidence_high": 2,
+   "n": 146,
+   "n_true": 99,
+   "n_false": 47,
+   "error_rate": 0.3219178082191781,
+   "evidence_entries": 292,
+   "evidence_min": 2,
+   "evidence_max": 2,
+   "reference_contribution_pts": 7.159608483444743
+  },
+  {
+   "index": 3,
+   "label": "3\u20134",
+   "evidence_low": 3,
+   "evidence_high": 4,
+   "n": 219,
+   "n_true": 136,
+   "n_false": 83,
+   "error_rate": 0.3789954337899543,
+   "evidence_entries": 754,
+   "evidence_min": 3,
+   "evidence_max": 4,
+   "reference_contribution_pts": 10.133080549388376
+  },
+  {
+   "index": 4,
+   "label": "5\u20138",
+   "evidence_low": 5,
+   "evidence_high": 8,
+   "n": 259,
+   "n_true": 193,
+   "n_false": 66,
+   "error_rate": 0.2548262548262548,
+   "evidence_entries": 1660,
+   "evidence_min": 5,
+   "evidence_max": 8,
+   "reference_contribution_pts": 14.624577112871634
+  },
+  {
+   "index": 5,
+   "label": "9\u201316",
+   "evidence_low": 9,
+   "evidence_high": 16,
+   "n": 294,
+   "n_true": 248,
+   "n_false": 46,
+   "error_rate": 0.1564625850340136,
+   "evidence_entries": 3457,
+   "evidence_min": 9,
+   "evidence_max": 16,
+   "reference_contribution_pts": 19.26741855915268
+  },
+  {
+   "index": 6,
+   "label": "17\u201332",
+   "evidence_low": 17,
+   "evidence_high": 32,
+   "n": 243,
+   "n_true": 217,
+   "n_false": 26,
+   "error_rate": 0.10699588477366255,
+   "evidence_entries": 5560,
+   "evidence_min": 17,
+   "evidence_max": 32,
+   "reference_contribution_pts": 17.17352148920807
+  },
+  {
+   "index": 7,
+   "label": "33+",
+   "evidence_low": 33,
+   "evidence_high": null,
+   "n": 200,
+   "n_true": 189,
+   "n_false": 11,
+   "error_rate": 0.055,
+   "evidence_entries": 21984,
+   "evidence_min": 33,
+   "evidence_max": 771,
+   "reference_contribution_pts": 15.078248021343349
+  }
+ ],
+ "band_true_counts": [
+  155,
+  99,
+  136,
+  193,
+  248,
+  217,
+  189
+ ],
+ "band_false_counts": [
+  173,
+  47,
+  83,
+  66,
+  46,
+  26,
+  11
+ ],
+ "arms": [
+  {
+   "name": "Gemma 4 26B",
+   "model_key": "gemma_4_26b",
+   "average_precision": 0.9509925130833301,
+   "total_delta_ap": 0.009788234134636817,
+   "total_pts": 0.9788234134636817,
+   "per_band_net_pts": [
+    0.08668058838860532,
+    0.14583806121168946,
+    0.06937914091833576,
+    0.21650865824070592,
+    0.1852908470001219,
+    0.13610004808569573,
+    0.13902606961852762
+   ],
+   "cumulative_pts": [
+    0.08668058838860532,
+    0.23251864960029478,
+    0.3018977905186305,
+    0.5184064487593365,
+    0.7036972957594584,
+    0.839797343845154,
+    0.9788234134636817
+   ],
+   "n_bands_agreeing_with_total_sign": 7,
+   "largest_band_share_of_total": 0.22119276599092025,
+   "largest_band_index": 4,
+   "ci95_low_pts": 0.12146037397306132,
+   "ci95_high_pts": 1.8527337585770645,
+   "p_arm_greater": 0.9864,
+   "clears_zero": true,
+   "shipped_bootstrap_mean_delta_ap": 0.009791524990593917
+  },
+  {
+   "name": "GLM-5",
+   "model_key": "glm_5",
+   "average_precision": 0.9506590078548791,
+   "total_delta_ap": 0.00945472890618598,
+   "total_pts": 0.945472890618598,
+   "per_band_net_pts": [
+    0.16806460844939072,
+    0.09101553445389263,
+    0.132038354355401,
+    0.2328693528288876,
+    0.011958059818943753,
+    0.1622632717073583,
+    0.14726370900472394
+   ],
+   "cumulative_pts": [
+    0.16806460844939072,
+    0.25908014290328335,
+    0.39111849725868436,
+    0.623987850087572,
+    0.6359459099065157,
+    0.798209181613874,
+    0.945472890618598
+   ],
+   "n_bands_agreeing_with_total_sign": 7,
+   "largest_band_share_of_total": 0.24629934410549553,
+   "largest_band_index": 4,
+   "ci95_low_pts": 0.06532989554322188,
+   "ci95_high_pts": 1.8412847330592426,
+   "p_arm_greater": 0.9832,
+   "clears_zero": true,
+   "shipped_bootstrap_mean_delta_ap": 0.009452742018179203
+  },
+  {
+   "name": "Gemma 4 31B",
+   "model_key": "gemma_4_31b",
+   "average_precision": 0.9489114903136125,
+   "total_delta_ap": 0.007707211364919335,
+   "total_pts": 0.7707211364919334,
+   "per_band_net_pts": [
+    0.15183786962692533,
+    0.148873662128301,
+    0.060755160859424055,
+    0.1431783408299386,
+    0.06001179118044874,
+    0.1151081718987676,
+    0.09095613996812804
+   ],
+   "cumulative_pts": [
+    0.15183786962692533,
+    0.30071153175522636,
+    0.3614666926146504,
+    0.504645033444589,
+    0.5646568246250377,
+    0.6797649965238054,
+    0.7707211364919334
+   ],
+   "n_bands_agreeing_with_total_sign": 7,
+   "largest_band_share_of_total": 0.19700753286466344,
+   "largest_band_index": 1,
+   "ci95_low_pts": -0.12481529308254244,
+   "ci95_high_pts": 1.67045002746407,
+   "p_arm_greater": 0.9544,
+   "clears_zero": false,
+   "shipped_bootstrap_mean_delta_ap": 0.007730613200392364
+  },
+  {
+   "name": "Paper literal RF+prom/avglen",
+   "model_key": null,
+   "average_precision": 0.9420068362357237,
+   "total_delta_ap": 0.0008025572870305149,
+   "total_pts": 0.08025572870305149,
+   "per_band_net_pts": [
+    -0.0039640886774698555,
+    -0.031782569392325405,
+    8.273662934732114e-05,
+    0.043488460479443096,
+    0.02431741098969649,
+    0.027203883223630706,
+    0.020909895450729136
+   ],
+   "cumulative_pts": [
+    -0.0039640886774698555,
+    -0.03574665806979526,
+    -0.035663921440447936,
+    0.00782453903899516,
+    0.03214195002869165,
+    0.05934583325232235,
+    0.08025572870305149
+   ],
+   "n_bands_agreeing_with_total_sign": 5,
+   "largest_band_share_of_total": 0.5418735980873297,
+   "largest_band_index": 4,
+   "ci95_low_pts": -0.17609938044450574,
+   "ci95_high_pts": 0.3366025521437276,
+   "p_arm_greater": 0.7298,
+   "clears_zero": false,
+   "shipped_bootstrap_mean_delta_ap": 0.0007998566613644969
+  },
+  {
+   "name": "Gemma 4 E2B",
+   "model_key": "gemma_4_e2b",
+   "average_precision": 0.9251951801050831,
+   "total_delta_ap": -0.01600909884361008,
+   "total_pts": -1.6009098843610081,
+   "per_band_net_pts": [
+    -0.49371700198896196,
+    -0.2849303221655269,
+    -0.32029667912509646,
+    -0.2520949121853337,
+    -0.17770077730845185,
+    -0.12776042582338226,
+    0.05559023423574509
+   ],
+   "cumulative_pts": [
+    -0.49371700198896196,
+    -0.7786473241544889,
+    -1.0989440032795852,
+    -1.351038915464919,
+    -1.528739692773371,
+    -1.6565001185967532,
+    -1.6009098843610081
+   ],
+   "n_bands_agreeing_with_total_sign": 6,
+   "largest_band_share_of_total": 0.3083977473135695,
+   "largest_band_index": 1,
+   "ci95_low_pts": -2.564275724562116,
+   "ci95_high_pts": -0.6146482003835232,
+   "p_arm_greater": 0.0013,
+   "clears_zero": true,
+   "shipped_bootstrap_mean_delta_ap": -0.015928829888344348
+  }
+ ],
+ "banding_sensitivity": {
+  "question": "Does the shape this decomposition shows depend on WHICH variable the bands are cut on?",
+  "finding": "Yes, when the banding variable is one of the two scores being differenced. Banded by the reference's own score every reader appears to lose at the head and win at the tail; banded by the compared arm's own score the same decomposition of the same arm says the opposite. Both are regression to the mean on the banding score's own noise. Banded on either exogenous variable the tilt collapses.",
+  "summary_metric": "tilt = (net AP points over D1-D5) - (net over D9+D10), in AP points, from equal-count deciles of each candidate banding variable",
+  "n_bands": 10,
+  "head_bands": 5,
+  "tail_bands": 2,
+  "drawn_arm": "Gemma 4 26B",
+  "variants": [
+   {
+    "key": "reference_own_score",
+    "banding_arm": "Paper literal RF+promoter",
+    "kind": "endogenous",
+    "note": "the reference arm's own out-of-fold score \u2014 the banding this figure used to use",
+    "arms": [
+     {
+      "arm": "Gemma 4 26B",
+      "head_pts": -0.5161989437732425,
+      "tail_pts": 0.9518166256661017,
+      "tilt_pts": -1.4680155694393442,
+      "head_pts_reversed_tie_break": -0.5161989437732425,
+      "tail_pts_reversed_tie_break": 0.9518166256661017,
+      "max_tie_break_spread_pts": 0.0
+     },
+     {
+      "arm": "GLM-5",
+      "head_pts": -0.48064663103493915,
+      "tail_pts": 1.0111495088791227,
+      "tilt_pts": -1.4917961399140618,
+      "head_pts_reversed_tie_break": -0.48064663103493915,
+      "tail_pts_reversed_tie_break": 1.0111495088791227,
+      "max_tie_break_spread_pts": 0.0
+     },
+     {
+      "arm": "Gemma 4 31B",
+      "head_pts": -0.6809506638074123,
+      "tail_pts": 0.9525838785831381,
+      "tilt_pts": -1.6335345423905503,
+      "head_pts_reversed_tie_break": -0.6809506638074123,
+      "tail_pts_reversed_tie_break": 0.9525838785831381,
+      "max_tie_break_spread_pts": 0.0
+     },
+     {
+      "arm": "Gemma 4 E2B",
+      "head_pts": -1.796117960402322,
+      "tail_pts": 0.4386579243239373,
+      "tilt_pts": -2.2347758847262593,
+      "head_pts_reversed_tie_break": -1.796117960402322,
+      "tail_pts_reversed_tie_break": 0.4386579243239373,
+      "max_tie_break_spread_pts": 0.0
+     }
+    ]
+   },
+   {
+    "key": "drawn_arm_own_score",
+    "banding_arm": "Gemma 4 26B",
+    "kind": "endogenous",
+    "note": "the compared arm's own score \u2014 the mirror of the row above",
+    "arms": [
+     {
+      "arm": "Gemma 4 26B",
+      "head_pts": 1.0067929408958867,
+      "tail_pts": -0.9735944811539554,
+      "tilt_pts": 1.980387422049842,
+      "head_pts_reversed_tie_break": 1.0187796684544093,
+      "tail_pts_reversed_tie_break": -0.9886044808944727,
+      "max_tie_break_spread_pts": 0.01500999974051731
+     },
+     {
+      "arm": "GLM-5",
+      "head_pts": 1.162511611409665,
+      "tail_pts": -0.9217900339129285,
+      "tilt_pts": 2.0843016453225935,
+      "head_pts_reversed_tie_break": 1.1770248646238495,
+      "tail_pts_reversed_tie_break": -0.9195318845731035,
+      "max_tie_break_spread_pts": 0.014513253214184507
+     },
+     {
+      "arm": "Gemma 4 31B",
+      "head_pts": 0.8914298654796661,
+      "tail_pts": -0.8179028889247607,
+      "tilt_pts": 1.7093327544044268,
+      "head_pts_reversed_tie_break": 0.9020106745430339,
+      "tail_pts_reversed_tie_break": -0.817553780128512,
+      "max_tie_break_spread_pts": 0.01058080906336778
+     },
+     {
+      "arm": "Gemma 4 E2B",
+      "head_pts": -0.6071646267788383,
+      "tail_pts": -0.3163718746509979,
+      "tilt_pts": -0.2907927521278404,
+      "head_pts_reversed_tie_break": -0.6001635836785764,
+      "tail_pts_reversed_tie_break": -0.3922470217747493,
+      "max_tie_break_spread_pts": 0.07587514712375137
+     }
+    ]
+   },
+   {
+    "key": "unfitted_noisy_or",
+    "banding_arm": "noisy-OR SimpleScorer (direct)",
+    "kind": "exogenous",
+    "note": "the unfitted noisy-OR belief \u2014 no labels, no fit, but it is every reader's own ceiling",
+    "arms": [
+     {
+      "arm": "Gemma 4 26B",
+      "head_pts": 0.35466912845451015,
+      "tail_pts": 0.09404617031362823,
+      "tilt_pts": 0.26062295814088193,
+      "head_pts_reversed_tie_break": 0.3554567336761548,
+      "tail_pts_reversed_tie_break": 0.07906414678313287,
+      "max_tie_break_spread_pts": 0.014982023530495367
+     },
+     {
+      "arm": "GLM-5",
+      "head_pts": 0.36224588721047674,
+      "tail_pts": 0.17870045230762682,
+      "tilt_pts": 0.1835454349028499,
+      "head_pts_reversed_tie_break": 0.3655664309123151,
+      "tail_pts_reversed_tie_break": 0.16489793630364438,
+      "max_tie_break_spread_pts": 0.01380251600398244
+     },
+     {
+      "arm": "Gemma 4 31B",
+      "head_pts": 0.1776268137719038,
+      "tail_pts": 0.1594059962393929,
+      "tilt_pts": 0.018220817532510925,
+      "head_pts_reversed_tie_break": 0.18273405166445836,
+      "tail_pts_reversed_tie_break": 0.16190441893151772,
+      "max_tie_break_spread_pts": 0.005107237892554545
+     },
+     {
+      "arm": "Gemma 4 E2B",
+      "head_pts": -0.6935302137957446,
+      "tail_pts": -0.49540875581438215,
+      "tilt_pts": -0.1981214579813625,
+      "head_pts_reversed_tie_break": -0.6813698113513484,
+      "tail_pts_reversed_tie_break": -0.5007758145552897,
+      "max_tie_break_spread_pts": 0.012160402444396201
+     }
+    ]
+   },
+   {
+    "key": "evidence_count",
+    "banding_arm": "evidence entries per statement",
+    "kind": "exogenous",
+    "note": "the corpus census this figure bands on, cut into deciles so it lands on the same head/tail definition as the rows above",
+    "arms": [
+     {
+      "arm": "Gemma 4 26B",
+      "head_pts": 0.5086643122527333,
+      "tail_pts": 0.08595167893131603,
+      "tilt_pts": 0.4227126333214173,
+      "head_pts_reversed_tie_break": 0.5756109154420349,
+      "tail_pts_reversed_tie_break": 0.0995284340195931,
+      "max_tie_break_spread_pts": 0.06694660318930157
+     },
+     {
+      "arm": "GLM-5",
+      "head_pts": 0.3265654799013942,
+      "tail_pts": 0.17159609728630967,
+      "tilt_pts": 0.1549693826150845,
+      "head_pts_reversed_tie_break": 0.3962108945837055,
+      "tail_pts_reversed_tie_break": 0.18462148655670912,
+      "max_tie_break_spread_pts": 0.06964541468231134
+     },
+     {
+      "arm": "Gemma 4 31B",
+      "head_pts": 0.29423318463394754,
+      "tail_pts": 0.151305472237686,
+      "tilt_pts": 0.14292771239626154,
+      "head_pts_reversed_tie_break": 0.36289736508841014,
+      "tail_pts_reversed_tie_break": 0.18236404003165152,
+      "max_tie_break_spread_pts": 0.0686641804544626
+     },
+     {
+      "arm": "Gemma 4 E2B",
+      "head_pts": -0.26631474900612906,
+      "tail_pts": -0.5210518538290816,
+      "tilt_pts": 0.25473710482295253,
+      "head_pts_reversed_tie_break": -0.18652907852700962,
+      "tail_pts_reversed_tie_break": -0.49939104416695557,
+      "max_tie_break_spread_pts": 0.07978567047911944
+     }
+    ]
+   }
+  ],
+  "arms_whose_tilt_sign_reverses_under_mirroring": [
+   "Gemma 4 26B",
+   "GLM-5",
+   "Gemma 4 31B"
+  ],
+  "n_arms_compared": 4,
+  "max_abs_tilt_endogenous_banding_pts": 2.2347758847262593,
+  "max_abs_tilt_exogenous_banding_pts": 0.4227126333214173,
+  "max_tie_break_spread_pts": 0.07978567047911944,
+  "tie_break_spread_tolerance_pts": 0.15,
+  "note": "Reported rather than dropped. The reversal is the reason the drawn bands are an exogenous count; volunteering it is the evidence for that choice."
+ },
+ "checks": {
+  "decomposition_vs_sklearn_average_precision_tol": 1e-12,
+  "decomposition_vs_shipped_point_delta_tol": 1e-12,
+  "decomposition_vs_shipped_bootstrap_mean_delta_tol": 0.0001,
+  "bands_partition_the_panel": true,
+  "band_membership_is_a_function_of_the_banding_variable_alone": true,
+  "n_statements_assigned_by_a_tie_break": 0,
+  "evidence_census_agrees_with_shared_gold": 1689,
+  "evidence_census_agrees_with_paper_released_counts": 1689,
+  "n_reader_beliefs_exceeding_the_unfitted_noisy_or": 0,
+  "n_reader_belief_comparisons": 6756,
+  "mirror_max_tie_break_spread_pts": 0.07978567047911944,
+  "mirror_tie_break_spread_tolerance_pts": 0.15,
+  "note": "Assertions are enforced in code; a violation fails the build rather than being reported here as False."
+ },
+ "provenance": {
+  "literal": "data/results/indra_paper_literal_models_20260724/paper_literal_table6_and_oof.json",
+  "comparison": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+  "gold": "data/results/indra_paper_statement_gold_20260717/paper_statement_gold.jsonl",
+  "execution_map": "data/benchmark/indra_paper_unique_pairs_20260717_execution_map.jsonl",
+  "unfitted_noisy_or_predictions": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_predictions.jsonl",
+  "llm_bundles": "data/comparison/models/{arm}/all_source_predictions.jsonl",
+  "generated_by": "scripts/compute_paper_ap_decomposition.py",
+  "output_filename_note": "The file name ap_decomposition_by_paper_band.json is a frozen join key (viewer loader + run manifest) and is kept across the banding change; artifact_kind and banding.kind carry the banding variable.",
+  "bootstrap": {
+   "n_bootstrap": 10000,
+   "seed": 20260717,
+   "note": "ci95_low_pts/ci95_high_pts/p_arm_greater are copied verbatim from paper_literal_vs_llms.json; total_pts is the exact decomposition sum (the observed point delta), NOT the bootstrap-mean `delta` field."
+  }
+ }
+}

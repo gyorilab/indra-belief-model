@@ -9,6 +9,9 @@ venv/
 
 # Large data files (download separately)
 data/benchmark/indra_benchmark_corpus.json.gz
+data/benchmark/indra_benchmark_corpus.pkl
+data/benchmark/indra_assembly_curations.json
+data/benchmark/indra_db_20250916/
 
 # Benchmark scratch / generated artifacts (reproducible; not checked in).
 # Tracked benchmark fixtures (eval_curation_v1*, rasmachine_*, holdout*,
@@ -29,11 +32,43 @@ data/benchmark/eval_curation_v1_clean.jsonl
 # run outputs, result json/md, profiles, reports, exports. A few legacy records
 # under data/results/ remain tracked from earlier commits; NEW artifacts are
 # ignored. Force-add (git add -f) if you ever truly need to track one.
-# The calibration ship-gate decision artifacts (calibration_ship_gate.md/.json)
-# ARE intentionally force-tracked for audit — they are the go/no-go record of
-# record. Raw *.jsonl run outputs stay ignored; the confusion counts that back
-# the belief math already live in tracked src/indra_belief/calibration_constants.py.
-data/results/
+# Tracked for audit (all present in `git ls-files data/results/`): the local
+# calibration ship-gate, the calibration confirm + stage0 decision records, and
+# the eval-curation head-to-head compare. The two *_external ship-gate decision
+# records are NOT tracked — they are whitelisted here and force-added at ship
+# time. Raw *.jsonl run outputs stay ignored; their exact SHA-256s are embedded
+# in the decision records.
+data/results/*
+!data/results/calibration_ship_gate.md
+!data/results/calibration_ship_gate.json
+!data/results/calibration_confirm.md
+!data/results/calibration_confirm.json
+!data/results/calibration_stage0.md
+!data/results/calibration_stage0.json
+!data/results/eval_curation_v1_compare.md
+!data/results/calibration_ship_gate_external.md
+!data/results/calibration_ship_gate_external.json
+
+# The /paper comparison artifacts. Tracked because the viewer READS them: without
+# them every figure on /paper gates to "unavailable" on a fresh clone, and nobody
+# outside this machine can check a number the page prints. They are small, derived
+# and deterministic (each generator re-emits identical bytes), and each carries its
+# own sha256 in a sibling manifest.
+#
+# Whitelisted per FILE, not per directory. `per_evidence_pairs.jsonl` is 3.9 MB of
+# raw per-evidence rows that nothing loads, and it stays ignored — the rule that
+# raw run outputs are untracked still holds.
+!data/results/indra_paper_literal_models_20260724/
+!data/results/indra_paper_literal_models_20260724/*.json
+!data/results/indra_paper_literal_models_20260724/*.md
+!data/results/deployed_baseline_replication_20260727/
+!data/results/deployed_baseline_replication_20260727/*.json
+!data/results/per_evidence_comparison_20260727/
+!data/results/per_evidence_comparison_20260727/per_evidence_comparison.json
+!data/results/per_evidence_comparison_20260727/per_evidence_comparison.md
+# Un-ignoring a directory un-ignores everything in it, and a later `!` rule only
+# ADDS — so the raw rows need an explicit re-exclude or they ride along.
+data/results/per_evidence_comparison_20260727/per_evidence_pairs.jsonl
 reports/
 data/corpus_export/
 # Generated corpus inputs (statement JSONs reproduced via eval_to_statements_json
@@ -60,6 +95,13 @@ Thumbs.db
 
 # Environment
 .env
+data/comparison/error_review.key
+data/comparison/error_reviews/
+data/comparison/error_review_admin/
 
-# Slidev presentation (local-only build; leverages ../biomolecular-clique-finding theme)
-presentations/
+# Slidev authoring source + its local theme are tracked. Generated builds, PDFs,
+# dependency trees, and the superseded second-reader working directory are local.
+presentations/**/node_modules/
+presentations/**/dist/
+presentations/**/*.pdf
+presentations/second-reader/

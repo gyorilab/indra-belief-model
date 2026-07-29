@@ -37,3 +37,50 @@ Pre-registered design = `soft_guard`; gate = ECE(guard) < ECE(hard) AND AUROC(gu
 | guard_k0.5 | 0.154 | 0.743 | 0.735 | 0.223 | 0.050 |
 | replace_k0.5 | 0.132 | 0.713 | 0.705 | 0.221 | 0.050 |
 
+## Provenance note — 2026-07-25: AUPRC values predate the tie-aware correction
+
+**Scope of the staleness.** Every `AUPRC` cell above — six rows in the MedPsy-4B
+table and six rows in the gemma-26B table, twelve cells in total, mirrored by the
+twelve `"auprc"` values at lines 26, 37, 48, 59, 70, 81, 114, 125, 136, 147, 158
+and 169 of the sibling `calibration_confirm.json` — was produced by the **pre**
+tie-aware average-precision definition. That definition has since been corrected,
+so these twelve numbers are **not comparable** with any post-correction AUPRC,
+including the values in `data/results/calibration_stage0.{md,json}` and
+`data/results/calibration_ship_gate*.{md,json}`. Do not place them in the same
+table, delta, or trend line.
+
+**What is unaffected.** The correction touched average precision only. The `ECE`,
+`AUROC`, `Brier` and `resolution (diag)` cells in both tables — and the fitted
+weights, `n_test`, `base_rate` and unmatched counts — are unchanged by it and
+remain directly comparable. The two `GATE` verdicts above are stated on ECE and
+AUROC, so they also stand as recorded.
+
+**Why this artifact was not regenerated.** It cannot be, offline or otherwise.
+Four independent blockers:
+
+1. *The recoverable generator is the wrong one.* `scripts/calibration_confirm.py`
+   was deleted at `f2ad1bc`. The version recoverable at `f2ad1bc^` renders the
+   method set `hard / parametric / guard / replace` with no κ sweep, whereas this
+   artifact carries `hard / parametric / guard_k0.0 / replace_k0.0 / guard_k0.5 /
+   replace_k0.5`. The true generator is the earlier `a2970e1` revision (the only
+   one defining `KAPPAS` / `PRIMARY_KAPPA`).
+2. *A fit API it calls no longer exists.* Both revisions call
+   `calibration_stage1.fit_weights`; `scripts/calibration_stage1.py` on disk
+   exposes `fit_reader_profile` instead.
+3. *The belief function it calls changed shape.* Both revisions call
+   `soft_belief(ev, w_correct, w_incorrect, [kappa,] mode)`; the current
+   `soft_belief(evidence, log_lr_confirm, log_lr_reject, priors, prior_logodds)`
+   has no survival-weight or mode argument. Restoring it means resurrecting the
+   guard/replace architecture that `f2ad1bc` deliberately removed.
+4. *The test gold is gone.* The `--test-gold` default
+   `data/benchmark/holdout_cc.jsonl` was deleted at `078b568` together with its
+   only builder, `scripts/build_holdout_cc.py`. The run outputs
+   `data/results/holdout_cc_{medpsy,gemma}.jsonl` survive, but there is no gold
+   left to join them against.
+
+**Why this note lives only here.** The sibling `calibration_confirm.json` cannot
+carry it. JSON has no comment syntax, and adding a note key would change the
+schema of a machine-read frozen artifact (`{"results": [...], "pending": [...]}`).
+This `.md` is therefore the sole provenance carrier for both files; no numeric
+cell in either file was touched.
+

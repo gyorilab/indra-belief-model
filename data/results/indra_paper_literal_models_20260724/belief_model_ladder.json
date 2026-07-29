@@ -1,0 +1,350 @@
+{
+ "artifact_kind": "belief_model_ladder",
+ "schema_version": 1,
+ "metric": "pooled_average_precision",
+ "metric_source": "sklearn.metrics.average_precision_score (tie-aware)",
+ "noisy_or_formula": "belief = 1 - PROD_s (syst_s + rand_s^{n_s})",
+ "panel": {
+  "n": 1689,
+  "n_errors": 452,
+  "n_correct": 1237,
+  "error_base_rate": 0.2676139727649497,
+  "label": "paper_replication_policy.released_paper_correct",
+  "label_convention": "\"error\" means the paper's own released label says incorrect",
+  "negative_breakdown": {
+   "n_errors": 452,
+   "adjudication_safe_negatives": 341,
+   "flagged_label_is_adjudication_safe_false": 111
+  },
+  "ordering": "sorted(statement_id)"
+ },
+ "baseline": {
+  "label": "noisy-OR SimpleScorer (direct)",
+  "average_precision": 0.9031171977429405,
+  "why": "the unfitted noisy-OR is what BOTH the paper's engineered features and the reading gate modify",
+  "formula": "belief = 1 - PROD_s (syst_s + rand_s^{n_s})"
+ },
+ "entries": [
+  {
+   "label": "CountsScorer RF, source counts",
+   "kind": "paper-family",
+   "average_precision": 0.9026865801573944,
+   "recorded_average_precision": 0.9026865801573944,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 1258,
+   "scores_path": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_source_only_oof_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_hybrid_paper_manifest.json",
+   "recorded_key": "indra_1.24.0_counts_rf_2kd13_source_only_oof_all_sources",
+   "note": "A supervised RF given ONLY the per-source evidence counts the noisy-OR already sees.",
+   "delta_vs_noisy_or_baseline": -0.0004306175855460781
+  },
+  {
+   "label": "Hierarchy propagation",
+   "kind": "paper-family",
+   "average_precision": 0.9030400323256944,
+   "recorded_average_precision": 0.9030400323256944,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 824,
+   "scores_path": "data/results/current_indra_hierarchy_paper_20260717/current_simple_hierarchy_all_sources_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/current_indra_hierarchy_paper_20260717/current_simple_hierarchy_paper_manifest.json",
+   "recorded_key": "indra_1.24.0_simple_hierarchy_all_sources",
+   "note": "Noisy-OR with belief propagated over the statement hierarchy.",
+   "delta_vs_noisy_or_baseline": -7.71654172461167e-05
+  },
+  {
+   "label": "noisy-OR SimpleScorer (direct)",
+   "kind": "paper-family",
+   "average_precision": 0.9031171977429405,
+   "recorded_average_precision": 0.9031171977429405,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 690,
+   "scores_path": "data/results/current_indra_bayesian_paper_20260717/current_simple_direct_all_sources_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_paper_manifest.json",
+   "recorded_key": "indra_1.24.0_simple_direct_all_sources",
+   "note": "INDRA's published source-prior noisy-OR, unfitted, on current evidence: belief = 1 - PROD_s (syst_s + rand_s^{n_s}).",
+   "delta_vs_noisy_or_baseline": 0.0
+  },
+  {
+   "label": "BayesianScorer, source refit",
+   "kind": "paper-family",
+   "average_precision": 0.9154395527490129,
+   "recorded_average_precision": 0.9154395527490129,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 1271,
+   "scores_path": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_source_oof_all_sources_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_paper_manifest.json",
+   "recorded_key": "indra_1.24.0_bayesian_source_oof_all_sources",
+   "note": "Out-of-fold refit of the per-source reliabilities.",
+   "delta_vs_noisy_or_baseline": 0.012322355006072372
+  },
+  {
+   "label": "BayesianScorer, source+subtype refit",
+   "kind": "paper-family",
+   "average_precision": 0.9178478151228482,
+   "recorded_average_precision": 0.9178478151228482,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 1399,
+   "scores_path": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_source_subtype_oof_all_sources_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_paper_manifest.json",
+   "recorded_key": "indra_1.24.0_bayesian_source_subtype_oof_all_sources",
+   "note": "Out-of-fold refit of the source AND source-subtype reliabilities \u2014 the best noisy-OR variant on this ladder, which is OURS: the 2023 paper publishes no subtype-resolved belief arm.",
+   "delta_vs_noisy_or_baseline": 0.014730617379907662
+  },
+  {
+   "label": "CountsScorer RF, full features",
+   "kind": "paper-family",
+   "average_precision": 0.9421597317022046,
+   "recorded_average_precision": 0.9421597317022046,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 1683,
+   "scores_path": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_full_features_oof_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_hybrid_paper_manifest.json",
+   "recorded_key": "indra_1.24.0_counts_rf_2kd13_full_features_oof_all_sources",
+   "note": "A supervised RF over INDRA's full CountsScorer feature set, a SUPERSET of the paper's engineered statement-type / #PMIDs / promoter features.",
+   "delta_vs_noisy_or_baseline": 0.03904253395926405
+  },
+  {
+   "label": "HybridScorer, full features",
+   "kind": "paper-family",
+   "average_precision": 0.9421597317022046,
+   "recorded_average_precision": 0.9421597317022046,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 1683,
+   "scores_path": "data/results/current_indra_counts_hybrid_paper_20260718/current_hybrid_local_full_features_oof_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_hybrid_paper_manifest.json",
+   "recorded_key": "indra_1.24.0_hybrid_local_rf_2kd13_full_features_oof_all_sources",
+   "note": "The same fitted RF served through the hybrid wrapper \u2014 two INDRA scorer classes over one model, not two independent results.",
+   "delta_vs_noisy_or_baseline": 0.03904253395926405
+  },
+  {
+   "label": "RF 2k-d13 + Type/#PMIDs/promoter",
+   "kind": "paper-literal",
+   "average_precision": 0.9412042789486932,
+   "recorded_average_precision": 0.9412042789486932,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 1546,
+   "scores_path": "data/results/indra_paper_literal_models_20260724/paper_literal_table6_and_oof.json",
+   "scores_key": "RF 2k-d13 + Type/#PMIDs/promoter - all sources, specific",
+   "recorded_in": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+   "recorded_key": "Paper literal RF+promoter",
+   "note": "The 2023 paper's OWN released code, run as-is on the released corpus \u2014 a different codebase and a different evidence snapshot.",
+   "delta_vs_noisy_or_baseline": 0.03808708120575266
+  },
+  {
+   "label": "Gemma 4 26B gate",
+   "kind": "reader-gate",
+   "average_precision": 0.9509925130833301,
+   "recorded_average_precision": 0.9509925130833301,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 492,
+   "scores_path": "data/comparison/models/gemma_4_26b/all_source_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+   "recorded_key": "Gemma 4 26B",
+   "note": "INDRA's own unfitted noisy-OR applied to the evidence the reader KEPT \u2014 not the paper's MCMC-refit Belief Orig.",
+   "delta_vs_noisy_or_baseline": 0.04787531534038958
+  },
+  {
+   "label": "GLM-5 gate",
+   "kind": "reader-gate",
+   "average_precision": 0.9506590078548791,
+   "recorded_average_precision": 0.9506590078548791,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 475,
+   "scores_path": "data/comparison/models/glm_5/all_source_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+   "recorded_key": "GLM-5",
+   "note": "INDRA's own unfitted noisy-OR applied to the evidence the reader KEPT \u2014 not the paper's MCMC-refit Belief Orig.",
+   "delta_vs_noisy_or_baseline": 0.04754181011193859
+  },
+  {
+   "label": "Gemma 4 31B gate",
+   "kind": "reader-gate",
+   "average_precision": 0.9489114903136125,
+   "recorded_average_precision": 0.9489114903136125,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 498,
+   "scores_path": "data/comparison/models/gemma_4_31b/all_source_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+   "recorded_key": "Gemma 4 31B",
+   "note": "INDRA's own unfitted noisy-OR applied to the evidence the reader KEPT \u2014 not the paper's MCMC-refit Belief Orig.",
+   "delta_vs_noisy_or_baseline": 0.045794292570672024
+  },
+  {
+   "label": "Gemma 4 E2B gate",
+   "kind": "reader-gate",
+   "average_precision": 0.9251951801050831,
+   "recorded_average_precision": 0.9251951801050831,
+   "disagreement_vs_recorded": 0.0,
+   "agrees_with_recorded": true,
+   "distinct_scores": 420,
+   "scores_path": "data/comparison/models/gemma_4_e2b/all_source_predictions.jsonl",
+   "scores_key": null,
+   "recorded_in": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+   "recorded_key": "Gemma 4 E2B",
+   "note": "INDRA's own unfitted noisy-OR applied to the evidence the reader KEPT \u2014 not the paper's MCMC-refit Belief Orig.",
+   "delta_vs_noisy_or_baseline": 0.022077982362142534
+  }
+ ],
+ "delta_guardrails": {
+  "baseline_label": "noisy-OR SimpleScorer (direct)",
+  "baseline_average_precision": 0.9031171977429405,
+  "engineered_features": {
+   "label": "CountsScorer RF, full features",
+   "average_precision": 0.9421597317022046,
+   "delta_vs_noisy_or_baseline": 0.03904253395926405
+  },
+  "reading_gate": {
+   "label": "Gemma 4 26B gate",
+   "average_precision": 0.9509925130833301,
+   "delta_vs_noisy_or_baseline": 0.04787531534038958,
+   "delta_vs_best_noisy_or_variant": {
+    "label": "BayesianScorer, source+subtype refit",
+    "delta": 0.03314469796048192
+   },
+   "delta_vs_best_paper_model": {
+    "CountsScorer RF, full features": 0.008832781381125532,
+    "RF 2k-d13 + Type/#PMIDs/promoter": 0.00978823413463692
+   },
+   "delta_vs_best_paper_model_range": [
+    0.008832781381125532,
+    0.00978823413463692
+   ]
+  },
+  "flat_against_baseline": {
+   "Hierarchy propagation": -7.71654172461167e-05,
+   "CountsScorer RF, source counts": -0.0004306175855460781
+  },
+  "reimplementation_proximity": {
+   "reimplemented_rf_full_features": 0.9421597317022046,
+   "paper_literal_rf_promoter": 0.9412042789486932,
+   "absolute_gap": 0.0009554527535113877,
+   "status": "consistency check ACROSS DIFFERENT CORPORA \u2014 not fidelity evidence",
+   "fidelity_evidence": {
+    "statistic": "per-statement Pearson r, literal vs semantic port",
+    "value": 0.9994174945814134,
+    "source": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json"
+   }
+  }
+ },
+ "caveats": [
+  "Every value here is pooled average precision on the SAME 1689 all-source curated statements with the SAME released paper labels, re-derived with sklearn's tie-aware average_precision_score and then cross-checked against the value each run's own artifact recorded.",
+  "The baseline is the unfitted noisy-OR SimpleScorer, belief = 1 - PROD_s (syst_s + rand_s^{n_s}), at 0.9031 pooled average precision. It is the baseline because it is what BOTH the engineered-feature RF and the reading gate modify \u2014 not because it is the paper's best model. That RF is OURS: INDRA's full CountsScorer feature set is a superset of the paper's Type/#PMIDs/promoter panel.",
+  "From that baseline INDRA's full CountsScorer feature set \u2014 a superset of the paper's statement-type / #PMIDs / promoter panel \u2014 is worth +0.0390 and the reading gate is worth +0.0479 (Gemma 4 26B gate) \u2014 but that gate figure is measured against the WEAKEST member of the paper's family. Against the paper's best noisy-OR variant (BayesianScorer, source+subtype refit) the same gate is +0.0331; against the paper's best model overall (RF with full features, 0.9422 re-implemented / 0.9412 literal) it is +0.0088 to +0.0098. Quote the range; never quote the +0.0479 alone.",
+  "Hierarchy propagation (-0.0001) and an RF trained on source counts alone (-0.0004) are flat against plain noisy-OR on this panel: the supervised lift comes from the non-count features, not from learning a better source-count function.",
+  "Our re-implemented RF lands at 0.9422 and the paper's literal released model at 0.9412, 0.0010 apart. That is a CONSISTENCY CHECK ACROSS DIFFERENT CORPORA \u2014 two codebases, two evidence snapshots, agreeing in one scalar \u2014 and it is NOT evidence of implementation fidelity. The fidelity evidence is the per-statement Pearson r = 0.9994 between the literal model and our semantic port, already reported on this page.",
+  "The seven non-reader rows are re-implementations on indra 1.24.0 and current INDRA evidence, and only some are models the paper published: it has no Bayesian, subtype-resolved, hierarchy-propagated or HybridScorer arm. The paper-literal row is the 2023 released code on the released corpus. The families compare cleanly to each other, and the literal row compares only loosely to them.",
+  "CountsScorer RF, full features and HybridScorer, full features are the SAME fitted model reported twice (agreeing to 0.000e+00), not two independent results. They appear as two rows because INDRA's scorer classes name them separately; the paper names neither.",
+  "The reader-gate rows are the paper's own noisy-OR applied to the evidence the reader kept, so the ladder compares belief models under a shared aggregation; the reader's contribution is the filtering."
+ ],
+ "checks": {
+  "every_entry_covers_the_panel_exactly": true,
+  "gold_matches_hash_agrees_with_prediction_provenance": true,
+  "literal_arm_joins_on_matches_hash": true,
+  "literal_arm_embedded_labels_agree_with_gold": 1689,
+  "baseline_matches_simple_scorer_predictions_bit_exactly": 1689,
+  "baseline_delta_is_exactly_zero": true,
+  "recorded_value_agreement_tol": 1e-12,
+  "n_entries": 12,
+  "n_entries_agreeing_with_recorded_value": 12,
+  "n_entries_disagreeing_with_recorded_value": 0,
+  "same_fitted_model_pair": [
+   "CountsScorer RF, full features",
+   "HybridScorer, full features"
+  ],
+  "same_fitted_model_absolute_gap": 0.0,
+  "same_fitted_model_tol": 1e-12,
+  "note": "Assertions are enforced in code; a violation fails the build rather than being reported here as False. A recorded-value disagreement is NOT an assertion: the artifact carries our re-derived value, records the shipped one beside it, and the script prints a stderr banner."
+ },
+ "provenance": {
+  "gold": "data/results/indra_paper_statement_gold_20260717/paper_statement_gold.jsonl",
+  "matches_hash_crosscheck": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_prediction_provenance.jsonl",
+  "simple_scorer_predictions_crosscheck": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_predictions.jsonl",
+  "scores": {
+   "CountsScorer RF, source counts": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_source_only_oof_predictions.jsonl",
+   "Hierarchy propagation": "data/results/current_indra_hierarchy_paper_20260717/current_simple_hierarchy_all_sources_predictions.jsonl",
+   "noisy-OR SimpleScorer (direct)": "data/results/current_indra_bayesian_paper_20260717/current_simple_direct_all_sources_predictions.jsonl",
+   "BayesianScorer, source refit": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_source_oof_all_sources_predictions.jsonl",
+   "BayesianScorer, source+subtype refit": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_source_subtype_oof_all_sources_predictions.jsonl",
+   "CountsScorer RF, full features": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_full_features_oof_predictions.jsonl",
+   "HybridScorer, full features": "data/results/current_indra_counts_hybrid_paper_20260718/current_hybrid_local_full_features_oof_predictions.jsonl",
+   "RF 2k-d13 + Type/#PMIDs/promoter": "data/results/indra_paper_literal_models_20260724/paper_literal_table6_and_oof.json",
+   "Gemma 4 26B gate": "data/comparison/models/gemma_4_26b/all_source_predictions.jsonl",
+   "GLM-5 gate": "data/comparison/models/glm_5/all_source_predictions.jsonl",
+   "Gemma 4 31B gate": "data/comparison/models/gemma_4_31b/all_source_predictions.jsonl",
+   "Gemma 4 E2B gate": "data/comparison/models/gemma_4_e2b/all_source_predictions.jsonl"
+  },
+  "recorded_values": {
+   "CountsScorer RF, source counts": {
+    "path": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_hybrid_paper_manifest.json",
+    "key": "indra_1.24.0_counts_rf_2kd13_source_only_oof_all_sources"
+   },
+   "Hierarchy propagation": {
+    "path": "data/results/current_indra_hierarchy_paper_20260717/current_simple_hierarchy_paper_manifest.json",
+    "key": "indra_1.24.0_simple_hierarchy_all_sources"
+   },
+   "noisy-OR SimpleScorer (direct)": {
+    "path": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_paper_manifest.json",
+    "key": "indra_1.24.0_simple_direct_all_sources"
+   },
+   "BayesianScorer, source refit": {
+    "path": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_paper_manifest.json",
+    "key": "indra_1.24.0_bayesian_source_oof_all_sources"
+   },
+   "BayesianScorer, source+subtype refit": {
+    "path": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_paper_manifest.json",
+    "key": "indra_1.24.0_bayesian_source_subtype_oof_all_sources"
+   },
+   "CountsScorer RF, full features": {
+    "path": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_hybrid_paper_manifest.json",
+    "key": "indra_1.24.0_counts_rf_2kd13_full_features_oof_all_sources"
+   },
+   "HybridScorer, full features": {
+    "path": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_hybrid_paper_manifest.json",
+    "key": "indra_1.24.0_hybrid_local_rf_2kd13_full_features_oof_all_sources"
+   },
+   "RF 2k-d13 + Type/#PMIDs/promoter": {
+    "path": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+    "key": "Paper literal RF+promoter"
+   },
+   "Gemma 4 26B gate": {
+    "path": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+    "key": "Gemma 4 26B"
+   },
+   "GLM-5 gate": {
+    "path": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+    "key": "GLM-5"
+   },
+   "Gemma 4 31B gate": {
+    "path": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+    "key": "Gemma 4 31B"
+   },
+   "Gemma 4 E2B gate": {
+    "path": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+    "key": "Gemma 4 E2B"
+   }
+  },
+  "join": "statement_id (paper gold canonical_corpus.statement_id) for every arm except the paper-literal row, which joins on the paper matches_hash; matches_hash is cross-checked for all",
+  "generated_by": "scripts/compute_belief_model_ladder.py"
+ }
+}

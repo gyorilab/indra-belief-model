@@ -23,9 +23,9 @@ Join: per-row exact (matches_hash, source_hash) first; truth-safe source fallbac
 
 | arm | ECE | AUROC | AUPRC | Brier | resolution (diag) |
 |---|---|---|---|---|---|
-| hard | 0.129 | 0.720 | 0.723 | 0.224 | 0.048 |
-| parametric | 0.145 | 0.586 | 0.624 | 0.260 | 0.022 |
-| clean | 0.146 | 0.745 | 0.792 | 0.222 | 0.053 |
+| hard | 0.129 | 0.720 | 0.648 | 0.224 | 0.048 |
+| parametric | 0.145 | 0.586 | 0.552 | 0.260 | 0.022 |
+| clean | 0.146 | 0.745 | 0.646 | 0.222 | 0.053 |
 
 ### Error-detection F1 (LEAD leg) — frozen train-selected thresholds (hard τ*=0.7, hybrid τ*=0.7; training n=913), 2000 bootstrap resamples (seed 0)
 
@@ -57,9 +57,9 @@ Join: per-row exact (matches_hash, source_hash) first; truth-safe source fallbac
 
 | arm | ECE | AUROC | AUPRC | Brier | resolution (diag) |
 |---|---|---|---|---|---|
-| hard | 0.157 | 0.734 | 0.749 | 0.227 | 0.052 |
-| parametric | 0.145 | 0.586 | 0.624 | 0.260 | 0.022 |
-| clean | 0.148 | 0.745 | 0.792 | 0.220 | 0.050 |
+| hard | 0.157 | 0.734 | 0.662 | 0.227 | 0.052 |
+| parametric | 0.145 | 0.586 | 0.552 | 0.260 | 0.022 |
+| clean | 0.148 | 0.745 | 0.651 | 0.220 | 0.050 |
 
 ### Error-detection F1 (LEAD leg) — frozen train-selected thresholds (hard τ*=0.3, hybrid τ*=0.7; training n=913), 2000 bootstrap resamples (seed 0)
 

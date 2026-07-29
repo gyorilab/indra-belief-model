@@ -1,0 +1,103 @@
+{
+  "artifact_kind": "indra_paper_literal_model_reproduction_and_comparison",
+  "created_at": "2026-07-24",
+  "claim_scope": "Runs the 2023 INDRA paper's OWN released belief-model code (not a reimplementation) to reproduce Table 6 and to place the paper's literal model head-to-head with the LLM belief scorers on the identical 1689-statement all-sources-specific panel.",
+  "paper": {
+    "doi": "10.15252/msb.202211325",
+    "title": "Automated assembly of molecular mechanisms at scale from text mining and curated databases",
+    "code_repository": "https://github.com/sorgerlab/indra_assembly_paper",
+    "code_commit": "63abdf1274d2f5534ed822585775031712916c83",
+    "critical_file_sha256_verified_against": "data/benchmark/indra_paper_2023.manifest.json",
+    "critical_files": [
+      "notebooks/Training Belief ML Models.ipynb",
+      "bioexp/curation/classifiers.py",
+      "bioexp/curation/belief_models.py",
+      "bioexp/curation/group_curations.py"
+    ]
+  },
+  "inputs": {
+    "assembled_statements_pickle": {
+      "path": "data/benchmark/indra_benchmark_corpus.pkl",
+      "sha256": "ed64a2409fc569806a5f6dbdcc72827fb5a6ea0a75cf92452839c6f60d160af2",
+      "n_statements": 894939,
+      "role": "bioexp_asmb_preassembled.pkl equivalent; source of statement objects for CountsScorer featurization"
+    },
+    "extended_curation_dataset_pickle": {
+      "path": "<paper_repo>/data/curation/extended_curation_dataset.pkl",
+      "sha256": "f235de451ddb8dc26423175ebabeac6422e299e948707e9b3bda0a4b20ab3f44",
+      "n_rows": 1689,
+      "role": "curated correctness labels + per-source mention counts"
+    },
+    "shared_gold": "data/results/indra_paper_statement_gold_20260717/paper_statement_gold.jsonl",
+    "semantic_port_reference": "data/results/indra_paper_reproduction_20260717/rf_promoter_all_sources_specific_predictions.jsonl",
+    "llm_bundles": "data/comparison/models/{gemma_4_e2b,gemma_4_26b,gemma_4_31b,glm_5,indra_cogex_hybrid}/all_source_predictions.jsonl"
+  },
+  "environment": {
+    "indra": "1.24.0",
+    "scikit_learn": "1.9.0",
+    "numpy": "2.5.1",
+    "scipy": "1.18.0",
+    "pandas": "3.0.3",
+    "extra_installed": [
+      "emcee==3.1.6",
+      "corner",
+      "texttable"
+    ]
+  },
+  "protocol": {
+    "cv": "StratifiedKFold(10, shuffle=False) after random.seed(4) + random.shuffle of (stmt, label) pairs, exactly as the released notebook cells 15+17",
+    "paper_metric": "fold-mean trapezoidal PR-AUC = mean over folds of sklearn.auc(recall, precision) on out-of-fold predictions",
+    "featurizer": "indra.belief.skl.CountsScorer (API identical to the 2023 notebook: use_stmt_type / use_num_pmids / use_promoter / use_avg_evidence_len / include_more_specific)"
+  },
+  "deviations_from_released_notebook": [
+    "df[readers].any(1) -> df[readers].any(axis=1): modern pandas removed the positional axis argument; semantically identical row-wise any.",
+    "RandomForestClassifier(random_state=1): the paper published no RF seed. Fixed for determinism; Table 6 reproduces within +/-0.002 regardless.",
+    "Belief Orig (MCMC/emcee) arms were not re-run for the head-to-head; the deterministic ML arms (RF, Log LR) carry the headline comparison. Belief Orig is separately reproduced by scripts/reproduce_indra_paper_headlines.py."
+  ],
+  "reproduction_fidelity": {
+    "max_abs_delta_vs_published_table6": 0.002,
+    "headline_rf_prom_avglen_all_sources_specific": {
+      "literal": 0.942,
+      "published": 0.942
+    },
+    "note": "every reproduced method within +/-0.002 of the published Table 6 fold-mean, fold SDs matching"
+  },
+  "methodology_correction": {
+    "issue": "The paper's fold-mean TRAPEZOIDAL PR-AUC is arm-dependent optimistic: trapezoidal interpolation over-credits heavily-tied score distributions. The paper RF emits 1546 distinct scores over 1689 statements (near-continuous), the LLMs only ~420-498 (heavily tied), so trapezoidal inflates LLM PR-AUC by +0.010 to +0.014 while barely touching the RF.",
+    "resolution": "Cross-arm verdict uses tie-robust pooled average_precision and AUROC. The paper's trapezoidal metric is reported only to document faithful Table-6 reproduction, not as the comparative verdict.",
+    "found_by": "adversarial verification workflow"
+  },
+  "outputs": {
+    "reproduction": "paper_literal_table6_and_oof.json",
+    "comparison_json": "paper_literal_vs_llms.json",
+    "comparison_markdown": "paper_literal_vs_llms.md",
+    "ap_decomposition": "ap_decomposition_by_paper_band.json",
+    "review_queue": "statement_review_queue.json",
+    "belief_model_ladder": "belief_model_ladder.json",
+    "non_reading_control": "non_reading_control.json",
+    "framing_correction": "framing_correction.json",
+    "margin_robustness": "paper_margin_robustness.json",
+    "statement_error_f1": "statement_error_f1.json",
+    "table6_extended": "paper_table6_extended.json"
+  },
+  "reproduce": [
+    "git clone https://github.com/sorgerlab/indra_assembly_paper && git -C indra_assembly_paper checkout 63abdf1274d2f5534ed822585775031712916c83",
+    "PYTHONPATH=src:indra_assembly_paper .venv/bin/python scripts/run_indra_paper_literal_models.py --paper-repo indra_assembly_paper --out data/results/indra_paper_literal_models_20260724/paper_literal_table6_and_oof.json",
+    ".venv/bin/python scripts/compare_paper_literal_vs_llms.py --literal data/results/indra_paper_literal_models_20260724/paper_literal_table6_and_oof.json --out-json data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json --out-md data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.md",
+    "PYTHONPATH=src .venv/bin/python scripts/compute_paper_ap_decomposition.py --literal data/results/indra_paper_literal_models_20260724/paper_literal_table6_and_oof.json --comparison data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json --out-json data/results/indra_paper_literal_models_20260724/ap_decomposition_by_paper_band.json --manifest data/results/indra_paper_literal_models_20260724/manifest.json",
+    "PYTHONPATH=src .venv/bin/python scripts/compute_statement_review_queue.py --out-json data/results/indra_paper_literal_models_20260724/statement_review_queue.json --manifest data/results/indra_paper_literal_models_20260724/manifest.json",
+    "PYTHONPATH=src .venv/bin/python scripts/compute_belief_model_ladder.py --out-json data/results/indra_paper_literal_models_20260724/belief_model_ladder.json --manifest data/results/indra_paper_literal_models_20260724/manifest.json",
+    "PYTHONPATH=src .venv/bin/python scripts/compute_non_reading_control.py --out-json data/results/indra_paper_literal_models_20260724/non_reading_control.json --manifest data/results/indra_paper_literal_models_20260724/manifest.json",
+    "PYTHONPATH=src .venv/bin/python scripts/compute_framing_correction.py --out-json data/results/indra_paper_literal_models_20260724/framing_correction.json --manifest data/results/indra_paper_literal_models_20260724/manifest.json"
+  ],
+  "output_sha256": {
+    "ap_decomposition_by_paper_band.json": "ffdb98daf4777616f55508035c6766eb1944bd04a0a7ead5b7545300298e4553",
+    "statement_review_queue.json": "570bb7cf9350548c283f2d741734a1453ad434dd1e19bda7cd9c27207b195c28",
+    "belief_model_ladder.json": "9f3855d1ef6f6bf0dda94edee726382dda33c8b623d3f4a8c1408218a5db7307",
+    "non_reading_control.json": "8414ea8700edd8bc2a6d3630dbed1e93701c17db95c36811f3b6717ab00711f0",
+    "framing_correction.json": "7cc508af0f61308e9505b57235126dc7d7787bc760b13e876fe851edd83bc5d3",
+    "paper_margin_robustness.json": "87490ef3ccb206daae3fcaafde830666883caa6301f116bd0f82c19d360d5f9e",
+    "statement_error_f1.json": "af69002d0269ebc3d91047f9cb4de46c06bb5d60d8e336757ceaefca24afc076",
+    "paper_table6_extended.json": "70ebdc7fa8ef03bca3a4632d1b2801a107be3198aafa645b94787e57f18ed098"
+  }
+}

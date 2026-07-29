@@ -1,0 +1,209 @@
+{
+ "artifact_kind": "non_reading_control",
+ "schema_version": 1,
+ "metric": "pooled_average_precision",
+ "metric_source": "sklearn.metrics.average_precision_score (tie-aware)",
+ "noisy_or_formula": "belief = 1 - PROD_s (syst_s + rand_s^{n_s})",
+ "aggregation": "indra_default_hard_gate",
+ "question": "Do the three NON-reading subtractions \u2014 de-duplication, skipping evidence that carries no sentence text, and deterministic grounding rejects \u2014 account for the reader arms' gain?",
+ "finding": "No. Applied with no model verdicts at all, they land BELOW the noisy-OR over every evidence entry, with no gate applied.",
+ "panel": {
+  "n": 1689,
+  "n_errors": 452,
+  "n_correct": 1237,
+  "error_base_rate": 0.2676139727649497,
+  "label": "paper_replication_policy.released_paper_correct",
+  "ordering": "sorted(statement_id)"
+ },
+ "rows": [
+  {
+   "key": "raw",
+   "label": "noisy-OR SimpleScorer (direct), every evidence entry",
+   "weight": "pair_multiplicity",
+   "dropped_routes": [],
+   "n_evidence_scored": 34035,
+   "n_statements_with_no_surviving_evidence": 0,
+   "average_precision": 0.9031171977429405,
+   "distinct_scores": 690,
+   "note": "The ungated baseline: all evidence, multiplicity retained, no subtraction of any kind.",
+   "delta_vs_raw_noisy_or": 0.0
+  },
+  {
+   "key": "dedup_only",
+   "label": "de-dup only",
+   "weight": "unique_pair",
+   "dropped_routes": [],
+   "n_evidence_scored": 33361,
+   "n_statements_with_no_surviving_evidence": 0,
+   "average_precision": 0.9026665696436724,
+   "distinct_scores": 685,
+   "note": "One vote per UNIQUE (statement, evidence) pair \u2014 the panel the reader arms were built on.",
+   "delta_vs_raw_noisy_or": -0.0004506280992681022
+  },
+  {
+   "key": "dedup_plus_no_text",
+   "label": "de-dup + drop evidence with no sentence",
+   "weight": "unique_pair",
+   "dropped_routes": [
+    "no_text"
+   ],
+   "n_evidence_scored": 32801,
+   "n_statements_with_no_surviving_evidence": 0,
+   "average_precision": 0.8982349449215774,
+   "distinct_scores": 618,
+   "note": "Also drops evidence with no sentence to read; the gate never sees these.",
+   "delta_vs_raw_noisy_or": -0.00488225282136312
+  },
+  {
+   "key": "full_control",
+   "label": "de-dup + no-sentence + deterministic rejects, no LLM (control)",
+   "weight": "unique_pair",
+   "dropped_routes": [
+    "no_text",
+    "deterministic_mismatch",
+    "deterministic_pseudogene"
+   ],
+   "n_evidence_scored": 32310,
+   "n_statements_with_no_surviving_evidence": 35,
+   "average_precision": 0.9016886096345376,
+   "distinct_scores": 614,
+   "note": "All three non-reading subtractions, every readable pair accepted, no model verdict anywhere.",
+   "delta_vs_raw_noisy_or": -0.0014285881084029617
+  }
+ ],
+ "contrast": {
+  "key": "gemma_4_26b",
+  "label": "Gemma 4 26B (same subtractions PLUS reading)",
+  "weight": "unique_pair",
+  "dropped_routes": [
+   "no_text",
+   "deterministic_mismatch",
+   "deterministic_pseudogene"
+  ],
+  "average_precision": 0.9509925130833301,
+  "delta_vs_raw_noisy_or": 0.04787531534038958,
+  "delta_vs_full_control": 0.04930390344879254,
+  "distinct_scores": 492,
+  "scores_path": "data/comparison/models/gemma_4_26b/all_source_predictions.jsonl",
+  "note": "The same three subtractions PLUS the reader's per-evidence verdicts, taken from the shipped bundle rather than recomputed."
+ },
+ "baseline_row": "raw",
+ "control_row": "full_control",
+ "control_minus_raw_average_precision": -0.0014285881084029617,
+ "control_lands_below_raw": true,
+ "route_census": {
+  "basis": "unique (statement, evidence) pairs in the execution map",
+  "n_unique_pairs": 33361,
+  "routes": {
+   "deterministic_mismatch": 488,
+   "deterministic_pseudogene": 3,
+   "no_text": 560,
+   "plain": 29640,
+   "tool": 2670
+  },
+  "routes_multiplicity_weighted": {
+   "deterministic_mismatch": 496,
+   "deterministic_pseudogene": 4,
+   "no_text": 560,
+   "plain": 30252,
+   "tool": 2723
+  },
+  "readable_routes": [
+   "plain",
+   "tool"
+  ],
+  "no_text": 560,
+  "deterministic_mismatch": 488,
+  "deterministic_pseudogene": 3
+ },
+ "dedup": {
+  "n_unique_pairs": 33361,
+  "n_summed_multiplicity": 34035,
+  "excess_pairs": 674,
+  "statements_with_excess": 327
+ },
+ "production_dedup_scope_difference": {
+  "status": "memo-reported; NOT re-derived by this script",
+  "source": "research/indra_paper_literal_vs_llm_comparison.md, Result 3d",
+  "why_not_rederived": "reproducing it requires the production statement_belief de-dup pass, not the execution map this script reads",
+  "excess_pairs": 714,
+  "statements_with_excess": 339,
+  "average_precision": {
+   "dedup_only": 0.9025,
+   "dedup_plus_no_text": 0.8981,
+   "full_control": 0.9015
+  },
+  "conclusion_unchanged": "the control sits BELOW the ungated noisy-OR under either de-dup scope"
+ },
+ "subtractive_check": {
+  "baseline": "raw noisy-OR (all evidence, multiplicity retained)",
+  "arms": {
+   "gemma_4_26b": {
+    "n_statements": 1689,
+    "n_exceeding_noisy_or": 0,
+    "n_at_exactly_zero": 462,
+    "max_belief_above_noisy_or": 0.0
+   },
+   "glm_5": {
+    "n_statements": 1689,
+    "n_exceeding_noisy_or": 0,
+    "n_at_exactly_zero": 541,
+    "max_belief_above_noisy_or": 0.0
+   },
+   "gemma_4_31b": {
+    "n_statements": 1689,
+    "n_exceeding_noisy_or": 0,
+    "n_at_exactly_zero": 478,
+    "max_belief_above_noisy_or": 0.0
+   },
+   "gemma_4_e2b": {
+    "n_statements": 1689,
+    "n_exceeding_noisy_or": 0,
+    "n_at_exactly_zero": 393,
+    "max_belief_above_noisy_or": 0.0
+   }
+  },
+  "n_comparisons": 6756,
+  "n_exceeding_noisy_or": 0
+ },
+ "caveats": [
+  "This is the EXECUTION-MAP pass. It de-duplicates to unique (statement, evidence) pairs as recorded in data/benchmark/indra_paper_unique_pairs_20260717_execution_map.jsonl. Production statement_belief collapses roughly 40 further within-source text-normalized near-duplicates, which needs the production de-dup pass to reproduce and is therefore NOT re-derived here; the memo-reported figures for that scope are carried in production_dedup_scope_difference, clearly marked. The conclusion is the same either way: the control sits below the ungated noisy-OR.",
+  "Every row uses the paper's OWN aggregation and the priors the reader bundles declare (data/comparison/aggregation.json): belief = 1 - PROD_s (syst_s + rand_s^{n_s}) over sorted(sources). No model verdict enters rows 1-4 at all.",
+  "The de-dup row is not a defect being corrected \u2014 it is a scope difference between counting every evidence entry and counting each distinct (statement, evidence) pair once. It is priced here so it cannot be mistaken for a reading gain.",
+  "35 statements lose ALL their evidence to the deterministic rejects and score belief 0 in the full control. That is a property of our grounding rules, not of any reader.",
+  "Average precision is sklearn's tie-aware average_precision_score throughout; the paper's own trapezoidal PR-AUC is not used here, because it over-credits tied score distributions."
+ ],
+ "checks": {
+  "raw_row_reproduces_simple_scorer_bit_exactly": 1689,
+  "raw_row_max_abs_delta_vs_simple_scorer": 0.0,
+  "raw_row_average_precision_vs_recorded": {
+   "ours": 0.9031171977429405,
+   "recorded": 0.9031171977429405,
+   "disagreement": 0.0,
+   "tol": 1e-12,
+   "recorded_in": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_paper_manifest.json",
+   "recorded_key": "indra_1.24.0_simple_direct_all_sources"
+  },
+  "full_control_below_raw": true,
+  "dedup_arithmetic_closes": true,
+  "every_execution_map_source_has_a_declared_prior": true,
+  "execution_map_covers_the_panel_exactly": true,
+  "gold_matches_hash_agrees_with_prediction_provenance": true,
+  "readers_never_exceed_the_noisy_or": true,
+  "note": "Assertions are enforced in code; a violation fails the build rather than being reported here as False."
+ },
+ "provenance": {
+  "execution_map": "data/benchmark/indra_paper_unique_pairs_20260717_execution_map.jsonl",
+  "priors": "data/comparison/aggregation.json",
+  "belief_function": "src/indra_belief/noise_model.py::compute_gated_belief",
+  "simple_scorer_predictions": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_predictions.jsonl",
+  "simple_scorer_recorded_metric": {
+   "path": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_paper_manifest.json",
+   "key": "indra_1.24.0_simple_direct_all_sources"
+  },
+  "matches_hash_crosscheck": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_prediction_provenance.jsonl",
+  "reader_bundles": "data/comparison/models/{arm}/all_source_predictions.jsonl",
+  "join": "paper_statement_hash == canonical_corpus.matches_hash -> statement_id",
+  "generated_by": "scripts/compute_non_reading_control.py"
+ }
+}

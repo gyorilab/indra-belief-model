@@ -1,0 +1,492 @@
+{
+ "aggregation": "indra_default_hard_gate",
+ "artifact_kind": "framing_correction",
+ "caveats": [
+  "The reachable-value check asks whether the paper's formula CAN emit each score for some surviving-count vector, not whether it emitted it for the vector the reader actually produced. Two different vectors can land on the same value. Leg (a) is what pins the aggregation itself; this leg shows the scores are consistent with it, and the null baseline below prices how much that consistency is worth.",
+  "The search is exhaustive within its window but capped at 5000000 nodes per statement. Nothing on this panel reached that cap (worst statement 1155323 nodes), and any statement that did would be reported as budget-exhausted rather than counted as confirmed.",
+  "The null baseline is restricted to the 1635 of 1689 statements whose reachable set can be enumerated outright, so the chance floor is measured against a complete value set. The remaining statements have the LARGEST reachable sets, so they would only raise the floor.",
+  "Belief 0.0 is the reader rejecting every piece of evidence it read, leaving an empty product. It is not a low score the formula assigned: SimpleScorer's own floor on this panel is 0.65, one reader sentence."
+ ],
+ "checks": {
+  "every_manifest_aggregation_config_sha_matches_the_tree": true,
+  "every_manifest_component_digest_matches_the_source": true,
+  "every_manifest_declares_the_unfitted_hard_gate": true,
+  "every_nonzero_score_is_reachable": true,
+  "gold_matches_hash_agrees_with_prediction_provenance": true,
+  "negative_breakdown_agrees_with_belief_model_ladder": true,
+  "note": "Assertions are enforced in code; a violation fails the build rather than being reported here as False.",
+  "readers_never_exceed_the_noisy_or": true,
+  "subtractive_agrees_with_non_reading_control": true,
+  "zero_and_nonzero_partition_the_panel": true
+ },
+ "declaration": {
+  "aggregation_config": {
+   "path": "data/comparison/aggregation.json",
+   "sha256": "1a5ceaa9ab6ef56a5dfe9a7a9fe0ebfc59686a62d094d1670810235de4a9e045"
+  },
+  "arms": [
+   {
+    "aggregation": "indra_default_hard_gate",
+    "aggregation_config_sha256_matches": true,
+    "arm": "gemma_4_26b",
+    "declared_aggregation_config_sha256": "1a5ceaa9ab6ef56a5dfe9a7a9fe0ebfc59686a62d094d1670810235de4a9e045",
+    "dedup": true,
+    "implementation": "indra_belief.statement_belief:statement_belief",
+    "implementation_component_sha256": {
+     "noise_model": "6a4276840d3281f32e01948a62699d566e01be306e3f628d9901936ff5730e73",
+     "shared_text_normalization": "a95ada5c8ca5e376beb60ab3934f58dff58b834b9d31f6a005f004bbe9139145",
+     "statement_belief": "8327ff74a8f34a4872abbe37a3754255031605bf9bece07c38e4ba4f6425ed06"
+    },
+    "implementation_component_sha256_matches": true,
+    "label": "Gemma 4 26B",
+    "manifest_path": "data/comparison/models/gemma_4_26b/manifest.json",
+    "reader_profile": null
+   },
+   {
+    "aggregation": "indra_default_hard_gate",
+    "aggregation_config_sha256_matches": true,
+    "arm": "glm_5",
+    "declared_aggregation_config_sha256": "1a5ceaa9ab6ef56a5dfe9a7a9fe0ebfc59686a62d094d1670810235de4a9e045",
+    "dedup": true,
+    "implementation": "indra_belief.statement_belief:statement_belief",
+    "implementation_component_sha256": {
+     "noise_model": "6a4276840d3281f32e01948a62699d566e01be306e3f628d9901936ff5730e73",
+     "shared_text_normalization": "a95ada5c8ca5e376beb60ab3934f58dff58b834b9d31f6a005f004bbe9139145",
+     "statement_belief": "8327ff74a8f34a4872abbe37a3754255031605bf9bece07c38e4ba4f6425ed06"
+    },
+    "implementation_component_sha256_matches": true,
+    "label": "GLM-5",
+    "manifest_path": "data/comparison/models/glm_5/manifest.json",
+    "reader_profile": null
+   },
+   {
+    "aggregation": "indra_default_hard_gate",
+    "aggregation_config_sha256_matches": true,
+    "arm": "gemma_4_31b",
+    "declared_aggregation_config_sha256": "1a5ceaa9ab6ef56a5dfe9a7a9fe0ebfc59686a62d094d1670810235de4a9e045",
+    "dedup": true,
+    "implementation": "indra_belief.statement_belief:statement_belief",
+    "implementation_component_sha256": {
+     "noise_model": "6a4276840d3281f32e01948a62699d566e01be306e3f628d9901936ff5730e73",
+     "shared_text_normalization": "a95ada5c8ca5e376beb60ab3934f58dff58b834b9d31f6a005f004bbe9139145",
+     "statement_belief": "8327ff74a8f34a4872abbe37a3754255031605bf9bece07c38e4ba4f6425ed06"
+    },
+    "implementation_component_sha256_matches": true,
+    "label": "Gemma 4 31B",
+    "manifest_path": "data/comparison/models/gemma_4_31b/manifest.json",
+    "reader_profile": null
+   },
+   {
+    "aggregation": "indra_default_hard_gate",
+    "aggregation_config_sha256_matches": true,
+    "arm": "gemma_4_e2b",
+    "declared_aggregation_config_sha256": "1a5ceaa9ab6ef56a5dfe9a7a9fe0ebfc59686a62d094d1670810235de4a9e045",
+    "dedup": true,
+    "implementation": "indra_belief.statement_belief:statement_belief",
+    "implementation_component_sha256": {
+     "noise_model": "6a4276840d3281f32e01948a62699d566e01be306e3f628d9901936ff5730e73",
+     "shared_text_normalization": "a95ada5c8ca5e376beb60ab3934f58dff58b834b9d31f6a005f004bbe9139145",
+     "statement_belief": "8327ff74a8f34a4872abbe37a3754255031605bf9bece07c38e4ba4f6425ed06"
+    },
+    "implementation_component_sha256_matches": true,
+    "label": "Gemma 4 E2B",
+    "manifest_path": "data/comparison/models/gemma_4_e2b/manifest.json",
+    "reader_profile": null
+   }
+  ],
+  "claim": "All four reader bundles declare the paper's unfitted hard gate, with no fitted reader profile, over the priors in data/comparison/aggregation.json.",
+  "dispatch": "statement_belief(soft=None) takes the unfitted path into noise_model.compute_gated_belief, which multiplies syst + rand**surviving over sorted(sources) and drops a source with zero surviving evidence from the product entirely. The two component digests below are the sha256 of those source files as they stand, so this is anchored to bytes rather than to prose.",
+  "implementation_sources": {
+   "noise_model": {
+    "path": "src/indra_belief/noise_model.py",
+    "sha256": "6a4276840d3281f32e01948a62699d566e01be306e3f628d9901936ff5730e73"
+   },
+   "statement_belief": {
+    "path": "src/indra_belief/statement_belief.py",
+    "sha256": "8327ff74a8f34a4872abbe37a3754255031605bf9bece07c38e4ba4f6425ed06"
+   }
+  },
+  "panel_priors": {
+   "bel": {
+    "n_statements": 38,
+    "rand": 0.1,
+    "syst": 0.01
+   },
+   "biopax": {
+    "n_statements": 47,
+    "rand": 0.2,
+    "syst": 0.01
+   },
+   "hprd": {
+    "n_statements": 176,
+    "rand": 0.1,
+    "syst": 0.01
+   },
+   "isi": {
+    "n_statements": 70,
+    "rand": 0.3,
+    "syst": 0.05
+   },
+   "medscan": {
+    "n_statements": 935,
+    "rand": 0.3,
+    "syst": 0.05
+   },
+   "reach": {
+    "n_statements": 1183,
+    "rand": 0.3,
+    "syst": 0.05
+   },
+   "rlimsp": {
+    "n_statements": 263,
+    "rand": 0.3,
+    "syst": 0.05
+   },
+   "signor": {
+    "n_statements": 97,
+    "rand": 0.049,
+    "syst": 0.01
+   },
+   "sparser": {
+    "n_statements": 954,
+    "rand": 0.3,
+    "syst": 0.05
+   },
+   "trips": {
+    "n_statements": 457,
+    "rand": 0.3,
+    "syst": 0.05
+   },
+   "trrust": {
+    "n_statements": 6,
+    "rand": 0.1,
+    "syst": 0.01
+   }
+  },
+  "prior_groups": [
+   {
+    "n_statements": 3862,
+    "rand": 0.3,
+    "sources": [
+     "isi",
+     "medscan",
+     "reach",
+     "rlimsp",
+     "sparser",
+     "trips"
+    ],
+    "syst": 0.05
+   },
+   {
+    "n_statements": 220,
+    "rand": 0.1,
+    "sources": [
+     "bel",
+     "hprd",
+     "trrust"
+    ],
+    "syst": 0.01
+   },
+   {
+    "n_statements": 97,
+    "rand": 0.049,
+    "sources": [
+     "signor"
+    ],
+    "syst": 0.01
+   },
+   {
+    "n_statements": 47,
+    "rand": 0.2,
+    "sources": [
+     "biopax"
+    ],
+    "syst": 0.01
+   }
+  ],
+  "required_aggregation": "indra_default_hard_gate"
+ },
+ "finding": "INDRA's own unfitted noisy-OR, on a filtered evidence set. It can only remove belief, never add it.",
+ "memo_reconciliation": {
+  "bit_exact_tier": {
+   "memo": {
+    "gemma_4_26b": 1218,
+    "gemma_4_31b": 1201,
+    "gemma_4_e2b": 1284,
+    "glm_5": 1139
+   },
+   "rederived": {
+    "gemma_4_26b": 1227,
+    "gemma_4_31b": 1211,
+    "gemma_4_e2b": 1296,
+    "glm_5": 1148
+   },
+   "why": "The memo's remainders were statements its search could not exhaust inside its budget, not statements that failed. Binary-searching the feasible factor window at each depth settles every one of them."
+  },
+  "note": "Re-derived here with a tighter search than the memo's. Reported so the memo can be reconciled rather than left to disagree.",
+  "permutation_floor": {
+   "memo": "near 45% (45-48% across replications)",
+   "rederived_pooled_mean": 0.47218532271096675,
+   "rederived_pooled_range": [
+    0.44165946413137425,
+    0.5201288244766505
+   ]
+  },
+  "source": "research/indra_paper_literal_vs_llm_comparison.md, Result 3c"
+ },
+ "noisy_or_formula": "belief = 1 - PROD_s (syst_s + rand_s^{n_s})",
+ "panel": {
+  "error_base_rate": 0.2676139727649497,
+  "label": "paper_replication_policy.released_paper_correct",
+  "label_convention": "\"error\" means the paper's own released label says incorrect",
+  "n": 1689,
+  "n_correct": 1237,
+  "n_errors": 452,
+  "negative_breakdown": {
+   "adjudication_safe_negatives": 341,
+   "flagged_label_is_adjudication_safe_false": 111,
+   "n_errors": 452
+  },
+  "ordering": "sorted(statement_id)"
+ },
+ "provenance": {
+  "belief_function": "src/indra_belief/noise_model.py::compute_gated_belief",
+  "belief_model_ladder": "data/results/indra_paper_literal_models_20260724/belief_model_ladder.json",
+  "generated_by": "scripts/compute_framing_correction.py",
+  "gold": "data/results/indra_paper_statement_gold_20260717/paper_statement_gold.jsonl",
+  "join": "paper_statement_hash == canonical_corpus.matches_hash -> statement_id",
+  "matches_hash_crosscheck": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_prediction_provenance.jsonl",
+  "noisy_or_scores": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_predictions.jsonl",
+  "non_reading_control": "data/results/indra_paper_literal_models_20260724/non_reading_control.json",
+  "priors": "data/comparison/aggregation.json",
+  "reader_bundles": "data/comparison/models/{arm}/all_source_predictions.jsonl",
+  "reader_manifests": "data/comparison/models/{arm}/manifest.json",
+  "source_counts": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_prediction_provenance.jsonl"
+ },
+ "question": "Is the reader arm a rival belief model, or INDRA's own unfitted noisy-OR run on the evidence a reader kept?",
+ "reachable_values": {
+  "arms": {
+   "gemma_4_26b": {
+    "label": "Gemma 4 26B",
+    "n_at_exactly_zero": 462,
+    "n_bit_exact": 1227,
+    "n_budget_exhausted": 0,
+    "n_confirmed_reachable": 1227,
+    "n_counterexamples": 0,
+    "n_nonzero": 1227,
+    "n_statements": 1689,
+    "share_bit_exact": 1.0,
+    "share_confirmed": 1.0,
+    "unresolved_statement_ids": []
+   },
+   "gemma_4_31b": {
+    "label": "Gemma 4 31B",
+    "n_at_exactly_zero": 478,
+    "n_bit_exact": 1211,
+    "n_budget_exhausted": 0,
+    "n_confirmed_reachable": 1211,
+    "n_counterexamples": 0,
+    "n_nonzero": 1211,
+    "n_statements": 1689,
+    "share_bit_exact": 1.0,
+    "share_confirmed": 1.0,
+    "unresolved_statement_ids": []
+   },
+   "gemma_4_e2b": {
+    "label": "Gemma 4 E2B",
+    "n_at_exactly_zero": 393,
+    "n_bit_exact": 1296,
+    "n_budget_exhausted": 0,
+    "n_confirmed_reachable": 1296,
+    "n_counterexamples": 0,
+    "n_nonzero": 1296,
+    "n_statements": 1689,
+    "share_bit_exact": 1.0,
+    "share_confirmed": 1.0,
+    "unresolved_statement_ids": []
+   },
+   "glm_5": {
+    "label": "GLM-5",
+    "n_at_exactly_zero": 541,
+    "n_bit_exact": 1148,
+    "n_budget_exhausted": 0,
+    "n_confirmed_reachable": 1148,
+    "n_counterexamples": 0,
+    "n_nonzero": 1148,
+    "n_statements": 1689,
+    "share_bit_exact": 1.0,
+    "share_confirmed": 1.0,
+    "unresolved_statement_ids": []
+   }
+  },
+  "claim": "Every non-zero reader score is a value the paper's own formula emits for some sub-multiset of that statement's evidence.",
+  "definition": "{1 - PROD_s f_s : f_s in {1} U {syst_s + rand_s^k, 1 <= k <= n_s}}, with n_s the statement's own source_counts and the priors read from data/comparison/aggregation.json",
+  "noisy_or_floor_on_panel": {
+   "derived_from": "min(probability_correct) over data/results/current_indra_simple_paper_20260717/current_indra_simple_default_predictions.jsonl",
+   "note": "The formula's own lowest score on this panel. It never reaches 0, so the reader's zero block is a different object: an empty product, not a low score.",
+   "value": 0.65
+  },
+  "null_baseline": {
+   "arms": {
+    "gemma_4_26b": {
+     "label": "Gemma 4 26B",
+     "n_enumerable_nonzero": 1173,
+     "observed_rate": 1.0,
+     "permuted_rate_max": 0.47655583972719523,
+     "permuted_rate_mean": 0.4679454390451833,
+     "permuted_rate_min": 0.453537936913896,
+     "permuted_rates": [
+      0.47655583972719523,
+      0.47058823529411764,
+      0.47144075021312876,
+      0.4731457800511509,
+      0.46888320545609546,
+      0.4620630861040068,
+      0.47058823529411764,
+      0.453537936913896,
+      0.4722932651321398,
+      0.46035805626598464
+     ]
+    },
+    "gemma_4_31b": {
+     "label": "Gemma 4 31B",
+     "n_enumerable_nonzero": 1157,
+     "observed_rate": 1.0,
+     "permuted_rate_max": 0.46499567847882456,
+     "permuted_rate_mean": 0.45237683664649964,
+     "permuted_rate_min": 0.44165946413137425,
+     "permuted_rates": [
+      0.44165946413137425,
+      0.44684528954191877,
+      0.4511668107173725,
+      0.46499567847882456,
+      0.442523768366465,
+      0.4520311149524633,
+      0.4580812445980985,
+      0.45375972342264476,
+      0.449438202247191,
+      0.46326707000864303
+     ]
+    },
+    "gemma_4_e2b": {
+     "label": "Gemma 4 E2B",
+     "n_enumerable_nonzero": 1242,
+     "observed_rate": 1.0,
+     "permuted_rate_max": 0.5201288244766505,
+     "permuted_rate_mean": 0.5138486312399355,
+     "permuted_rate_min": 0.5032206119162641,
+     "permuted_rates": [
+      0.5040257648953301,
+      0.5201288244766505,
+      0.5032206119162641,
+      0.5112721417069244,
+      0.5177133655394525,
+      0.5177133655394525,
+      0.5193236714975845,
+      0.5112721417069244,
+      0.5152979066022544,
+      0.5185185185185185
+     ]
+    },
+    "glm_5": {
+     "label": "GLM-5",
+     "n_enumerable_nonzero": 1094,
+     "observed_rate": 1.0,
+     "permuted_rate_max": 0.46617915904936014,
+     "permuted_rate_mean": 0.4545703839122486,
+     "permuted_rate_min": 0.4424131627056673,
+     "permuted_rates": [
+      0.44881170018281535,
+      0.44881170018281535,
+      0.46617915904936014,
+      0.45429616087751373,
+      0.4506398537477148,
+      0.4643510054844607,
+      0.45429616087751373,
+      0.4424131627056673,
+      0.4579524680073126,
+      0.4579524680073126
+     ]
+    }
+   },
+   "enumerable_cap_assignments": 200000,
+   "method": "The arm's own non-zero scores are permuted across the statements whose reachable set is small enough to enumerate exhaustively, and the same membership test is re-run against the RECIPIENT statement's set.",
+   "n_permutations": 10,
+   "n_reachable_values_enumerated": 1026058,
+   "n_statements_enumerable": 1635,
+   "n_statements_on_panel": 1689,
+   "pooled_permuted_rate_max": 0.5201288244766505,
+   "pooled_permuted_rate_mean": 0.47218532271096675,
+   "pooled_permuted_rate_min": 0.44165946413137425,
+   "question": "How often does a reader score land on a reachable value by chance? Reachable values are not rare, so 100% is only worth stating against this floor.",
+   "seed": 20260717
+  },
+  "search": {
+   "algorithm": "depth-first over sorted(sources), feasible factor window per depth binary-searched from a suffix min/max product interval",
+   "max_nodes_used": 1155323,
+   "n_budget_exhausted": 0,
+   "n_counterexamples": 0,
+   "node_budget_per_statement": 5000000
+  },
+  "source_counts": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_prediction_provenance.jsonl",
+  "tiers": {
+   "bit_exact": "1.0 - PROD f_s == belief exactly, with the product taken in the sorted-source order compute_gated_belief multiplies in",
+   "confirmed": "|belief - (1 - PROD f_s)| <= 9e-15"
+  },
+  "tolerance": 9e-15
+ },
+ "schema_version": 1,
+ "subtractive": {
+  "arms": {
+   "gemma_4_26b": {
+    "label": "Gemma 4 26B",
+    "max_belief_above_noisy_or": 0.0,
+    "n_at_exactly_zero": 462,
+    "n_exceeding_noisy_or": 0,
+    "n_nonzero": 1227,
+    "n_statements": 1689,
+    "scores_path": "data/comparison/models/gemma_4_26b/all_source_predictions.jsonl"
+   },
+   "gemma_4_31b": {
+    "label": "Gemma 4 31B",
+    "max_belief_above_noisy_or": 0.0,
+    "n_at_exactly_zero": 478,
+    "n_exceeding_noisy_or": 0,
+    "n_nonzero": 1211,
+    "n_statements": 1689,
+    "scores_path": "data/comparison/models/gemma_4_31b/all_source_predictions.jsonl"
+   },
+   "gemma_4_e2b": {
+    "label": "Gemma 4 E2B",
+    "max_belief_above_noisy_or": 0.0,
+    "n_at_exactly_zero": 393,
+    "n_exceeding_noisy_or": 0,
+    "n_nonzero": 1296,
+    "n_statements": 1689,
+    "scores_path": "data/comparison/models/gemma_4_e2b/all_source_predictions.jsonl"
+   },
+   "glm_5": {
+    "label": "GLM-5",
+    "max_belief_above_noisy_or": 0.0,
+    "n_at_exactly_zero": 541,
+    "n_exceeding_noisy_or": 0,
+    "n_nonzero": 1148,
+    "n_statements": 1689,
+    "scores_path": "data/comparison/models/glm_5/all_source_predictions.jsonl"
+   }
+  },
+  "baseline": "raw noisy-OR (all evidence, multiplicity retained)",
+  "baseline_scores": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_predictions.jsonl",
+  "claim": "Dropping evidence removes factors from a product of numbers below 1, so a reader can only lower belief. Checked, not assumed.",
+  "cross_check": {
+   "agrees": true,
+   "artifact": "data/results/indra_paper_literal_models_20260724/non_reading_control.json",
+   "block": "subtractive_check",
+   "note": "Re-derived independently here from the prediction files, then asserted equal to P1's block field by field.",
+   "sha256": "8414ea8700edd8bc2a6d3630dbed1e93701c17db95c36811f3b6717ab00711f0"
+  },
+  "max_belief_above_noisy_or": 0.0,
+  "n_comparisons": 6756,
+  "n_exceeding_noisy_or": 0
+ }
+}

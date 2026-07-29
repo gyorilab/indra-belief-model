@@ -1,0 +1,347 @@
+{
+ "artifact_kind": "paper_margin_robustness",
+ "metric": "pooled average precision (sklearn average_precision_score)",
+ "seed": 20260717,
+ "n_bootstrap": 10000,
+ "bootstrap_design": "paired fold-stratified bootstrap over the paper's own out-of-fold fold assignment; one index vector per resample, SHARED across all arms; deltas are arm minus the paper's re-run RF on the same resample. Imported from scripts/compare_paper_literal_vs_llms.py.",
+ "reference": {
+  "id": "paper-rf-promoter",
+  "label": "Paper literal RF+promoter",
+  "description": "our re-run of the paper's own released RF code (sorgerlab/indra_assembly_paper), scored out-of-fold on the paper's own folds"
+ },
+ "panels": {
+  "primary": {
+   "n_statements": 1689,
+   "n_positive": 1237,
+   "n_negative": 452,
+   "negative_fraction": 0.2676139727649497,
+   "n_folds": 10,
+   "reference_average_precision": 0.9412042789486932,
+   "id": "paper_labels_1689",
+   "role": "primary",
+   "label_field": "paper_replication_policy.released_paper_correct",
+   "label_provenance": "the 2023 paper's released labels, unmodified",
+   "is_our_label_revision": false
+  },
+  "sensitivity": {
+   "n_statements": 1578,
+   "n_positive": 1237,
+   "n_negative": 341,
+   "negative_fraction": 0.21609632446134347,
+   "n_folds": 10,
+   "reference_average_precision": 0.9671897774839691,
+   "id": "adjudication_safe_1578",
+   "role": "sensitivity",
+   "label_field": "paper_replication_policy.released_paper_correct",
+   "label_provenance": "the paper's released labels with 111 statements REMOVED by us \u2014 every one of them a negative in the paper's labels whose evidence review is incomplete (label_is_adjudication_safe == false)",
+   "is_our_label_revision": true
+  }
+ },
+ "label_completeness": {
+  "field": "paper_replication_policy.label_is_adjudication_safe",
+  "n_dropped": 111,
+  "all_dropped_are_negative": true,
+  "all_dropped_have_incomplete_evidence_review": true,
+  "dropped_share_of_all_negatives": 0.24557522123893805,
+  "dropped_share_of_panel": 0.06571936056838366,
+  "negative_fraction_before": 0.2676139727649497,
+  "negative_fraction_after": 0.21609632446134347,
+  "no_model_is_refit": true,
+  "note": "These 111 statements are NEGATIVE in the paper's released labels. Dropping them is our revision of their labels, so this is a sensitivity check and never the primary result. It also removes a quarter of all negatives and shifts the class balance, so it changes what the panel is a sample of, not only its label quality."
+ },
+ "multiplicity": {
+  "family": [
+   "gemma-4-26b",
+   "glm-5",
+   "gemma-4-31b",
+   "gemma-4-e2b"
+  ],
+  "family_size": 4,
+  "method": "studentized max-t over the shared paired-bootstrap draws",
+  "family_alpha": 0.05,
+  "critical_value": 2.3014814686972622,
+  "sensitivity_critical_value": 2.2978101416482315,
+  "pointwise_normal_critical_value": 1.9599639845400534,
+  "bonferroni_critical_value": 2.4977054744123737,
+  "score_spearman_min": 0.8359466585256952,
+  "score_spearman_max": 0.98040964413235,
+  "pairwise_correlation": [
+   {
+    "a": "gemma-4-e2b",
+    "b": "gemma-4-26b",
+    "score_spearman": 0.8563267304758625,
+    "bootstrap_delta_pearson": 0.6941042923795195
+   },
+   {
+    "a": "gemma-4-e2b",
+    "b": "gemma-4-31b",
+    "score_spearman": 0.851890029046446,
+    "bootstrap_delta_pearson": 0.7037000002880688
+   },
+   {
+    "a": "gemma-4-e2b",
+    "b": "glm-5",
+    "score_spearman": 0.8359466585256952,
+    "bootstrap_delta_pearson": 0.6283633504515451
+   },
+   {
+    "a": "gemma-4-26b",
+    "b": "gemma-4-31b",
+    "score_spearman": 0.98040964413235,
+    "bootstrap_delta_pearson": 0.940469851259713
+   },
+   {
+    "a": "gemma-4-26b",
+    "b": "glm-5",
+    "score_spearman": 0.9743710271610518,
+    "bootstrap_delta_pearson": 0.918463366207552
+   },
+   {
+    "a": "gemma-4-31b",
+    "b": "glm-5",
+    "score_spearman": 0.9768809169930547,
+    "bootstrap_delta_pearson": 0.9154919855653808
+   }
+  ],
+  "no_designated_primary_arm": true,
+  "run_plan": {
+   "path": "data/comparison/run_plan.json",
+   "sha256": "ce4a4cd44b2bc1add88b0b983b75de2276d7a49a9fa108bda727ff62b8548ae1",
+   "frozen_at": "2026-07-22T05:03:33Z",
+   "stages": [
+    "e2b",
+    "gemma_26b",
+    "gemma_31b",
+    "glm_5"
+   ]
+  },
+  "note": "The frozen run plan stages all four reader arms and designates none of them as the confirmatory one, so we cannot claim a pre-registered single arm and a simultaneous band over the four is a fair ask. The arms are strongly rank-correlated, so max-t costs far less than Bonferroni would."
+ },
+ "dose_response": {
+  "smallest_arm_id": "gemma-4-e2b",
+  "n_arms_with_negative_delta": 1,
+  "n_arms_with_positive_delta": 3,
+  "only_negative_arm_is_the_smallest": true,
+  "basis": "Gemma 4 E2B is the family's edge variant and the smallest arm; the other three are larger. No finer size ordering is claimed \u2014 GLM-5's parameter count is not published. The checkable part is the sign pattern: exactly one arm is negative and it is the smallest."
+ },
+ "power": {
+  "pointwise_ci_half_width": {
+   "gemma-4-26b": 0.008656366923020017,
+   "glm-5": 0.008879774187580102,
+   "gemma-4-31b": 0.008976326602733061,
+   "gemma-4-e2b": 0.009748137620892963
+  },
+  "note": "The pointwise half-width is the same order as the effect it is measuring, so this panel is underpowered for an effect this size rather than silent about it."
+ },
+ "arms": [
+  {
+   "id": "gemma-4-26b",
+   "label": "Gemma 4 26B",
+   "run_plan_stage": "gemma_26b",
+   "provider_model_id": "google.gemma-4-26b-a4b",
+   "prediction_bundle": "data/comparison/models/gemma_4_26b/all_source_predictions.jsonl",
+   "primary": {
+    "panel": "paper_labels_1689",
+    "average_precision": 0.9509925130833301,
+    "delta": 0.00978823413463692,
+    "delta_bootstrap_mean": 0.009791524990593917,
+    "ci95_low": 0.0012146037397306132,
+    "ci95_high": 0.018527337585770645,
+    "p_greater_than_zero": 0.9864,
+    "bootstrap_se": 0.004437618813153213,
+    "n_valid_resamples": 10000,
+    "simultaneous_low": -0.00042486332897753894,
+    "simultaneous_high": 0.020001331598251376,
+    "excludes_zero_pointwise": true,
+    "excludes_zero_simultaneous": false
+   },
+   "sensitivity": {
+    "panel": "adjudication_safe_1578",
+    "average_precision": 0.9711207654594702,
+    "delta": 0.003930987975501177,
+    "delta_bootstrap_mean": 0.003957363978180327,
+    "ci95_low": -0.0017938611559521144,
+    "ci95_high": 0.009858365133751273,
+    "p_greater_than_zero": 0.9095,
+    "bootstrap_se": 0.002987875410918428,
+    "n_valid_resamples": 10000,
+    "simultaneous_low": -0.002934582445688564,
+    "simultaneous_high": 0.010796558396690917,
+    "excludes_zero_pointwise": false,
+    "excludes_zero_simultaneous": false
+   },
+   "shipped_reconciliation": {
+    "worst_residual_vs_shipped": 0.0,
+    "per_field_residual": {
+     "delta": 0.0,
+     "ci95_low": 0.0,
+     "ci95_high": 0.0,
+     "p_arm_greater": 0.0,
+     "average_precision": 0.0
+    }
+   }
+  },
+  {
+   "id": "glm-5",
+   "label": "GLM-5",
+   "run_plan_stage": "glm_5",
+   "provider_model_id": "zai.glm-5",
+   "prediction_bundle": "data/comparison/models/glm_5/all_source_predictions.jsonl",
+   "primary": {
+    "panel": "paper_labels_1689",
+    "average_precision": 0.9506590078548791,
+    "delta": 0.009454728906185927,
+    "delta_bootstrap_mean": 0.009452742018179203,
+    "ci95_low": 0.0006532989554322189,
+    "ci95_high": 0.018412847330592425,
+    "p_greater_than_zero": 0.9832,
+    "bootstrap_se": 0.0044905048713509855,
+    "n_valid_resamples": 10000,
+    "simultaneous_low": -0.0008800848403231493,
+    "simultaneous_high": 0.019789542652695002,
+    "excludes_zero_pointwise": true,
+    "excludes_zero_simultaneous": false
+   },
+   "sensitivity": {
+    "panel": "adjudication_safe_1578",
+    "average_precision": 0.9680882570762812,
+    "delta": 0.0008984795923121514,
+    "delta_bootstrap_mean": 0.0009226286065166262,
+    "ci95_low": -0.005053498082525404,
+    "ci95_high": 0.006982931072248298,
+    "p_greater_than_zero": 0.6143,
+    "bootstrap_se": 0.003057186631123302,
+    "n_valid_resamples": 10000,
+    "simultaneous_low": -0.006126354853594363,
+    "simultaneous_high": 0.007923314038218665,
+    "excludes_zero_pointwise": false,
+    "excludes_zero_simultaneous": false
+   },
+   "shipped_reconciliation": {
+    "worst_residual_vs_shipped": 0.0,
+    "per_field_residual": {
+     "delta": 0.0,
+     "ci95_low": 0.0,
+     "ci95_high": 0.0,
+     "p_arm_greater": 0.0,
+     "average_precision": 0.0
+    }
+   }
+  },
+  {
+   "id": "gemma-4-31b",
+   "label": "Gemma 4 31B",
+   "run_plan_stage": "gemma_31b",
+   "provider_model_id": "google.gemma-4-31b",
+   "prediction_bundle": "data/comparison/models/gemma_4_31b/all_source_predictions.jsonl",
+   "primary": {
+    "panel": "paper_labels_1689",
+    "average_precision": 0.9489114903136125,
+    "delta": 0.007707211364919364,
+    "delta_bootstrap_mean": 0.007730613200392364,
+    "ci95_low": -0.0012481529308254243,
+    "ci95_high": 0.0167045002746407,
+    "p_greater_than_zero": 0.9544,
+    "bootstrap_se": 0.004594056757464521,
+    "n_valid_resamples": 10000,
+    "simultaneous_low": -0.0028659251285286635,
+    "simultaneous_high": 0.018280347858367393,
+    "excludes_zero_pointwise": false,
+    "excludes_zero_simultaneous": false
+   },
+   "sensitivity": {
+    "panel": "adjudication_safe_1578",
+    "average_precision": 0.9702824785561939,
+    "delta": 0.0030927010722248127,
+    "delta_bootstrap_mean": 0.0031295427174467807,
+    "ci95_low": -0.0027102328814400055,
+    "ci95_high": 0.009108858286557027,
+    "p_greater_than_zero": 0.8511,
+    "bootstrap_se": 0.0030110855207838806,
+    "n_valid_resamples": 10000,
+    "simultaneous_low": -0.003826201774802535,
+    "simultaneous_high": 0.010011603919252161,
+    "excludes_zero_pointwise": false,
+    "excludes_zero_simultaneous": false
+   },
+   "shipped_reconciliation": {
+    "worst_residual_vs_shipped": 0.0,
+    "per_field_residual": {
+     "delta": 0.0,
+     "ci95_low": 0.0,
+     "ci95_high": 0.0,
+     "p_arm_greater": 0.0,
+     "average_precision": 0.0
+    }
+   }
+  },
+  {
+   "id": "gemma-4-e2b",
+   "label": "Gemma 4 E2B",
+   "run_plan_stage": "e2b",
+   "provider_model_id": "google.gemma-4-e2b",
+   "prediction_bundle": "data/comparison/models/gemma_4_e2b/all_source_predictions.jsonl",
+   "primary": {
+    "panel": "paper_labels_1689",
+    "average_precision": 0.9251951801050831,
+    "delta": -0.016009098843610126,
+    "delta_bootstrap_mean": -0.015928829888344348,
+    "ci95_low": -0.025642757245621157,
+    "ci95_high": -0.006146482003835232,
+    "p_greater_than_zero": 0.0013,
+    "bootstrap_se": 0.004992714873325916,
+    "n_valid_resamples": 10000,
+    "simultaneous_low": -0.027499739603058918,
+    "simultaneous_high": -0.004518458084161332,
+    "excludes_zero_pointwise": true,
+    "excludes_zero_simultaneous": true
+   },
+   "sensitivity": {
+    "panel": "adjudication_safe_1578",
+    "average_precision": 0.9575895307778626,
+    "delta": -0.009600246706106486,
+    "delta_bootstrap_mean": -0.009575661427579686,
+    "ci95_low": -0.015931448782446414,
+    "ci95_high": -0.003282840307113675,
+    "p_greater_than_zero": 0.0018,
+    "bootstrap_se": 0.0032267681459974187,
+    "n_valid_resamples": 10000,
+    "simultaneous_low": -0.017014747276726815,
+    "simultaneous_high": -0.002185746135486156,
+    "excludes_zero_pointwise": true,
+    "excludes_zero_simultaneous": true
+   },
+   "shipped_reconciliation": {
+    "worst_residual_vs_shipped": 0.0,
+    "per_field_residual": {
+     "delta": 0.0,
+     "ci95_low": 0.0,
+     "ci95_high": 0.0,
+     "p_arm_greater": 0.0,
+     "average_precision": 0.0
+    }
+   }
+  }
+ ],
+ "shipped_reconciliation": {
+  "comparison_artifact": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+  "tolerance": 1e-12,
+  "reference_average_precision_residual": 0.0,
+  "worst_residual_vs_shipped": 0.0,
+  "fields_reproduced": [
+   "paired_delta_vs_paper_literal[arm].pooled_average_precision.delta",
+   "paired_delta_vs_paper_literal[arm].pooled_average_precision.ci95_low",
+   "paired_delta_vs_paper_literal[arm].pooled_average_precision.ci95_high",
+   "paired_delta_vs_paper_literal[arm].pooled_average_precision.p_arm_greater",
+   "point_metrics[arm].pooled_average_precision"
+  ]
+ },
+ "inputs": {
+  "literal": "data/results/indra_paper_literal_models_20260724/paper_literal_table6_and_oof.json",
+  "comparison": "data/results/indra_paper_literal_models_20260724/paper_literal_vs_llms.json",
+  "gold": "data/results/indra_paper_statement_gold_20260717/paper_statement_gold.jsonl",
+  "model_bundles": "data/comparison/models/{arm}/all_source_predictions.jsonl",
+  "join": "paper_statement_hash -> canonical_corpus.statement_id",
+  "generated_by": "scripts/compute_paper_robustness.py"
+ }
+}

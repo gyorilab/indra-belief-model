@@ -1,0 +1,73 @@
+{
+ "artifact_kind": "deployed_baseline_replication",
+ "schema_version": 3,
+ "generated_by": "scripts/compute_deployed_baseline_replication.py",
+ "n_boot": 10000,
+ "seed": 20260717,
+ "indra_default_prior_resource_sha256": "6c26f48e0a9aa0917c5d605547841c67032d73b22c93f4811d3306f8c7bef9b5",
+ "inputs": {
+  "indra_paper_2023": {
+   "gold": "data/results/indra_paper_statement_gold_20260717/paper_statement_gold.jsonl",
+   "gold_sha256": "8b23feb521d22337a37c147fd6fc8fa4594e83364f183b5e1356d14333b7fbc8",
+   "run": "data/comparison/models/gemma_4_26b/all_source_predictions.jsonl",
+   "run_sha256": "e154e0ec2749253547f9954b0760b549e6d9d64ef004a80a9b17418f3022685f",
+   "incumbent_variants": {
+    "simple_scorer_direct": {
+     "source": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_predictions.jsonl",
+     "source_sha256": "4593c313f5a055977fdcc8d350aa5e983a95f0093896e9beb47e6ffdf62dea91"
+    },
+    "simple_scorer_hierarchy": {
+     "source": "data/results/current_indra_hierarchy_paper_20260717/current_simple_hierarchy_all_sources_predictions.jsonl",
+     "source_sha256": "1e3dd42a42190ca377321fbcfb1fe035f8af293abe576cfd36fdc059a0b66918"
+    },
+    "cogex_fitted_hybrid": {
+     "source": "data/comparison/models/indra_cogex_hybrid/all_source_predictions.jsonl",
+     "source_sha256": "fb9f76b3e54bb2668e629237bd47dfb61c5541cfaddb99d4bce5bb7a95a1f952"
+    }
+   }
+  },
+  "eval_curation_v1": {
+   "gold": "data/benchmark/eval_curation_v1.jsonl",
+   "gold_sha256": "8e266acefd191e25a92f88febcb6f6d7f1b3be8c8d8f45a18012f76d9930f600",
+   "run": "data/results/eval_curation_v1_gemma.jsonl",
+   "run_sha256": "d286ffa32433584f48a100d173c8fc0fb02a088dc8d1b99bdfd97b11205ebb37",
+   "incumbent_variants": {
+    "simple_scorer_recomputed": {
+     "source": "data/benchmark/eval_curation_v1.jsonl",
+     "source_sha256": "8e266acefd191e25a92f88febcb6f6d7f1b3be8c8d8f45a18012f76d9930f600"
+    },
+    "indra_served_belief": {
+     "source": "data/results/eval_curation_v1_gemma.jsonl",
+     "source_sha256": "d286ffa32433584f48a100d173c8fc0fb02a088dc8d1b99bdfd97b11205ebb37"
+    }
+   }
+  },
+  "external_curator_v1": {
+   "gold": "data/benchmark/external_curator_gold_v1.jsonl",
+   "gold_sha256": "52cde61f8f3e3dac01ad13f09c9d6db623eea888ffd617410d1c88de6527c80f",
+   "run": "data/results/external_curator_v1_bedrock-gemma.jsonl",
+   "run_sha256": "b1466546d071b9bca056c0260001ff06f50866aad8692ac8f8887e070a5b4ce8",
+   "incumbent_variants": {
+    "indra_served_belief": {
+     "source": "data/results/external_curator_v1_bedrock-gemma.jsonl",
+     "source_sha256": "b1466546d071b9bca056c0260001ff06f50866aad8692ac8f8887e070a5b4ce8"
+    }
+   }
+  },
+  "holdout_cc": {
+   "gold": "data/results/cc_holdout_cc/holdout_cc.jsonl",
+   "gold_sha256": "aa022aa0d2543f7031a686ec661a3bc3f59dec7cb9cc12f049ff0068653ecb49",
+   "run": "data/results/holdout_cc_gemma.jsonl",
+   "run_sha256": "fea4fdc6a4649fd96f091a10791437051b1e7431d9b747f93175c428d6cc36df",
+   "incumbent_variants": {
+    "indra_served_belief": {
+     "source": "data/results/holdout_cc_gemma.jsonl",
+     "source_sha256": "fea4fdc6a4649fd96f091a10791437051b1e7431d9b747f93175c428d6cc36df"
+    }
+   }
+  }
+ },
+ "output_sha256": {
+  "deployed_baseline_replication.json": "697bd3dfe3e3634e7b17042817043e518cef7ab6af9a15f195b3a183326438c0"
+ }
+}

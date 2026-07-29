@@ -6,8 +6,8 @@ Diagnostic for **G0** (go/no-go). No production code path touched. Per-evidence 
 
 | reader | stmts | base rate | belief AUROC | Δ vs 0.5 | belief AUPRC | Δ vs base | verdict |
 |---|---|---|---|---|---|---|---|
-| MedPsy-4B | 861 | 0.513 | 0.771 | 0.271 | 0.737 | 0.224 | **GO** |
-| gemma-26B | 861 | 0.513 | 0.804 | 0.304 | 0.768 | 0.255 | **GO** |
+| MedPsy-4B | 861 | 0.513 | 0.771 | 0.271 | 0.735 | 0.222 | **GO** |
+| gemma-26B | 861 | 0.513 | 0.804 | 0.304 | 0.764 | 0.251 | **GO** |
 
 > GO criterion: AUROC − 0.5 > 0.03 AND AUPRC − base_rate > 0.02. A NO-GO means a monotone post-hoc map cannot manufacture discrimination — the lever is upstream (reader / grounding), and Stages C1–C3 should not fire (D8).
 
@@ -23,7 +23,7 @@ Joined 1604 evidence rows (parse-null 0, unmatched 0). Confidence mix: {'high': 
 
 ### C0.2 — Tier-1 per-evidence reliability of the grid `score`
 
-- ECE 0.138 · Brier 0.176 (reliability 0.023 − resolution 0.098 + uncertainty 0.250) · AUROC 0.811 · AUPRC(correct) 0.748 (base 0.499) · n 1604
+- ECE 0.138 · Brier 0.176 (reliability 0.023 − resolution 0.098 + uncertainty 0.250) · AUROC 0.811 · AUPRC(correct) 0.738 (base 0.499) · n 1604
 
 ```
     bin            n     pred   emp    0                      1
@@ -37,11 +37,11 @@ Joined 1604 evidence rows (parse-null 0, unmatched 0). Confidence mix: {'high': 
 ### C0.3 — Tier-2 per-statement raw-belief (DECISIVE)
 
 - statements 861 (501 singletons, 360 multi-evidence)
-- **AUROC 0.771 · AUPRC(correct) 0.737** (base 0.513) · ECE 0.144 · Brier 0.199 (resolution 0.073)
+- **AUROC 0.771 · AUPRC(correct) 0.735** (base 0.513) · ECE 0.144 · Brier 0.199 (resolution 0.073)
 - saturation check: mean belief when correct 0.627 vs when incorrect 0.282
-  - singletons: n 501, AUROC 0.792, AUPRC 0.785 (base 0.567), ECE 0.201
-  - multi_evidence: n 360, AUROC 0.832, AUPRC 0.749 (base 0.439), ECE 0.146
-  - indra_prior_reference: n 861, AUROC 0.717, AUPRC 0.706 (base 0.513), ECE 0.393
+  - singletons: n 501, AUROC 0.792, AUPRC 0.772 (base 0.567), ECE 0.201
+  - multi_evidence: n 360, AUROC 0.832, AUPRC 0.751 (base 0.439), ECE 0.146
+  - indra_prior_reference: n 861, AUROC 0.717, AUPRC 0.709 (base 0.513), ECE 0.393
 
 ```
     bin            n     pred   emp    0                      1
@@ -65,7 +65,7 @@ Joined 1604 evidence rows (parse-null 0, unmatched 0). Confidence mix: {'high': 
 
 ### C0.2 — Tier-1 per-evidence reliability of the grid `score`
 
-- ECE 0.107 · Brier 0.144 (reliability 0.012 − resolution 0.118 + uncertainty 0.250) · AUROC 0.844 · AUPRC(correct) 0.803 (base 0.499) · n 1604
+- ECE 0.107 · Brier 0.144 (reliability 0.012 − resolution 0.118 + uncertainty 0.250) · AUROC 0.844 · AUPRC(correct) 0.782 (base 0.499) · n 1604
 
 ```
     bin            n     pred   emp    0                      1
@@ -78,11 +78,11 @@ Joined 1604 evidence rows (parse-null 0, unmatched 0). Confidence mix: {'high': 
 ### C0.3 — Tier-2 per-statement raw-belief (DECISIVE)
 
 - statements 861 (501 singletons, 360 multi-evidence)
-- **AUROC 0.804 · AUPRC(correct) 0.768** (base 0.513) · ECE 0.156 · Brier 0.188 (resolution 0.092)
+- **AUROC 0.804 · AUPRC(correct) 0.764** (base 0.513) · ECE 0.156 · Brier 0.188 (resolution 0.092)
 - saturation check: mean belief when correct 0.613 vs when incorrect 0.213
-  - singletons: n 501, AUROC 0.832, AUPRC 0.816 (base 0.567), ECE 0.222
-  - multi_evidence: n 360, AUROC 0.847, AUPRC 0.786 (base 0.439), ECE 0.104
-  - indra_prior_reference: n 861, AUROC 0.717, AUPRC 0.705 (base 0.513), ECE 0.393
+  - singletons: n 501, AUROC 0.832, AUPRC 0.804 (base 0.567), ECE 0.222
+  - multi_evidence: n 360, AUROC 0.847, AUPRC 0.782 (base 0.439), ECE 0.104
+  - indra_prior_reference: n 861, AUROC 0.717, AUPRC 0.709 (base 0.513), ECE 0.393
 
 ```
     bin            n     pred   emp    0                      1
