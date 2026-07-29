@@ -34,7 +34,7 @@
 > The June 17 confusion counts and held-out findings remain valid evidence; only
 > the candidate mechanism derived from them was superseded.
 
-**Historical status (June 17 record):** **C0 executed 2026-06-17 → G0 = GO** for both readers (`scripts/calibration_stage0.py` → `data/results/calibration_stage0.md`): per-statement gated belief AUROC 0.77 (MedPsy) / 0.81 (gemma), AUPRC 0.74 / 0.77 vs base 0.51 — real discrimination AND real miscalibration (mid-range under-confidence). **C1 done + CONFIRMED OOD 2026-06-17**: the then-candidate soft weight worked; committed `replace` over-flattened; the **`guard` variant** at **κ=0** improved ECE and AUROC. **C1.2 authoritative confirmation on independent `holdout_cc` PASSED both readers at κ=0** (MedPsy ECE 0.159→0.126/AUROC 0.717→0.759; gemma 0.171→0.129/0.740→0.768), clearing G1 for the historical C2 experiment. Those results motivated the later measurement model; they do not make the survival-weight architecture current.
+**Historical status (June 17 record):** **C0 executed 2026-06-17 → G0 = GO** for both readers (`scripts/calibration_stage0.py` → `data/results/calibration_stage0.md`): per-statement gated belief AUROC 0.77 (MedPsy) / 0.81 (gemma), AUPRC 0.735 / 0.764 vs base 0.513 — real discrimination AND real miscalibration (mid-range under-confidence). **C1 done + CONFIRMED OOD 2026-06-17**: the then-candidate soft weight worked; committed `replace` over-flattened; the **`guard` variant** at **κ=0** improved ECE and AUROC. **C1.2 authoritative confirmation on independent `holdout_cc` PASSED both readers at κ=0** (MedPsy ECE 0.159→0.126/AUROC 0.717→0.759; gemma 0.171→0.129/0.740→0.768), clearing G1 for the historical C2 experiment. Those results motivated the later measurement model; they do not make the survival-weight architecture current.
 **Last update:** 2026-07-13 (current likelihood-ratio contract documented; June 17 evidence retained as historical provenance)
 **Owner question:** "Consider INDRA's existing error mode `1 − ∏ₛ[syst(s) + rand(s)^nₛ]`. How do we arrive at a coherent, useful, accurate heuristic to inform calibration?"
 
@@ -111,7 +111,8 @@ gold truth), rather than consuming these values as weights.
 > Bedrock Gemma is a different measurement configuration (~11% vs ~16%) and must
 > not inherit the remote profile.
 
-`rand_s`, `syst_s` are **not fit** — they stay `RECALIBRATED_PRIORS` (`noise_model.py:52-76`, e.g. `reach (0.462, 0.05)`).
+`rand_s`, `syst_s` are **not fit** — they stay `RECALIBRATED_PRIORS` in
+`src/indra_belief/noise_model.py` (e.g. `reach (0.462, 0.05)`).
 
 ---
 
@@ -159,7 +160,20 @@ This preserves existing callers without imposing the noisy-OR formula on the
 fitted-reader likelihood-ratio path.
 
 ### E5 — Per-run calibration-product export (the presentation seam)
-`export_meta.json` now carries `schema_version: 8` (`results.py:1234`); a separate `metrics.json` — its own `METRICS_SCHEMA_VERSION = 3` (`results.py:489`) — is written alongside `per_evidence.jsonl`/`per_statement.json` (built by `build_run_metrics`, `results.py:570`; written to disk at `results.py:1278-1279`), keyed by `run_id`: `BINS_8` reliability bins `{lo, hi, n, mean_pred, empirical}` at Tier-1 and Tier-2, `ece`, Brier `{reliability, resolution, uncertainty}`, and per-run confusion `{tp, fp, fn, tn}` vs baked gold. Reuse E1's emitter so the persisted numbers are **byte-identical** to the C0 figures (golden-output check; a no-gold / all-`verdict=None` run writes a *named-empty* metrics block, per the doctrine — no imputed zeros). This executes the doc's own **D5 / C3.2** "travels with the run" commitment for the calibration products themselves — the reliability curve must travel with the run, not be a global figure file the viewer points at. Unlocks: the viewer presentation stages **C4 / C5** (which live in `research/belief_instrument_task_graph.md`).
+`export_meta.json` now carries `schema_version: 8`, assembled by `build_run_export`
+in `src/indra_belief/results.py`; a separate `metrics.json` — with its own
+`METRICS_SCHEMA_VERSION = 3` — is built by `build_run_metrics` and persisted by
+`write_run_export` alongside `per_evidence.jsonl`/`per_statement.json`, keyed by
+`run_id`: `BINS_8` reliability bins `{lo, hi, n, mean_pred, empirical}` at Tier-1
+and Tier-2, `ece`, Brier `{reliability, resolution, uncertainty}`, and per-run
+confusion `{tp, fp, fn, tn}` vs baked gold. Reuse E1's emitter so the persisted
+numbers are **byte-identical** to the C0 figures (golden-output check; a no-gold /
+all-`verdict=None` run writes a *named-empty* metrics block, per the doctrine — no
+imputed zeros). This executes the doc's own **D5 / C3.2** "travels with the run"
+commitment for the calibration products themselves — the reliability curve must
+travel with the run, not be a global figure file the viewer points at. Unlocks:
+the viewer presentation stages **C4 / C5** (which live in
+`research/belief_instrument_task_graph.md`).
 
 ---
 
@@ -169,9 +183,9 @@ fitted-reader likelihood-ratio path.
 
 - [x] **C0.1** Joined `eval_curation_v1_{medpsy,gemma}` to gold on the canonical (matches_hash, source_hash) pair (1606/1606 raw rows, 0 missing; 1604 unique pairs after conservative duplicate-curator aggregation). Anchors reproduce the verified table: MedPsy `rand_corr` 0.243 / `rand_rej` 0.127; remote Gemma `rand_corr` 0.182 / `rand_rej` 0.131. Confidence mix degenerate (not fit).
 - [x] **C0.2** Tier-1 per-evidence reliability of the grid `score` vs `gold==correct`: MedPsy ECE 0.139 / gemma 0.108; AUROC 0.810 / 0.843. Degenerate ~2 occupied bins, as expected (confidence collapse).
-- [x] **C0.3** Historical Tier-2 raw belief (hard gate + RECALIBRATED_PRIORS, grouped by gold `pa_hash`, gold any-incorrect-wins; not the current run-`stmt_hash` production grain): **AUROC 0.771 / 0.804, AUPRC 0.737 / 0.768 (base 0.513)** after the unique-pair correction — clear headroom. The saturated, no-headroom belief was the **INDRA prior reference** (AUROC 0.717, ECE 0.393), not the hard-gated belief (ECE ~0.14–0.16, resolution ~0.07–0.09). Reliability bins still show systematic mid-range under-confidence — a real recalibration target. Current production-grain metrics are the schema-v3 export and ship-gate artifacts, not this retained C0 baseline.
-- [x] **C0.4** Shipped `scripts/calibration_stage0.py` (analysis-only, numpy + shared libs; implements AUROC/AUPRC/Brier-Murphy not in `metrics.py`) → `data/results/calibration_stage0.{md,json}`.
-- [x] **G0** — **GO** (2026-06-17). Raw-belief AUPRC has headroom (Δ +0.226 MedPsy / +0.257 gemma over base; AUROC Δ +0.27 / +0.31). Discrimination is real and the belief is miscalibrated → C1–C3 have both signal to preserve and error to fix. Proceed to C1.
+- [x] **C0.3** Historical Tier-2 raw belief (hard gate + RECALIBRATED_PRIORS, grouped by gold `pa_hash`, gold any-incorrect-wins; not the current run-`stmt_hash` production grain): **AUROC 0.771 / 0.804, AUPRC 0.735 / 0.764 (base 0.513)** after the unique-pair correction — clear headroom. The saturated, no-headroom belief was the **INDRA prior reference** (AUROC 0.717, ECE 0.393), not the hard-gated belief (ECE ~0.14–0.16, resolution ~0.07–0.09). Reliability bins still show systematic mid-range under-confidence — a real recalibration target. Current production-grain metrics are the schema-v3 export and ship-gate artifacts, not this retained C0 baseline.
+- [x] **C0.4** Shipped `scripts/calibration_stage0.py` (analysis-only, numpy + shared libs; reuses AUROC/AUPRC/Brier-Murphy/ECE/reliability-bins from `indra_belief.metrics` rather than redefining them — see the in-file note at its aggregation boundary) → `data/results/calibration_stage0.{md,json}`.
+- [x] **G0** — **GO** (2026-06-17). Raw-belief AUPRC has headroom (Δ +0.222 MedPsy / +0.251 gemma over base; AUROC Δ +0.271 / +0.304). Discrimination is real and the belief is miscalibrated → C1–C3 have both signal to preserve and error to fix. Proceed to C1.
 
 ## Stage C1 — Historical survival-weight fit + Tier-1 validation  ·  do→review with **G1**
 
@@ -215,12 +229,12 @@ fitted-reader likelihood-ratio path.
 
 ---
 
-## Presentation handoff — viewer surfaces (live in `research/belief_instrument_task_graph.md`)
+## Presentation handoff — viewer surfaces (shipped; live in `research/belief_instrument_task_graph.md`)
 
-**The viewer is NOT prepared today** (verified 2026-06-17): `/runs/[run_id]` renders a residual-vs-INDRA histogram + `{mae, bias}` scalars (`Validity.svelte`, `queries.ts:113`), but `reliability`/`ece`/`brier` are **zero hits** in `viewer/src`; the fig6 "calibration card" is a **static** `rasmachine_belief_comparison.html`, not a route; and no `metrics.json` home exists. E5 is the seam that hands products from this math arc to the viewer. The two presentation stages are **authored as Phase T6 (C4/C5) + substrate edge E5 in `research/belief_instrument_task_graph.md`** (2026-06-17) — that doc owns the viewer IA + perceptual doctrine; the nodes keep the `C#`/`G#` vocabulary here for cross-reference. Device: **route = register** (`/runs/[run_id]` = single-run palette; `/compare` = A/B/gold comparison grammar). Both consume E5; neither recomputes.
+**Resolved handoff.** The June 17 gap (only residual `{mae, bias}`, no reliability/ECE/Brier route, no `metrics.json` home) is historical. E5, C4, and C5 are now shipped. `research/belief_instrument_task_graph.md` owns the current viewer IA and perceptual doctrine; the nodes retain the `C#`/`G#` vocabulary here for cross-reference. Device: **route = register** (`/runs/[run_id]` = single-run palette; `/compare` = A/B/gold comparison grammar). Both consume persisted metrics; neither recomputes them.
 
-- **C4 — Run-on-its-own calibration surface** → extend `/runs/[run_id]` (it **shipped** — the belief-instrument "deferred" note is stale). New `ReliabilityDiagram` + `BrierBar` + `ConfusionMosaic` primitives read `metrics.json`; one reactive lever = **Tier toggle** `?tier=ev|stmt` (Tier-1 per-evidence and Tier-2 per-statement shown as two *labeled, stacked* diagrams, never merged); ECE headline + Brier-as-stacked-bar make the D8 resolution story visible; per-stratum ECE retires the `unavailable` apology (`queries.ts:171`). **Renders C0's product.** → review gate **G4**: served numbers == `metrics.json` byte-exact (no served-vs-persisted drift); single-palette register; named-empty on no-gold, no crash.
-- **C5 — Run-comparison calibration mode** → add `?mode=calib` to `/compare` (mirror `?mode=gold`, `compare/+page.svelte:94`). L0 anatomy swaps the verdict 2×2 for **overlaid reliability curves + ΔECE/ΔBrier**; the **three-way baseline** (hard / parametric / soft) renders as three series tied to G2; L1–L3 strat/cohort/reasoning drill reused **unchanged** (no second confusion-matrix). **Renders C2.5's product.** → review gate **G5v**: viewer ΔECE/ΔBrier == C1/C2 held-out script outputs for the same run pair; drill skeleton unchanged; comparison register (A/B/gold hues) preserved.
+- **C4 — Run-on-its-own calibration surface (shipped).** `viewer/src/lib/data/queries.ts` (`getRunCalibration`) and the `/runs/[run_id]` route serve `ReliabilityDiagram` + `BrierBar` + `ConfusionMosaic` from `metrics.json`; the **Tier toggle** `?tier=ev|stmt` keeps Tier-1 and Tier-2 labeled and separate. → **G4:** served numbers == persisted metrics; single-palette register; named-empty on no-gold.
+- **C5 — Run-comparison calibration mode (shipped).** `viewer/src/routes/compare/+page.svelte` implements `?mode=calib`: L0 swaps the verdict 2×2 for overlaid reliability curves + ΔECE/ΔBrier, with hard/parametric/hybrid series tied to G2; L1–L3 reuse the comparison drill skeleton. → **G5v:** viewer deltas equal persisted outputs; comparison register preserved.
 
 **Decision-gating:** a **NO-GO at G0** (D8) costs ZERO viewer work — C4/C5 never fire without a product to show. The math arc is gated by G0–G3; the rendering arc by G4/G5v.
 
@@ -249,8 +263,8 @@ fitted-reader likelihood-ratio path.
 
 ## Key file anchors
 
-- `src/indra_belief/noise_model.py:48-49` (`rand = 1 − accuracy − syst`), `:52-76` (`RECALIBRATED_PRIORS`), `:108` (additive factor `syst + rand^n`), `:204` (contradiction `dominant·(1−opposing)`), `:357-480` (`compute_gated_belief`)
-- `src/indra_belief/noise_model.py:357-480` (`compute_gated_belief` — hard gate), `:435-441` (parametric-only ablation)
-- `src/indra_belief/scorers/_shared.py:10-17` (`VERDICT_SCORE_GRID` — display-only, do not fit)
+- `src/indra_belief/noise_model.py` (`RECALIBRATED_PRIORS`, `compute_edge_reliability_from_counts`, `compute_edge_reliability_with_contradiction`, `compute_gated_belief`)
+- `src/indra_belief/noise_model.py` (`compute_gated_belief` — hard gate and parametric-only ablation)
+- `src/indra_belief/scorers/_shared.py` (`VERDICT_SCORE_GRID` — display-only, do not fit)
 - `src/indra_belief/metrics.py` (`ece` / `BINS_8`)
 - Gold: `data/benchmark/eval_curation_v1.jsonl` · Runs: `data/results/eval_curation_v1_{medpsy,gemma}.jsonl` · Holdouts: `data/benchmark/holdout_cc.jsonl` (removed post-validation), `holdout_v15_sample.jsonl`, `rasmachine_v1_gold.jsonl` · Contamination: `scripts/check_contamination.py`

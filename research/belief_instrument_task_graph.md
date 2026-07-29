@@ -1,5 +1,12 @@
 # Belief Instrument Task Hypergraph
 
+> _Naming note: this file keeps the older `_task_graph` filename suffix while its
+> sibling live docs use `_task_hypergraph` (and this doc's own title reads
+> "Hypergraph"). The legacy spelling is retained deliberately — the live-doc
+> anchor guard and several sibling research docs pin this exact basename, so a
+> rename would reach into guarded tooling that is out of scope for a docs-only
+> pass. The divergence is cosmetic; the file's role is unchanged._
+
 Status: drafted + first execution pass landed 2026-05-10. T1 fully complete (E0 belief primitive, E1 findings, E2 run-narrative, E3 probe attribution, E4 residual distribution). T2 6/6 complete (focus card, findings strip, validity-as-section, run feed, `/runs/[run_id]` page, demolitions — the run page **shipped**; the earlier "deferred until multiple runs" note is retired). **T6 — calibration surfaces added 2026-06-17** (C4 run-on-its-own + C5 run-comparison; new substrate edge E5 render primitives; consumes the calibration arc's per-run `metrics.json`; see `research/calibration_task_hypergraph.md`). T3 perceptual instruments landed inline with T2 (probe bars, residual sparkline, bias-axis cleanup, verdict pillbar). T4 wayfinding 3/4 (deep-link focus + relevance-sort matrix already work; deep-dive reframed; keyboard nav deferred). T5 gates pending. Successor to `rasmachine_task_graph.md` (closed). The R-phase shipped a *working* interface; this hypergraph reframes it as a *truthful* one.
 
 ## Frame

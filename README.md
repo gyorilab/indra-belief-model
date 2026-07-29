@@ -271,6 +271,57 @@ mixed.
 The `soft=` argument name is retained for API compatibility; it now accepts this
 measurement profile, not survival weights.
 
+### Representative INDRA curations
+
+The viewer's `representative` lane starts from a **5,000-pair uniform evidence-row
+reservoir** drawn without replacement with Algorithm R from exactly
+**44,944,056 grounded/assembled evidence rows** in the CoGEx 2025-09-16 dump.
+The 5,000 rows are the sampling frame, not the size of CoGEx, and the sampling
+unit is an evidence row rather than a statement or every raw INDRA extraction.
+The source dump and reproduced reservoir are pinned by SHA-256.
+
+At serving time, the tracked manifest retains all 5,000 reservoir keys for
+provenance but blocks two exact pairs that occur in older benchmarks, leaving
+4,998 eligible keys. Every card shown to a curator is atomically reserved in a
+persistent draw ledger; completed INDRA history and all prior reservations,
+including skips, are removed before the next random draw. Production must set
+`CURATION_DRAW_LEDGER_DIR` to storage shared by every viewer instance and
+acknowledge it with `CURATION_DRAW_LEDGER_SHARED=1`; sampling fails closed when
+that guarantee is not configured. Rows that no longer materialize through INDRA
+or lack usable text are retried, so the served population is conditional on
+materializability and text availability.
+
+The June 29 snapshot was **not** drawn from this frame. It predates the July 3
+reservoir lane and came from the older hand-selected, high-coverage agent-panel
+sampler. The first qualifying reservoir curation is ID 19920 on July 6.
+
+The tracked `mock7ee@gmail.com` artifact
+`data/benchmark/representative_indra_curations_400.jsonl` is a
+**first-write-wins unique-pair progress snapshot**; `_400` names the benchmark
+target, not the current row count. It contains all 403 unique exact pairs from
+415 qualifying submissions available through curation ID 20334 at the recorded
+export cutoff. For each pair, the first
+qualifying submission supplies the tag and derived binary label; the 12 later
+repeat submissions are excluded from canonical rows and labels rather than
+aggregated as votes, while their provenance remains in audit metadata. The
+resulting snapshot is 199 correct / 204 incorrect. Each row contains one
+curation event and embeds the judged INDRA statement structure for
+clean-checkout inspection; no duplicate-event arrays or any-incorrect-wins
+conflict rollups are present. The 400-pair target is `complete` and exceeded by
+3 pairs. Benchmark status remains `pending` because the historical
+completed-sequence randomness is unproven.
+
+All 403 snapshot pairs are reservoir members and have zero prior-benchmark or
+pre-reservoir-curation overlap. The latter is pinned against
+`mock7ee_pre_reservoir_pair_manifest.jsonl` (124 genuine old-viewer submissions,
+123 unique pairs; the unrelated API auth probe is excluded). That proves frame
+membership, not that the historical completion sequence was a simple random
+sample: the legacy UI retained no draw/skip log, retried unusable rows, and
+allowed pairs to be drawn again. First-write deduplication removes those repeat
+events from the artifact but cannot reconstruct a no-replacement draw history.
+The artifact is therefore described as reservoir-sourced, not as a provable
+simple-random sample of the reservoir.
+
 For an unfitted reader, the hard-gate fallback retains confirmed/unscored
 evidence and removes rejected evidence before applying the parametric noisy-OR.
 The tiered `verdict_statement` is the production decision (deterministic
@@ -305,16 +356,21 @@ carry matching byte-level corpus and gold digests, the same exact evaluated
 evidence- and statement-key sets, and a compatible metrics contract. Temporal deltas are
 stricter still: they require the same exact reader configuration. Fit-set
 results are labeled in-sample and are never presented as external validation.
+The publication-grade statement comparison has its own frozen artifact and
+status contract; see
+[`research/indra_belief_comparison.md`](research/indra_belief_comparison.md)
+and `/frontier?view=belief`.
 
 ```bash
-cd viewer && npm install && npm run dev  # http://127.0.0.1:5173
+cd viewer && npm install && npm run dev  # http://127.0.0.1:5174
 ```
 
 ### Observed LLM cost (per run)
 
-Each run's export carries the real USD it cost to score, computed from the token
-usage actually observed during the run — not an estimate. Prices live in exactly
-one place (`src/indra_belief/corpus/cost.py`); the viewer only reads baked numbers.
+Each ordinary run export carries the real USD it cost to score, computed from
+the token usage actually observed during the run — not an estimate. Pricing for
+these exports lives in `src/indra_belief/corpus/cost.py`; the viewer only reads
+baked numbers.
 
 At export time, every evidence row's `call_log` (one entry per LLM call, each
 carrying `prompt_tokens`, `out_tokens`, and the real `model_id`) is priced via
@@ -340,6 +396,13 @@ list rates; local models are zero marginal cost. A model in neither table reads
 input/output rate to `MODEL_PRICES_PER_M_TOKENS` (or its id to
 `ZERO_COST_MODEL_IDS` if free) in `cost.py`, then re-export the run.
 
+The statement-level INDRA comparison does not silently inherit that mutable
+run-export table. Its LLM bundles bind `data/comparison/pricing.json`: structured
+AWS Bedrock `us-east-1` on-demand pricing, requested tier `default`, resolved
+tier Standard, exact provider model and token rates, retrieval date, and one
+cost-comparability identity. All-source and five-reader costs are observed
+projections of the same run and are explicitly non-additive.
+
 ### Benchmark evaluation against a holdout file
 
 ```bash
@@ -356,9 +419,9 @@ PYTHONPATH=src python -m indra_belief.scorers.scorer \
 Contributor-facing rules to keep the repository legible:
 
 - **`main` is the canonical state.** Every "ship" decision ends with `git push`. Local ship decisions don't count.
-- **Version labels don't belong in source.** Version numbers appear in PR titles, CHANGELOG entries, and benchmark-run output filenames (`data/results/<run>.jsonl`). They do *not* appear in source comments, docstrings, or identifier names. `scripts/check_no_version_labels.py` enforces this.
+- **Immutable identities are explicit.** Dataset, schema, model, prompt, and decision-artifact identities retain their real names and hashes; prose describes the current contract rather than narrating refactor chronology.
 - **Public API is `score_statement(statement, client)` + `score_evidence(statement, evidence, client)`.** `score_statement` mirrors INDRA's abstraction (a Statement owns a list of Evidence) and returns one dict per evidence. `score_evidence` is the atomic per-sentence call. `score(client, record, …)` is the benchmark-harness path used by `indra_belief.scorers.scorer.main`; treat it as internal.
-- **Comments explain current constraints, not past versions.** If a reader needs history, `git log` is the source of truth. "Provenance is selectively enabled because full-population provenance dilutes attention" is legitimate. "Removed in v12" is not.
+- **Comments explain current constraints.** Historical implementation rationale belongs in `git log`; source comments state only the causal constraint that governs current behavior.
 
 ## Project structure
 
@@ -442,10 +505,11 @@ data/
 scripts/
   run_rasmachine_monolithic.py  # Production scoring runner
   check_contamination.py        # Pre-eval gate: examples must not overlap holdout
-  check_no_version_labels.py    # CI guard: no v{n} labels in src, tests, scripts
+  check_doc_anchors.py          # Live-doc guard: referenced implementation files exist
+  export_representative_curations.py  # Export first-write unique-pair representative snapshot
 
 .github/workflows/
-  ci.yml                        # pytest + both guards on every push and PR
+  ci.yml                        # pytest + guards + viewer/deck checks on every push and PR
 ```
 
 ## References

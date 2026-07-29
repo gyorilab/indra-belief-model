@@ -241,8 +241,8 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 
 ## 4. Node specifications (engineering detail)
 
-> Convention per node: **Intent · MAP · DO · REVIEW · Artifacts · Gate · Risk · Targets.** Line numbers are
-> seeds for MAP to re-confirm, not ground truth.
+> Convention per node: **Intent · MAP · DO · REVIEW · Artifacts · Gate · Risk · Targets.** File paths and
+> symbol names are seeds for MAP to re-confirm; volatile source-line coordinates are not ground truth.
 
 ### Cluster A — Substrate Integrity
 
@@ -250,8 +250,9 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Intent.** The pre-eval safety gate silently scans zero of a declared live source, so "no contamination"
   is currently unfalsified, not verified. Make it honest. *(Do first: it is the cheapest, has no scoring-axis
   risk, and re-establishes trust in every downstream eval.)*
-- **MAP.** Confirm `from indra_belief.scorers._prompts import CONTRASTIVE_EXAMPLES` (`check_contamination.py:63`)
-  raises `ModuleNotFoundError` (real module is `monolithic._prompts`), swallowed to `[]` at `:64-65`. Enumerate
+- **MAP.** Confirm the legacy import in `scripts/check_contamination.py`
+  (`_load_legacy_examples`) raises `ModuleNotFoundError` (real module is
+  `monolithic._prompts`) and was swallowed by the empty-list fallback. Enumerate
   *every* declared source in the file and check each loads non-empty. Spec the fail-loud contract.
 - **DO.** Fix the import to `indra_belief.scorers.monolithic._prompts`. Replace the blanket `except: =[]` with a
   loud failure on a *missing/empty* declared source (a genuinely empty source may be legitimate — distinguish
@@ -262,7 +263,7 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** Patched `check_contamination.py`; `tests/test_contamination_guard_sources.py`.
 - **Gate.** Every declared source loads ≥1 example or fails loudly; new test green.
 - **Risk.** None on scoring axis (offline guard). 
-- **Targets.** `scripts/check_contamination.py:63-65`; `src/indra_belief/scorers/monolithic/_prompts.py`.
+- **Targets.** `scripts/check_contamination.py` (`_load_legacy_examples`); `src/indra_belief/scorers/monolithic/_prompts.py`.
 
 #### A2 — Repair the example-bank path (H1)
 - **Intent.** The 19-key type-specialized bank never loads (`_EXAMPLE_BANK_PATH` is off by one directory), so
@@ -282,14 +283,15 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** Patched `scorer.py`; `tests/test_example_bank_loads.py` (path + non-empty + per-type coverage).
 - **Gate.** Bank loads; `_TYPE_BANK` non-empty; coverage test green.
 - **Risk.** Re-introduces a real-but-untested input → strictly bounded by the A5 barrier; could move err-F1 either way.
-- **Targets.** `src/indra_belief/scorers/monolithic/scorer.py:106-110, 124-133, 184-231`; data at `src/indra_belief/data/example_bank.json`.
+- **Targets.** `src/indra_belief/scorers/monolithic/scorer.py` (`_EXAMPLE_BANK_PATH`, `_TYPE_BANK`, `_select_examples`); data at `src/indra_belief/data/example_bank.json`.
 
 #### A3 — Balance the few-shot disposition (H2)
 - **Intent.** Loaded shots teach "objection present ⇒ incorrect" with perfect correlation (0/18 carry
   `considered`), which is the exact bias the disconfirm/no-backstop design exists to break, and a plausible
   driver of over-rejection. Make the shots demonstrate **surface-objection-then-accept.**
-- **MAP.** Confirm the disconfirm renderer supports a resolved-objection field
-  (`_prompts_disconfirm.py:107-120`, `support, objection = ev, (ex.get("considered") or None)`), and that the
+- **MAP.** Confirm the disconfirm renderer supports a resolved-objection field in
+  `src/indra_belief/scorers/monolithic/_prompts_disconfirm.py` (`render_example`;
+  `support, objection = ev, (ex.get("considered") or None)`), and that the
   single `considered` example lives only in the (now-loadable, post-A2) bank. Decide the minimal set: annotate
   2–3 *correct* base examples with a `considered` (an apparent objection an explicit rule resolves), keeping
   the correct/incorrect objection-presence symmetry. **This touches prompt examples, never gold labels.**
@@ -302,13 +304,15 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Gate.** Loaded shots include resolved-objection correct examples; symmetry test green.
 - **Risk.** Over-correction toward over-acceptance — *this is why A5 reports FP and FN separately.* gemma already
   misses more errors (FN=158) than it over-rejects (FP=97) on balanced n=1606; do not trade recall blindly.
-- **Targets.** `src/indra_belief/scorers/monolithic/_prompts.py`; renderer `_prompts_disconfirm.py:107-120`.
+- **Targets.** `src/indra_belief/scorers/monolithic/_prompts.py`; renderer
+  `src/indra_belief/scorers/monolithic/_prompts_disconfirm.py` (`render_example`).
 
 #### A4 — ΔerrF1 paired-bootstrap CI on the lead metric (M2)
 - **Intent.** The lead metric (error-F1) is currently emitted bare; the only CI and McNemar attach to the
   *demoted* metric (accuracy). A5 must be interpretable, so build the CI before the re-run.
-- **MAP.** Confirm `wilson_ci` is on `acc_hits` (`eval_curation_compare.py:127`), err-F1 bare (`:209-212`),
-  McNemar on accuracy-concordance. Locate the existing `bootstrap_errf1` in `scripts/calibration_ship_gate.py`
+- **MAP.** Confirm `wilson_ci` is applied to `acc_hits` and err-F1 is bare in
+  `scripts/eval_curation_compare.py` (`model_block`), while McNemar is applied to
+  accuracy concordance. Locate the existing `bootstrap_errf1` in `scripts/calibration_ship_gate.py`
   and the documented `NOISE_FLOOR = 0.154`. Spec the back-port (a paired bootstrap ΔerrF1 + permutation p on F1).
 - **DO.** Back-port `bootstrap_errf1` into the compare path; emit err-F1 with a 95% paired-bootstrap CI and a
   permutation p, lead with it, keep McNemar-on-accuracy as a secondary traceable line. **I-CALIB-EXTERNAL:**
@@ -318,7 +322,7 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** Patched `eval_curation_compare.py`; a golden re-report of an existing run (numbers unchanged + CI added).
 - **Gate.** err-F1 reported with CI + permutation p; point estimate unchanged on cached data.
 - **Risk.** None — reporting-only; cannot move verdicts.
-- **Targets.** `scripts/eval_curation_compare.py:112,127,209-212`; `scripts/calibration_ship_gate.py` (`bootstrap_errf1`).
+- **Targets.** `scripts/eval_curation_compare.py` (`bootstrap_errf1`, `permutation_errf1`, `model_block`); `scripts/calibration_ship_gate.py` (`bootstrap_errf1`).
 
 #### A5 — Clean re-run barrier (n=1606, both models) ⟵ E-BAR, E-GATE root
 - **Intent.** Re-measure on the repaired substrate so every downstream conclusion (and the standing
@@ -346,7 +350,8 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Intent.** Balanced err-F1 (0.835) is a *selection* metric; production is ~58% correct, where usable
   error-class precision falls to roughly 0.50–0.82. Report the deployment operating point so the headline isn't
   misread as a curator's experienced precision.
-- **MAP.** Confirm eval is forced 1:1 (`build_curation_eval.py:16`) and the production prevalence figure; spec a
+- **MAP.** Confirm eval is forced 1:1 by `stratified_balanced` in
+  `scripts/build_curation_eval.py` and confirm the production prevalence figure; spec a
   prevalence-reweighted error-class PR curve + expected review-queue precision at pair grain. No gold edits.
 - **DO.** Add the additive reweighted PR / expected-queue-precision report; one-line caveat that 0.835 is a
   selection number, not deployment.
@@ -355,7 +360,7 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** Prevalence-operating-point section in the compare report.
 - **Gate.** Reweighted PR + caveat present; selection metric unchanged.
 - **Risk.** None (additive reporting); amplifies visibility of the known over-rejection/over-acceptance driver.
-- **Targets.** `scripts/eval_curation_compare.py`; `scripts/build_curation_eval.py:16`.
+- **Targets.** `scripts/eval_curation_compare.py`; `scripts/build_curation_eval.py` (`main`).
 
 #### B2 — Effective-context probe (deployed models)
 - **Intent.** Our usable-context budget is unknown; NoLiMa/RULER effective-length numbers are 2024-vintage and
@@ -373,8 +378,10 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 ### Cluster C — Architecture Hygiene (E-PAR: all parity-gated)
 
 #### C1 — ScorerConfig threading (M4)
-- **Intent.** `MONO_VARIANT` is an import-time process global (`scorer.py:59`), so no test can flip the variant
-  in-process and the branch-selection fork (`:262/:292/:317`) + baseline else-branch are untested. Make the
+- **Intent.** `MONO_VARIANT` resolves to the import-time `_VARIANT` global in
+  `src/indra_belief/scorers/monolithic/scorer.py`, so no test can flip the variant
+  in-process and the branch-selection paths in `_build_messages`, `_parse_verdict`,
+  and `score` plus the baseline else-branch are untested. Make the
   variant an injectable config; env var becomes the default factory.
 - **MAP.** Confirm the global resolution and the untested branch-selection fork. Spec a `ScorerConfig` dataclass
   (system_prompt, render/parse/derive callables, relnature flag) threaded through `score()`/`score_statement()`.
@@ -385,11 +392,12 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** `ScorerConfig`; threaded entry points; branch-selection tests; golden fixture.
 - **Gate.** Golden diff = 0; in-process variant switch works.
 - **Risk.** None if parity-gated (pure plumbing; touches no prompt/threshold/verdict logic).
-- **Targets.** `scorer.py:59,262,292,317,462,556`.
+- **Targets.** `src/indra_belief/scorers/monolithic/scorer.py` (`_VARIANT`,
+  `_build_messages`, `_parse_verdict`, `score`, `score_statement`, `main`).
 
 #### C2 — Unify result schema + collapse `_score_single`/`_score_with_tools` (M5)
 - **Intent.** The two scoring paths are ~90% duplicated and the result-dict schema is maintained in 3+ places
-  (`_score_single` `:332-358`, `_score_with_tools` `:422-459`, Tier-0 `:496-498`, final assembly `:541-553`),
+  (`_score_single`, `_score_with_tools`, and the Tier-0/final-assembly branches of `score`),
   inviting silent schema drift / KeyError.
 - **MAP.** Confirm the duplication and the 3+ schema sites. Spec one `_score(..., *, lookup_block='',
   system_suffix='', kind)` helper + one result-builder/dataclass used by all three tiers.
@@ -400,10 +408,12 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** Unified `_score`; single result schema; input-identity regression test.
 - **Gate.** Golden diff = 0; input-identity test green.
 - **Risk.** None if parity-gated.
-- **Targets.** `scorer.py:332-358,422-459,496-498,541-553`.
+- **Targets.** `src/indra_belief/scorers/monolithic/scorer.py` (`_score_single`,
+  `_score_with_tools`, `score`).
 
 #### C3 — Tag-keyed universal pairs + lift shared LLM utils (L3 / M5)
-- **Intent.** Two papercuts: `_UNIVERSAL_PAIRS = _ALL_EXAMPLES[4:6],[6:8]` (`scorer.py:161-164`) is positional —
+- **Intent.** Two papercuts: `_UNIVERSAL_PAIRS = _ALL_EXAMPLES[4:6],[6:8]` in
+  `src/indra_belief/scorers/monolithic/scorer.py` is positional —
   a reorder silently re-picks the priority-3 slot; and the live monolithic default transitively loads the dormant
   `probes/` package via `probes._llm` for `_extract_json`/`llm_classify` through an eager `probes/__init__.py`.
 - **MAP.** Confirm the positional slices resolve to the intended AGER/TP53 + MYB/PPID pairs today (anchored only by
@@ -415,14 +425,17 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** tag-keyed universal registry; `_shared._extract_json/llm_classify`; import-graph test.
 - **Gate.** Identical selection; probes no longer transitively imported; golden diff = 0.
 - **Risk.** None (selection-preserving + relocation).
-- **Targets.** `scorer.py:161-164`; `src/indra_belief/scorers/probes/_llm.py`, `probes/__init__.py`; `_shared.py`.
+- **Targets.** `src/indra_belief/scorers/monolithic/scorer.py` (`_UNIVERSAL_PAIRS`);
+  `src/indra_belief/scorers/probes/_llm.py`, `probes/__init__.py`; `_shared.py`.
 
 #### C4 — Branch-archive dormant scorers + relabel relnature note (M6)
 - **Intent.** Two things: (a) the decomposed/panel/probes pipelines are live comparison baselines with eval
   anchors but clutter the live import surface — branch-archive them (V-phase precedent) rather than delete; (b) the
   relnature note is written in deterministic-grounding vocabulary ("that is a grounding MISMATCH") though it is a
   *second LLM call's output* — relabel to truthful provenance ("relation-nature objection (model-derived)").
-- **MAP.** Confirm the relnature note text (`_prompts_relation.py:126-129`) and that no code reads it to flip the
+- **MAP.** Confirm the relnature note text in
+  `src/indra_belief/scorers/monolithic/_prompts_relation.py`
+  (`resolve_relation_nature`) and that no code reads it to flip the
   verdict (honors I-DETERMINISM mechanically). Confirm the Complex-slice lever was validated at err-F1 +0.04
   (audited ~0.887, `fc8f5de`). Spec the relabel + the branch-archive plan.
 - **DO.** Relabel the note voice/trace; create the archive branch for dormant scorers; keep the shared seam
@@ -434,7 +447,8 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Gate.** Golden diff = 0 on the disposition; note provenance truthful; dormant scorers preserved on branch.
 - **Risk.** Softening the relnature lever regresses a measured Complex win — note the statement-grain residual is
   over-*acceptance* (false-confidence 124 > false-doubt 42), so this lever fights the larger statement-grain failure.
-- **Targets.** `_prompts_relation.py:126-129`; `scorers/{decomposed.py,panel/,probes/}`.
+- **Targets.** `src/indra_belief/scorers/monolithic/_prompts_relation.py`
+  (`resolve_relation_nature`); `scorers/{decomposed.py,panel/,probes/}`.
 
 ### Cluster D — Substrate-Input Grounding (E-GATE: all blocked until A5 passes)
 
@@ -444,7 +458,7 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
   the **input** side via an LLM disambiguation layer that reads the evidence context — never by tightening the
   substrate or overriding the verdict.
 - **MAP.** Re-read `grounding_alias_collision_report.md` §6.2 (the layer-2 NO-GO under the *old* degraded shots) and
-  `entity.py:380-406` (`_competing_candidates`). **Crucially: the prior layer-2 attempt was tested on the H1/H2-
+  `src/indra_belief/data/entity.py` (`_competing_candidates`). **Crucially: the prior layer-2 attempt was tested on the H1/H2-
   degraded substrate** — A5 may change its verdict, which is *why* this node is E-GATE'd. Spec a context-conditioned
   disambiguation that emits an input signal (this raw_text, in this sentence, denotes X not Y), not a verdict flip.
 - **DO.** Implement the input-side disambiguation behind a flag; run on the 3 residual cases + the 9 legit-alias
@@ -454,15 +468,16 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** flagged disambiguation layer; residual+control report; n=1606 validation.
 - **Gate.** ≥2/3 caught, 0 legit-alias regression, n=1606 non-inferior err-F1.
 - **Risk.** Over-flag (the reason the substrate-only approach stopped at the 0.10 band) — input-only keeps it safe.
-- **Targets.** `src/indra_belief/data/entity.py:380-406`; `research/archive/completed_phases/grounding_alias_collision_report.md` §6.2.
+- **Targets.** `src/indra_belief/data/entity.py` (`_competing_candidates`); `research/archive/completed_phases/grounding_alias_collision_report.md` §6.2.
 
 #### D2 — Minimal-resolved-facts substrate output + claim↔evidence alignment
 - **Intent.** Frontier principle (CONFIRMED): a single distractor pushes accuracy below baseline; low claim↔needle
   similarity accelerates degradation; verification is a synthesis/citation task (the degraded regime). Ensure the
   substrate hands the LLM *resolved, minimal* facts (one competing grounding, not a candidate dump) and that the
   claim is rendered in vocabulary close to the evidence span.
-- **MAP.** Audit `scoring_record.format_user_message` (`:358-388`), provenance block (`:307-356`), entity context
-  (`:253-279`) for distractor mass; cross-reference B2's effective-context number for the budget. Spec the trim +
+- **MAP.** Audit `ScoringRecord.format_user_message`, `format_provenance`, and
+  `format_entity_context` in `src/indra_belief/data/scoring_record.py` for distractor
+  mass; cross-reference B2's effective-context number for the budget. Spec the trim +
   the alignment (surface raw-text forms as a lexical bridge, already partially done by `_verify_raw_text`).
 - **DO.** Tighten provenance/entity-context to resolved minimal facts; ensure claim rendering surfaces the
   evidence-aligned surface forms. Worktree.
@@ -471,7 +486,7 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** trimmed substrate output; n=1606 non-inferiority report.
 - **Gate.** Distractor tokens ↓, err-F1 non-inferior, flag-gating preserved.
 - **Risk.** Context surgery can remove a load-bearing fact — non-inferiority gate guards it.
-- **Targets.** `src/indra_belief/data/scoring_record.py:253-279,307-356,358-388`.
+- **Targets.** `src/indra_belief/data/scoring_record.py` (`ScoringRecord.format_user_message` and its entity/provenance helpers).
 
 #### D3 — *Spike:* asymmetric candidate→check verification
 - **Intent.** Frontier (medium-confidence): reallocating compute from search to *backward verification* (start from
@@ -521,8 +536,9 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Role.** Not our work. The standing M1 gap — no verdict-grain mechanism for over-rejection — is the
   calibration agent's territory, and it **shipped**: `503d816` (configuration-scoped hybrid belief calibration)
   edited all three belief-math files as the X1 owner's legitimate work. The former sub-claim that soft-guard is
-  belief-grain only (`statement_belief.py` never reads `soft`) is now stale — `statement_belief.py:211-217` **does**
-  read the soft/calibrated reader profile via the config-scoped path.
+  belief-grain only (`statement_belief.py` never reads `soft`) is now stale —
+  `statement_belief` in `src/indra_belief/statement_belief.py` **does** read the
+  soft/calibrated reader profile via the config-scoped path.
 - **Our obligation (E-CAL handoff).** A4/A5/B1 must **expose** clean per-pair and per-statement outputs
   (verdict, confidence, score, grounding_status, tier, FP/FN labels) in a stable schema the calibration agent
   consumes. We define the interface; we do not edit `noise_model.py` / `calibration_constants.py` / the rollup.

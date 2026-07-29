@@ -95,12 +95,21 @@ Thumbs.db
 
 # Environment
 .env
+# Model run outputs: 19 GB of per-evidence attempts, predictions and manifests
+# across every scored model. The derived artifacts the viewer reads are tracked
+# under data/results/ and each embeds the sha256 of the run it came from, so the
+# provenance chain survives without the raw rows.
+data/comparison/
+
 data/comparison/error_review.key
 data/comparison/error_reviews/
 data/comparison/error_review_admin/
 
 # Slidev authoring source + its local theme are tracked. Generated builds, PDFs,
 # dependency trees, and the superseded second-reader working directory are local.
+# Slide decks: 1.7 GB, and node_modules/dist alone did not cover it — the built
+# assets and media sit outside both.
+presentations/
 presentations/**/node_modules/
 presentations/**/dist/
 presentations/**/*.pdf
