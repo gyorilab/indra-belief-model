@@ -151,21 +151,36 @@ def auroc(scores, labels) -> float:
 
 
 def auprc(scores, labels) -> float:
-    """Average precision (AUPRC), positive class = label True."""
+    """Average precision (AUPRC), positive class = label True.
+
+    AP = sum over THRESHOLDS of (R_k - R_{k-1}) * P_k. A threshold is a distinct
+    score, not a row: rows carrying the same score are indistinguishable to any
+    decision rule, so they collapse into ONE point on the PR curve. Walking the
+    curve row-by-row instead would let the arbitrary within-tie ordering decide
+    the answer and would inflate it (each tied positive would be credited at a
+    precision that no reachable threshold actually delivers). The result here
+    equals `sklearn.metrics.average_precision_score` and is invariant to the
+    order of the input rows.
+
+    Tie grouping mirrors `indra_belief.comparison.metrics::_weighted_pr_summaries`
+    (the weighted sibling; same reduceat algorithm, weights all 1 here). Mirrored
+    rather than imported: that module imports sklearn at top level and its
+    `_unit_interval` raises on out-of-range input.
+    """
     s = np.asarray(scores, float)
     y = np.asarray(labels, bool)
     n_pos = int(y.sum())
     if n_pos == 0:
         return float("nan")
     order = np.argsort(-s, kind="mergesort")
-    y_sorted = y[order]
-    tp = np.cumsum(y_sorted)
-    fp = np.cumsum(~y_sorted)
-    precision = tp / np.maximum(tp + fp, 1)
-    recall = tp / n_pos
-    # AP = sum over thresholds of (R_k - R_{k-1}) * P_k
-    rec_prev = np.concatenate([[0.0], recall[:-1]])
-    return float(np.sum((recall - rec_prev) * precision))
+    sorted_scores = s[order]
+    sorted_labels = y[order]
+    starts = np.r_[0, np.flatnonzero(sorted_scores[1:] != sorted_scores[:-1]) + 1]
+    cumulative_total = np.cumsum(np.add.reduceat(np.ones(len(sorted_scores)), starts))
+    cumulative_positive = np.cumsum(np.add.reduceat(sorted_labels.astype(float), starts))
+    precision = cumulative_positive / cumulative_total
+    recall = cumulative_positive / n_pos
+    return float(np.sum((recall - np.r_[0.0, recall[:-1]]) * precision))
 
 
 def brier_murphy(scores, labels, bins=BINS_8) -> dict:

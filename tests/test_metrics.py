@@ -5,8 +5,15 @@ short-key from aa/cc/three_way confusion). The behavioral guarantee that the
 five eval scripts reproduce their committed .md reports byte-exactly is the
 real extraction proof; these lock the unit contract.
 """
+import ast
+import json
 import math
+import random
+import subprocess
+import sys
+from pathlib import Path
 
+import indra_belief.metrics as metrics_module
 from indra_belief.metrics import (
     BINS_8,
     auprc,
@@ -153,6 +160,50 @@ def test_auprc_perfect_is_one():
     assert math.isnan(auprc([0.1, 0.2], [False, False]))  # no positives
 
 
+def test_auprc_collapses_ties():
+    # Two rows carrying the SAME score are one threshold, not two. A row-by-row
+    # walk would return 1.0 for [1,0] and 0.5 for [0,1] — the arbitrary input
+    # order deciding the metric. Both orders must be the single reachable
+    # precision at that threshold: 1 positive of 2 rows = 0.5.
+    assert auprc([0.5, 0.5], [False, True]) == 0.5
+    assert auprc([0.5, 0.5], [True, False]) == 0.5
+
+
+def test_auprc_is_order_invariant():
+    # A tie-heavy vector on a coarse score grid: every permutation of the input
+    # rows must return the bit-identical float.
+    rng = random.Random(20260725)
+    grid = [0.1, 0.3, 0.5, 0.7, 0.9]
+    scores = [rng.choice(grid) for _ in range(120)]
+    labels = [rng.random() < 0.4 for _ in range(120)]
+    assert any(labels)
+    values = {auprc(scores, labels)}
+    for _ in range(50):
+        idx = list(range(len(scores)))
+        rng.shuffle(idx)
+        values.add(auprc([scores[i] for i in idx], [labels[i] for i in idx]))
+    assert len(values) == 1, f"auprc is order-dependent: {sorted(values)}"
+
+
+def test_auprc_matches_sklearn_average_precision():
+    # sklearn is already a hard dependency (pyproject.toml) but metrics.py must
+    # not import it — the parity lives here, in the test, not in the module.
+    from sklearn.metrics import average_precision_score
+
+    rng = random.Random(4242)
+    for trial in range(200):
+        n = rng.randint(4, 150)
+        # coarse grid ⇒ heavy ties, which is where the two definitions diverge
+        grid = [round(rng.random(), 2) for _ in range(rng.randint(2, 7))]
+        scores = [rng.choice(grid) for _ in range(n)]
+        labels = [rng.random() < 0.4 for _ in range(n)]
+        if not any(labels):
+            labels[rng.randrange(n)] = True
+        ours = auprc(scores, labels)
+        ref = float(average_precision_score(labels, scores))
+        assert abs(ours - ref) <= 1e-12, f"trial {trial}: {ours!r} vs {ref!r}"
+
+
 def test_brier_murphy_decomposition_identity():
     # Brier == reliability − resolution + uncertainty (Murphy)
     scores = [0.9, 0.9, 0.1, 0.1, 0.6, 0.4]
@@ -176,6 +227,73 @@ def test_reliability_bins_are_eight_with_null_empties():
     assert occupied[0]["empirical"] == pytest_approx(0.5)
     empties = [b for b in bins if b["n"] == 0]
     assert all(b["mean_pred"] is None and b["empirical"] is None for b in empties)
+
+
+def test_metrics_import_roots_are_exactly_the_declared_four():
+    # The invariant: metrics.py is the light, dependency-lean home for the
+    # scalar metrics, so it must import ONLY {__future__, statistics, typing,
+    # numpy} — no sklearn, and no pull on indra_belief.comparison (which does
+    # import sklearn at top level).
+    #
+    # WHY AST AND NOT GREP: auprc's docstring names `sklearn` twice as prose —
+    # once to say the result equals average_precision_score, once to explain why
+    # the tie grouping is MIRRORED from indra_belief.comparison.metrics rather
+    # than imported. A grep-based "no sklearn" check reads those two sentences
+    # as violations and false-positives on a file that is in fact clean. The AST
+    # sees import statements only, so documentation can never trip it.
+    tree = ast.parse(Path(metrics_module.__file__).read_text())
+    roots = set()
+    relative_targets = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(alias.name.split(".", 1)[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0:
+                roots.add(node.module.split(".", 1)[0])
+            elif node.module:  # from .pkg import x
+                relative_targets.add(node.module.split(".", 1)[0])
+            else:  # from . import x, y
+                relative_targets.update(a.name.split(".", 1)[0] for a in node.names)
+    assert relative_targets == set(), (
+        "metrics.py must not reach into intra-package siblings; found relative "
+        f"import(s): {sorted(relative_targets)}"
+    )
+    assert roots == {"__future__", "numpy", "statistics", "typing"}, (
+        "metrics.py import roots drifted from the declared set; got "
+        f"{sorted(roots)}"
+    )
+
+
+def test_importing_metrics_pulls_neither_comparison_nor_sklearn():
+    # Mirror of the AST guard at runtime: static imports could be clean while a
+    # transitive import (via indra_belief/__init__ or a lazy hop) still drags
+    # sklearn in. A fresh interpreter is the only honest check — the in-process
+    # sys.modules is already polluted by sibling tests that import sklearn
+    # directly (see test_auprc_matches_sklearn_average_precision).
+    #
+    # FLAGS: -I -B -P isolate the child (no user site, no bytecode, no implicit
+    # cwd on sys.path). `-S` is DELIBERATELY OMITTED, unlike the precedent in
+    # tests/test_package_lazy_import.py: metrics.py legitimately imports numpy,
+    # which lives in site-packages, so -S would make the child die with
+    # ModuleNotFoundError instead of exercising the invariant.
+    source = r'''
+import json
+import sys
+sys.path.insert(0, SOURCE_ROOT)
+import indra_belief.metrics
+print(json.dumps(sorted(
+    name for name in sys.modules
+    if name.startswith("indra_belief.comparison")
+    or name == "sklearn" or name.startswith("sklearn.")
+)))
+'''.replace("SOURCE_ROOT", repr(str(Path(__file__).resolve().parents[1] / "src")))
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", "-P", "-c", source],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert json.loads(result.stdout) == []
 
 
 def pytest_approx(x):
