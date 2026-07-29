@@ -1,0 +1,263 @@
+{
+  "artifact": {
+    "path": "data/benchmark/representative_indra_curations_400.jsonl",
+    "sha256": "31f3bcd0cb7f4897ba9cd66da8c51da61d7899280201669a9585d9d6b6f69675"
+  },
+  "benchmark_blockers": {
+    "selection_randomness_unproven": true
+  },
+  "benchmark_status": "pending",
+  "benchmark_target": {
+    "unique_pairs": 400,
+    "unit": "unique exact (statement, evidence) pairs"
+  },
+  "contamination": {
+    "pool_pairs_overlapping_preexisting_benchmarks": 2,
+    "selected_pairs_overlapping_preexisting_benchmarks": 0
+  },
+  "counts": {
+    "excluded_repeat_submission_events": 12,
+    "gold_correct": 199,
+    "gold_incorrect": 204,
+    "observed_submission_events": 415,
+    "retained_submission_events": 403,
+    "unique_pairs": 403,
+    "unique_pairs_above_benchmark_target": 3,
+    "unique_pairs_remaining_to_benchmark_target": 0,
+    "unique_statements": 403
+  },
+  "curator": "mock7ee@gmail.com",
+  "dataset_id": "representative_indra_curations_400",
+  "deduplication_audit": {
+    "excluded_repeat_events": [
+      {
+        "curation_date": "Mon, 06 Jul 2026 15:54:45 GMT",
+        "curation_id": 19993,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": 11266252465877877,
+        "retained_curation_id": 19928,
+        "source_hash": 6325937784227376597,
+        "tag": "correct"
+      },
+      {
+        "curation_date": "Mon, 06 Jul 2026 15:56:41 GMT",
+        "curation_id": 19998,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": -22573517970537194,
+        "retained_curation_id": 19976,
+        "source_hash": 6522729967445123199,
+        "tag": "wrong_relation"
+      },
+      {
+        "curation_date": "Wed, 15 Jul 2026 09:33:07 GMT",
+        "curation_id": 20135,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": 7183679686157841,
+        "retained_curation_id": 20039,
+        "source_hash": 4982204471752466115,
+        "tag": "grounding"
+      },
+      {
+        "curation_date": "Wed, 15 Jul 2026 09:43:35 GMT",
+        "curation_id": 20148,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": -34049483541034531,
+        "retained_curation_id": 20080,
+        "source_hash": -7281069400247944968,
+        "tag": "correct"
+      },
+      {
+        "curation_date": "Wed, 15 Jul 2026 10:14:04 GMT",
+        "curation_id": 20158,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": 28327197925850296,
+        "retained_curation_id": 19950,
+        "source_hash": -8742125658163815994,
+        "tag": "grounding"
+      },
+      {
+        "curation_date": "Wed, 15 Jul 2026 10:25:09 GMT",
+        "curation_id": 20169,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": 32822240528064067,
+        "retained_curation_id": 20058,
+        "source_hash": 4715449645443766864,
+        "tag": "entity_boundaries"
+      },
+      {
+        "curation_date": "Thu, 16 Jul 2026 09:39:33 GMT",
+        "curation_id": 20243,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": 11540003459281328,
+        "retained_curation_id": 20241,
+        "source_hash": 7731983334527123209,
+        "tag": "correct"
+      },
+      {
+        "curation_date": "Thu, 16 Jul 2026 09:40:39 GMT",
+        "curation_id": 20245,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": 30588235471610666,
+        "retained_curation_id": 20005,
+        "source_hash": 7834853741222719324,
+        "tag": "polarity"
+      },
+      {
+        "curation_date": "Thu, 16 Jul 2026 12:51:11 GMT",
+        "curation_id": 20279,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": 14281099238350207,
+        "retained_curation_id": 20267,
+        "source_hash": -5220388436007723457,
+        "tag": "correct"
+      },
+      {
+        "curation_date": "Thu, 16 Jul 2026 13:22:52 GMT",
+        "curation_id": 20305,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": 35887275097456177,
+        "retained_curation_id": 20280,
+        "source_hash": 7549558778735324732,
+        "tag": "correct"
+      },
+      {
+        "curation_date": "Thu, 16 Jul 2026 13:37:00 GMT",
+        "curation_id": 20316,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": -12303252188006616,
+        "retained_curation_id": 20133,
+        "source_hash": -2285635807397803245,
+        "tag": "correct"
+      },
+      {
+        "curation_date": "Thu, 16 Jul 2026 14:35:35 GMT",
+        "curation_id": 20320,
+        "curation_source": "indra-belief viewer",
+        "matches_hash": 7183679686157841,
+        "retained_curation_id": 20039,
+        "source_hash": 4982204471752466115,
+        "tag": "grounding"
+      }
+    ],
+    "historical_binary_conflict_pairs": 1,
+    "historical_tag_conflict_pairs": 3,
+    "identity": "exact artifact (matches_hash, source_hash) pair; INDRA API input aliases matches_hash as pa_hash",
+    "observed_event_curation_source_counts": {
+      "indra-belief viewer": 403,
+      "indra-belief viewer/representative": 12
+    },
+    "observed_event_tag_counts": {
+      "act_vs_amt": 9,
+      "agent_conditions": 19,
+      "correct": 205,
+      "entity_boundaries": 36,
+      "grounding": 71,
+      "hypothesis": 5,
+      "negative_result": 4,
+      "no_relation": 10,
+      "polarity": 20,
+      "wrong_relation": 36
+    },
+    "repeat_pair_groups": 11,
+    "rule": "first qualifying submission wins"
+  },
+  "pair_target_status": "complete",
+  "pre_reservoir_curator_history": {
+    "manifest_path": "data/benchmark/mock7ee_pre_reservoir_pair_manifest.jsonl",
+    "manifest_sha256": "36705f2951815a870f82b81fc3ec8be70100c1a98d8f8e4cc47ecea07c9f89ae",
+    "raw_submissions": 124,
+    "selected_pair_overlap": 0,
+    "source_filter": "indra-belief viewer",
+    "through_curation_id": 19918,
+    "unique_pairs": 123
+  },
+  "representative_pool": {
+    "algorithm": "uniform streaming reservoir sample (Algorithm R)",
+    "manifest_path": "data/benchmark/cogex_representative_pool_manifest.jsonl",
+    "manifest_sha256": "8d8567167340fc62ba866764a3009425a21b82d11fa3d18ab5b2dcb65013e4e1",
+    "materialization_path": "data/corpora/cogex_evidence_sample.jsonl",
+    "materialization_sha256": "4382d25fca3a5d07053be225978d2909f4fc7dc4f2e1dea475c29dcae38b1b3d",
+    "pairs": 5000,
+    "population_rows": 44944056,
+    "sampling_unit": "CoGEx evidence row",
+    "seed": 20260701,
+    "source_api_counts": {
+      "bel": 5,
+      "biogrid": 191,
+      "biopax": 26,
+      "ctd": 242,
+      "drugbank": 2,
+      "eidos": 160,
+      "hprd": 9,
+      "isi": 1,
+      "medscan": 71,
+      "reach": 3509,
+      "rlimsp": 8,
+      "signor": 7,
+      "sparser": 757,
+      "tas": 4,
+      "trips": 2,
+      "ubibrowser": 1,
+      "virhostnet": 5
+    },
+    "source_dump": "CoGEx 2025-09-16 nodes_Evidence.tsv.gz",
+    "source_dump_sha256": "29cee1b4a9367c3a9aa7c9e34066fd679381ebde324a770dae1e4944cef33ff5",
+    "statements": 4862,
+    "without_replacement": true
+  },
+  "retained_curation_source_counts": {
+    "indra-belief viewer": 391,
+    "indra-belief viewer/representative": 12
+  },
+  "retained_tag_counts": {
+    "act_vs_amt": 9,
+    "agent_conditions": 19,
+    "correct": 199,
+    "entity_boundaries": 35,
+    "grounding": 68,
+    "hypothesis": 5,
+    "negative_result": 4,
+    "no_relation": 10,
+    "polarity": 19,
+    "wrong_relation": 35
+  },
+  "schema_version": 2,
+  "selection": {
+    "after_curation_id": 19918,
+    "allowed_curation_sources": [
+      "indra-belief viewer",
+      "indra-belief viewer/representative"
+    ],
+    "canonicalization": "earliest qualifying submission per exact pair",
+    "first_curation_date": "Mon, 06 Jul 2026 14:15:47 GMT",
+    "first_curation_id": 19920,
+    "last_curation_date": "Fri, 17 Jul 2026 08:57:43 GMT",
+    "last_curation_id": 20334,
+    "last_observed_event_date": "Fri, 17 Jul 2026 08:57:43 GMT",
+    "last_observed_event_id": 20334,
+    "repeat_handling": "exclude later submissions for an already-retained exact pair",
+    "scope": "all qualifying events returned at export time"
+  },
+  "selection_auditability": {
+    "historical_draw_log_available": false,
+    "historical_sampler_allowed_replacement": true,
+    "reason": "the historical viewer retained no draw/skip log and retried unmaterializable or textless rows",
+    "reservoir_membership_proven": true,
+    "simple_random_completed_subset_proven": false
+  },
+  "snapshot_semantics": "earliest qualifying submission for each exact pair across all qualifying events returned at export time; benchmark target does not cap the snapshot",
+  "source": "INDRA DB keyed /curation/list exact-joined to the viewer representative pool",
+  "statement_materialization": {
+    "endpoint": "/statements/from_hashes",
+    "ev_limit": 1,
+    "format": "json-js",
+    "removed_fields": [
+      "belief",
+      "evidence",
+      "id",
+      "supported_by",
+      "supports"
+    ],
+    "unique_statements": 403
+  }
+}

@@ -20,11 +20,13 @@ verdict_statement's error-detection at statement grain.
         --gold data/benchmark/eval_curation_v1.jsonl \
         --run  data/results/eval_curation_v1_gemma.jsonl \
         --label remote-gemma-4-26b \
-        --model remote-gemma-4-26b
+        --model remote-gemma-4-26b --out-json data/results/belief_headtohead_gemma.json \
+        --out-md reports/belief_headtohead_gemma.md
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections import defaultdict
@@ -142,8 +144,12 @@ def main() -> None:
     ap.add_argument("--label", default="model")
     ap.add_argument("--model", default=None,
                     help="reader model name for exact fitted-profile lookup (default: --label)")
-    ap.add_argument("--out-json", default="data/results/belief_headtohead.json")
-    ap.add_argument("--out-md", default="reports/belief_headtohead.md")
+    ap.add_argument("--out-json", required=True,
+                    help="explicit provenance-specific JSON artifact path")
+    ap.add_argument("--out-md", required=True,
+                    help="explicit provenance-specific Markdown artifact path")
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite an existing JSON artifact with different inputs")
     args = ap.parse_args()
 
     # Exact pair lookup only. load_gold_map aggregates repeated curator rows for
@@ -266,10 +272,15 @@ def main() -> None:
         vcounts[s["verdict_statement"]] += 1
 
     artifact = {
+        "schema_version": 1,
         "label": args.label,
         "model": args.model or args.label,
         "gold_source": args.gold,
         "run_source": args.run,
+        "input_sha256": {
+            "gold": hashlib.sha256(Path(args.gold).read_bytes()).hexdigest(),
+            "run": hashlib.sha256(Path(args.run).read_bytes()).hexdigest(),
+        },
         "reader_configuration": reader_configuration,
         "calibration": calib,
         "evaluation_basis": {
@@ -309,7 +320,21 @@ def main() -> None:
             "verdict_statement_counts": dict(vcounts),
         },
     }
-    with open(args.out_json, "w") as f:
+    out_json = Path(args.out_json)
+    out_md = Path(args.out_md)
+    if out_json.exists() and not args.force:
+        try:
+            prior = json.loads(out_json.read_text())
+        except (json.JSONDecodeError, OSError):
+            prior = {}
+        if prior.get("input_sha256") not in (None, artifact["input_sha256"]):
+            raise SystemExit(
+                f"refusing to overwrite {out_json} with different input hashes; "
+                "choose a new provenance-specific name or pass --force"
+            )
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    out_md.parent.mkdir(parents=True, exist_ok=True)
+    with out_json.open("w") as f:
         json.dump(artifact, f, indent=2)
 
     label = {"belief_llm": f"LLM hard-gate belief ({args.label})",
@@ -346,7 +371,7 @@ def main() -> None:
     L.append(f"Deterministic hard-flag (`verdict_statement == incorrect`) precision: "
              f"{det_prec:.3f}." if det_prec is not None else "Deterministic hard-flag precision: n/a.")
     L.append(f"verdict_statement counts: {dict(vcounts)}.\n")
-    with open(args.out_md, "w") as f:
+    with out_md.open("w") as f:
         f.write("\n".join(L))
 
     # console

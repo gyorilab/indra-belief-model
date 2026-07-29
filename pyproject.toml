@@ -12,7 +12,12 @@ requires-python = ">=3.10"
 dependencies = [
     "gilda>=1.1.0",
     "indra>=1.22.0",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.2.0",
 ]
+
+[project.scripts]
+indra-belief-comparison = "indra_belief.comparison.cli:main"
 
 [project.optional-dependencies]
 llm = [

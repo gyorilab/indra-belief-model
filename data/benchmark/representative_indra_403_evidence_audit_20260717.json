@@ -1,0 +1,184 @@
+{
+  "audit_schema_version": 1,
+  "audited_at_approx_utc": "2026-07-17T11:50:00Z",
+  "input": {
+    "gold_path": "data/benchmark/representative_indra_curations_400.jsonl",
+    "gold_sha256": "31f3bcd0cb7f4897ba9cd66da8c51da61d7899280201669a9585d9d6b6f69675",
+    "statement_hashes": 403,
+    "hash_encoding": "signed decimal integers in requests; decimal strings in json-js responses"
+  },
+  "public_rest_probe": {
+    "base_url": "https://db.indra.bio",
+    "endpoint": "/statements/from_hashes",
+    "format": "json-js",
+    "metadata_ev_limit": 1,
+    "materialization_ev_limit": 40000,
+    "authentication_scope": "anonymous",
+    "batches": 32,
+    "batching": "evidence-weighted, approximately 5000 public evidences per batch; 17 large statements isolated",
+    "indra_db_commit_audited": "7dc8bf501407c51f36c0746595d8e63d44d4a671",
+    "limits": {
+      "max_statements": 500,
+      "max_list_length": 2000,
+      "ev_limit_is_per_statement": true,
+      "evidence_offset_supported": false,
+      "ev_limit_zero_means_no_evidence": true
+    },
+    "pagination": {
+      "requested_hashes": 403,
+      "returned_hashes": 403,
+      "statement_limit": 500,
+      "next_offset": null,
+      "end_of_statements": true,
+      "complete_for_statement_ids": true
+    }
+  },
+  "direct_evidence_counts": {
+    "db_evidence_counts_total": 217601,
+    "anonymous_source_counts_total": 214572,
+    "returned_raw_entries": 214541,
+    "unique_statement_source_hash_pairs": 212399,
+    "globally_unique_source_hashes": 211439,
+    "duplicate_entries_beyond_unique_pairs": 2142,
+    "pairs_with_multiple_payload_variants": 1915,
+    "max_payload_variants_for_one_pair": 18,
+    "evidence_text_present": 214342,
+    "agent_raw_text_present": 214298,
+    "median_returned_per_statement": 17,
+    "p95_returned_per_statement_approx": 2355,
+    "max_returned_per_statement": 37861
+  },
+  "returned_source_api_counts": {
+    "reach": 139018,
+    "sparser": 72229,
+    "eidos": 2946,
+    "ctd": 121,
+    "biogrid": 67,
+    "trips": 56,
+    "bel": 37,
+    "rlimsp": 32,
+    "isi": 17,
+    "hprd": 9,
+    "signor": 7,
+    "biopax": 2
+  },
+  "anonymous_visibility_gaps": {
+    "db_count_minus_public_source_metadata": 3029,
+    "affected_statements": 84,
+    "interpretation": "inferred hidden MedScan evidence from the current service filtering code; not directly observed in anonymous responses",
+    "public_source_metadata_minus_returned_arrays": 31,
+    "affected_statements_for_link_gap": 9,
+    "link_gap_by_matches_hash": {
+      "16684240914093688": 6,
+      "5723442015504108": 4,
+      "24948650734662370": 4,
+      "-32826369537665370": 3,
+      "7161200325631624": 3,
+      "11615698897273748": 3,
+      "23044513659152995": 3,
+      "29887049521620004": 3,
+      "32725924782047840": 2
+    },
+    "link_gap_hypothesis": "preassembled JSON links absent for metadata rows",
+    "link_gap_proven": false,
+    "elsevier_long_text_may_be_truncated": true,
+    "elsevier_truncation_count_measured": false
+  },
+  "multiplicity_contract": {
+    "raw_entries_required_for_source_count_scorers": true,
+    "unique_pair_projection_required_for_curation_identity": true,
+    "source_hash_is_lossless_provenance_identity": false,
+    "observed_variant_example": "same source hash/text/source API/raw spans with different PMIDs"
+  },
+  "frozen_sampling_frame": {
+    "s3_uri": "s3://bigmech/indra-db/dumps/cogex_files/20250916/nodes_Evidence.tsv.gz",
+    "workspace_path": "data/corpora/cogex_nodes_Evidence_20250916.tsv.gz",
+    "rows": 44944056,
+    "sha256": "29cee1b4a9367c3a9aa7c9e34066fd679381ebde324a770dae1e4944cef33ff5",
+    "purpose": "authoritative direct-evidence recovery for the exact sampling frame, including raw multiplicity and sources hidden by anonymous REST",
+    "scan_checkpoint": {
+      "path": "data/corpora/representative_indra_403_full_evidence/.frozen-substrate.work/scan_summary.json",
+      "scan_fingerprint": "5cd07b138ed71e02955b46c46d1ff5589f0f6259255ad5955d6aae9e3ffb4b16",
+      "status": "scan_complete_pending_enrichment",
+      "input_rows_scanned": 44944056,
+      "matched_raw_entries": 207485,
+      "unique_statement_source_hash_pairs": 205343,
+      "globally_unique_source_hashes": 204401,
+      "duplicate_entries_beyond_unique_pairs": 2142,
+      "pairs_with_multiple_payload_variants": 1744,
+      "max_payload_variants_for_one_pair": 18,
+      "target_hashes_covered": 403,
+      "gold_exact_pairs_covered": 403,
+      "source_api_counts": {
+        "reach": 139026,
+        "sparser": 62136,
+        "medscan": 3029,
+        "eidos": 2946,
+        "ctd": 121,
+        "biogrid": 67,
+        "trips": 56,
+        "bel": 37,
+        "rlimsp": 32,
+        "isi": 17,
+        "hprd": 9,
+        "signor": 7,
+        "biopax": 2
+      },
+      "all_reconciliation_assertions_pass": true,
+      "publication_complete": false,
+      "checkpoint_artifacts": {
+        "scan_summary": {
+          "bytes": 1876,
+          "sha256": "0f078b3f20714b5ab603373f9e46462c7fd0c04764b123c502249914d98aec05"
+        },
+        "statements_jsonl": {
+          "bytes": 192809,
+          "sha256": "18605124dd3dda7112c12c0af1e420fa00304cea3cddf7e1adc0e98e68345261"
+        },
+        "pair_index_jsonl": {
+          "bytes": 85277818,
+          "sha256": "288811cc0f375aa8a2e99b11db7f1c62bad3c1fda23124bf8c352637152fc2b4"
+        },
+        "evidence_entries_jsonl": {
+          "bytes": 370820023,
+          "sha256": "49967702e215a58dcf1cad4a46ff893843b1e7aefdeb68b5f97e7e639dec5246"
+        }
+      }
+    },
+    "snapshot_vs_current_api": {
+      "same_temporal_view": false,
+      "current_api_returned_raw_minus_frozen_raw": 7056,
+      "current_api_unique_pairs_minus_frozen_unique_pairs": 7056,
+      "current_api_globally_unique_source_hashes_minus_frozen": 7038,
+      "current_api_multi_payload_pairs_minus_frozen": 171,
+      "duplicate_multiplicity_delta": 0,
+      "returned_source_deltas_current_api_minus_frozen": {
+        "sparser": 10093,
+        "reach": -8,
+        "medscan": -3029
+      },
+      "all_other_returned_source_deltas": 0,
+      "interpretation": "The July 2026 public API must not substitute for the pinned 2025-09-16 sampling frame; the dump restores hidden MedScan and predates almost all observed Sparser growth."
+    }
+  },
+  "production_hybrid_parity": {
+    "direct_rest_evidence_is_sufficient": false,
+    "production_rule": "sum direct source counts for target plus every nx.ancestors(refinement_graph, target), then score mock source_api-only evidence with deployed HybridScorer",
+    "rest_exposes_refinement_graph": false,
+    "ordinary_cogex_import_exposes_refinement_graph": false,
+    "required_same_snapshot_objects": [
+      "s3://bigmech/indra-db/dumps/cogex_files/20250916/source_counts.pkl",
+      "s3://bigmech/indra-db/dumps/cogex_files/20250916/refinements.tsv.gz",
+      "s3://bigmech/indra-db/dumps/cogex_files/20250916/belief_scores.pkl",
+      "s3://indra-belief/1.20.0/sk141_hybrid_rf_2kd13_cs.pkl"
+    ],
+    "status": "awaiting_privileged_s3_retrieval"
+  },
+  "artifact_status": {
+    "this_file_is": "audit summary",
+    "raw_public_responses_retained_as_durable_workspace_artifact": false,
+    "frozen_direct_materialization": "complete durable scan checkpoint; final compressed publication bundle awaits synchronized enrichment inputs",
+    "refinement_expanded_materialization": "pending same-snapshot S3 objects",
+    "may_be_called_complete_deployed_hybrid_evidence": false
+  }
+}

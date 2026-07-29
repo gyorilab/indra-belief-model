@@ -14,13 +14,15 @@ Answers, with numbers, the five things that decide it:
   5. AGREEMENT — on pairs curated by >=2 curators, how often they agree — the
                  direct read on whether pooling strangers' labels is trustworthy.
 
-Also dumps per-curator correct-rate (the "bias" made visible) and caches the full
-universe so we don't re-pull.
+Also dumps per-curator correct-rate (the "bias" made visible) and refreshes the
+full-universe cache. Pass ``--offline-cache`` only for an explicitly offline run;
+a stale cache is never silently treated as current.
 
     PYTHONPATH=src .venv/bin/python scripts/curation_pool_feasibility.py
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from collections import Counter, defaultdict
@@ -43,9 +45,11 @@ CACHE = ROOT / "data" / "results" / "curation_universe_all.jsonl"
 PAIR_CURATORS = {"bachmanjohn@gmail.com", "ben.gyori@gmail.com", "bachmanjohn", "ben.gyori"}
 
 
-def load_universe() -> list[dict]:
-    if CACHE.exists():
-        print(f"using cached universe {CACHE}", flush=True)
+def load_universe(*, use_cache: bool = False) -> list[dict]:
+    if use_cache:
+        if not CACHE.exists():
+            raise SystemExit(f"--offline-cache requested but cache is missing: {CACHE}")
+        print(f"OFFLINE: using cached universe {CACHE}", flush=True)
         return [json.loads(l) for l in CACHE.open() if l.strip()]
     url, key, _ = pmc._load_env()
     data = pmc.pull_all(url, key)
@@ -85,7 +89,11 @@ def load_pairs(path: Path) -> set:
 
 
 def main() -> None:
-    data = load_universe()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--offline-cache", action="store_true",
+                    help="use the existing cache without claiming it is current")
+    args = ap.parse_args()
+    data = load_universe(use_cache=args.offline_cache)
     print(f"\nTOTAL curations: {len(data)}", flush=True)
 
     # group curations by pair

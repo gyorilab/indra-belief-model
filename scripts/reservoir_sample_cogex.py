@@ -9,9 +9,13 @@ JSON column, and writes a JSONL of grounded evidences ready to curate/score:
   {stmt_hash, source_api, source_hash, pmid, text, evidence:<full json>}
 
 Never holds the whole 4.87 GB — decompresses on the fly, keeps only N rows.
+The checked-in representative-pool provenance was produced with N=5,000 from
+the 44,944,056 evidence rows in the frozen 2025-09-16 dump.  The row-count
+check is intentional: a truncated or different stdin must not silently claim
+the identity of that frozen population.
 
     # via presigned URL (no creds needed on our end):
-    curl -s '<presigned-url>' | SAMPLE_N=2000 python scripts/reservoir_sample_cogex.py
+    curl -s '<presigned-url>' | python scripts/reservoir_sample_cogex.py
     # or with S3 creds configured:
     aws s3 cp s3://bigmech/indra-db/dumps/cogex_files/20250916/nodes_Evidence.tsv.gz - \
         | python scripts/reservoir_sample_cogex.py
@@ -26,9 +30,14 @@ import os
 import random
 import sys
 
-N = int(os.environ.get("SAMPLE_N", "2000"))
+DEFAULT_SAMPLE_N = 5_000
+SOURCE_POPULATION_ROWS = 44_944_056
+
+N = int(os.environ.get("SAMPLE_N", str(DEFAULT_SAMPLE_N)))
 SEED = int(os.environ.get("SAMPLE_SEED", "20260701"))
 OUT = os.environ.get("SAMPLE_OUT", "data/corpora/cogex_evidence_sample.jsonl")
+# Override only when deliberately sampling a different source population.
+EXPECTED_ROWS = int(os.environ.get("SAMPLE_EXPECTED_ROWS", str(SOURCE_POPULATION_ROWS)))
 
 
 def open_stdin_text():
@@ -68,6 +77,13 @@ def main() -> int:
                 reservoir[j] = row
         if seen % 5_000_000 == 0:
             print(f"  scanned {seen:,} evidences…", file=sys.stderr, flush=True)
+
+    if seen != EXPECTED_ROWS:
+        sys.exit(
+            f"source population row-count mismatch: scanned {seen:,}, "
+            f"expected {EXPECTED_ROWS:,}; set SAMPLE_EXPECTED_ROWS only for a "
+            "deliberately different source dump"
+        )
 
     os.makedirs(os.path.dirname(OUT) or ".", exist_ok=True)
     written = 0

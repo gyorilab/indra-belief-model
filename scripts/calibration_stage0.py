@@ -73,7 +73,23 @@ def load_jsonl(p: str | Path) -> list[dict]:
     return [json.loads(l) for l in open(p) if l.strip()]
 
 
-# ---- canonical join (mirrors eval_curation_compare.py) ----------------------
+# ---- gold-join trio: parallels eval_curation_compare.py, DELIBERATELY DIVERGES
+# This build_gold_index / gold_for / join_model trio is NOT a lazy fork of
+# eval_curation_compare's same-named trio and must not be unified into it. Its
+# Tier-2 per-statement path needs three behaviors the leaner compare trio
+# intentionally omits:
+#   1. any-incorrect-wins multi-curator collapse (aggregate_gold) in
+#      _collapse_gold_rows / build_gold_index (compare keeps last-write-wins,
+#      raw rows in by_sh);
+#   2. a PERMISSIVE source-only fallback in gold_for — fire whenever every gold
+#      row sharing the source_hash agrees on truth class (len(classes) == 1);
+#      compare instead requires exactly one candidate (len(cand) == 1);
+#   3. pair-dedup in join_model that RAISES on conflicting scored verdicts for a
+#      duplicated pair (compare does no dedup).
+# The two build_gold_index collapses were MEASURED byte-equal on both real golds
+# today (collapse_diff_pairs=0 on eval_curation_v1 n=1606 + external_curator_gold
+# _v1 n=578), so the divergence is a latent-drift guard, not an active mismatch.
+# -----------------------------------------------------------------------------
 def _collapse_gold_rows(rows: list[dict]) -> dict | None:
     """Collapse multi-curator rows without a last-write-wins label.
 

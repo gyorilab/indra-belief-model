@@ -27,6 +27,9 @@ CORPUS_GOLD = {
     "rasmachine_v1_statements.json": "data/benchmark/rasmachine_v1_gold.jsonl",
     "eval_curation_v1_statements.json": "data/benchmark/eval_curation_v1.jsonl",
     "external_curator_gold_v1_statements.json": "data/benchmark/external_curator_gold_v1.jsonl",
+    "representative_indra_expanded_403_20260717_statements.json": (
+        "data/benchmark/representative_indra_curations_400.jsonl"
+    ),
 }
 
 # The default re-export set: the rasmachine_v1 model fleet (cost spread), the

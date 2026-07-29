@@ -41,11 +41,13 @@ candidate remains an explicit ``_PROFILE_META`` deployment_status decision in
 ``calibration_constants.py``: a FAIL exit forces a conscious override, it does
 not auto-disable the reader.
 
-    PYTHONPATH=src python scripts/calibration_ship_gate.py
+    PYTHONPATH=src python -m pytest -q tests/test_soft_belief.py && \
+      PYTHONPATH=src python scripts/calibration_ship_gate.py --e4-identity-pass
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -80,6 +82,30 @@ NI_MARGIN = 0.154
 N_BOOT = 2000
 BOOT_SEED = 0
 HASH_MASK = (1 << 64) - 1
+
+
+def file_sha256(path: str | Path) -> str:
+    """Hash one gate input relative to the repository root."""
+    p = Path(path)
+    if not p.is_absolute():
+        p = ROOT / p
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def production_profile_id(reader_configuration: str, fit_gold: str | Path) -> str:
+    """Use the same compact display ID persisted by the production profile.
+
+    ``reader_configuration`` remains the full model+prompt SHA identity; profile_id
+    is its stable human-facing alias. Keeping both prevents the gate artifact from
+    inventing a second profile identity for the same fitted configuration.
+    """
+    marker = "@prompt-sha256:"
+    if marker not in reader_configuration:
+        raise ValueError(f"unrecognized reader configuration: {reader_configuration!r}")
+    model, prompt_sha256 = reader_configuration.split(marker, 1)
+    if len(prompt_sha256) != 64:
+        raise ValueError(f"invalid prompt SHA in reader configuration: {reader_configuration!r}")
+    return f"{model}@prompt-{prompt_sha256[:12]}@{Path(fit_gold).stem}"
 
 
 def err_f1(beliefs, gold_correct, tau) -> float:
@@ -534,13 +560,11 @@ def main():
         train_statements, train_join = statements_for_run(trun, args.train_gold)
         profile = c1.fit_reader_profile(train_statements)
         profile.update({
-            "profile_id": (
-                f"{train_configuration}@{Path(args.train_gold).stem}"
-                if train_configuration else None
-            ),
+            "profile_id": production_profile_id(train_configuration, args.train_gold),
             "reader_configuration": train_configuration,
             "fit_run": trun,
             "fit_gold": args.train_gold,
+            "fit_gold_sha256": file_sha256(args.train_gold),
             "fit_unique_pairs": sum(profile["confusion"].values()),
             "gold_rule": (
                 "exact pair; multi-curator any-incorrect-wins; duplicate pairs removed"
@@ -554,10 +578,14 @@ def main():
             "test_label": test_label,
             "provenance": {
                 "train_gold": args.train_gold,
+                "train_gold_sha256": file_sha256(args.train_gold),
                 "train_run": trun,
+                "train_run_sha256": file_sha256(trun),
                 "train_configuration": train_configuration,
                 "test_gold": args.test_gold,
+                "test_gold_sha256": file_sha256(args.test_gold),
                 "test_run": terun,
+                "test_run_sha256": file_sha256(terun),
                 "test_configuration": test_configuration,
                 "statement_grain": "run stmt_hash",
                 "statement_gold": "any-incorrect-wins",
@@ -590,7 +618,12 @@ def main():
         f"FAIL: {', '.join(failed) or '—'}; "
         f"PENDING: {', '.join(name for name, _ in pending) or '—'}"
     )
-    return 0 if (not pending and not failed) else 1
+    return gate_exit_code(results, pending)
+
+
+def gate_exit_code(results: list[dict], pending: list[tuple[str, str]]) -> int:
+    """Process contract: success only when every requested reader passes."""
+    return 0 if (not pending and all(r["gate"]["overall"] for r in results)) else 1
 
 
 if __name__ == "__main__":

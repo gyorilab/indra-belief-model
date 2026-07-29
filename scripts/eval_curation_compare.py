@@ -106,8 +106,16 @@ def permutation_errf1(gold_err, pred_err_a, pred_err_b,
 
     On each permutation, randomly swap the A/B pred-error labels per statement
     (exchangeability under H0: the two models are interchangeable), recompute
-    |ΔerrF1| = |errF1(B') − errF1(A')|, and return the fraction of permuted |Δ|
-    that meet or exceed the observed |Δ|. p is always in [0, 1].
+    |ΔerrF1| = |errF1(B') − errF1(A')|, and count the permuted |Δ| that meet or
+    exceed the observed |Δ|.
+
+    The returned p is (hits + 1) / (n_perm + 1), matching
+    frontier_paired_stats.paired_permutation_errf1: the plus-one prevents a
+    finite Monte Carlo run from reporting an impossible p-value of zero (the
+    observed split is itself one of the exchangeable arrangements). p therefore
+    lies in [1 / (n_perm + 1), 1] — 1/(n_perm + 1) is the minimum ATTAINABLE
+    p, not evidence of a smaller one, and p == 1.0 exactly when every
+    permutation ties or beats the observed |Δ|.
     """
     ge = np.asarray(gold_err, bool)
     pa = np.asarray(pred_err_a, bool)
@@ -124,7 +132,7 @@ def permutation_errf1(gold_err, pred_err_a, pred_err_b,
         d = abs(_errf1_from_pairs(ge_dummy, pb_p) - _errf1_from_pairs(ge_dummy, pa_p))
         if d >= obs:
             hits += 1
-    return hits / n_perm
+    return (hits + 1) / (n_perm + 1)
 
 
 def umask(x) -> int:
@@ -157,6 +165,29 @@ def mcnemar_p(b: int, c: int) -> float:
     return min(1.0, 2 * tail)
 
 
+# ---- gold-join trio: build_gold_index / gold_for / join_model ----------------
+# DELIBERATE, leaner variant — kept DISTINCT from scripts/calibration_stage0.py's
+# same-named trio; the two are NOT to be unified. This trio is the stable public
+# API imported by analyze_external_gold, bootstrap_precision, convergence_report,
+# learning_curve_v2, demo_simulate_more_data (build_gold_index + join_model) and
+# frontier_table (build_gold_index + gold_for), so it must NOT adopt stage0's
+# collapsing / raising / permissive-fallback behavior.
+#
+# Three intentional call-site divergences from calibration_stage0.py's trio:
+#   1. build_gold_index does NO multi-curator collapse — last-write-wins into
+#      by_pair, raw rows kept in by_sh (stage0 collapses via any-incorrect-wins).
+#   2. gold_for uses a STRICT source-only fallback: fire only when exactly one
+#      gold row carries the source_hash (len(cand) == 1). stage0 is permissive
+#      (fires whenever every candidate agrees on truth class, len(classes) == 1).
+#   3. join_model does NO pair-dedup (stage0 dedups and raises on conflicting
+#      scored verdicts for a duplicated pair).
+#
+# The two build_gold_index collapses were MEASURED byte-equal on the current
+# golds (collapse_diff_pairs=0 on eval_curation_v1 n=1606 + external_curator_gold
+# _v1 n=578); that split is a latent-drift guard, not an active mismatch. The
+# gold_for source-only fallback rule, by contrast, is NOT proven equal (its
+# resolution differs on those golds' source_hash sets) — a further reason not to
+# force the merge.
 def build_gold_index(gold_rows: list[dict]):
     by_pair: dict[tuple[int, int], dict] = {}
     by_sh: dict[int, list[dict]] = defaultdict(list)
@@ -284,6 +315,10 @@ def main() -> int:
     b_perr = [Bkv[k]["verdict"] == "incorrect" for k in shared]
     errf1_boot = (bootstrap_errf1(gold_err, a_perr, b_perr) if shared else None)
     errf1_perm = (permutation_errf1(gold_err, a_perr, b_perr) if shared else None)
+    # Same name/semantics as frontier_paired_stats' `minimum_attainable_p`: with the
+    # (hits+1)/(n_perm+1) correction, p can never go below this, so a p sitting AT it
+    # is floored by the Monte Carlo budget, not measured to be smaller.
+    p_floor = 1 / (N_PERM + 1)
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -314,7 +349,8 @@ def main() -> int:
                       f"(paired bootstrap, {N_BOOT} resamples, seed {BOOT_SEED}; "
                       f"n={errf1_boot['n']} shared)**")
             emit(out, f"**Permutation p (err-F1, two-sided, {N_PERM} perms) = {errf1_perm:.4f}  "
-                      f"({sig} at α=0.05; favors {direction})** — this is the PRIMARY paired test.")
+                      f"({sig} at α=0.05; favors {direction})** — this is the PRIMARY paired test. "
+                      f"minimum attainable p = {p_floor:.4f}")
             vs_floor = ("below" if abs(d) < NOISE_FLOOR else "above")
             emit(out, f"_Context: |ΔerrF1| = {abs(d):.3f} is {vs_floor} the n=60 single-model "
                       f"run-to-run spread (NOISE_FLOOR = {NOISE_FLOOR:.3f}, medpsy-4B Arm A). "
@@ -402,7 +438,7 @@ def main() -> int:
         cd = errf1_boot["ci_delta"]
         print(f"ΔerrF1 ({B['name']}−{A['name']})={errf1_boot['delta']:+.3f} "
               f"[95% CI {cd[0]:+.3f},{cd[1]:+.3f}]  permutation p={errf1_perm:.4f}  "
-              f"(PRIMARY; n={errf1_boot['n']} shared)")
+              f"(PRIMARY; n={errf1_boot['n']} shared; minimum attainable p={p_floor:.4f})")
     print(f"McNemar p={p:.4f}  (b={a_only} {A['name']}-only, c={b_only} {B['name']}-only)  [secondary]")
     return 0
 

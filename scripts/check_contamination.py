@@ -254,6 +254,9 @@ def _default_eval_paths(holdout_arg: str) -> list[Path]:
     paths: list[Path] = []
     # All calibration files
     paths.extend(sorted(benchmark.glob("calibration_*.jsonl")))
+    # Frozen representative-curation milestones are independent evaluation gold
+    # and must remain disjoint from every prompt/few-shot source.
+    paths.extend(sorted(benchmark.glob("representative_indra_curations_*.jsonl")))
     # Holdout from CLI (and the small v15 sample, always)
     paths.append(Path(holdout_arg))
     sample = benchmark / "holdout_v15_sample.jsonl"

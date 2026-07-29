@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            viewer/package-lock.json
+            presentations/gyori-belief/package-lock.json
+            presentations/slidev-theme-gyori-cogex/package-lock.json
+
+      - name: Install Python package
+        run: python -m pip install -e ".[dev]"
+
+      - name: Python tests
+        run: python -m pytest -q
+
+      - name: Evaluation contamination guard
+        run: python scripts/check_contamination.py
+
+      - name: Live-document anchor guard
+        run: python scripts/check_doc_anchors.py
+
+      - name: Install viewer
+        working-directory: viewer
+        run: npm ci
+
+      - name: Viewer behavioral and type checks
+        working-directory: viewer
+        run: |
+          npm run test:calibration
+          npm run test:cost
+          npm run test:curation
+          npm run test:paper-literal
+          npm run check
+          npm run build
+
+      - name: Install and build authoritative deck
+        run: |
+          npm ci --prefix presentations/slidev-theme-gyori-cogex
+          npm ci --prefix presentations/gyori-belief
+          npm run build --prefix presentations/gyori-belief
