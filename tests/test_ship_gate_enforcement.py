@@ -11,6 +11,17 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import calibration_ship_gate as ship_gate  # noqa: E402
+
+
+def test_ship_gate_exit_code_rejects_an_evaluated_reader_failure():
+    passed = [{"gate": {"overall": True}}]
+    failed = [{"gate": {"overall": False}}]
+    assert ship_gate.gate_exit_code(passed, []) == 0
+    assert ship_gate.gate_exit_code(failed, []) == 1
+    assert ship_gate.gate_exit_code(passed, [("Foo", "missing.jsonl")]) == 1
 
 
 def test_ship_gate_exits_nonzero_when_evidence_pending(tmp_path):

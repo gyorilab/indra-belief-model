@@ -3,12 +3,16 @@ scripts/eval_curation_compare.py (A4 back-port).
 
 Covers the paired bootstrap ΔerrF1 CI and the permutation p-value on err-F1:
 determinism under a fixed seed, the CI bracketing the point estimate, and the
-permutation p staying in [0, 1].
+permutation p staying in [1/(n_perm+1), 1] — the (hits+1)/(n_perm+1) correction
+shared with frontier_paired_stats.paired_permutation_errf1, which keeps a finite
+Monte Carlo run from reporting an impossible p of exactly zero.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -22,6 +26,14 @@ import eval_curation_compare as ec  # noqa: E402
 GOLD_ERR = [True, True, True, True, True, True, False, False, False, False, False, False]
 PRED_A = [True, True, True, True, False, False, False, False, False, False, False, False]
 PRED_B = [True, True, True, True, True, True, False, False, False, True, False, False]
+
+# Perfectly separated pair at n=40: A reproduces gold exactly (err-F1 1.0), B is
+# gold inverted (err-F1 0.0), so the observed |ΔerrF1| is the maximal 1.0. The only
+# permutations that tie it are the two all-same swaps, probability 2/2**40 — no
+# 2000-perm run hits one, so `hits` is 0 and p sits exactly on the floor.
+SEP_GOLD = [True] * 20 + [False] * 20
+SEP_PRED_A = list(SEP_GOLD)
+SEP_PRED_B = [not x for x in SEP_GOLD]
 
 
 def test_point_estimate_matches_confusion_pr():
@@ -61,6 +73,25 @@ def test_permutation_p_in_unit_interval_and_deterministic():
     p2 = ec.permutation_errf1(GOLD_ERR, PRED_A, PRED_B, n_perm=500, seed=0)
     assert p1 == p2  # fixed seed -> deterministic
     assert 0.0 <= p1 <= 1.0
+    # (hits+1)/(n_perm+1) floors p strictly above zero, for every input.
+    assert p1 >= 1 / (500 + 1)
+
+
+def test_permutation_p_never_zero_for_separated_inputs():
+    """A perfectly separated pair returns the Monte Carlo FLOOR, never 0.0.
+
+    hits == 0 here, so the uncorrected hits/n_perm would report p = 0.0000 — an
+    impossible p-value for a finite permutation run. (hits+1)/(n_perm+1) reports
+    1/2001 instead: "no permutation beat the observed split", not "p is zero".
+    """
+    for n_perm in (500, 2000):
+        p = ec.permutation_errf1(SEP_GOLD, SEP_PRED_A, SEP_PRED_B,
+                                 n_perm=n_perm, seed=0)
+        assert p > 0.0
+        assert p == pytest.approx(1 / (n_perm + 1))
+    # The floor the report discloses as `minimum attainable p` at the shipped N_PERM.
+    assert ec.permutation_errf1(SEP_GOLD, SEP_PRED_A, SEP_PRED_B,
+                                n_perm=ec.N_PERM, seed=0) == 1 / (ec.N_PERM + 1)
 
 
 def test_permutation_p_high_when_models_identical():

@@ -19,6 +19,7 @@ from indra_belief.model_client import (
     ModelClient, ModelResponse, ReasoningStatus,
     _build_trace, _classify_reasoning, _reasoning_tokens,
 )
+from indra_belief.bedrock_responses_transport import BedrockResponsesResult
 
 
 # --- _classify_reasoning -----------------------------------------------------
@@ -86,12 +87,16 @@ def _fake_urlopen(payload):
     def _open(req, timeout=None): return _Resp()
     return _open
 
+def _install_fake_bedrock_open(c, payload):
+    class _Opener:
+        open = staticmethod(_fake_urlopen(payload))
+    c._bedrock_url_opener = _Opener()
+
 def _responses_client(monkeypatch):
     monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "test-token")
     return ModelClient("bedrock-gpt-5.5")  # backend == bedrock_responses
 
 def test_responses_encrypted(monkeypatch):
-    import urllib.request
     c = _responses_client(monkeypatch)
     payload = {"status": "completed",
                "usage": {"output_tokens": 40, "input_tokens": 10,
@@ -99,7 +104,7 @@ def test_responses_encrypted(monkeypatch):
                "output": [{"type": "reasoning", "summary": [], "id": "r"},
                           {"type": "message",
                            "content": [{"type": "output_text", "text": '{"verdict":"correct"}'}]}]}
-    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen(payload))
+    _install_fake_bedrock_open(c, payload)
     resp = c._call_bedrock_responses("sys", [{"role": "user", "content": "hi"}], 100, 0.1, 30,
                                      reasoning_effort="high")
     assert resp.reasoning_trace["status"] == ReasoningStatus.ENCRYPTED
@@ -108,17 +113,75 @@ def test_responses_encrypted(monkeypatch):
     assert resp.content == '{"verdict":"correct"}'   # answer still extracted
 
 def test_responses_plaintext(monkeypatch):
-    import urllib.request
     c = _responses_client(monkeypatch)
     payload = {"status": "completed", "usage": {"output_tokens": 40, "input_tokens": 10},
                "output": [{"type": "reasoning", "content": [{"text": "step by step CoT"}], "id": "r"},
                           {"type": "message",
                            "content": [{"type": "output_text", "text": '{"verdict":"correct"}'}]}]}
-    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen(payload))
+    _install_fake_bedrock_open(c, payload)
     resp = c._call_bedrock_responses("sys", [{"role": "user", "content": "hi"}], 100, 0.1, 30,
                                      reasoning_effort="high")
     assert resp.reasoning_trace["status"] == ReasoningStatus.PLAINTEXT
     assert resp.reasoning == "step by step CoT"
+
+
+def _raw_responses_client(result: BedrockResponsesResult):
+    class _Transport:
+        def call(self, _body, *, timeout):
+            assert timeout == 30
+            return result
+
+    client = ModelClient.__new__(ModelClient)
+    client.model_name = "bedrock-gemma-4-e2b-fixture"
+    client.backend = "bedrock_responses_raw"
+    client.config = {
+        "model_id": "google.gemma-4-e2b",
+        "reasoning_in_content": False,
+        "reasoning_effort": "high",
+    }
+    client._bedrock_responses_transport = _Transport()
+    return client
+
+
+def test_raw_responses_plaintext_reasoning_classification():
+    result = BedrockResponsesResult(
+        content='{"verdict":"correct"}',
+        reasoning="step by step CoT",
+        prompt_tokens=10,
+        output_tokens=40,
+        reasoning_tokens=17,
+        finish_reason="stop",
+        reasoning_item_present=True,
+        transport_trace={"request_body_sha256": "a" * 64},
+    )
+    response = _raw_responses_client(result)._call_bedrock_responses_raw(
+        "sys", [{"role": "user", "content": "hi"}], 100, 0.1, 30,
+        reasoning_effort="high",
+    )
+    assert response.reasoning_trace["status"] == ReasoningStatus.PLAINTEXT
+    assert response.reasoning_trace["backend"] == "bedrock_responses_raw"
+    assert response.raw_text == "step by step CoT\n" + response.content
+    assert response.transport_trace == result.transport_trace
+
+
+def test_raw_responses_encrypted_reasoning_classification():
+    result = BedrockResponsesResult(
+        content='{"verdict":"correct"}',
+        reasoning="",
+        prompt_tokens=10,
+        output_tokens=40,
+        reasoning_tokens=1847,
+        finish_reason="stop",
+        reasoning_item_present=True,
+        transport_trace={"request_body_sha256": "b" * 64},
+    )
+    response = _raw_responses_client(result)._call_bedrock_responses_raw(
+        "sys", [{"role": "user", "content": "hi"}], 100, 0.1, 30,
+        reasoning_effort="high",
+    )
+    assert response.reasoning_trace["status"] == ReasoningStatus.ENCRYPTED
+    assert response.reasoning_trace["reasoning_tokens"] == 1847
+    assert response.raw_text == response.content
 
 
 # --- scorer stamps committed support/objection onto the trace ----------------

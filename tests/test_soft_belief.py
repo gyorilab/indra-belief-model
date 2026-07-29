@@ -5,6 +5,7 @@ match the deterministic stage-1 reference, preserve its source-reliability floor
 remain numerically stable, and forward through contradiction recursion.
 """
 import hashlib
+import json
 import math
 import sys
 from pathlib import Path
@@ -179,13 +180,24 @@ def test_calibration_resolver():
 
 def test_profile_gold_digests_match_pinned_artifacts():
     root = Path(__file__).resolve().parents[1]
+    # Tracked golds are byte-checked on every checkout.
     pinned = {
         "data/benchmark/eval_curation_v1.jsonl": FIT_GOLD_SHA256,
-        "data/results/cc_holdout_cc/holdout_cc.jsonl": HOLDOUT_GOLD_SHA256,
         "data/benchmark/external_curator_gold_v1.jsonl": EXTERNAL_GOLD_SHA256,
     }
     for relative, expected in pinned.items():
         assert hashlib.sha256((root / relative).read_bytes()).hexdigest() == expected
+
+    # The old holdout is a large ignored validation input. Check its bytes when
+    # restored locally, while always pinning its digest through the tracked gate
+    # decision so a clean clone remains testable and auditable.
+    holdout = root / "data/results/cc_holdout_cc/holdout_cc.jsonl"
+    if holdout.exists():
+        assert hashlib.sha256(holdout.read_bytes()).hexdigest() == HOLDOUT_GOLD_SHA256
+    gate = json.loads((root / "data/results/calibration_ship_gate.json").read_text())
+    assert {row["provenance"]["test_gold_sha256"] for row in gate} == {
+        HOLDOUT_GOLD_SHA256
+    }
 
 
 # ── statement_belief soft integration (end-to-end through the production roll-up) ──

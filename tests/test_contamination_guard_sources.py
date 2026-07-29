@@ -82,3 +82,8 @@ def test_every_declared_source_loads_nonempty_or_fails_loud():
         assert n >= 1, f"declared source {source!r} reported a non-positive count"
     # Source 1 must be in the union.
     assert counts.get("CONTRASTIVE_EXAMPLES", 0) >= 1
+
+
+def test_representative_curation_gold_is_in_default_eval_guard():
+    paths = cc._default_eval_paths(str(ROOT / "data/benchmark/holdout_large.jsonl"))
+    assert ROOT / "data/benchmark/representative_indra_curations_400.jsonl" in paths

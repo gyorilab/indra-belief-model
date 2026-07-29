@@ -3,6 +3,7 @@
 The byte-exact parity vs the old export_collaborator_data.py was verified against
 the real 47k-row run; these lock the taxonomy partition and the build contract.
 """
+import hashlib
 import json
 
 import pytest
@@ -10,9 +11,13 @@ import pytest
 from indra_belief.calibration_constants import (
     BASELINE_PROMPT_SHA256,
     REASONING_FIRST_PROMPT_SHA256,
+    calibration_for,
+    fitted_calibration_for,
+    reader_configuration_for_run,
 )
 from indra_belief.results import (
     ORDER,
+    _soft_calibration_block,
     build_run_export,
     call_log_cost,
     classify,
@@ -547,3 +552,103 @@ def test_canonical_belief_falls_back_to_hard_for_unfitted_configuration(tmp_path
     s = per_stmt[0]
     assert s["belief_soft"] is None
     assert s["belief"] == s["belief_hard"]
+
+
+# ── unavailability prose names the half that actually disagrees ──────────────
+#
+# reader_configuration_for_run collapses two independent cross-checks (monolithic
+# prompt digest, served model id) into one status, so the sentence the viewer
+# renders has to read the evidence back out. The three PROMPT-side sentences are
+# FROZEN prose — they are quoted verbatim in already-generated data/exports
+# artifacts — so these are byte-literal pins, not "a reason exists" smoke tests.
+# The two MODEL-side sentences are the only new strings.
+
+_REASON_SYSTEM_A = "You judge whether a biomedical text-mining extraction is correct.\n"
+_REASON_SYSTEM_B = _REASON_SYSTEM_A + "Answer strictly in JSON.\n"
+_REASON_SYSTEM_A_SHA256 = hashlib.sha256(_REASON_SYSTEM_A.encode("utf-8")).hexdigest()
+
+
+def _reason_call(system=None, model_id=None, kind="monolithic"):
+    call = {"kind": kind}
+    if system is not None:
+        call["system"] = system
+    if model_id is not None:
+        call["model_id"] = model_id
+    return call
+
+
+def _status_and_reason(tmp_path, call_logs, meta):
+    """Resolve a synthesized run exactly as build_run_metrics does, then bake
+    the soft-calibration block and hand back (status, reason)."""
+    run = tmp_path / "reason_run.jsonl"
+    run.write_text("".join(
+        json.dumps({"stmt_i": i, "evidence_i": 0, "call_log": cl}) + "\n"
+        for i, cl in enumerate(call_logs)
+    ))
+    run.with_suffix(".meta.json").write_text(json.dumps(meta))
+    config = reader_configuration_for_run(run, meta.get("model"))
+    block = _soft_calibration_block(
+        config["model"], config,
+        calibration_for(config["model"], prompt_sha256=config["prompt_sha256"]),
+        fitted_calibration_for(config["model"], prompt_sha256=config["prompt_sha256"]),
+    )
+    assert block["status"] == "unavailable"
+    return config["status"], block["reason"]
+
+
+def test_reason_prompt_mixed_is_byte_identical(tmp_path):
+    status, reason = _status_and_reason(
+        tmp_path,
+        [[_reason_call(_REASON_SYSTEM_A, "gemma-4-26b-ollama")],
+         [_reason_call(_REASON_SYSTEM_B, "gemma-4-26b-ollama")]],
+        {"model": "gemma-remote"},
+    )
+    assert status == "mixed"
+    assert reason == "run contains more than one monolithic prompt fingerprint"
+
+
+def test_reason_prompt_mismatch_is_byte_identical(tmp_path):
+    status, reason = _status_and_reason(
+        tmp_path,
+        [[_reason_call(_REASON_SYSTEM_A, "gemma-4-26b-ollama")]],
+        {"model": "gemma-remote", "prompt_sha256": BASELINE_PROMPT_SHA256},
+    )
+    assert status == "mismatch"
+    assert reason == "declared prompt fingerprint disagrees with persisted call logs"
+
+
+def test_reason_missing_prompt_is_byte_identical(tmp_path):
+    status, reason = _status_and_reason(
+        tmp_path,
+        [[_reason_call(model_id="gemma-4-26b-ollama", kind="relation_nature")]],
+        {"model": "gemma-remote"},
+    )
+    assert status == "missing_prompt"
+    assert reason == "run has no persisted monolithic system prompt fingerprint"
+
+
+def test_reason_model_mixed_names_the_model_half(tmp_path):
+    # ONE prompt digest, TWO served ids: the prompt half agrees with itself, so
+    # the sentence must not blame it.
+    status, reason = _status_and_reason(
+        tmp_path,
+        [[_reason_call(_REASON_SYSTEM_A, "gemma-4-26b-ollama")],
+         [_reason_call(_REASON_SYSTEM_A, "medpsy-4b")]],
+        {"model": "gemma-remote", "prompt_sha256": _REASON_SYSTEM_A_SHA256},
+    )
+    assert status == "mixed"
+    assert reason == "run call logs record more than one served model id"
+
+
+def test_reason_model_mismatch_names_the_model_half(tmp_path):
+    # The declared prompt digest matches the persisted one exactly; only the
+    # served id contradicts the declared model.
+    status, reason = _status_and_reason(
+        tmp_path,
+        [[_reason_call(_REASON_SYSTEM_A, "medpsy-4b")]],
+        {"model": "gemma-remote", "prompt_sha256": _REASON_SYSTEM_A_SHA256},
+    )
+    assert status == "mismatch"
+    assert reason == (
+        "declared model disagrees with the served model id in persisted call logs"
+    )
