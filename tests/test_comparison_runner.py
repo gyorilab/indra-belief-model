@@ -723,19 +723,27 @@ def test_fifth_transport_attempt_can_complete_with_exponential_backoff(
     ]
 
 
-def test_two_invalid_outputs_remain_capped_after_transport_limit_amendment(
+def test_invalid_outputs_remain_capped_after_transport_limit_amendment(
     tmp_path: Path,
 ) -> None:
+    """The invalid-output cap is independent of, and tighter than, max_attempts.
+
+    The load-bearing assertion is the SECOND phase: after amending max_attempts
+    5 -> 10, a source already capped on invalid output makes ZERO further calls.
+    Raising the transport-retry budget must not buy more attempts for a model
+    that is emitting unparseable output — that is what keeps the two limits
+    separate concerns.
+    """
     path = _write_fixture(
         tmp_path, max_attempts=5, primary_actions=True
     )
     plan, client, _events, summary = _execute(path, invalid_responses=5)
     assert summary.status == "partial"
-    assert client.calls == runner.INVALID_MODEL_OUTPUT_LIMIT == 2
+    assert client.calls == runner.INVALID_MODEL_OUTPUT_LIMIT == 5
     raw_prefix = plan.actions[0].output.read_bytes()
     ledger_prefix = plan.actions[0].ledger.read_bytes()
     rows = [json.loads(line) for line in plan.actions[0].output.read_text().splitlines()]
-    assert [row["attempt_ordinal"] for row in rows] == [1, 2]
+    assert [row["attempt_ordinal"] for row in rows] == [1, 2, 3, 4, 5]
     assert {row["error"]["type"] for row in rows} == {"InvalidModelOutput"}
 
     value = _amended_attempt_limit(path)
@@ -1088,18 +1096,24 @@ def test_legacy_scored_null_row_remains_evidence_and_gets_second_attempt(
 def test_legacy_scored_null_counts_toward_invalid_output_limit(
     tmp_path: Path,
 ) -> None:
-    path = _write_fixture(tmp_path, max_attempts=5)
+    path = _write_fixture(tmp_path, max_attempts=10)
     _append_legacy_scored_null(path)
 
-    plan, client, _events, summary = _execute(path, invalid_responses=5)
+    plan, client, _events, summary = _execute(path, invalid_responses=10)
     assert summary.status == "partial"
-    assert client.calls == 1
+    # The pre-existing legacy row already consumes one slot, so the source may
+    # make only LIMIT-1 further calls before it is capped. Written against the
+    # constant rather than a literal: the POINT of this test is that a legacy
+    # `scored`-with-null-verdict row counts toward the cap at all, not the
+    # cap's particular value.
+    budget = runner.INVALID_MODEL_OUTPUT_LIMIT - 1
+    assert client.calls == budget
     rows = [json.loads(line) for line in plan.actions[0].output.read_text().splitlines()]
     assert [(row["attempt_ordinal"], row["row_status"]) for row in rows] == [
         (1, "scored"),
-        (2, "error"),
+        *[(ordinal, "error") for ordinal in range(2, 2 + budget)],
     ]
-    assert rows[1]["error"]["type"] == "InvalidModelOutput"
+    assert {row["error"]["type"] for row in rows[1:]} == {"InvalidModelOutput"}
 
 
 def test_rolling_window_reuses_only_distinct_idle_clients(tmp_path: Path) -> None:

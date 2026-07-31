@@ -132,8 +132,30 @@ def parse_response(response: ResponseLike) -> tuple[str | None, str | None]:
     return None, None
 
 
-def verdict_score(verdict: str | None, confidence: str | None) -> float:
-    return VERDICT_SCORES.get((verdict, confidence or "medium"), 0.5) if verdict else 0.5
+VALID_VERDICTS = frozenset({"correct", "incorrect"})
+VALID_CONFIDENCES = frozenset({"high", "medium", "low"})
+
+
+def verdict_score(verdict: str | None, confidence: str | None) -> float | None:
+    """Grid score for a (verdict, confidence) pair, or None if it is off-grid.
+
+    Returns None rather than the 0.5 midpoint this used to fabricate. 0.5 is not
+    on the six-cell grid — no model output can produce it — so writing it for an
+    answer the model did not give records an invented value as though it were a
+    measurement, and it lands exactly on the neutral point a calibration curve is
+    most sensitive to.
+
+    A None here is the caller's signal to RETRY (runner._attempt treats it as
+    InvalidModelOutput) and, once the per-source retry budget is spent, to write
+    the row as an ERROR. An absent measurement stays absent.
+
+    A missing confidence still defaults to "medium". That is deliberate and
+    different in kind: it resolves to a real grid cell (0.80 / 0.20) rather than
+    to a value outside the grid entirely.
+    """
+    if verdict not in VALID_VERDICTS:
+        return None
+    return VERDICT_SCORES.get((verdict, confidence or "medium"))
 
 
 def _canonical_rows(descriptor: FileDescriptor, *, context: str) -> tuple[list[dict[str, Any]], FileCapture]:

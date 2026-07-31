@@ -36,6 +36,8 @@ from .contracts import (
     load_run_plan,
 )
 from .replay import (
+    VALID_CONFIDENCES,
+    VALID_VERDICTS,
     AppendLog,
     ReplayIndex,
     ResumeState,
@@ -64,7 +66,32 @@ class ActionDeadlineExceeded(TimeoutError): pass
 class InvalidModelOutput(ValueError): pass
 
 
-INVALID_MODEL_OUTPUT_LIMIT = 2
+# One message for both the persisted error row and the raise, so the ALERT
+# detail's message_sha256 is stable across the two sites.
+_INVALID_OUTPUT_MESSAGE = (
+    "provider response is not an on-grid (verdict, confidence) pair"
+)
+
+
+# Per-source cap on unparseable model output, counted cumulatively across
+# restarts from the persisted rows (see _run_source). It exists to stop a model
+# that CANNOT do the task from burning the whole transport-retry budget, and is
+# deliberately separate from, and much tighter than, action.max_attempts.
+#
+# Raised 2 -> 5 on 2026-07-31 against measured evidence from the verdict-only
+# run. That prompt asks for two closed-enum fields, and every one of the four
+# models occasionally fills them in the wrong order — e.g. gemma-4-e2b returned
+# `{"verdict": "medium", "confidence": "medium"}`. The rate is 0.057%-0.097%
+# across all four arms, and it is sporadic rather than systematic: re-issuing
+# the SAME request for the execution that wedged returned a valid verdict on 2
+# of 3 tries. At a per-request failure probability of about a third for a hard
+# input, a cap of 2 stops the arm 11% of the time, which is what happened —
+# gemma_26b finished carrying 19 such errors purely by luck. Five leaves ~0.4%.
+#
+# This does NOT loosen the systematic case: a model that never emits a valid
+# verdict still stops after five attempts on its first source, long before
+# max_attempts, and the failure is still terminal rather than silently scored.
+INVALID_MODEL_OUTPUT_LIMIT = 5
 
 
 @dataclass(frozen=True)
@@ -529,7 +556,22 @@ def _attempt(prepared: PreparedRun, client: Any, source: Mapping[str, Any]) -> t
                 raise
             else:
                 receipt = prepared.action_guard.ensure_attempt_started()
-                invalid = result.get("verdict") not in {"correct", "incorrect"}
+                # The single validity gate. It covers BOTH closed-set fields and
+                # the resulting score, because confidence selects the score cell
+                # (0.95/0.80/0.65 or 0.05/0.20/0.35) just as much as the verdict
+                # picks its sign. Previously only the verdict was checked, so a
+                # well-formed verdict with an out-of-vocabulary confidence — e.g.
+                # {"verdict": "correct", "confidence": "certain"} — fell through
+                # to a fabricated 0.5 and was written as row_status="scored",
+                # indistinguishable from a real measurement. Anything off-grid is
+                # now retried like any other unparseable output and, once the
+                # per-source budget is spent, recorded as an ERROR rather than
+                # assigned a number the model never produced.
+                invalid = (
+                    result.get("verdict") not in VALID_VERDICTS
+                    or result.get("confidence") not in VALID_CONFIDENCES
+                    or result.get("score") is None
+                )
                 candidate = (
                     error_row(
                         source,
@@ -537,9 +579,7 @@ def _attempt(prepared: PreparedRun, client: Any, source: Mapping[str, Any]) -> t
                         calls=list(result.get("call_log") or []),
                         attempt=_attempt_projection(receipt, "error"),
                         latency_s=time.monotonic() - started,
-                        error=InvalidModelOutput(
-                            "provider response lacks a correct/incorrect verdict"
-                        ),
+                        error=InvalidModelOutput(_INVALID_OUTPUT_MESSAGE),
                     )
                     if invalid
                     else result_row(
@@ -553,9 +593,7 @@ def _attempt(prepared: PreparedRun, client: Any, source: Mapping[str, Any]) -> t
                 _commit(prepared, source, candidate)
                 row = candidate
                 if invalid:
-                    raise InvalidModelOutput(
-                        "provider response lacks a correct/incorrect verdict"
-                    )
+                    raise InvalidModelOutput(_INVALID_OUTPUT_MESSAGE)
         return row, None
     except BaseException as exc:
         return row, exc
