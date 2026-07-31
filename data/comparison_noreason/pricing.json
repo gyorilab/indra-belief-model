@@ -1,0 +1,35 @@
+{
+  "cost_comparability_id": "bedrock_us_east_1_on_demand_standard_inference_tokens",
+  "currency": "USD",
+  "kind": "provider_token_pricing",
+  "provider": "AWS Bedrock",
+  "pricing_mode": "on_demand",
+  "region": "us-east-1",
+  "resolved_service_tier": "standard",
+  "retrieved_on": "2026-07-21",
+  "service_tier_request": "default",
+  "source_url": "https://aws.amazon.com/bedrock/pricing/",
+  "tariffs": {
+    "google.gemma-4-26b-a4b": {
+      "input_usd_per_million": "0.13",
+      "output_usd_per_million": "0.4",
+      "pricing_basis": "list"
+    },
+    "google.gemma-4-31b": {
+      "input_usd_per_million": "0.14",
+      "output_usd_per_million": "0.4",
+      "pricing_basis": "list"
+    },
+    "google.gemma-4-e2b": {
+      "input_usd_per_million": "0.04",
+      "output_usd_per_million": "0.08",
+      "pricing_basis": "list"
+    },
+    "zai.glm-5": {
+      "input_usd_per_million": "1",
+      "output_usd_per_million": "3.2",
+      "pricing_basis": "list"
+    }
+  },
+  "unit": "per_million_tokens"
+}

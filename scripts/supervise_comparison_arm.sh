@@ -8,7 +8,26 @@
 # the frozen plan's retry bounds (that requires a reviewed plan amendment,
 # not a restart). Designed for macOS bash 3.2.
 #
-# Usage: supervise_comparison_arm.sh <action_id> [initial_delay_seconds]
+# Usage: supervise_comparison_arm.sh <action_id> [initial_delay_seconds] [plan_path]
+#
+# The plan path defaults to the original comparison plan, so the historical
+# invocation is unchanged. Passing a third argument supervises a different
+# plan; the arm's attempts file is then DERIVED from that plan's own
+# actions[].output path rather than assumed, because the supervisor's only
+# progress signal is that file growing (a wrong path makes every invocation
+# look like zero progress and drives a spurious crash-loop ALERT).
+#
+# Two knobs are environment-overridable for sleep-tolerant operation:
+#   SUPERVISOR_CAFFEINATE   1 (default) holds a no-sleep assertion around the
+#                           runner; 0 lets the machine sleep mid-run. Sleeping
+#                           is safe — the spend WAL is append-only and resume
+#                           re-derives — but every in-flight socket dies on
+#                           sleep and each one burns attempt ordinals on wake.
+#   NETFAIL_KILL_TICKS      consecutive 30s network-probe failures before the
+#                           runner is killed to stop it burning those ordinals.
+#                           Default 4 (~120s); lower it when sleeping is
+#                           expected, since max_attempts is capped at ten by
+#                           the run-plan contract and cannot absorb much.
 #
 # State (data/comparison/supervisor/):
 #   <arm>.supervisor.log   supervisor decisions
@@ -20,18 +39,51 @@
 set -u
 
 REPO="/Users/noot/Documents/indra-belief-model"
-ARM="${1:?usage: supervise_comparison_arm.sh <action_id> [initial_delay]}"
+ARM="${1:?usage: supervise_comparison_arm.sh <action_id> [initial_delay] [plan]}"
 STAGGER="${2:-0}"
-SUP="$REPO/data/comparison/supervisor"
-PLAN="data/comparison/run_plan.json"
-ATTEMPTS="$REPO/data/comparison/runs/$ARM/attempts.jsonl"
+PLAN="${3:-data/comparison/run_plan.json}"
+# Accept an absolute in-repo plan path; every downstream use is repo-relative.
+case "$PLAN" in /*) PLAN="${PLAN#"$REPO"/}" ;; esac
+SUP="$REPO/$(dirname "$PLAN")/supervisor"
 PROBE_HOST="bedrock-mantle.us-east-1.api.aws"
 PY="$REPO/.venv/bin/python"
 CRASH_ALERT_LIMIT=8
 TRANSIENT_ALERT_LIMIT=40
-NETFAIL_KILL_TICKS=4
+NETFAIL_KILL_TICKS="${NETFAIL_KILL_TICKS:-4}"
+CAFFEINATE="${SUPERVISOR_CAFFEINATE:-1}"
+
+# Validate the env knobs rather than trusting them: this value gates a kill, and
+# a typo is silent. 0 or a non-number would make the kill fire on a HEALTHY
+# network every tick, restarting the runner forever and burning attempt ordinals
+# on a run that is otherwise fine.
+case "$NETFAIL_KILL_TICKS" in
+    ''|*[!0-9]*) echo "NETFAIL_KILL_TICKS must be a positive integer, got '$NETFAIL_KILL_TICKS'" >&2; exit 64 ;;
+    0) echo "NETFAIL_KILL_TICKS must be >= 1 (0 kills on a healthy network)" >&2; exit 64 ;;
+esac
+case "$CAFFEINATE" in
+    0|1) ;;
+    *) echo "SUPERVISOR_CAFFEINATE must be 0 or 1, got '$CAFFEINATE'" >&2; exit 64 ;;
+esac
 
 mkdir -p "$SUP"
+
+# Derive this arm's attempts file from the plan itself. Failing loudly beats
+# defaulting: a silently wrong path reports zero progress forever.
+ATTEMPTS=$( (cd "$REPO" && "$PY" - "$PLAN" "$ARM" <<'PYEOF'
+import json, sys
+plan_path, arm = sys.argv[1], sys.argv[2]
+with open(plan_path) as handle:
+    plan = json.load(handle)
+for action in plan["actions"]:
+    if action["id"] == arm:
+        print(action["output"]["path"])
+        break
+else:
+    raise SystemExit(f"action {arm!r} is not in {plan_path}")
+PYEOF
+) ) || { echo "cannot resolve attempts path for $ARM in $PLAN" >&2; exit 64; }
+ATTEMPTS="$REPO/$ATTEMPTS"
+mkdir -p "$(dirname "$ATTEMPTS")"
 LOG="$SUP/$ARM.supervisor.log"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [$ARM] $*" >> "$LOG"; }
@@ -154,9 +206,15 @@ while :; do
     state "running"
     log "invocation $INV starting (attempts.jsonl ${SIZE_BEFORE} bytes)"
 
-    ( cd "$REPO" && exec env PYTHONPATH=src /usr/bin/caffeinate -i -s \
-        "$PY" -m indra_belief.comparison run --plan "$PLAN" --action "$ARM" ) \
-        >> "$OUT" 2>> "$ERRF" &
+    if [ "$CAFFEINATE" = "1" ]; then
+        ( cd "$REPO" && exec env PYTHONPATH=src /usr/bin/caffeinate -i -s \
+            "$PY" -m indra_belief.comparison run --plan "$PLAN" --action "$ARM" ) \
+            >> "$OUT" 2>> "$ERRF" &
+    else
+        ( cd "$REPO" && exec env PYTHONPATH=src \
+            "$PY" -m indra_belief.comparison run --plan "$PLAN" --action "$ARM" ) \
+            >> "$OUT" 2>> "$ERRF" &
+    fi
     RPID=$!
     TICK=0
     NETFAIL=0

@@ -1,0 +1,104 @@
+{
+  "kind": "indra_belief_comparison_run_plan",
+  "replay": {
+    "manifest": {
+      "base": "repository",
+      "bytes": 109458,
+      "path": "data/comparison/grounding_replay/manifest.json",
+      "sha256": "294f902f5b83876e1f7f5e464729e874c687f8e45d05042f44d73ee45f16aadd"
+    }
+  },
+  "global_cap_usd": "390",
+  "stages": [
+    {
+      "cap_usd": "40",
+      "id": "gemma_26b_noreason",
+      "model": "bedrock-gemma-4-26b-noreason",
+      "provider_model_id": "google.gemma-4-26b-a4b"
+    },
+    {
+      "cap_usd": "40",
+      "id": "gemma_31b_noreason",
+      "model": "bedrock-gemma-4-31b-noreason",
+      "provider_model_id": "google.gemma-4-31b"
+    },
+    {
+      "cap_usd": "310",
+      "id": "glm_5_noreason",
+      "model": "bedrock-glm-5-noreason",
+      "provider_model_id": "zai.glm-5"
+    }
+  ],
+  "actions": [
+    {
+      "cap_usd": "39.9",
+      "deadline_seconds": 129600,
+      "depends_on": [],
+      "execution_keys": null,
+      "id": "gemma_31b_noreason_primary",
+      "ledger": {
+        "base": "repository",
+        "path": "data/comparison_noreason/runs/gemma_31b_noreason_primary/spend.ndjson"
+      },
+      "main_max_output_tokens": 32000,
+      "max_attempts": 10,
+      "output": {
+        "base": "repository",
+        "path": "data/comparison_noreason/runs/gemma_31b_noreason_primary/attempts.jsonl"
+      },
+      "provider_input_token_maximum": 8192,
+      "retry_backoff_seconds": 15.0,
+      "run_id": "paper_gemma_31b_noreason_primary",
+      "stage": "gemma_31b_noreason",
+      "workers": 6,
+      "workload": "unique_exact_pairs_primary"
+    },
+    {
+      "cap_usd": "39.9",
+      "deadline_seconds": 259200,
+      "depends_on": [],
+      "execution_keys": null,
+      "id": "gemma_26b_noreason_primary",
+      "ledger": {
+        "base": "repository",
+        "path": "data/comparison_noreason/runs/gemma_26b_noreason_primary/spend.ndjson"
+      },
+      "main_max_output_tokens": 32000,
+      "max_attempts": 10,
+      "output": {
+        "base": "repository",
+        "path": "data/comparison_noreason/runs/gemma_26b_noreason_primary/attempts.jsonl"
+      },
+      "provider_input_token_maximum": 8192,
+      "retry_backoff_seconds": 15.0,
+      "run_id": "paper_gemma_26b_noreason_primary",
+      "stage": "gemma_26b_noreason",
+      "workers": 6,
+      "workload": "unique_exact_pairs_primary"
+    },
+    {
+      "cap_usd": "309.5",
+      "deadline_seconds": 259200,
+      "depends_on": [],
+      "execution_keys": null,
+      "id": "glm_5_noreason_primary",
+      "ledger": {
+        "base": "repository",
+        "path": "data/comparison_noreason/runs/glm_5_noreason_primary/spend.ndjson"
+      },
+      "main_max_output_tokens": 32000,
+      "max_attempts": 10,
+      "output": {
+        "base": "repository",
+        "path": "data/comparison_noreason/runs/glm_5_noreason_primary/attempts.jsonl"
+      },
+      "provider_input_token_maximum": 8192,
+      "retry_backoff_seconds": 15.0,
+      "run_id": "paper_glm_5_noreason_primary",
+      "stage": "glm_5_noreason",
+      "workers": 8,
+      "workload": "unique_exact_pairs_primary"
+    }
+  ],
+  "amendment": null
+}

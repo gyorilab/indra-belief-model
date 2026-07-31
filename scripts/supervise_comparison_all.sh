@@ -16,23 +16,61 @@
 # runs resume from append-only ledgers — but mid-flight attempts are cut).
 # `stop` halts supervision without touching markers.
 #
-# Usage: supervise_comparison_all.sh [restart|stop]
+# Usage: supervise_comparison_all.sh [restart|stop] [plan_path]
+#
+# The arm list is DERIVED from the plan rather than hardcoded: every action on
+# the primary workload that is not a pinned-key smoke. On the original plan
+# that reproduces the historical list and order exactly
+# (gemma_31b_primary gemma_26b_primary glm_5_primary), so the default
+# invocation is unchanged; on a second plan it picks up that plan's arms with
+# no edit here.
 set -eu
 
 REPO="/Users/noot/Documents/indra-belief-model"
-SUP="$REPO/data/comparison/supervisor"
-ARMS="gemma_31b_primary gemma_26b_primary glm_5_primary"
 MODE="${1:-start}"
+PLAN="${2:-data/comparison/run_plan.json}"
+# Accept an absolute in-repo plan path; every downstream use is repo-relative.
+case "$PLAN" in /*) PLAN="${PLAN#"$REPO"/}" ;; esac
+SUP="$REPO/$(dirname "$PLAN")/supervisor"
 
 mkdir -p "$SUP"
 
+ARMS=$( (cd "$REPO" && "$REPO/.venv/bin/python" - "$PLAN" <<'PYEOF'
+import json, sys
+with open(sys.argv[1]) as handle:
+    plan = json.load(handle)
+print(" ".join(
+    action["id"]
+    for action in plan["actions"]
+    if action["workload"] == "unique_exact_pairs_primary"
+    and action["execution_keys"] is None
+))
+PYEOF
+) ) || { echo "cannot read arms from $PLAN" >&2; exit 64; }
+[ -n "$ARMS" ] || { echo "no primary arms in $PLAN" >&2; exit 64; }
+
+# Position in the derived list x STAGGER_SECONDS. Replaces the per-arm case
+# table, whose `*) echo 0` fallback silently gave any new arm zero stagger —
+# putting every arm's preflight and first provider burst in lockstep.
+#
+# The stagger is NOT throughput: arms run fully concurrently once started, so it
+# costs (n-1) x STAGGER_SECONDS once, at launch. It buys separation of the
+# preflights, which each stream every action's attempts file, and of the first
+# provider burst. Set STAGGER_SECONDS=0 for a simultaneous start; expect more
+# "transient prepare failure" restarts if you do (one was already observed at
+# 180s, self-healed on the next invocation).
+STAGGER_SECONDS="${STAGGER_SECONDS:-180}"
+case "$STAGGER_SECONDS" in
+    ''|*[!0-9]*) echo "STAGGER_SECONDS must be a non-negative integer" >&2; exit 64 ;;
+esac
+
 stagger_for() {
-    case "$1" in
-        gemma_31b_primary) echo 0 ;;
-        gemma_26b_primary) echo 180 ;;
-        glm_5_primary) echo 360 ;;
-        *) echo 0 ;;
-    esac
+    index=0
+    for candidate in $ARMS; do
+        if [ "$candidate" = "$1" ]; then echo $((index * STAGGER_SECONDS)); return; fi
+        index=$((index + 1))
+    done
+    echo 0
 }
 
 supervisor_running() {
@@ -55,10 +93,10 @@ stop_arm() {
 
 start_arm() {
     arm="$1"
-    nohup /bin/bash "$REPO/scripts/supervise_comparison_arm.sh" "$arm" "$(stagger_for "$arm")" \
+    nohup /bin/bash "$REPO/scripts/supervise_comparison_arm.sh" "$arm" "$(stagger_for "$arm")" "$PLAN" \
         >> "$SUP/$arm.nohup.log" 2>&1 &
     disown $! 2>/dev/null || true
-    echo "$arm: supervisor started (pid $!, stagger $(stagger_for "$arm")s)"
+    echo "$arm: supervisor started (pid $!, stagger $(stagger_for "$arm")s, plan $PLAN)"
 }
 
 case "$MODE" in
