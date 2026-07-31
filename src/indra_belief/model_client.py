@@ -237,17 +237,97 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 32000,         # CoT + answer share the budget
         "timeout": 600,
     },
-    # Reasoning-isolation twin of bedrock-gemma-4-26b: identical full-precision
-    # serving, reasoning_effort="none" (no reasoning item) — to de-confound the
-    # +0.025 gap into reasoning-mode vs quant vs width. Compare to the high run.
+    # ── Reasoning-isolation twins ────────────────────────────────────────────
+    # One per paid comparison arm, differing from their thinking sibling in
+    # exactly one field: reasoning_effort "high" -> "none". Everything else
+    # (backend, endpoint pins, TLS bundle, byte bounds, model_id, max_tokens)
+    # is copied verbatim, so a paired run isolates reasoning mode and nothing
+    # else. All three keep the *_raw paid-lane transports on purpose: only
+    # those backends make GuardedModelClient._provider_wire_request rebuild a
+    # canonical wire body (spend_guard.py:1935-1974), and that recorded body is
+    # the ONLY artifact that can prove reasoning was actually off — the
+    # provider's own token accounting cannot (gemma reports
+    # reasoning_tokens=0 while returning real CoT; glm-5 omits the field).
+    #
+    # What "none" does on each wire, verified in bedrock_*_transport.py:
+    #   Responses lane (gemma): `if reasoning_effort and != "none"` — the
+    #     `reasoning` key is OMITTED entirely (bedrock_responses_transport.py
+    #     :625-627), and a literal reasoning.effort=="none" is rejected by the
+    #     request validator (:658).
+    #   Chat lane (glm-5): `if reasoning_effort:` — "none" is truthy, so
+    #     `"reasoning_effort":"none"` IS sent on the wire
+    #     (bedrock_chat_transport.py:571-572). Mantle accepts it and does not
+    #     deliberate (thinking engages only at "high"; see :264-279 above).
     "bedrock-gemma-4-26b-noreason": {
-        "backend": "bedrock_responses",
+        "backend": "bedrock_responses_raw",
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+        "responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
+        "expected_responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
         "model_id": "google.gemma-4-26b-a4b",
         "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "tls_ca_bundle": _FIXED_BEDROCK_TLS_CA_BUNDLE,
+        "tls_ca_bundle_sha256": _FIXED_BEDROCK_TLS_CA_BUNDLE_SHA256,
+        "max_request_bytes": 16 * 1024 * 1024,
+        "max_response_bytes": 16 * 1024 * 1024,
         "reasoning_in_content": False,
         "reasoning_effort": "none",
         "typical_tokens": 400,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
+    "bedrock-gemma-4-31b-noreason": {
+        "backend": "bedrock_responses_raw",
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+        "responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
+        "expected_responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
+        "model_id": "google.gemma-4-31b",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "tls_ca_bundle": _FIXED_BEDROCK_TLS_CA_BUNDLE,
+        "tls_ca_bundle_sha256": _FIXED_BEDROCK_TLS_CA_BUNDLE_SHA256,
+        "max_request_bytes": 16 * 1024 * 1024,
+        "max_response_bytes": 16 * 1024 * 1024,
+        "reasoning_in_content": False,
+        "reasoning_effort": "none",
+        "typical_tokens": 500,
+        "max_tokens": 32000,
+        "timeout": 600,
+    },
+    "bedrock-gemma-4-e2b-noreason": {
+        "backend": "bedrock_responses_raw",
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+        "responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
+        "expected_responses_endpoint": _FIXED_BEDROCK_RESPONSES_ENDPOINT,
+        "model_id": "google.gemma-4-e2b",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "tls_ca_bundle": _FIXED_BEDROCK_TLS_CA_BUNDLE,
+        "tls_ca_bundle_sha256": _FIXED_BEDROCK_TLS_CA_BUNDLE_SHA256,
+        "max_request_bytes": 16 * 1024 * 1024,
+        "max_response_bytes": 16 * 1024 * 1024,
+        "reasoning_in_content": False,
+        "reasoning_effort": "none",
+        "typical_tokens": 400,
+        "max_tokens": 16000,
+        "timeout": 300,
+    },
+    "bedrock-glm-5-noreason": {
+        "backend": "bedrock_chat_completions_raw",
+        "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
+        "chat_completions_endpoint": (
+            "https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions"
+        ),
+        "expected_chat_completions_endpoint": (
+            "https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions"
+        ),
+        "tls_ca_bundle": _FIXED_BEDROCK_TLS_CA_BUNDLE,
+        "tls_ca_bundle_sha256": _FIXED_BEDROCK_TLS_CA_BUNDLE_SHA256,
+        "max_request_bytes": 16 * 1024 * 1024,
+        "max_response_bytes": 16 * 1024 * 1024,
+        "model_id": "zai.glm-5",
+        "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+        "strict_openai_compat": True,
+        "reasoning_in_content": False,
+        "reasoning_effort": "none",
+        "typical_tokens": 800,
         "max_tokens": 32000,
         "timeout": 600,
     },
