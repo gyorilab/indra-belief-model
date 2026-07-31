@@ -1,0 +1,53 @@
+{
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 20260717
+  },
+  "current_bayesian_manifest": "data/results/current_indra_bayesian_paper_20260717/current_bayesian_paper_manifest.json",
+  "current_counts_all_source_manifest": "data/results/current_indra_counts_hybrid_paper_20260718/current_counts_hybrid_paper_manifest.json",
+  "current_counts_reader_manifest": "data/results/current_indra_counts_hybrid_readers_20260719/current_counts_hybrid_readers_manifest.json",
+  "current_hierarchy_manifest": "data/results/current_indra_hierarchy_paper_20260717/current_simple_hierarchy_paper_manifest.json",
+  "current_simple_manifest": "data/results/current_indra_simple_paper_20260717/current_indra_simple_default_manifest.json",
+  "error_review_protocol": "data/comparison/error_review.json",
+  "frozen_at": "2026-07-31T00:00:00+00:00",
+  "gold_manifest": "data/results/indra_paper_comparison_gold_20260717/paper_comparison_gold_manifest.json",
+  "llm_models": [
+    {
+      "action_id": "e2b_vo_primary",
+      "bundle_manifest": "data/comparison_verdict_only/models/gemma_4_e2b_vo/manifest.json",
+      "model_id": "llm_gemma_4_e2b_vo",
+      "provider_model_id": "google.gemma-4-e2b",
+      "run_id": "paper_e2b_vo_primary",
+      "served_model": "bedrock-gemma-4-e2b-noreason"
+    },
+    {
+      "action_id": "gemma_26b_vo_primary",
+      "bundle_manifest": "data/comparison_verdict_only/models/gemma_4_26b_vo/manifest.json",
+      "model_id": "llm_gemma_4_26b_vo",
+      "provider_model_id": "google.gemma-4-26b-a4b",
+      "run_id": "paper_gemma_26b_vo_primary",
+      "served_model": "bedrock-gemma-4-26b-noreason"
+    },
+    {
+      "action_id": "gemma_31b_vo_primary",
+      "bundle_manifest": "data/comparison_verdict_only/models/gemma_4_31b_vo/manifest.json",
+      "model_id": "llm_gemma_4_31b_vo",
+      "provider_model_id": "google.gemma-4-31b",
+      "run_id": "paper_gemma_31b_vo_primary",
+      "served_model": "bedrock-gemma-4-31b-noreason"
+    },
+    {
+      "action_id": "glm_5_vo_primary",
+      "bundle_manifest": "data/comparison_verdict_only/models/glm_5_vo/manifest.json",
+      "model_id": "llm_glm_5_vo",
+      "provider_model_id": "zai.glm-5",
+      "run_id": "paper_glm_5_vo_primary",
+      "served_model": "bedrock-glm-5-noreason"
+    }
+  ],
+  "paper_reproduction_manifest": "data/results/indra_paper_reproduction_20260717/paper_reproduction_manifest.json",
+  "production_hybrid_manifest": "data/comparison/models/indra_cogex_hybrid/manifest.json",
+  "published_metrics": "data/benchmark/indra_paper_2023_published_method_metrics.json",
+  "scorer_registry": "data/comparison/scorers.json",
+  "workspace_root": "../.."
+}

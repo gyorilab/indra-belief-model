@@ -1,0 +1,133 @@
+{
+  "actions": [
+    {
+      "cap_usd": "39.9",
+      "deadline_seconds": 129600,
+      "depends_on": [],
+      "execution_keys": null,
+      "id": "gemma_31b_vo_primary",
+      "ledger": {
+        "base": "repository",
+        "path": "data/comparison_verdict_only/runs/gemma_31b_vo_primary/spend.ndjson"
+      },
+      "main_max_output_tokens": 32000,
+      "max_attempts": 10,
+      "output": {
+        "base": "repository",
+        "path": "data/comparison_verdict_only/runs/gemma_31b_vo_primary/attempts.jsonl"
+      },
+      "provider_input_token_maximum": 8192,
+      "retry_backoff_seconds": 15.0,
+      "run_id": "paper_gemma_31b_vo_primary",
+      "stage": "gemma_31b_vo",
+      "workers": 8,
+      "workload": "unique_exact_pairs_primary"
+    },
+    {
+      "cap_usd": "39.9",
+      "deadline_seconds": 259200,
+      "depends_on": [],
+      "execution_keys": null,
+      "id": "gemma_26b_vo_primary",
+      "ledger": {
+        "base": "repository",
+        "path": "data/comparison_verdict_only/runs/gemma_26b_vo_primary/spend.ndjson"
+      },
+      "main_max_output_tokens": 32000,
+      "max_attempts": 10,
+      "output": {
+        "base": "repository",
+        "path": "data/comparison_verdict_only/runs/gemma_26b_vo_primary/attempts.jsonl"
+      },
+      "provider_input_token_maximum": 8192,
+      "retry_backoff_seconds": 15.0,
+      "run_id": "paper_gemma_26b_vo_primary",
+      "stage": "gemma_26b_vo",
+      "workers": 8,
+      "workload": "unique_exact_pairs_primary"
+    },
+    {
+      "cap_usd": "3.6",
+      "deadline_seconds": 129600,
+      "depends_on": [],
+      "execution_keys": null,
+      "id": "e2b_vo_primary",
+      "ledger": {
+        "base": "repository",
+        "path": "data/comparison_verdict_only/runs/e2b_vo_primary/spend.ndjson"
+      },
+      "main_max_output_tokens": 32000,
+      "max_attempts": 10,
+      "output": {
+        "base": "repository",
+        "path": "data/comparison_verdict_only/runs/e2b_vo_primary/attempts.jsonl"
+      },
+      "provider_input_token_maximum": 8192,
+      "retry_backoff_seconds": 15.0,
+      "run_id": "paper_e2b_vo_primary",
+      "stage": "e2b_vo",
+      "workers": 8,
+      "workload": "unique_exact_pairs_primary"
+    },
+    {
+      "cap_usd": "309.5",
+      "deadline_seconds": 259200,
+      "depends_on": [],
+      "execution_keys": null,
+      "id": "glm_5_vo_primary",
+      "ledger": {
+        "base": "repository",
+        "path": "data/comparison_verdict_only/runs/glm_5_vo_primary/spend.ndjson"
+      },
+      "main_max_output_tokens": 32000,
+      "max_attempts": 10,
+      "output": {
+        "base": "repository",
+        "path": "data/comparison_verdict_only/runs/glm_5_vo_primary/attempts.jsonl"
+      },
+      "provider_input_token_maximum": 8192,
+      "retry_backoff_seconds": 15.0,
+      "run_id": "paper_glm_5_vo_primary",
+      "stage": "glm_5_vo",
+      "workers": 8,
+      "workload": "unique_exact_pairs_primary"
+    }
+  ],
+  "amendment": null,
+  "global_cap_usd": "393.63428896",
+  "kind": "indra_belief_comparison_run_plan",
+  "replay": {
+    "manifest": {
+      "base": "repository",
+      "bytes": 53716,
+      "path": "data/comparison_verdict_only/grounding_replay/manifest.json",
+      "sha256": "41df80ed404a6e23ee3bfab67dc6a88f175266e83cdd5203b7502531dba2165d"
+    }
+  },
+  "stages": [
+    {
+      "cap_usd": "3.63428896",
+      "id": "e2b_vo",
+      "model": "bedrock-gemma-4-e2b-noreason",
+      "provider_model_id": "google.gemma-4-e2b"
+    },
+    {
+      "cap_usd": "40",
+      "id": "gemma_26b_vo",
+      "model": "bedrock-gemma-4-26b-noreason",
+      "provider_model_id": "google.gemma-4-26b-a4b"
+    },
+    {
+      "cap_usd": "40",
+      "id": "gemma_31b_vo",
+      "model": "bedrock-gemma-4-31b-noreason",
+      "provider_model_id": "google.gemma-4-31b"
+    },
+    {
+      "cap_usd": "310",
+      "id": "glm_5_vo",
+      "model": "bedrock-glm-5-noreason",
+      "provider_model_id": "zai.glm-5"
+    }
+  ]
+}
