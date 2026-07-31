@@ -19,6 +19,11 @@ log = logging.getLogger(__name__)
 LOW_CONFIDENCE_THRESHOLD = 0.53
 
 
+def _term_display_name(term) -> str:
+    """Return a stable display name even when a Gilda term has no name."""
+    return term.entry_name or f"{term.db}:{term.id}"
+
+
 @dataclass
 class GroundedEntity:
     """An entity resolved through gilda with all identity metadata."""
@@ -63,7 +68,7 @@ class GroundedEntity:
             return entity
 
         top = matches[0]
-        entity.canonical = top.term.entry_name
+        entity.canonical = _term_display_name(top.term)
         entity.db = top.term.db
         entity.db_id = str(top.term.id)
 
@@ -100,8 +105,9 @@ class GroundedEntity:
             return
 
         text_top = text_results[0].term
+        text_top_display = _term_display_name(text_top)
         self.gilda_score = text_results[0].score
-        self.text_top_name = text_top.entry_name
+        self.text_top_name = text_top_display
         self.is_low_confidence = self.gilda_score <= LOW_CONFIDENCE_THRESHOLD
 
         # Independent-competition check (the structural separator).
@@ -124,7 +130,7 @@ class GroundedEntity:
                 n.lower() == raw_text.lower() for n in self.all_names
             ) if self.db == "HGNC" else False
             self.verification_note = (
-                f'"{raw_text}" resolves to {text_top.entry_name} = {self.name}'
+                f'"{raw_text}" resolves to {text_top_display} = {self.name}'
             )
             return
 
@@ -133,7 +139,7 @@ class GroundedEntity:
         if _is_descendant(self.db, self.db_id, text_top.db, str(text_top.id)):
             self.verification_status = "MATCH"
             self.verification_note = (
-                f'"{raw_text}" resolves to family {text_top.entry_name}; '
+                f'"{raw_text}" resolves to family {text_top_display}; '
                 f'{self.name} is a member (family-level evidence)'
             )
             return
@@ -145,7 +151,7 @@ class GroundedEntity:
         if _is_descendant(text_top.db, str(text_top.id), self.db, self.db_id):
             self.verification_status = "MATCH"
             self.verification_note = (
-                f'"{raw_text}" resolves to {text_top.entry_name}, a member '
+                f'"{raw_text}" resolves to {text_top_display}, a member '
                 f'of family {self.name} (member-level evidence for family claim)'
             )
             return
@@ -173,10 +179,11 @@ class GroundedEntity:
         # matches the claim name, the raw_text extraction is a better match.
         if (self.canonical
                 and self.canonical.lower() != self.name.lower()
+                and text_top.entry_name
                 and text_top.entry_name.lower() == self.name.lower()):
             self.verification_status = "MATCH"
             self.verification_note = (
-                f'"{raw_text}" resolves to {text_top.entry_name} '
+                f'"{raw_text}" resolves to {text_top_display} '
                 f'(claim name {self.name} is ambiguous; text extraction agrees)'
             )
             return
@@ -191,7 +198,7 @@ class GroundedEntity:
             for r in competitors[:5]:
                 desc, pseudo = _cached_get_desc(r.term.db, str(r.term.id))
                 self.competing_candidates.append({
-                    "name": r.term.entry_name,
+                    "name": _term_display_name(r.term),
                     "db": r.term.db,
                     "id": str(r.term.id),
                     "score": r.score,
@@ -212,7 +219,7 @@ class GroundedEntity:
                 self.verification_status = "MISMATCH"
                 self.verification_note = (
                     f'"{raw_text}" independently grounds to '
-                    f'{text_top.entry_name} ({text_top.db}:{text_top.id}), '
+                    f'{text_top_display} ({text_top.db}:{text_top.id}), '
                     f'NOT {self.name}'
                 )
             return
@@ -228,7 +235,7 @@ class GroundedEntity:
             for r in text_results[:5]:
                 desc, pseudo = _cached_get_desc(r.term.db, str(r.term.id))
                 self.competing_candidates.append({
-                    "name": r.term.entry_name,
+                    "name": _term_display_name(r.term),
                     "db": r.term.db,
                     "id": str(r.term.id),
                     "score": r.score,
@@ -236,13 +243,13 @@ class GroundedEntity:
                     "is_pseudogene": pseudo,
                 })
             self.verification_note = (
-                f'"{raw_text}" most likely refers to {text_top.entry_name}, '
+                f'"{raw_text}" most likely refers to {text_top_display}, '
                 f'not {self.name}'
             )
         else:
             self.verification_status = "MISMATCH"
             self.verification_note = (
-                f'"{raw_text}" resolves to {text_top.entry_name}, '
+                f'"{raw_text}" resolves to {text_top_display}, '
                 f'NOT {self.name}'
             )
 
