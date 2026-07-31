@@ -5,6 +5,8 @@ import csv
 import gzip
 import importlib.util
 import json
+import sys
+import types
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,8 +61,49 @@ def test_empty_evidence_and_empty_text_are_filtered_separately():
     selected, counts = pipeline.text_evidence_items(
         Statement([no_text, whitespace, supported])
     )
-    assert selected == [(2, supported)]
-    assert counts == {"evidences_without_text": 2}
+    assert selected == []
+    assert counts == {"evidences_without_text": 1}
+
+    selected, counts = pipeline.text_evidence_items(
+        Statement([supported, whitespace])
+    )
+    assert selected == [(0, supported)]
+    assert counts == {}
+
+
+def test_entity_inputs_use_agent_text_db_refs(monkeypatch):
+    statements_module = types.ModuleType("indra.statements")
+
+    class SelfModification:
+        pass
+
+    statements_module.SelfModification = SelfModification
+    indra_module = types.ModuleType("indra")
+    indra_module.statements = statements_module
+    monkeypatch.setitem(sys.modules, "indra", indra_module)
+    monkeypatch.setitem(sys.modules, "indra.statements", statements_module)
+
+    @dataclass
+    class Agent:
+        name: str
+        db_refs: dict
+
+    class Statement:
+        def __init__(self, agents):
+            self.agents = agents
+
+        def agent_list(self):
+            return self.agents
+
+    statement = Statement([
+        Agent("MAPK1", db_refs={"TEXT": "ERK2", "HGNC": "6871"}),
+        Agent("ELK1", db_refs={"TEXT": "ELK-1", "HGNC": "3320"}),
+    ])
+
+    subject, obj = pipeline._entity_inputs(statement)
+
+    assert subject == ("MAPK1", "ERK2")
+    assert obj == ("ELK1", "ELK-1")
 
 
 @dataclass

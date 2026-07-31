@@ -5,10 +5,10 @@ LLM. The input is the gzip TSV emitted by ``export_assembly.py``:
 
     statement_hash<TAB>statement_json
 
-The file is read one row at a time. Statements with no evidence and evidence
-objects with no text are skipped. Every remaining (Statement, Evidence) pair
-is grounded once, checked by deterministic Tier 1, rendered into the
-monolithic user message, and written to an atomic gzip JSONL shard.
+The file is read one row at a time. Statements with no evidence, or whose
+first evidence object has no text, are skipped. Every remaining statement's
+first evidence is grounded once, checked by deterministic Tier 1, rendered
+into the monolithic user message, and written to an atomic gzip JSONL shard.
 
 Defaults are tailored to the intended HPC layout:
 
@@ -87,21 +87,19 @@ def iter_processed_rows(
 def text_evidence_items(
     statement,
 ) -> tuple[list[tuple[int, Any]], Counter[str]]:
-    """Return evidence entries with non-empty text plus filtering counters."""
+    """Return the statement's first evidence when it has non-empty text."""
     counts: Counter[str] = Counter()
     evidences = statement.evidence or []
     if not evidences:
         counts["statements_without_evidence"] = 1
         return [], counts
 
-    selected: list[tuple[int, Any]] = []
-    for evidence_index, evidence in enumerate(evidences):
-        text = evidence.text
-        if not isinstance(text, str) or not text.strip():
-            counts["evidences_without_text"] += 1
-            continue
-        selected.append((evidence_index, evidence))
-    return selected, counts
+    evidence = evidences[0]
+    text = evidence.text
+    if not isinstance(text, str) or not text.strip():
+        counts["evidences_without_text"] = 1
+        return [], counts
+    return [(0, evidence)], counts
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
@@ -280,31 +278,32 @@ class AtomicShardWriter:
             self.tmp_path.unlink()
 
 
-def _entity_inputs(statement, evidence) -> tuple[
+def _entity_inputs(statement) -> tuple[
     tuple[str, str | None] | None,
     tuple[str, str | None] | None,
 ]:
-    """Mirror ScoringRecord's subject/object and raw-text mapping."""
+    """Return subject/object names with their reader TEXT db_refs."""
     from indra.statements import SelfModification
 
     agents = statement.agent_list()
-    subject = agents[0].name if agents and agents[0] else "?"
+    subject_agent = agents[0] if agents and agents[0] else None
     if isinstance(statement, SelfModification):
-        obj = subject
-    elif len(agents) > 1 and agents[1]:
-        obj = agents[1].name
+        object_agent = subject_agent
+    elif len(agents) > 1:
+        object_agent = agents[1]
     else:
-        obj = "?"
+        object_agent = None
 
-    raw_texts = (
-        evidence.annotations.get("agents", {}).get("raw_text") or []
+    subject_input = (
+        (subject_agent.name, subject_agent.db_refs.get("TEXT"))
+        if subject_agent
+        else None
     )
-    clean_raw_texts = [value for value in raw_texts if value is not None]
-    subject_raw = clean_raw_texts[0] if clean_raw_texts else None
-    object_raw = clean_raw_texts[1] if len(clean_raw_texts) > 1 else None
-
-    subject_input = None if subject == "?" else (subject, subject_raw)
-    object_input = None if obj == "?" else (obj, object_raw)
+    object_input = (
+        (object_agent.name, object_agent.db_refs.get("TEXT"))
+        if object_agent
+        else None
+    )
     return subject_input, object_input
 
 
@@ -368,7 +367,7 @@ def prepare_statement_jobs(
 
     jobs: list[dict[str, Any]] = []
     for evidence_index, evidence in selected_evidence:
-        subject_input, object_input = _entity_inputs(statement, evidence)
+        subject_input, object_input = _entity_inputs(statement)
         subject_entity = (
             cache.resolve_entity(*subject_input, GroundedEntity)
             if subject_input
