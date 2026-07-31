@@ -417,14 +417,43 @@ function errorFindingNumbers(
 ): VerdictNumber[] {
 	const margins = winners.map((row) => row.delta.delta);
 	const tStats = winners.map((row) => row.delta.tStatistic);
+	/** The oracle's size on the winning side — see the note on the first number. */
+	const winnerCuts = winners.map((row) => row.distinctScores);
+	/**
+	 * ARE THE WINNERS TELLABLE APART? Derived, never asserted. A reader who meets
+	 * five named models across six adjacent beats asks which one to actually run,
+	 * and the page had no answer: each figure names its own best and none says the
+	 * leaders are a tie. They are — every winner's margin lies inside every other
+	 * winner's interval — so the honest guidance is that the choice is not a
+	 * quality choice. If a future run separates them this goes false and the
+	 * sentence stops rendering, which is the point of computing it.
+	 */
+	const winnersAreATie =
+		winners.length > 1 &&
+		winners.every((row) =>
+			winners.every(
+				(other) => row.delta.delta >= other.delta.ciLow && row.delta.delta <= other.delta.ciHigh
+			)
+		);
 	const numbers: VerdictNumber[] = [
 		{
 			caption: 'when it flags a statement as wrong, it is right',
 			value: `${fmtPct(leader.operating.errorPrecision)} of the time`,
+			// BOTH SIDES ARE TUNED, AND THE TUNING FAVOURS THE FOREST. This note used
+			// to attach "at the best cutoff" to the random forest alone, so the
+			// strongest claim on the page read as "our untuned number beats their
+			// tuned number" — the opposite of what the artifact says. Every cutoff
+			// here was chosen with the labels in hand, on the same statements it is
+			// then scored on. The advantage of that is the FOREST's: it had far more
+			// candidate cutoffs to search, and it still loses.
 			note:
-				`${canonicalDisplay(leader.id, leader.display)}. The random forest, at the best cutoff these same ` +
-				`${figure.panel.n.toLocaleString()} statements allow it: ` +
-				`${fmtPct(figure.reference.operating.errorPrecision)}.`
+				`${canonicalDisplay(leader.id, leader.display)} against the random forest's ` +
+				`${fmtPct(figure.reference.operating.errorPrecision)}. Both cutoffs were chosen with the ` +
+				`answers already in hand, on these same ${figure.panel.n.toLocaleString()} statements — ` +
+				`and the search favoured the forest, which had ` +
+				`${figure.reference.distinctScores.toLocaleString()} candidate cutoffs to choose from ` +
+				`against ${fmtRange(Math.min(...winnerCuts), Math.max(...winnerCuts), (n) => n.toLocaleString())} ` +
+				`for the reading models.`
 		},
 		{
 			caption:
@@ -435,7 +464,12 @@ function errorFindingNumbers(
 				`random forest. ` +
 				`Ratio of margin to its own spread ${fmtRange(Math.min(...tStats), Math.max(...tStats), fmtT)}, ` +
 				`where ${figure.multiplicity.criticalValue.toFixed(4)} is what it has to clear once the ` +
-				`interval is widened to cover all ${figure.multiplicity.familySize} reading models we ran.`
+				`interval is widened to cover all ${figure.multiplicity.familySize} reading models we ran. ` +
+				`Measured at the same chosen cutoffs as the row above, not on held-back statements.` +
+				(winnersAreATie
+					? ` These ${winners.length} cannot be told apart here — each one's margin sits inside ` +
+						`the others' intervals — so the choice between them is cost, not quality.`
+					: '')
 		}
 	];
 

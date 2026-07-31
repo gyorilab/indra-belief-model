@@ -204,6 +204,14 @@ const removedBoundaries = [
 	['ReviewQueue: robustness multiplicity note', queue.errorRecallRobustness.multiplicityNote],
 	['ReviewQueue: label completeness note', queue.errorRecallRobustness.labelCompleteness.note],
 
+	// routes/paper/+page.svelte — the page's OWN boundary, headed "caveats,
+	// verbatim from the artifact", which sat at the foot of the costs section and
+	// showed two shipped things: the promotion ceiling's explanation and the
+	// review queue's caveat list. The caveats are already in the list above under
+	// ReviewQueue; the ceiling's explanation rendered nowhere else and is named
+	// here, so removing that boundary is checked rather than asserted.
+	['/paper costs section: promotion-ceiling explanation', queue.promotionCeiling.why],
+
 	// StatementErrorF1.svelte — two "in the artifact's own words" summaries, the
 	// "Caveats, as shipped" list, and the value table's note.
 	['StatementErrorF1: headline cutoff rule', errorF1.headlineThresholdRule.rule],
@@ -533,7 +541,16 @@ const INVITATIONS = [
 	/\bthe\s+(?:real|actual|true|unedited|original)\s+(?:version|wording|text)\b/i,
 	/\bin\s+full,?\s+unedited\b/i
 ];
+/**
+ * The route is in this list because the LAST of the boundaries was on the page
+ * itself, not in a component: a <details> headed "caveats, verbatim from the
+ * artifact" — a phrase that is an INVITATION_PROBE below, i.e. a wording this
+ * scan is proved to catch, sitting unscanned because the route was never scanned.
+ * A guard that runs over every component and skips the page they are mounted on
+ * has a hole shaped exactly like the file that assembles them.
+ */
 const CONVERTED = [
+	'routes/paper/+page.svelte',
 	'lib/components/ReviewQueue.svelte',
 	'lib/components/StatementErrorF1.svelte',
 	'lib/components/BeliefModelLadder.svelte',

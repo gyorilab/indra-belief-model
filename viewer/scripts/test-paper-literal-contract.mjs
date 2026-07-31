@@ -2378,13 +2378,74 @@ for (const literal of ['0.7683', '0.7881', '0.9010', '0.0494']) {
 //
 // This is a GAP being closed, not prose being padded: nothing else on the page
 // makes any score interpretable. The rule above still stands for the next raise.
-const PROSE_BUDGET = 6200;
+//
+// 6200 -> 6400. TWO NEW BEATS, which is exactly what the rule above demands of a
+// raise, and they are the first and the last blocks on the page:
+//
+//   1. THE RANKED VERDICT (`PaperVerdict.svelte`, 0 -> 40 counted words, NEW
+//      counted file). A working biologist read this page and reported: "it gives
+//      me six answers and then argues with each of them. By the end I do not know
+//      whether I am being told 'this is a real improvement', 'this is borderline',
+//      or 'the benchmark is too small to say'. It never ranks its own claims."
+//      Sixteen figures, every one scrupulously hedged, and nowhere a statement of
+//      WHICH hedge matters. The block states three claims strongest-first, each
+//      with the numbers behind it and the single best reason to doubt it. 40 words
+//      is the whole of its authored prose: the questions, the claims, the doubts
+//      and every number in it are read off three loads the page already performs,
+//      and `{…}` is dropped by this counter, so the block's ~450 rendered words
+//      cost the budget only what is typed into the template.
+//   2. THE VERIFICATION SECTION (`PaperAuditTrail.svelte`, 0 -> 102 counted words,
+//      NEW counted file). The page's ONE remaining boundary onto the result files'
+//      own wording, and the reason the other four are gone. 102 counted words are
+//      its heading and the paragraph that says what the section is for; the ~240
+//      shipped sentences and their restatements are inside its single <details>
+//      and are uncounted, which is the same treatment every method note on this
+//      page gets and the reason the budget exists.
+//
+//   · routes/paper/+page.svelte 653 -> 700 (+47), and it is +48 -1:
+//     +48 — the page-wide caveat paragraph ("the head-to-head's bootstrap
+//     intervals are not corrected across the models compared…") MOVED OUT of the
+//     <details> headed "caveats, verbatim from the artifact" and now renders in
+//     the open, so this counter can see it for the first time. It did not grow; it
+//     stopped being hidden. That <details> was the page's second verification
+//     boundary and the shipped halves it carried — the promotion ceiling's own
+//     explanation and the review queue's caveat list — are in the section at the
+//     foot of the page, beside their restatements, asserted reachable by name in
+//     scripts/test-paper-audit-trail-contract.mjs.
+//     −1 — the review-queue lead-in, which used to open "The same finding as a
+//     review workload" when it sat AFTER six beats of ranking argument. It opens
+//     the evidence now, so it says what it is: "Finding wrong statements, as
+//     review work."
+//
+// Measured after the reorder: 6,381 words across 19 counted files, rounded up one
+// step in the style every earlier raise used (2416 -> 2420, 2932 -> 2950, 3938 ->
+// 3950, 6069 -> 6100, 6192 -> 6200) to 6400. No estimate and no allowance is left
+// in this number.
+//
+// NOTHING WAS CUT TO FIT, and the reorder cut nothing either: fifteen lead-ins,
+// sixteen figures, the gloss and every caveat are all still on the page. Six
+// figures MOVED to sit under the claim they support. Per-file density falls 347 ->
+// 336 words per counted file, the first fall since the plain-language pass, and it
+// falls because the two new files are short rather than because anything was
+// trimmed.
+//
+// The rule stands unchanged for the next raise: it needs a new BEAT, not new prose
+// in the beats that exist.
+const PROSE_BUDGET = 6400;
 const LEAD_IN_BUDGET = 35;
 const LEDE_BUDGET = 60;
 const PAPER_PAGE = '../src/routes/paper/+page.svelte';
-/** The page, then the fifteen spine beats in the order they are read. */
+/**
+ * The page, then every counted block on it in the order they are read.
+ *
+ * THE TWO BOOKENDS ARE COUNTED LIKE ANYTHING ELSE. `PaperVerdict` is the first
+ * prose a reader meets and `PaperAuditTrail` the last; a budget that skipped
+ * them would let the page grow at both ends for free, which is the one way a
+ * word ceiling stops being a ceiling. Neither is exempt for being new.
+ */
 const PROSE_FILES = [
 	PAPER_PAGE,
+	'../src/lib/components/PaperVerdict.svelte',
 	'../src/lib/components/FidelityPanel.svelte',
 	'../src/lib/components/FramingCorrection.svelte',
 	'../src/lib/components/ScoreDistribution.svelte',
@@ -2400,7 +2461,8 @@ const PROSE_FILES = [
 	'../src/lib/components/StatementErrorF1.svelte',
 	'../src/lib/components/ApDecompositionByPaperRank.svelte',
 	'../src/lib/components/BeliefHeuristicResponse.svelte',
-	'../src/lib/components/PaperReliabilityStrip.svelte'
+	'../src/lib/components/PaperReliabilityStrip.svelte',
+	'../src/lib/components/PaperAuditTrail.svelte'
 ];
 
 function dropElement(source, tag) {
@@ -2467,7 +2529,22 @@ ok(proseTotal <= PROSE_BUDGET, `/paper prose is ${proseTotal} words, budget ${PR
 
 const pageSource = readFileSync(new URL(PAPER_PAGE, import.meta.url), 'utf8');
 const pageLeadIns = leadIns(pageSource);
-ok(pageLeadIns.length === 15, `/paper draws one lead-in per spine beat (found ${pageLeadIns.length})`);
+/**
+ * Fifteen `.framing` lead-ins across the page's seven beats — a beat groups the
+ * figures that answer one claim, and each figure keeps the lead-in that
+ * introduces it. The count is pinned, not the grouping: dropping a figure or
+ * silently merging two into one lead-in is what this catches.
+ *
+ * The verdict and the verification section are NOT lead-ins and must not become
+ * ones. Each carries its own heading and its own introduction, so a `.framing`
+ * paragraph above either would be a second heading for one block — and both are
+ * counted against the prose budget under their own names, which is where their
+ * length is checked.
+ */
+ok(
+	pageLeadIns.length === 15,
+	`/paper draws one lead-in per figure across its seven beats (found ${pageLeadIns.length})`
+);
 pageLeadIns.forEach((count, index) => {
 	ok(count <= LEAD_IN_BUDGET, `/paper lead-in ${index + 1} is ${count} words, budget ${LEAD_IN_BUDGET}`);
 });

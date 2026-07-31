@@ -4,9 +4,11 @@
 	import BeliefModelLadder from '$lib/components/BeliefModelLadder.svelte';
 	import FidelityPanel from '$lib/components/FidelityPanel.svelte';
 	import FramingCorrection from '$lib/components/FramingCorrection.svelte';
+	import PaperAuditTrail from '$lib/components/PaperAuditTrail.svelte';
 	import PaperLiteralComparison from '$lib/components/PaperLiteralComparison.svelte';
 	import PaperOwnMetric from '$lib/components/PaperOwnMetric.svelte';
 	import PaperTable6Extended from '$lib/components/PaperTable6Extended.svelte';
+	import PaperVerdict from '$lib/components/PaperVerdict.svelte';
 	import PerEvidenceGrain from '$lib/components/PerEvidenceGrain.svelte';
 	import DeployedBaseline from '$lib/components/DeployedBaseline.svelte';
 	import PaperRobustness from '$lib/components/PaperRobustness.svelte';
@@ -19,9 +21,28 @@
 	import type { PaperLiteralArm, PaperLiteralDelta } from '$lib/data/paper-literal';
 	import type { PaperPerEvidenceLane } from '$lib/data/paper-per-evidence';
 	import { reviewQueueCalloutArm } from '$lib/data/paper-review-queue';
+	import { buildPaperVerdict } from '$lib/data/paper-verdict';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	/**
+	 * THE RANKED VERDICT, assembled from three loads this page ALREADY performs.
+	 *
+	 * No fourth read and no second serialization: the block sits above figures
+	 * drawn from the very same objects, so it cannot disagree with them. It also
+	 * decides everything itself — which claim is strongest, the sentence that
+	 * states it, the sentence that doubts it, and the order the three appear in —
+	 * because five sign-blindness regressions on this page were all a template
+	 * choosing a direction. Nothing here selects a word or formats a number.
+	 */
+	const verdict = $derived(
+		buildPaperVerdict({
+			statementErrorF1: data.statementErrorF1,
+			reviewQueue: data.reviewQueue,
+			paperRobustness: data.paperRobustness
+		})
+	);
 
 	/** An arm that carries a paired delta (i.e. not the reference arm itself). */
 	type DeltaArm = PaperLiteralArm & { delta: PaperLiteralDelta };
@@ -223,8 +244,9 @@
 		     cross-validation paper, and replacing "fold" with "slice" fails that
 		     reader exactly as "arm" and "tau" do, pointing the other way. So:
 		     FOLD, OUT-OF-FOLD and CROSS-VALIDATION are the words, each glossed
-		     ONCE where the page first uses it — the gloss under beat 3 is that
-		     once. Likewise average precision, precision, recall, F1, random
+		     ONCE where the page first uses it — the gloss under beat 4a is that
+		     once, and the error-class F1 figure in beat 3 defines it again in place
+		     because the reorder put that figure first. Likewise average precision, precision, recall, F1, random
 		     forest, noisy-OR. "max-t" may appear only carrying its gloss
 		     ("corrected for testing four models at once"), and the page currently
 		     prefers the gloss alone.
@@ -237,7 +259,7 @@
 		     are never trained and see no labels, so nothing needs holding back:
 		     they are scored once over all 1,689 statements and then given the same
 		     fold indices purely so the identical estimator applies. That asymmetry
-		     is stated in the gloss under beat 3 and again beside the estimator in
+		     is stated in the gloss under beat 4a and again beside the estimator in
 		     the robustness table — a reviewer asks about it, so it is not left to
 		     be inferred. The one thing fitted on everything is the score CUTOFF in
 		     the error-class F1 figure, and that figure discloses it itself.
@@ -255,8 +277,8 @@
 		     Two clauses MOVED here rather than being dropped, each to the beat that
 		     owns it, because the lede is capped at 60 words and both are stated
 		     beside their own figure: the AUROC margin is now in the head-to-head
-		     lead-in (beat 3), and the per-evidence margin against INDRA's own
-		     scorer is now in the per-evidence lead-in (beat 9). Nothing is lost.
+		     lead-in (beat 4a), and the per-evidence margin against INDRA's own
+		     scorer is now in the per-evidence lead-in (beat 5a). Nothing is lost.
 
 		     Each numeric clause is gated on its own load with NO else branch: if an
 		     artifact is dark the sentence does not render at all and the figure
@@ -268,7 +290,7 @@
 		     is the manifest's `max_abs_delta_vs_published_table6`, printed at the
 		     same three decimals FidelityPanel prints it at one beat below, so the
 		     two agree by construction; the typed 0.0016 was the extended table's
-		     re-run TOLERANCE, a different quantity, and it still renders at beat 6a
+		     re-run TOLERANCE, a different quantity, and it still renders at beat 4b
 		     beside the five rows it bounds.
 
 		     EACH MARGIN NAMES ITS OWN ARM. The two margins below come from two
@@ -285,7 +307,7 @@
 		     costs no budget: `display` is interpolated, and the word counter drops
 		     `{...}` — the lede stays at 59 of 60 words.
 
-		     THE AVERAGE-PRECISION CLAUSE MOVED into beat 3's lead-in, where the same
+		     THE AVERAGE-PRECISION CLAUSE MOVED into beat 4a's lead-in, where the same
 		     margin is already printed beside the figure that draws it, and it moved
 		     with its qualification ("the most conservative view") attached. It left
 		     because the plain-language rewrite costs words the 60-word lede does not
@@ -293,8 +315,8 @@
 		     as insider shorthand, and its replacement ("both cutoffs were tuned on
 		     these statements, favouring the forest: N choices to our M") is the same
 		     disclosure in words a biologist can act on. Nothing left the page — the
-		     margin, its name and its concession all render at beat 3, and
-		     "trapezoidal PR-AUC flatters us" is beats 6b and 6c entire. -->
+		     margin, its name and its concession all render at beat 4a, and
+		     "trapezoidal PR-AUC flatters us" is beats 4c and 4d entire. -->
 
 		<p class="lede">
 			We re-ran the code the 2023 INDRA assembly paper released, on its 1,689 statements and
@@ -310,14 +332,57 @@
 		</p>
 	</header>
 
-	<!-- 1 · fidelity — the credibility floor everything else stands on -->
+	<!-- ════ THE SPINE ════════════════════════════════════════════════════════
+	     A biologist who had never read the 2023 INDRA assembly paper read this
+	     page and reported: "it gives me six answers and then argues with each of
+	     them. By the end I do not know whether I am being told 'this is a real
+	     improvement', 'this is borderline', or 'the benchmark is too small to
+	     say'. It never ranks its own claims."
+
+	     Nothing was hedged too much; the hedges were never SORTED. So the page is
+	     now ordered by the verdict rather than by method:
+
+	       1 the ranked verdict                       <- first, before any figure
+	       2 what was replicated, and that it reproduces
+	       3 evidence for the claim that survives correction — finding wrong
+	         statements
+	       4 evidence for the claim that does not — ordering — with its own limits
+	         beside it
+	       5 why there is anything to win
+	       6 limits that apply to everything
+	       7 the one place to check this page against the files it was built from
+
+	     NOTHING WAS DELETED TO DO IT. Every figure, lead-in and caveat that was on
+	     the page is still on it; six figures MOVED to sit under the claim they
+	     support, which is the whole point — a qualification that sits beneath a
+	     stated position reads as support for it, where the same qualification
+	     floating between two figures reads as a further, unranked answer.
+	     ════════════════════════════════════════════════════════════════════════ -->
+
+	<!-- 1 · THE RANKED VERDICT. It prints three claims strongest-first and names
+	     the single best reason to doubt each. Everything below it supports one of
+	     those three or qualifies it.
+
+	     THE ORDER ON SCREEN IS NOT WRITTEN HERE OR THERE. `buildPaperVerdict`
+	     sorts its own tiers by how well this benchmark answers them, so a re-run
+	     that made the ordering claim the stronger one would reorder the block
+	     rather than leave a stale ranking standing. This page mounts it and
+	     supplies no wording of its own — see the note on `verdict` above. -->
+	<PaperVerdict data={verdict} />
+
+	<!-- ── 2 · WHAT WAS REPLICATED, AND THAT IT REPRODUCES ───────────────────
+	     The credibility floor. Both claims in the block above are measured on a
+	     re-run of released code, so the re-run has to be checkable before either
+	     of them is worth reading. -->
+
+	<!-- 2a · fidelity — the credibility floor everything else stands on -->
 	<p class="framing">
 		First, can you trust the re-run at all? We ran the released code unmodified, on the released
 		data, and the published Table 6 comes back. Everything below rests on that.
 	</p>
 	<FidelityPanel data={data.paperLiteral} />
 
-	<!-- 2 · the framing correction — what the reader arm actually is. The score
+	<!-- 2b · the framing correction — what the reader arm actually is. The score
 	     distribution sits here as its EVIDENCE: the piles are the published
 	     reachable grid coming back, which is the correction's whole claim. -->
 	<p class="framing">
@@ -328,15 +393,64 @@
 	<FramingCorrection data={data.framingCorrection} />
 	<ScoreDistribution data={data.paperLiteral} />
 
-	<!-- 3 · THE COMPARISON TO THE 2023 RESULT. This is the beat the page exists
-	     for: the fitted models published in 2023 against evidence-gated reading, on
-	     the same 1,689 statements, the same labels and the same 10 folds. It leads
-	     because it is the ONLY comparison anyone can check against a published
-	     number — every figure through beat 7 qualifies this one margin, and beat 12
-	     is the only place the page leaves those 1,689 statements.
+	<!-- ── 3 · EVIDENCE FOR THE CLAIM THAT SURVIVES CORRECTION ────────────────
+	     Finding wrong statements. These two figures MOVED UP from the foot of the
+	     page, where they sat behind six beats of ranking argument that qualify a
+	     different and weaker claim. They are one result under two cutoff rules —
+	     the queue reports it as an afternoon's reading, the figure reports it as
+	     error-class precision, recall and F1 — and it is the result that holds
+	     once the interval is widened to cover every reading model we ran. It
+	     therefore sits directly beneath the verdict tier it answers. -->
+
+	<!-- 3a · THE SAME RESULT AS WORK. Still the same 1,689 statements and still
+	     against the random forest published in 2023: the operating point a curator
+	     would actually be handed. -->
+	<p class="framing">
+		Finding wrong statements, as review work. At its own untuned cutoff the Gemma 4 26B reader flags
+		462 statements and catches 354 of the 452 known errors; the random forest, its cutoff tuned on
+		these very statements, needs 662.
+	</p>
+	<ReviewQueue data={data.reviewQueue} />
+
+	<!-- 3b · THE SAME RESULT, NAMED AS A METRIC. It sits immediately after the
+	     queue because it is not a second finding: the queue reports the operating
+	     point as a workload (462 flagged, 354 of 452 errors caught) and this
+	     reports the same class of operating point as error-class precision, recall
+	     and F1. Two threshold rules, two derivations, one result — the artifact
+	     reconciles them row by row and gates itself on the residual, which is why
+	     the lead-in can state the agreement instead of asserting it.
+
+	     This is the margin the lede leads with and the verdict ranks first: it is
+	     the one that survives the correction across the reader family, where the
+	     ranking margins in beat 4 do not. Its thresholds are an oracle, and the
+	     figure says so in the open, beside every number the oracle governs. -->
+	<p class="framing">
+		The same result as a number. The queue above and this figure are one finding under two different
+		cutoff rules; {#if errorF1}they disagree by at most
+			{errorF1.reconciliation.worstResidual.toFixed(6)} on error-class F1{:else}reconciled inside the
+			artifact{/if}.
+	</p>
+	<StatementErrorF1 data={data.statementErrorF1} />
+
+	<!-- ── 4 · EVIDENCE FOR THE CLAIM THAT DOES NOT SURVIVE CORRECTION ────────
+	     Ordering the whole list. Seven figures, and every one of them qualifies
+	     THIS margin rather than the one above: what the published measure is, how
+	     much of the margin is interpolation credit, how it behaves once corrected
+	     across four reading models, where in the evidence it comes from, and where
+	     it sits among every other way of scoring belief.
+
+	     They used to open the page, which is how a reader met 1,125 words of
+	     qualification before meeting a claim that survives any of it. Grouped here
+	     they read as what they are: the honest limits of the weaker claim. -->
+
+	<!-- 4a · THE COMPARISON TO THE 2023 RESULT — the fitted models published in
+	     2023 against evidence-gated reading, on the same 1,689 statements, the
+	     same labels and the same 10 folds. It is the only comparison anyone can
+	     check against a published number, which is why the ordering claim is
+	     argued here at all rather than dropped.
 
 	     The AUROC margin used to sit in the lede. It sits here now, beside the
-	     lens that draws it — same arm, same shipped interval, one more decimal,
+	     view that draws it — same model, same shipped interval, one more decimal,
 	     and read off the load instead of typed. The AP margin's own concession
 	     ("the most conservative view") joined it here in the plain-language pass:
 	     it is the same argmax, the same `best.display`, and the sentence that
@@ -356,9 +470,9 @@
 	</p>
 	<!-- THE GLOSS, AND WHY IT IS ITS OWN PARAGRAPH. "Fold" is the field's word and
 	     the audience owns it, so the page uses it — but a word the page uses is a
-	     word the page defines, once, where it is first read. It does not fit in the
-	     lead-in above: that paragraph is at its 35-word budget and every clause in
-	     it carries a claim or a qualification, so buying room would mean dropping
+	     word the page defines, where it is read. It does not fit in the lead-in
+	     above: that paragraph is at its 35-word budget and every clause in it
+	     carries a claim or a qualification, so buying room would mean dropping
 	     one. It buys none here either — this is not a lead-in and is not counted as
 	     one. The second sentence is the asymmetry a reviewer asks about, stated
 	     rather than left to be inferred from the word "fitted". -->
@@ -369,7 +483,7 @@
 	</p>
 	<PaperLiteralComparison data={data.paperLiteral} />
 
-	<!-- 6a · TABLE 6, EXTENDED. It comes BEFORE the banded figure because a ranked
+	<!-- 4b · TABLE 6, EXTENDED. It comes BEFORE the banded figure because a ranked
 	     list is the reading this lab already has for trapezoidal PR-AUC, and
 	     `PaperOwnMetric` bands the newly scored models separately from the
 	     published ones — which is exactly what hides that ranks 1–3 are newly
@@ -383,7 +497,7 @@
 	</p>
 	<PaperTable6Extended data={data.paperTable6Extended} />
 
-	<!-- 6b · trapezoidal PR-AUC, the published numbers and the newly scored models
+	<!-- 4c · trapezoidal PR-AUC, the published numbers and the newly scored models
 	     on one axis -->
 	<p class="framing">
 		The same models again, beside the fifteen published rows from the same configuration. Check how
@@ -392,7 +506,7 @@
 	</p>
 	<PaperOwnMetric data={data.paperOwnMetric} />
 
-	<!-- 6c · why trapezoidal PR-AUC inflates the reading models specifically -->
+	<!-- 4d · why trapezoidal PR-AUC inflates the reading models specifically -->
 	<p class="framing">
 		Why it flatters the reading models. Trapezoidal PR-AUC draws a straight line across tied scores
 		where the real curve steps. They give many statements the same score, collecting credit no cutoff
@@ -400,7 +514,8 @@
 	</p>
 	<TieInflation data={data.tieInflation} />
 
-	<!-- 6d · how that margin behaves under correction and under label completeness -->
+	<!-- 4e · how that margin behaves under correction and under label completeness.
+	     This is the figure the verdict's second and third tiers are read from. -->
 	<p class="framing">
 		How far to trust that margin. Corrected at once across all four reading models it grazes zero;
 		drop the errors whose review never finished and it narrows. Both shown; neither replaces the
@@ -408,7 +523,7 @@
 	</p>
 	<PaperRobustness data={data.paperRobustness} />
 
-	<!-- 7 · where that ranking margin comes from -->
+	<!-- 4f · where that ranking margin comes from -->
 	<p class="framing">
 		Where the margin comes from. Group statements by how much evidence they have — a count neither
 		model chose: the reading models gain most where the formula is weakest. Grouping by a score would
@@ -416,52 +531,38 @@
 	</p>
 	<ApDecompositionByPaperRank data={data.paperLiteral} />
 
-	<!-- 8 · THE SAME MARGIN AS WORK, still on the same 1,689 statements and still
-	     against the published random forest. Placed after the ranking beats because it is
-	     the same comparison expressed as a review budget — and it is the more
-	     robust half: unlike the AP margin it survives max-t correction and
-	     STRENGTHENS on the adjudication-safe subpanel. -->
+	<!-- 4g · every belief model on this benchmark, on one axis. It closes the
+	     ordering beat rather than opening a new one: it is the same measure as
+	     every figure above it, drawn for every model rather than for four. -->
 	<p class="framing">
-		The same finding as a review workload. At its own untuned cutoff the Gemma 4 26B reader flags 462
-		statements and catches 354 of the 452 known errors; the random forest, its cutoff tuned on these
-		very statements, needs 662.
+		Every way of scoring belief on these 1,689 statements, on one axis — all measured from the
+		unfitted noisy-OR that hand-built features and language-model reading each change in their own
+		way.
 	</p>
-	<ReviewQueue data={data.reviewQueue} />
+	<BeliefModelLadder data={data.beliefLadder} />
 
-	<!-- 8b · THE SAME RESULT, NAMED AS A METRIC. It sits immediately after the
-	     queue because it is not a second finding: the queue reports the operating
-	     point as a workload (462 flagged, 354 of 452 errors caught) and this
-	     reports the same class of operating point as error-class precision, recall
-	     and F1. Two threshold rules, two derivations, one result — the artifact
-	     reconciles them row by row and gates itself on the residual, which is why
-	     the lead-in can state the agreement instead of asserting it.
+	<!-- ── 5 · WHY THERE IS ANYTHING TO WIN ───────────────────────────────────
+	     Both claims above are margins over the same starting point, so the reader
+	     is owed an account of what is wrong with that starting point. Two figures
+	     answer it from opposite ends: the per-evidence figure shows the reading
+	     step working at the level the system actually operates at, and the
+	     heuristic figure shows the formula it is measured against never reading a
+	     sentence at all. -->
 
-	     This is the margin the lede now leads with: it is the one that survives the
-	     max-t correction across the reader family, where the ranking margins above
-	     do not. Its thresholds are an oracle, and the figure says so in the open,
-	     beside every number the oracle governs. -->
-	<p class="framing">
-		The same result as a number. The queue above and this figure are one finding under two different
-		cutoff rules; {#if errorF1}they disagree by at most
-			{errorF1.reconciliation.worstResidual.toFixed(6)} on error-class F1{:else}reconciled inside the
-			artifact{/if}.
-	</p>
-	<StatementErrorF1 data={data.statementErrorF1} />
-
-	<!-- 9 · THE GRAIN THE SYSTEM ACTUALLY OPERATES AT — same 1,689 statements,
-	     resolved to the 5,379 evidence pairs underneath them. The reader's native
-	     output is one verdict per pair; statement belief is DERIVED from those
-	     through INDRA's noisy-OR. 3.2x better powered than every beat above, and
-	     it separates reading from aggregation: how much each model gains from the
-	     noisy-OR is how much of its score is NOT reading. The labels come from two
-	     authors of the 2023 paper, which is what makes it checkable at all — that
-	     paper reports no per-evidence baseline.
+	<!-- 5a · THE GRAIN THE SYSTEM ACTUALLY OPERATES AT — the same 1,689
+	     statements, resolved to the 5,379 evidence pairs underneath them. The
+	     reader's native output is one verdict per pair; statement belief is
+	     DERIVED from those through INDRA's noisy-OR. 3.2x better powered than
+	     every beat above, and it separates reading from aggregation: how much each
+	     model gains from the noisy-OR is how much of its score is NOT reading. The
+	     labels come from two authors of the 2023 paper, which is what makes it
+	     checkable at all — that paper reports no per-evidence baseline.
 
 	     The per-evidence margin used to sit in the lede, with the qualification
 	     that its baseline is INDRA's own scorer and not a published model. That
 	     qualification renders nowhere else outside a <details>, so it moved here
-	     rather than being dropped: the arm is NAMED from the load and the value is
-	     printed signed, so a negative margin would read as a loss. -->
+	     rather than being dropped: the model is NAMED from the load and the value
+	     is printed signed, so a negative margin would read as a loss. -->
 	<p class="framing">
 		The level the model works at: one piece of evidence at a time. A statement's score is built from
 		those. Two authors of the 2023 paper labelled 5,379.
@@ -471,27 +572,29 @@
 	</p>
 	<PerEvidenceGrain data={data.paperPerEvidence} />
 
-	<!-- 10 · every belief model on this panel, on one axis -->
-	<p class="framing">
-		Every way of scoring belief on these 1,689 statements, on one axis — all measured from the
-		unfitted noisy-OR that hand-built features and language-model reading each change in their own
-		way.
-	</p>
-	<BeliefModelLadder data={data.beliefLadder} />
-
-	<!-- 11 · why there is anything to win -->
+	<!-- 5b · the formula every margin on this page is measured from, and what it
+	     cannot see -->
 	<p class="framing">
 		Why there is anything to win. The noisy-OR is a lookup table on how many times each source said
 		it — it never reads the sentence.
 	</p>
 	<BeliefHeuristicResponse data={data.beliefHeuristic} />
 
-	<!-- 12 · THE ONE BEAT THAT LEAVES THE 1,689 STATEMENTS. The fitted HybridScorer
-	     INDRA serves today is not in the 2023 paper, so no part of this beat can be
-	     checked against a published number; 3 of this figure's 4 benchmarks are
-	     assembled here rather than published. That is exactly why it sits here and
-	     not in the lede — it is the larger margin (+0.074) but the weaker
-	     provenance. -->
+	<!-- ── 6 · LIMITS THAT APPLY TO EVERYTHING ────────────────────────────────
+	     Not limits on one claim — those sit beside the claim they limit, in beats
+	     3 and 4. These are the three that apply to every number on the page: the
+	     benchmark is 1,689 statements and nothing here says what happens outside
+	     them; ranking well is not being right about the odds; and the design has a
+	     ceiling it can never reach past. -->
+
+	<!-- 6a · THE ONE BEAT THAT LEAVES THE 1,689 STATEMENTS, and it is here because
+	     it is a limit rather than a result. The fitted HybridScorer INDRA serves
+	     today is not in the 2023 paper, so no part of this beat can be checked
+	     against a published number; 3 of this figure's 4 benchmarks are assembled
+	     here rather than published. It is the larger margin (+0.074) and the
+	     weaker provenance, which is why the verdict does not rank it: what it
+	     shows is that the question the verdict cannot settle — how much better, in
+	     general — is a question worth asking, not one this page answers. -->
 	<p class="framing">
 		Beyond these 1,689 statements. That random forest was a research model and never shipped; the
 		belief INDRA serves today is different code. Language-model reading beats every version of it we
@@ -499,16 +602,31 @@
 	</p>
 	<DeployedBaseline data={data.deployedBaseline} />
 
-	<!-- 13 · limits: calibration, then what the gate design costs, then the caveats.
-	     The closing metric caveat that used to sit here is gone: the head-to-head
-	     panel now carries "the published measure flatters the reading models" inside
-	     every lens, so keeping it here was the same concession twice. -->
+	<!-- 6b · calibration, then what the gate design costs. The closing metric
+	     caveat that used to sit here is gone: the head-to-head panel now carries
+	     "the published measure flatters the reading models" inside every view, so
+	     keeping it here was the same concession twice. -->
 	<p class="framing">
 		The limits. Ranking statements better is not the same as getting the odds right: every reading
 		model's numbers are far too extreme to read as probabilities.
 	</p>
 	<PaperReliabilityStrip data={data.paperLiteral} />
 
+	<!-- 6c · WHAT THE DESIGN COSTS, AND THE PAGE-WIDE CAVEATS.
+	     This section used to end in a second verification boundary — a <details>
+	     headed "caveats, verbatim from the artifact" holding the promotion
+	     ceiling's shipped explanation and the review queue's shipped caveat list.
+	     It was one of four such openings, and the reason they are gone is that
+	     each handed a curator a sentence written for a referee, unannounced and
+	     unpaired with the restatement the rest of the page renders. Those shipped
+	     sentences are all in the verification section at the foot of this page,
+	     beside their restatements and under the file and digest they came from,
+	     where a reader can check one against the other instead of meeting the
+	     dialect by accident. `test-paper-audit-trail-contract.mjs` asserts each of
+	     them is reachable there by name.
+	     The caveat below is NOT one of those: it is written on this page, about
+	     this page, and it was behind the same toggle for no reason other than
+	     proximity. It renders in the open now. -->
 	<section class="costs" aria-label="what this design costs">
 		{#if ceiling && zeroed && zeroed.zeroPile}
 			{#if overlap}
@@ -527,18 +645,12 @@
 					{zeroed.display} is missing from the artifact.
 				</p>
 			{/if}
-			<details class="caveats">
-				<summary>caveats, verbatim from the artifact</summary>
-				<p>
-					The head-to-head's bootstrap intervals are not corrected across the models compared, and its
-					legend says so beside the marks. "Error" throughout is the label released in 2023; the
-					framing section above and the ladder both print how those negatives break down.
-				</p>
-				<p>{ceiling.why}</p>
-				{#each queue?.caveats ?? [] as caveat (caveat)}
-					<p>{caveat}</p>
-				{/each}
-			</details>
+			<p class="caveat">
+				Two more that apply throughout. The head-to-head's bootstrap intervals are not corrected
+				across the models compared, and its legend says so beside the marks. "Error" everywhere on
+				this page is the label released in 2023; the framing figure and the ladder above both print
+				how those negatives break down.
+			</p>
 		{:else}
 			<p class="dark">
 				What this design costs is unavailable — {data.reviewQueue.status === 'ok'
@@ -547,6 +659,14 @@
 			</p>
 		{/if}
 	</section>
+
+	<!-- 7 · THE ONE VERIFICATION BOUNDARY, and it is last because it is the only
+	     block on the page addressed to someone checking rather than reading. It
+	     takes this page's own server load straight through — `PageData` satisfies
+	     `PaperAuditPageLoads` structurally — so it adds no read, no adapter and no
+	     second serialization, and every sentence in it is a sentence some figure
+	     above already drew. -->
+	<PaperAuditTrail {data} />
 </main>
 
 <style>
@@ -589,7 +709,7 @@
 		padding-left: 0.7rem;
 		border-left: 1px solid var(--rule);
 	}
-	/* Closing beat: what the gate costs, then the artifact's own caveats. */
+	/* Closing beat: what the reading step costs, then the page-wide caveats. */
 	.costs {
 		margin: 1.4rem 0 0;
 		padding-top: 0.9rem;
@@ -608,27 +728,13 @@
 		font-size: 0.76rem;
 		color: var(--ink-faint);
 	}
-	.caveats {
-		margin-top: 0.6rem;
+	/* The page-wide caveats. They were behind a second verification boundary and
+	   are authored prose, not artifact text, so they read in the open — quieter
+	   than the ceiling paragraph above them, which carries measured numbers. */
+	.costs .caveat {
+		margin-top: 0.8rem;
 		max-width: 74ch;
-	}
-	.caveats summary {
-		font-family: var(--mono);
-		font-size: 0.66rem;
+		font-size: 0.82rem;
 		color: var(--ink-faint);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		cursor: pointer;
-	}
-	.caveats summary:hover {
-		color: var(--ink-muted);
-	}
-	.caveats[open] summary {
-		margin-bottom: 0.6rem;
-	}
-	.caveats p {
-		font-size: 0.78rem;
-		color: var(--ink-faint);
-		margin: 0 0 0.6rem;
 	}
 </style>

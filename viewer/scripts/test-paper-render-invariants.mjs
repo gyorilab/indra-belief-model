@@ -165,9 +165,14 @@ function discoverPaperComponents() {
  * later node will mount — never a file that is already on the page.
  */
 const COMPONENTS_UNMOUNTED = [
-	// The ranked verdict is the FIRST prose on the page and may be all a reader
-	// reads, so it is enforced from the day it lands rather than deferred.
-	'PaperVerdict.svelte'
+	// EMPTY, and that is the point rather than an oversight. `PaperVerdict.svelte`
+	// sat here from the day it landed — enforced before it was mounted, because it
+	// is the FIRST prose on the page and may be all a reader reads. The route now
+	// imports it, and the assertion below refuses to let a mounted file stay named
+	// here, so discovery is the only thing keeping it in scope. `PaperAuditTrail
+	// .svelte` never needed an entry: it came into scope through the same import
+	// graph on the same day. The list stays because the next component built
+	// ahead of its mount needs somewhere to be enforced from.
 ];
 
 const COMPONENTS_MOUNTED = discoverPaperComponents();
