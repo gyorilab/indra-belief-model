@@ -235,8 +235,14 @@ def model_block(name: str, joined: list[tuple[dict, dict]]) -> dict:
     ed_pairs = [(not is_gold_correct(g["tag"]), s["verdict"] == "incorrect") for g, s in joined]
     ed = confusion_pr(ed_pairs)
     # calibration: score is P(correct); is_correct = gold-correct
-    cal = ece([(s.get("score") if s.get("score") is not None else 0.5, is_gold_correct(g["tag"]))
-               for g, s in joined])
+    # Rows with no score are EXCLUDED, not imputed at 0.5. 0.5 is off the
+    # six-cell grid, so imputing it fabricates a measurement for a row the model
+    # never answered — and puts it exactly at the neutral point ECE is most
+    # sensitive to. An absent measurement stays absent.
+    cal_pairs = [(s["score"], is_gold_correct(g["tag"]))
+                 for g, s in joined if s.get("score") is not None]
+    n_unscored = len(joined) - len(cal_pairs)
+    cal = ece(cal_pairs)
     # per-tag correct-call rate
     by_tag: dict[str, list[int]] = defaultdict(lambda: [0, 0])  # [right, total]
     for g, s in joined:
@@ -250,7 +256,8 @@ def model_block(name: str, joined: list[tuple[dict, dict]]) -> dict:
     lo, hi = wilson_ci(acc_hits, n)
     return {
         "name": name, "n": n, "acc": acc_hits / n if n else 0, "acc_ci": (lo, hi),
-        "ed": ed, "ece": cal, "by_tag": dict(by_tag), "by_type": dict(by_type),
+        "ed": ed, "ece": cal, "ece_n": len(cal_pairs), "n_unscored_excluded": n_unscored,
+        "by_tag": dict(by_tag), "by_type": dict(by_type),
     }
 
 

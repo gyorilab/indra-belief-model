@@ -231,9 +231,17 @@ def analyze(name: str, joined, parse_null, missed) -> dict:
     rand_corr = ci / (ci + cc) if (ci + cc) else float("nan")   # P(gold=incorrect|verdict=correct)
     rand_rej = ic / (ic + ii) if (ic + ii) else float("nan")    # P(gold=correct|verdict=incorrect)
 
-    # C0.2 — Tier-1 per-evidence reliability of the grid score
-    ev_pairs = [(s.get("score") if s.get("score") is not None else 0.5,
-                 is_gold_correct(g["tag"])) for g, s in joined]
+    # C0.2 — Tier-1 per-evidence reliability of the grid score.
+    #
+    # A row with no score is EXCLUDED, not imputed. This previously substituted
+    # 0.5, which is not a value the grid can produce: it invented a measurement
+    # for a row the model never successfully answered, placed it at exactly the
+    # neutral point where ECE is most sensitive, and gave it a mid-rank position
+    # in AUROC/AUPRC. An absent measurement is absent; the count is reported so
+    # the exclusion is visible rather than silent.
+    ev_pairs = [(s["score"], is_gold_correct(g["tag"]))
+                for g, s in joined if s.get("score") is not None]
+    n_unscored = len(joined) - len(ev_pairs)
     ev_scores = [p for p, _ in ev_pairs]
     ev_labels = [y for _, y in ev_pairs]
     t1 = {
@@ -244,6 +252,7 @@ def analyze(name: str, joined, parse_null, missed) -> dict:
         "brier": brier_murphy(ev_scores, ev_labels),
         "bins": reliability_bins(ev_scores, ev_labels),
         "n": len(ev_pairs),
+        "n_unscored_excluded": n_unscored,
     }
 
     # C0.3 — Tier-2 per-statement raw-belief headroom (DECISIVE)
