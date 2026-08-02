@@ -1,0 +1,53 @@
+# Operator surface for the batch scoring image.
+#
+# Nothing here bakes data or credentials. `data/` is the corpus — tens of GB,
+# gitignored — and is bind-mounted; the CLI resolves its inputs relative to the
+# working directory, so it must land on /app/data. Tokens come from a .env file
+# the operator owns and which .dockerignore excludes from the build context.
+#
+#   docker compose run --rm status                 # read-only, offline, spends nothing
+#   docker compose run --rm status status --plan data/comparison_verdict_only/run_plan.json
+#   docker compose run --rm arm run --help         # the real entry point
+#
+# NOTE THE REPEATED WORD in the second line, because it reads like a typo and is
+# not. `docker compose run <service> <args>` REPLACES `command:` wholesale rather
+# than appending to it, so overriding the arguments drops the subcommand too and
+# the entry point sees only `--plan ...`. The first `status` is the service, the
+# second is the CLI subcommand.
+#
+# `status` is deliberately given no network and a READ-ONLY mount: it should be
+# impossible for an inspection command to spend money or mutate a ledger.
+
+x-image: &image
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: indra-belief:batch
+
+services:
+  # Inspection. Read-only corpus, no network, no credentials — a command that
+  # cannot cost anything should not be able to reach a provider.
+  status:
+    <<: *image
+    network_mode: none
+    volumes:
+      - ./data:/app/data:ro
+    command: ["status"]
+
+  # Execution. Read-write corpus and credentials, because a run appends to the
+  # attempts log and the hash-chained spend ledger.
+  #
+  # env_file is REQUIRED for anything that dispatches: AWS_BEARER_TOKEN_BEDROCK
+  # for the Bedrock mantle endpoint (model_client.py reads it from the
+  # environment and fails with a named error if absent). Never bake it.
+  arm:
+    <<: *image
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    # A corpus arm runs for hours; do not let a restart policy re-dispatch it.
+    # Resume is crash-safe and derived from the durable rows, so the correct
+    # recovery is an explicit re-invocation, not an automatic one.
+    restart: "no"
+    command: ["--help"]
