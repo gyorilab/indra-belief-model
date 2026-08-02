@@ -22,19 +22,19 @@ disposition), never OUTPUT. `support`/`objection` remain as a reasoning scaffold
 telemetry, not as inputs to a verdict override. Do not re-add the override; sharpen the
 prompt/few-shots instead.
 
+This module is prompt + few-shot RENDERING only. Reading the four-field answer
+back is `indra_belief.verdict`'s job — one parser for every profile, which is
+where `support`/`objection` are recovered and their nullish spellings
+normalized, and where the model's committed verdict passes through unchanged.
+
 Selected via env MONO_VARIANT=disconfirm in the scorer.
 """
 from __future__ import annotations
 
 import json
-import logging
-import re
-
-log = logging.getLogger(__name__)
 
 from indra_belief.scorers.monolithic._prompts import (
     CONTRASTIVE_EXAMPLES,  # noqa: F401 — kept importable for parity
-    extract_verdict as _base_extract_verdict,
 )
 
 # Same rule body as the baseline, but a structured, commit-first output contract.
@@ -120,9 +120,6 @@ Output JSON ONLY, in this order:
 {"relation_check": <one short clause>, "support": <exact evidence quote or null>, "objection": <string or null>, "verdict": "correct" | "incorrect", "confidence": "high" | "medium" | "low"}\
 """
 
-_NULLISH = {"", "none", "null", "n/a", "na", "no objection", "no support", "-"}
-
-
 def render_example(ex: dict) -> tuple[str, str]:
     """Render a base contrastive example in the variant's 4-field format, so the
     few-shots TEACH the structured output. Derives support/objection from the example.
@@ -177,53 +174,3 @@ def render_example_reasonfirst(ex: dict) -> tuple[str, str]:
         ensure_ascii=True,
     )
     return user, assistant
-
-
-def _norm_field(v) -> str | None:
-    if v is None:
-        return None
-    s = str(v).strip()
-    return None if s.lower() in _NULLISH else s
-
-
-def parse_structured(text: str) -> dict:
-    """Pull {support, objection, verdict, confidence} from the model output.
-    Falls back to the base verdict parser when the structured JSON is absent."""
-    out = {"support": None, "objection": None, "verdict": None, "confidence": None}
-    if not text:
-        return out
-    # last balanced object containing "verdict"
-    for m in reversed(list(re.finditer(r"\{[^{}]*\"verdict\"[^{}]*\}", text, re.DOTALL))):
-        try:
-            obj = json.loads(m.group(0))
-        except json.JSONDecodeError:
-            log.debug("parse_structured: skipping unparseable verdict-like span: %r", m.group(0), exc_info=True)
-            continue
-        out["support"] = _norm_field(obj.get("support"))
-        out["objection"] = _norm_field(obj.get("objection"))
-        v = obj.get("verdict")
-        out["verdict"] = v.lower() if isinstance(v, str) else None
-        c = obj.get("confidence")
-        out["confidence"] = c.lower() if isinstance(c, str) else None
-        if out["verdict"] in ("correct", "incorrect"):
-            return out
-    # fallback: base parser (phrase-level)
-    v, c = _base_extract_verdict(text)
-    out["verdict"], out["confidence"] = v, c
-    return out
-
-
-def derive_verdict(parsed: dict) -> tuple[str | None, str | None, str]:
-    """Pass the model's committed verdict through unchanged. Returns
-    (verdict, confidence, rule_applied).
-
-    We deliberately do NOT re-derive the verdict from the parsed `support`/`objection`
-    fields. Output-side determinism — code reading the objection field and flipping the
-    verdict — is what made the scorer reject correct claims whose objection the model had
-    already resolved (e.g. miRNA inverse-inference). The disconfirm disposition lives in
-    the prompt; the verdict the model commits is final. Kept as a thin seam for telemetry
-    and so callers don't change."""
-    v, c = parsed.get("verdict"), parsed.get("confidence")
-    if v is None:
-        return None, None, "parse_null"
-    return v, (c or "medium"), "model"

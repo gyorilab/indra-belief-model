@@ -2,7 +2,10 @@
 
 Wraps an INDRA statement + evidence pair, resolving entities once at
 construction and carrying all derived metadata through the pipeline. Owns
-the Tier-1 auto-reject policy and the user-message rendering.
+the Tier-1 auto-reject policy and every PART of the user message; the join
+that turns those parts into one string belongs to
+`indra_belief.prepared_execution.ExecutionBody`, which the batch replay
+shares.
 """
 from __future__ import annotations
 
@@ -10,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from indra_belief.data.entity import GroundedEntity
+from indra_belief.prepared_execution import ExecutionBody
 
 if TYPE_CHECKING:
     from indra.statements import Statement, Evidence
@@ -355,20 +359,15 @@ class ScoringRecord:
 
         return "\n".join(parts)
 
-    def format_user_message(self) -> str:
-        """Build the complete user message for Tier 2 LLM scoring."""
-        parts = [f"CLAIM: {self.format_claim()}"]
+    def execution_body(self) -> ExecutionBody:
+        """The five parts of the Tier-2 user message, unjoined.
 
-        entity_ctx = self.format_entity_context()
-        if entity_ctx:
-            parts.append(entity_ctx)
-
-        # In-text abbreviation aliases (always-on, INPUT-only; empty unless a
-        # parenthetical definition expands to a claim entity).
-        abbrev_lines = self._abbreviation_alias_lines()
-        if abbrev_lines:
-            parts.append("In-text abbreviations:\n" + "\n".join(abbrev_lines))
-
+        This record owns the PARTS — the claim, the alias context, the
+        abbreviation lines, the provenance block, and the gate below that decides
+        whether provenance is injected at all. It no longer owns the JOIN: that
+        was implemented identically here and in the batch replay, and now lives
+        once in `ExecutionBody.render`.
+        """
         # Provenance: only inject when grounding is flagged (has_grounding_signal).
         # Full-population provenance hurt accuracy by 6.7pp (72.2% vs 78.9% on
         # 3754 records), but the flagged-grounding subset (n=361) is already at
@@ -378,14 +377,15 @@ class ScoringRecord:
             for e in (self.subject_entity, self.object_entity)
             if e
         )
-        if has_flagged_grounding:
-            provenance = self.format_provenance()
-            if provenance:
-                parts.append(provenance)
-
-        parts.append(f'EVIDENCE: "{self.evidence_text}"')
-
-        return "\n".join(parts)
+        return ExecutionBody(
+            claim=self.format_claim(),
+            entity_context=self.format_entity_context(),
+            # In-text abbreviation aliases (always-on, INPUT-only; empty unless a
+            # parenthetical definition expands to a claim entity).
+            abbreviation_lines=tuple(self._abbreviation_alias_lines()),
+            provenance=self.format_provenance() if has_flagged_grounding else "",
+            evidence_text=self.evidence_text,
+        )
 
     # --- Tier 1 deterministic checks ---
 

@@ -1,11 +1,11 @@
-"""System prompt, contrastive examples, and verdict parsing for the scorer.
+"""System prompt and contrastive examples for the scorer's baseline profile.
 
-This module is *data* plus minimal rendering/parsing — no model client, no
-scoring logic. The active scorer in `scorer.py` imports from here.
+This module is *data* plus minimal rendering — no model client, no scoring
+logic, and no parsing: reading the model's reply back belongs to
+`indra_belief.verdict`, which is the one parser every profile shares. The active
+scorer in `scorer.py` imports from here.
 """
 from __future__ import annotations
-
-import re
 
 
 # ---------------------------------------------------------------------------
@@ -215,81 +215,3 @@ def render_example(ex: dict) -> tuple[str, str]:
         f'{{"verdict": "{ex["verdict"]}", "confidence": "{ex["confidence"]}"}}'
     )
     return user, assistant
-
-
-# ---------------------------------------------------------------------------
-# Verdict parsing and score mapping — canonical implementations.
-# Multi-strategy parser: tries strict JSON first, then alternate ordering,
-# then phrase-level extraction from reasoning text. This is the single
-# source of truth; model_client does not duplicate verdict parsing.
-# ---------------------------------------------------------------------------
-
-_JSON_VERDICT = re.compile(
-    r'\{[^{}]*?"verdict"\s*:\s*"(correct|incorrect)"[^{}]*?"confidence"\s*:\s*"(high|medium|low)"[^{}]*?\}',
-    re.IGNORECASE,
-)
-_JSON_VERDICT_REV = re.compile(
-    r'\{[^{}]*?"confidence"\s*:\s*"(high|medium|low)"[^{}]*?"verdict"\s*:\s*"(correct|incorrect)"[^{}]*?\}',
-    re.IGNORECASE,
-)
-
-_VERDICT_PHRASE_PATTERNS = [
-    re.compile(r'"verdict"\s*:\s*"(correct|incorrect)"', re.IGNORECASE),
-    re.compile(r'(?:final\s+)?(?:verdict|decision|conclusion)[^a-z]*?:[^a-z]*?(?:["\'\*]*)(correct|incorrect)', re.IGNORECASE),
-    re.compile(r'\b(?:verdict|decision|answer)\s+(?:is|should be|would be|=)\s*[:"\'\*]*\s*(correct|incorrect)', re.IGNORECASE),
-]
-_CONFIDENCE_PHRASE_PATTERNS = [
-    re.compile(r'"confidence"\s*:\s*"(high|medium|low)"', re.IGNORECASE),
-    re.compile(r'confidence[^a-z]*?:[^a-z]*?(?:["\'\*]*)(high|medium|low)', re.IGNORECASE),
-    re.compile(r'confidence\s+(?:is|level)?[^a-z]*?(high|medium|low)', re.IGNORECASE),
-    re.compile(r'with\s+(high|medium|low)\s+confidence', re.IGNORECASE),
-]
-
-
-def extract_verdict(text: str) -> tuple[str | None, str | None]:
-    """Extract (verdict, confidence) from model output.
-
-    Returns (None, None) when no parseable verdict is found. Tries, in order:
-      1. Strict JSON with verdict before confidence.
-      2. Strict JSON with confidence before verdict.
-      3. Phrase-level extraction — verdict keyword + confidence keyword.
-    """
-    if not text:
-        return None, None
-
-    matches = _JSON_VERDICT.findall(text)
-    if matches:
-        v, c = matches[-1]
-        return v.lower(), c.lower()
-
-    matches = _JSON_VERDICT_REV.findall(text)
-    if matches:
-        c, v = matches[-1]
-        return v.lower(), c.lower()
-
-    verdict = None
-    for pat in _VERDICT_PHRASE_PATTERNS:
-        m = pat.findall(text)
-        if m:
-            verdict = m[-1].lower()
-            break
-    if not verdict:
-        return None, None
-
-    confidence = "medium"
-    for pat in _CONFIDENCE_PHRASE_PATTERNS:
-        m = pat.findall(text)
-        if m:
-            confidence = m[-1].lower()
-            break
-    return verdict, confidence
-
-
-from indra_belief.scorers._shared import VERDICT_SCORE_GRID as _SCORE_GRID
-
-
-def verdict_to_score(verdict: str | None, confidence: str | None) -> float:
-    """Convert (verdict, confidence) to a probability score in [0, 1]."""
-    if verdict is None:
-        return 0.5
-    return _SCORE_GRID.get((verdict, confidence or "medium"), 0.50)

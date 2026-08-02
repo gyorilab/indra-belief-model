@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from indra_belief.scorers.panel.types import CONFIDENCE_RANK, Objection
 
-# verdict x confidence -> score on the shared 0.05-0.95 grid (matches verdict_to_score)
+# verdict x confidence -> score on the shared 0.05-0.95 grid (the same table
+# `indra_belief.verdict.grid_score` reads for the monolithic path)
 from indra_belief.scorers._shared import VERDICT_SCORE_GRID as _SCORE
 
 

@@ -21,8 +21,14 @@ credited as support. If nothing was semantically read, ``belief`` is ``None``
 Three outputs travel together:
   - ``belief``: calibrated hybrid log-odds for fitted readers, hard gate otherwise;
   - ``verdict_statement``: deterministic rejects hard-flag ``incorrect`` while
-    credible LLM rejects route to ``review``;
+    any other credited LLM reject routes to ``review``;
   - tally fields: the evidence/read counts that disambiguate the scalar.
+
+The route and the scalar read the same rows under the same rule: a rejection
+that is credited is credited by both. Confidence used to gate the route but
+never the belief, so a ``low``-confidence rejection could drive ``belief`` to
+0.0 while ``verdict_statement`` still said ``correct``. It cannot now —
+``verdict_statement == "correct"`` implies ``n_incorrect == 0``.
 """
 from __future__ import annotations
 
@@ -34,8 +40,6 @@ from .scorers._shared import GREEK_GLYPHS
 
 # Deterministic grounding rejects: high-precision, credible enough to hard-flag.
 _DETERMINISTIC_TIERS = {"deterministic_mismatch", "deterministic_pseudogene"}
-# LLM verdicts are only credible (for routing to review) at these confidences.
-_CREDIBLE_LLM_CONF = {"high", "medium"}
 # Evidence that was never semantically read — excluded from the belief numerator.
 _NO_TEXT_TIER = "no_text"
 
@@ -68,7 +72,7 @@ class StatementBelief:
     n_null_source: int
     n_distinct_sources: int
     n_credible_incorrect_det: int     # deterministic rejects (hard-flag drivers)
-    n_credible_incorrect_llm: int     # high/medium-confidence LLM incorrects (review drivers)
+    n_credible_incorrect_llm: int     # any credited LLM rejection (review drivers)
     sources: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -194,7 +198,7 @@ def statement_belief(
             n_incorrect += 1
             if tier in _DETERMINISTIC_TIERS:
                 n_cred_det += 1
-            elif (r.get("confidence") or "").lower() in _CREDIBLE_LLM_CONF:
+            else:
                 n_cred_llm += 1
         else:
             # unknown verdict string — treat as unread, do not credit

@@ -68,7 +68,11 @@ while :; do
     while read -r arm attempts; do
         [ -n "$arm" ] || continue
         arm_terminal=0
-        for marker in ALERT COMPLETE; do
+        # SETTLED is terminal too. Omitting it would leave a finished arm
+        # looking non-terminal with a correctly-exited supervisor, so the healer
+        # below would relaunch it forever — and each relaunch would see its own
+        # SETTLED marker and exit immediately.
+        for marker in ALERT COMPLETE SETTLED; do
             if [ -f "$SUP/$arm.$marker" ]; then
                 TERMINAL=$((TERMINAL + 1))
                 arm_terminal=1
@@ -96,7 +100,7 @@ $FLEET
 EOF
 
     if [ "$TERMINAL" -ge "$ARM_COUNT" ]; then
-        log "every arm is terminal (complete or alerted) — monitor exiting"
+        log "every arm is terminal (complete, settled or alerted) — monitor exiting"
         exit 0
     fi
 

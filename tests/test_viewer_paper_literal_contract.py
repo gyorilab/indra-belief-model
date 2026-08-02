@@ -44,6 +44,7 @@ import json
 import math
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -52,8 +53,20 @@ from sklearn.metrics import average_precision_score
 
 from indra_belief.comparison import metrics
 
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from scripts.reproduce_published_statement_beliefs import (  # noqa: E402
+    published_reproduction,
+)
+
+# The statement_belief.py bytes that produced the published arms. The live file
+# may differ; what it COMPUTES may not, and `published_reproduction` is what
+# holds that line. Named so drift in the artifact stays visible.
+_HISTORICAL_STATEMENT_BELIEF_SHA256 = (
+    "8327ff74a8f34a4872abbe37a3754255031605bf9bece07c38e4ba4f6425ed06"
+)
+
 TS_RUNNER = ROOT / "viewer" / "scripts" / "test-paper-literal-contract.mjs"
 # The cross-cutting sweep: the three defect classes that have each shipped more
 # than once across the whole /paper surface (a frozen join key rendered as a
@@ -923,19 +936,30 @@ def test_framing_correction_subtractive_leg_rederives_from_the_prediction_files(
 
 
 def test_framing_correction_declaration_is_what_the_manifests_actually_say() -> None:
-    """Leg (a) is checked against the bundles and the source bytes, not transcribed."""
+    """Leg (a) is checked against the bundles and the source bytes, not transcribed.
+
+    The statement_belief leg is BEHAVIOURAL, the noise_model leg stays byte-exact.
+    A byte digest proved only that a file was untouched; the reproduction proves
+    the 13460 published scores still re-derive exactly from the frozen
+    observations that produced them. The artifact keeps its recorded digest — it
+    is the historical record of the code that made those numbers — so the literal
+    is spelled as a named constant and artifact drift stays visible.
+    """
     framing = _load(_FRAMING_PATH)
     declaration = framing["declaration"]
     assert declaration["required_aggregation"] == _REQUIRED_AGGREGATION
     assert [arm["arm"] for arm in declaration["arms"]] == _FRAMING_ARMS
 
+    assert published_reproduction().ok, [
+        mismatch.describe() for mismatch in published_reproduction().mismatches
+    ]
     aggregation_sha = hashlib.sha256(_AGGREGATION_PATH.read_bytes()).hexdigest()
     assert declaration["aggregation_config"]["sha256"] == aggregation_sha
     sources = {
         "noise_model": (_NOISE_MODEL_PATH,
                         hashlib.sha256(_NOISE_MODEL_PATH.read_bytes()).hexdigest()),
         "statement_belief": (_STATEMENT_BELIEF_PATH,
-                             hashlib.sha256(_STATEMENT_BELIEF_PATH.read_bytes()).hexdigest()),
+                             _HISTORICAL_STATEMENT_BELIEF_SHA256),
     }
     for key, (path, digest) in sources.items():
         assert declaration["implementation_sources"][key]["sha256"] == digest, key

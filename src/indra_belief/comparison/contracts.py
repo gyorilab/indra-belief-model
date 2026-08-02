@@ -297,6 +297,18 @@ class Action:
     execution_keys: tuple[Mapping[str, Any], ...] | None = None
 
 
+# Statuses meaning "this action will never dispatch another source", so it must
+# not be offered as ready again. `replay.resolved_status` is the sole producer.
+#
+# This is deliberately NOT the same set as "a dependent may now start". Only
+# `complete` satisfies a dependency: a settled action holds at least one source
+# with no verdict, so it can never be bundled, and the whole reason its
+# dependents exist is to run after it succeeded. Letting `settled` satisfy
+# `depends_on` would release this plan's three primary arms — $39.96, $39.96 and
+# $309.54 — on the strength of a sensitivity arm that failed.
+TERMINAL_STATUSES = frozenset({"complete", "settled"})
+
+
 @dataclass(frozen=True)
 class AmendmentChange:
     action_id: str
@@ -334,7 +346,15 @@ class RunPlan:
         return {action.id: action for action in self.actions}
 
     def ready_actions(self, statuses: Mapping[str, str]) -> tuple[Action, ...]:
-        allowed = {"pending", "partial", "complete"}
+        # Two different questions, deliberately given two different answers.
+        # "Is this action still schedulable?" is answered by TERMINAL_STATUSES,
+        # so a settled action stops being re-offered. "May its dependents
+        # start?" is answered by `complete` alone, because a settled action can
+        # never be bundled and its successors exist precisely to follow a
+        # successful one. A settled action therefore blocks its dependents, on
+        # purpose: that is a stop, not a deadlock, and the operator clears it by
+        # fixing the cause rather than by waiting.
+        allowed = {"pending", "partial", "settled", "complete"}
         unknown = set(statuses) - set(self.action_by_id)
         if unknown:
             _fail(f"statuses contain unknown actions: {sorted(unknown)}")
@@ -355,7 +375,7 @@ class RunPlan:
         return tuple(
             action
             for action in self.actions
-            if statuses.get(action.id, "pending") != "complete"
+            if statuses.get(action.id, "pending") not in TERMINAL_STATUSES
             and all(
                 statuses.get(dependency, "pending") == "complete"
                 for dependency in action.depends_on

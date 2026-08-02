@@ -20,11 +20,16 @@ from indra_belief.scorers.monolithic.scorer import (
 
 if TYPE_CHECKING:
     from indra_belief.model_client import ModelClient
+    from indra_belief.scorers.monolithic.scorer import ScoringVariant
 
 
-def score_evidence(statement, evidence, client: "ModelClient") -> dict:
-    """Score one (Statement, Evidence) pair via the monolithic pipeline."""
-    return _score_evidence_monolithic(statement, evidence, client)
+def score_evidence(statement, evidence, client: "ModelClient", *,
+                   variant: "ScoringVariant | None" = None) -> dict:
+    """Score one (Statement, Evidence) pair via the monolithic pipeline.
+
+    `variant` selects the scoring profile; None keeps the module default.
+    """
+    return _score_evidence_monolithic(statement, evidence, client, variant=variant)
 
 
 def score_statement(statement, client: "ModelClient") -> list[dict]:

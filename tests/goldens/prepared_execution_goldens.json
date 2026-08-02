@@ -1,0 +1,2598 @@
+{
+  "_gilda_table": {
+    "get_names": {
+      "HGNC\t12665": [
+        "MV",
+        "Metavinculin",
+        "VCL",
+        "VINC",
+        "Vinculin",
+        "metavinculin",
+        "vinculin"
+      ],
+      "HGNC\t12796": [
+        "AWT1",
+        "GUD",
+        "NPHS4",
+        "WAGR",
+        "WIT-2",
+        "WT-1",
+        "WT1",
+        "WT1 transcription factor",
+        "WT33",
+        "Wilms tumor protein"
+      ],
+      "HGNC\t13017": [
+        "BMZF-2",
+        "BMZF2",
+        "Bone marrow zinc finger 2",
+        "KOX22",
+        "ZNF224",
+        "ZNF233",
+        "ZNF255",
+        "ZNF27",
+        "Zinc finger protein 224",
+        "Zinc finger protein 233",
+        "Zinc finger protein 255",
+        "Zinc finger protein 27",
+        "Zinc finger protein KOX22",
+        "zinc finger protein 224"
+      ],
+      "HGNC\t14565": [
+        "CAP",
+        "FLJ12406",
+        "KIAA0894",
+        "KIAA1296",
+        "Ponsin",
+        "SH3 domain protein 5",
+        "SH3D5",
+        "SH3P12",
+        "SORBS1",
+        "Sorbin and SH3 domain-containing protein 1",
+        "c-Cbl-associated protein",
+        "ponsin",
+        "sh3p12",
+        "sorbin and SH3 domain containing 1"
+      ]
+    },
+    "ground": {
+      "IL-6": [
+        [
+          "HGNC",
+          "6018",
+          "IL6",
+          1.0
+        ]
+      ],
+      "Ponsin": [
+        [
+          "HGNC",
+          "14565",
+          "SORBS1",
+          0.5555555555555556
+        ]
+      ],
+      "SORBS1": [
+        [
+          "HGNC",
+          "14565",
+          "SORBS1",
+          0.7777777777777778
+        ]
+      ],
+      "VCL": [
+        [
+          "HGNC",
+          "12665",
+          "VCL",
+          0.7777777777777778
+        ]
+      ],
+      "WT1": [
+        [
+          "HGNC",
+          "12796",
+          "WT1",
+          0.7777777777777778
+        ],
+        [
+          "DOID",
+          "DOID:5183",
+          "hereditary Wilms' tumor",
+          0.5555555555555556
+        ]
+      ],
+      "ZNF224": [
+        [
+          "HGNC",
+          "13017",
+          "ZNF224",
+          0.7777777777777778
+        ]
+      ],
+      "interleukin-6": [
+        [
+          "HGNC",
+          "6018",
+          "IL6",
+          0.7623170480313337
+        ]
+      ],
+      "vinculin": [
+        [
+          "HGNC",
+          "12665",
+          "VCL",
+          0.7777777777777778
+        ],
+        [
+          "MESH",
+          "D016596",
+          "Vinculin",
+          0.7623170480313337
+        ]
+      ]
+    }
+  },
+  "_inputs": {
+    "entities": {
+      "032b35a7db1fe6a27834a88cf6f99db2fd98ffcfe3e33ee7395d9de9b09bcfd9": {
+        "aliases": [
+          "CAP",
+          "SH3D5",
+          "Ponsin",
+          "SH3P12",
+          "ponsin",
+          "sh3p12"
+        ],
+        "all_names": [
+          "CAP",
+          "FLJ12406",
+          "KIAA0894",
+          "KIAA1296",
+          "Ponsin",
+          "SH3 domain protein 5",
+          "SH3D5",
+          "SH3P12",
+          "SORBS1",
+          "Sorbin and SH3 domain-containing protein 1",
+          "c-Cbl-associated protein",
+          "ponsin",
+          "sh3p12",
+          "sorbin and SH3 domain containing 1"
+        ],
+        "canonical": "SORBS1",
+        "competing_candidates": [],
+        "db": "HGNC",
+        "db_id": "14565",
+        "description": "Sorbin and SH3 domain-containing protein 1",
+        "entity_key_sha256": "032b35a7db1fe6a27834a88cf6f99db2fd98ffcfe3e33ee7395d9de9b09bcfd9",
+        "family_members": [],
+        "gilda_score": 0.5555555555555556,
+        "is_family": false,
+        "is_known_alias": true,
+        "is_low_confidence": false,
+        "is_pseudogene": false,
+        "name": "SORBS1",
+        "raw_text": "Ponsin",
+        "text_top_name": "SORBS1",
+        "verification_note": "\"Ponsin\" resolves to SORBS1 = SORBS1",
+        "verification_status": "MATCH"
+      },
+      "19a8ce1089d5ae8ddef8c81b3511d5e6e9cc023676deefa3338326a344f1b6cd": {
+        "aliases": [
+          "MV",
+          "VINC",
+          "Vinculin",
+          "vinculin",
+          "Metavinculin",
+          "metavinculin"
+        ],
+        "all_names": [
+          "MV",
+          "Metavinculin",
+          "VCL",
+          "VINC",
+          "Vinculin",
+          "metavinculin",
+          "vinculin"
+        ],
+        "canonical": "VCL",
+        "competing_candidates": [
+          {
+            "db": "MESH",
+            "description": "",
+            "id": "D016596",
+            "is_pseudogene": false,
+            "name": "Vinculin",
+            "score": 0.7623170480313337
+          }
+        ],
+        "db": "HGNC",
+        "db_id": "12665",
+        "description": "",
+        "entity_key_sha256": "19a8ce1089d5ae8ddef8c81b3511d5e6e9cc023676deefa3338326a344f1b6cd",
+        "family_members": [],
+        "gilda_score": 0.7777777777777778,
+        "is_family": false,
+        "is_known_alias": false,
+        "is_low_confidence": false,
+        "is_pseudogene": false,
+        "name": "VCL",
+        "raw_text": "vinculin",
+        "text_top_name": "VCL",
+        "verification_note": "\"vinculin\" is ambiguous: grounds to VCL and also Vinculin (equal confidence) — disambiguate from evidence",
+        "verification_status": "AMBIGUOUS"
+      },
+      "2f2090a90dbcab126606978cf7054185797c12529270fee113c3578eaf92770e": {
+        "aliases": [
+          "MV",
+          "VINC",
+          "Vinculin",
+          "vinculin",
+          "Metavinculin",
+          "metavinculin"
+        ],
+        "all_names": [
+          "MV",
+          "Metavinculin",
+          "VCL",
+          "VINC",
+          "Vinculin",
+          "metavinculin",
+          "vinculin"
+        ],
+        "canonical": "VCL",
+        "competing_candidates": [],
+        "db": "HGNC",
+        "db_id": "12665",
+        "description": "",
+        "entity_key_sha256": "2f2090a90dbcab126606978cf7054185797c12529270fee113c3578eaf92770e",
+        "family_members": [],
+        "gilda_score": null,
+        "is_family": false,
+        "is_known_alias": false,
+        "is_low_confidence": false,
+        "is_pseudogene": false,
+        "name": "VCL",
+        "raw_text": null,
+        "text_top_name": null,
+        "verification_note": "",
+        "verification_status": null
+      },
+      "37a31a8f4b88e69e9b4291c445e1e65c7849510ac9e2af080233be8e388b9c0e": {
+        "aliases": [
+          "TRAP1",
+          "GRP94B",
+          "GRP94b",
+          "HSPCP2",
+          "TRA1P1",
+          "GRP94P1"
+        ],
+        "all_names": [
+          "GRP94B",
+          "GRP94P1",
+          "GRP94b",
+          "HSP90B2P",
+          "HSPCP2",
+          "Putative endoplasmin-like protein",
+          "Putative heat shock protein 90 kDa beta member 2",
+          "TRA1P1",
+          "TRAP1",
+          "heat shock protein 90 beta family member 2, pseudogene"
+        ],
+        "canonical": "HSP90B2P",
+        "competing_candidates": [
+          {
+            "db": "CHEBI",
+            "description": "",
+            "id": "CHEBI:50430",
+            "is_pseudogene": false,
+            "name": "N-(3-carboxypropanoyl)-N-hydroxyputrescine",
+            "score": 0.5555555555555556
+          }
+        ],
+        "db": "HGNC",
+        "db_id": "12099",
+        "description": "Putative heat shock protein 90 kDa beta member 2",
+        "entity_key_sha256": "37a31a8f4b88e69e9b4291c445e1e65c7849510ac9e2af080233be8e388b9c0e",
+        "family_members": [],
+        "gilda_score": 0.5555555555555556,
+        "is_family": false,
+        "is_known_alias": false,
+        "is_low_confidence": false,
+        "is_pseudogene": true,
+        "name": "HSP90B2P",
+        "raw_text": "HSP",
+        "text_top_name": "N-(3-carboxypropanoyl)-N-hydroxyputrescine",
+        "verification_note": "\"HSP\" independently grounds to N-(3-carboxypropanoyl)-N-hydroxyputrescine (CHEBI:CHEBI:50430), NOT HSP90B2P",
+        "verification_status": "MISMATCH"
+      },
+      "520a66873b5aa390a88924e270fb06c0286404c0572f4ca9668f4a375aa357aa": {
+        "aliases": [
+          "CAP",
+          "SH3D5",
+          "Ponsin",
+          "SH3P12",
+          "ponsin",
+          "sh3p12"
+        ],
+        "all_names": [
+          "CAP",
+          "FLJ12406",
+          "KIAA0894",
+          "KIAA1296",
+          "Ponsin",
+          "SH3 domain protein 5",
+          "SH3D5",
+          "SH3P12",
+          "SORBS1",
+          "Sorbin and SH3 domain-containing protein 1",
+          "c-Cbl-associated protein",
+          "ponsin",
+          "sh3p12",
+          "sorbin and SH3 domain containing 1"
+        ],
+        "canonical": "SORBS1",
+        "competing_candidates": [],
+        "db": "HGNC",
+        "db_id": "14565",
+        "description": "Sorbin and SH3 domain-containing protein 1",
+        "entity_key_sha256": "520a66873b5aa390a88924e270fb06c0286404c0572f4ca9668f4a375aa357aa",
+        "family_members": [],
+        "gilda_score": null,
+        "is_family": false,
+        "is_known_alias": false,
+        "is_low_confidence": false,
+        "is_pseudogene": false,
+        "name": "SORBS1",
+        "raw_text": null,
+        "text_top_name": null,
+        "verification_note": "",
+        "verification_status": null
+      },
+      "57e4ae2cfe64f3bc5fe9f6495b4da5b1c66fc36b08aa0bbb7bfa6ebaded1997b": {
+        "aliases": [
+          "BMZF2",
+          "KOX22",
+          "ZNF27",
+          "BMZF-2",
+          "ZNF233",
+          "ZNF255"
+        ],
+        "all_names": [
+          "BMZF-2",
+          "BMZF2",
+          "Bone marrow zinc finger 2",
+          "KOX22",
+          "ZNF224",
+          "ZNF233",
+          "ZNF255",
+          "ZNF27",
+          "Zinc finger protein 224",
+          "Zinc finger protein 233",
+          "Zinc finger protein 255",
+          "Zinc finger protein 27",
+          "Zinc finger protein KOX22",
+          "zinc finger protein 224"
+        ],
+        "canonical": "ZNF224",
+        "competing_candidates": [],
+        "db": "HGNC",
+        "db_id": "13017",
+        "description": "Bone marrow zinc finger 2",
+        "entity_key_sha256": "57e4ae2cfe64f3bc5fe9f6495b4da5b1c66fc36b08aa0bbb7bfa6ebaded1997b",
+        "family_members": [],
+        "gilda_score": null,
+        "is_family": false,
+        "is_known_alias": false,
+        "is_low_confidence": false,
+        "is_pseudogene": false,
+        "name": "ZNF224",
+        "raw_text": "ZNF224",
+        "text_top_name": null,
+        "verification_note": "",
+        "verification_status": null
+      },
+      "937888104bbd7e55cdca79c1e44d3cd9f01c7d4977e7f9273856c94e42f2abd6": {
+        "aliases": [
+          "Plasminogen",
+          "plasminogen",
+          "Profibrinolysin"
+        ],
+        "all_names": [
+          "PLG",
+          "Plasminogen",
+          "Profibrinolysin",
+          "plasminogen"
+        ],
+        "canonical": "PLG",
+        "competing_candidates": [],
+        "db": "HGNC",
+        "db_id": "9071",
+        "description": "Profibrinolysin",
+        "entity_key_sha256": "937888104bbd7e55cdca79c1e44d3cd9f01c7d4977e7f9273856c94e42f2abd6",
+        "family_members": [],
+        "gilda_score": 0.7777777777777778,
+        "is_family": false,
+        "is_known_alias": true,
+        "is_low_confidence": false,
+        "is_pseudogene": false,
+        "name": "PLG",
+        "raw_text": "plasminogen",
+        "text_top_name": "PLG",
+        "verification_note": "\"plasminogen\" resolves to PLG = PLG",
+        "verification_status": "MATCH"
+      },
+      "aed949550bed4eac99a3bca89c2900885f8f3ec8409e782a63644893dd5598ff": {
+        "aliases": [
+          "CDF",
+          "HGF",
+          "HSF",
+          "BSF2",
+          "IL-6",
+          "BSF-2"
+        ],
+        "all_names": [
+          "B Cell Differentiation Factor",
+          "B Cell Differentiation Factor 2",
+          "B Cell Stimulatory Factor 2",
+          "B Cell Stimulatory Factor-2",
+          "B-Cell Differentiation Factor",
+          "B-Cell Differentiation Factor-2",
+          "B-Cell Stimulatory Factor 2",
+          "B-Cell Stimulatory Factor-2",
+          "B-cell stimulatory factor 2",
+          "BSF-2",
+          "BSF2",
+          "CDF",
+          "CTL differentiation factor",
+          "Differentiation Factor 2, B Cell",
+          "Differentiation Factor, B Cell",
+          "Differentiation Factor, B-Cell",
+          "Differentiation Factor-2, B-Cell",
+          "Differentiation-Inducing Protein, Myeloid",
+          "Growth Factor, Hybridoma",
+          "Growth Factor, Plasmacytoma",
+          "HGF",
+          "HSF",
+          "Hepatocyte Stimulating Factor",
+          "Hepatocyte-Stimulating Factor",
+          "Hybridoma Growth Factor",
+          "Hybridoma growth factor",
+          "IFN-beta 2",
+          "IFN-beta-2",
+          "IFNB2",
+          "IL-6",
+          "IL6",
+          "Interferon beta 2",
+          "Interferon beta-2",
+          "Interleukin 6",
+          "Interleukin-6",
+          "MGI-2",
+          "Myeloid Differentiation Inducing Protein",
+          "Myeloid Differentiation-Inducing Protein",
+          "Plasmacytoma Growth Factor",
+          "beta-2, Interferon",
+          "interferon, beta 2",
+          "interleukin 6"
+        ],
+        "canonical": "IL6",
+        "competing_candidates": [],
+        "db": "HGNC",
+        "db_id": "6018",
+        "description": "Differentiation-Inducing Protein, Myeloid",
+        "entity_key_sha256": "aed949550bed4eac99a3bca89c2900885f8f3ec8409e782a63644893dd5598ff",
+        "family_members": [],
+        "gilda_score": 0.7623170480313337,
+        "is_family": false,
+        "is_known_alias": true,
+        "is_low_confidence": false,
+        "is_pseudogene": false,
+        "name": "IL6",
+        "raw_text": "interleukin-6",
+        "text_top_name": "IL6",
+        "verification_note": "\"interleukin-6\" resolves to IL6 = IL6",
+        "verification_status": "MATCH"
+      },
+      "cfb5e048d5218ddf13cddd72c2626286238a80606dd86393806d6fc933eb6e41": {
+        "aliases": [
+          "GUD",
+          "AWT1",
+          "WAGR",
+          "WT-1",
+          "WT33",
+          "NPHS4"
+        ],
+        "all_names": [
+          "AWT1",
+          "GUD",
+          "NPHS4",
+          "WAGR",
+          "WIT-2",
+          "WT-1",
+          "WT1",
+          "WT1 transcription factor",
+          "WT33",
+          "Wilms tumor protein"
+        ],
+        "canonical": "WT1",
+        "competing_candidates": [],
+        "db": "HGNC",
+        "db_id": "12796",
+        "description": "WT1 transcription factor",
+        "entity_key_sha256": "cfb5e048d5218ddf13cddd72c2626286238a80606dd86393806d6fc933eb6e41",
+        "family_members": [],
+        "gilda_score": null,
+        "is_family": false,
+        "is_known_alias": false,
+        "is_low_confidence": false,
+        "is_pseudogene": false,
+        "name": "WT1",
+        "raw_text": "WT1",
+        "text_top_name": null,
+        "verification_note": "",
+        "verification_status": null
+      },
+      "d859480d33a72fa77535f652ecbb836894d2deecb0ab01cf4125301cbaa0de3f": {
+        "aliases": [
+          "CAP",
+          "SH3D5",
+          "Ponsin",
+          "SH3P12",
+          "ponsin",
+          "sh3p12"
+        ],
+        "all_names": [
+          "CAP",
+          "FLJ12406",
+          "KIAA0894",
+          "KIAA1296",
+          "Ponsin",
+          "SH3 domain protein 5",
+          "SH3D5",
+          "SH3P12",
+          "SORBS1",
+          "Sorbin and SH3 domain-containing protein 1",
+          "c-Cbl-associated protein",
+          "ponsin",
+          "sh3p12",
+          "sorbin and SH3 domain containing 1"
+        ],
+        "canonical": "SORBS1",
+        "competing_candidates": [
+          {
+            "db": "CHEBI",
+            "description": "",
+            "id": "CHEBI:36080",
+            "is_pseudogene": false,
+            "name": "protein",
+            "score": 0.7777777777777778
+          }
+        ],
+        "db": "HGNC",
+        "db_id": "14565",
+        "description": "Sorbin and SH3 domain-containing protein 1",
+        "entity_key_sha256": "d859480d33a72fa77535f652ecbb836894d2deecb0ab01cf4125301cbaa0de3f",
+        "family_members": [],
+        "gilda_score": 0.7777777777777778,
+        "is_family": false,
+        "is_known_alias": false,
+        "is_low_confidence": false,
+        "is_pseudogene": false,
+        "name": "SORBS1",
+        "raw_text": "protein",
+        "text_top_name": "protein",
+        "verification_note": "\"protein\" independently grounds to protein (CHEBI:CHEBI:36080), NOT SORBS1",
+        "verification_status": "MISMATCH"
+      },
+      "f93d0315d2ae6a42709dcc9593802c666ad31983edb04c5de7226ffc2801b0fd": {
+        "aliases": [
+          "FLJ20032",
+          "KIAA1546"
+        ],
+        "all_names": [
+          "FLJ20032",
+          "KIAA1546",
+          "Methylcytosine dioxygenase TET2",
+          "TET2",
+          "ten-eleven translocation 2",
+          "tet methylcytosine dioxygenase 2"
+        ],
+        "canonical": "TET2",
+        "competing_candidates": [],
+        "db": "HGNC",
+        "db_id": "25941",
+        "description": "Methylcytosine dioxygenase TET2",
+        "entity_key_sha256": "f93d0315d2ae6a42709dcc9593802c666ad31983edb04c5de7226ffc2801b0fd",
+        "family_members": [],
+        "gilda_score": null,
+        "is_family": false,
+        "is_known_alias": false,
+        "is_low_confidence": false,
+        "is_pseudogene": false,
+        "name": "TET2",
+        "raw_text": "Tet2",
+        "text_top_name": null,
+        "verification_note": "",
+        "verification_status": null
+      }
+    },
+    "rows": {
+      "0:0": {
+        "abbreviation_lines": [],
+        "claim": "WT1 + ZNF224 [Complex]",
+        "entity_context": "Entities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)",
+        "entity_refs": {
+          "object": "57e4ae2cfe64f3bc5fe9f6495b4da5b1c66fc36b08aa0bbb7bfa6ebaded1997b",
+          "subject": "cfb5e048d5218ddf13cddd72c2626286238a80606dd86393806d6fc933eb6e41"
+        },
+        "evidence_i": 0,
+        "evidence_metadata": {
+          "found_by": "binding_token_5",
+          "is_direct": true,
+          "pmid": "26320177",
+          "raw_text": [
+            "WT1",
+            "ZNF224"
+          ],
+          "source_api": "reach",
+          "text": "In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia."
+        },
+        "lookup_refs": [],
+        "main_message_prefix_ref": "c5551c23906974fbfc18bf227778c453d2ae4e4b0038fc4aaddc2707abb77faa",
+        "main_prompt_base_sha256": "778060f43554543c723781350a56fc68f86dcd779ee31ca009d7c4c3b3efa07c",
+        "main_system_ref": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+        "object_name": "ZNF224",
+        "provenance": "",
+        "relation_note_insertion": {
+          "empty_note_inserts_prefix": false,
+          "message_index": 28,
+          "prefix_if_nonempty": "\n\n",
+          "role": "user",
+          "utf8_byte_offset": 453
+        },
+        "route": "plain",
+        "statement_type": "Complex",
+        "stmt_i": 0,
+        "subject_name": "WT1",
+        "workload": "unique_exact_pairs_primary"
+      },
+      "2:0": {
+        "abbreviation_lines": [],
+        "claim": "VCL + SORBS1 [Complex]",
+        "entity_context": "Entities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)",
+        "entity_refs": {
+          "object": "032b35a7db1fe6a27834a88cf6f99db2fd98ffcfe3e33ee7395d9de9b09bcfd9",
+          "subject": "19a8ce1089d5ae8ddef8c81b3511d5e6e9cc023676deefa3338326a344f1b6cd"
+        },
+        "evidence_i": 0,
+        "evidence_metadata": {
+          "found_by": "binding1b",
+          "is_direct": true,
+          "pmid": "16125169",
+          "raw_text": [
+            "vinculin",
+            "Ponsin"
+          ],
+          "source_api": "reach",
+          "text": "Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor."
+        },
+        "lookup_refs": [
+          "7235dff78aec3b9090f48215712f2d22b89b24ff0c5c6d578b0903224d84ce36",
+          "838a5315e237a4ef53e6fc5d86f6479081063c077233721417ba7c3acfc0adef"
+        ],
+        "main_message_prefix_ref": "c5551c23906974fbfc18bf227778c453d2ae4e4b0038fc4aaddc2707abb77faa",
+        "main_prompt_base_sha256": "f794e9a60a283079bae162f47ed49c1e269fd925bc876a8acd1f1d5f2b4d6782",
+        "main_system_ref": "6b0132507d102e4fa0d4748e846401ed989d3c74802b5bf1472c7465b385189c",
+        "object_name": "SORBS1",
+        "provenance": "",
+        "relation_note_insertion": {
+          "empty_note_inserts_prefix": false,
+          "message_index": 28,
+          "prefix_if_nonempty": "\n\n",
+          "role": "user",
+          "utf8_byte_offset": 349
+        },
+        "route": "tool",
+        "statement_type": "Complex",
+        "stmt_i": 2,
+        "subject_name": "VCL",
+        "workload": "unique_exact_pairs_primary"
+      },
+      "2:31": {
+        "abbreviation_lines": [],
+        "claim": "VCL + SORBS1 [Complex]",
+        "entity_context": "Entities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)",
+        "entity_refs": {
+          "object": "d859480d33a72fa77535f652ecbb836894d2deecb0ab01cf4125301cbaa0de3f",
+          "subject": "19a8ce1089d5ae8ddef8c81b3511d5e6e9cc023676deefa3338326a344f1b6cd"
+        },
+        "evidence_i": 31,
+        "evidence_metadata": {
+          "found_by": "binding1b",
+          "is_direct": true,
+          "pmid": "10085297",
+          "raw_text": [
+            "vinculin",
+            "protein"
+          ],
+          "source_api": "reach",
+          "text": "Furthermore, we have found that the l-afadin-binding protein directly bound vinculin, an F-actin-binding protein that is localized at ZA in epithelial cells, at cell-cell AJ in nonepithelial cells, and at cell-matrix AJ in both types of cells."
+        },
+        "lookup_refs": [],
+        "main_message_prefix_ref": "c5551c23906974fbfc18bf227778c453d2ae4e4b0038fc4aaddc2707abb77faa",
+        "main_prompt_base_sha256": "34e755f34a63064b3ea914876e5137b4663466cab254a44623798980ab9d6ef8",
+        "main_system_ref": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+        "object_name": "SORBS1",
+        "provenance": "Extraction provenance:\n  Subject: NLP extracted \"vinculin\" → VCL (confirmed alias)\n  Object: NLP extracted \"protein\" → mapped to SORBS1 (MISMATCH — \"protein\" is a DIFFERENT entity, gilda: 0.78)\n  Reader: reach, pattern: binding1b",
+        "relation_note_insertion": null,
+        "route": "deterministic_mismatch",
+        "statement_type": "Complex",
+        "stmt_i": 2,
+        "subject_name": "VCL",
+        "workload": "unique_exact_pairs_primary"
+      },
+      "2:41": {
+        "abbreviation_lines": [],
+        "claim": "VCL + SORBS1 [Complex]",
+        "entity_context": "Entities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)",
+        "entity_refs": {
+          "object": "520a66873b5aa390a88924e270fb06c0286404c0572f4ca9668f4a375aa357aa",
+          "subject": "2f2090a90dbcab126606978cf7054185797c12529270fee113c3578eaf92770e"
+        },
+        "evidence_i": 41,
+        "evidence_metadata": {
+          "found_by": "",
+          "is_direct": null,
+          "pmid": "10085297",
+          "raw_text": [
+            null,
+            null
+          ],
+          "source_api": "hprd",
+          "text": ""
+        },
+        "lookup_refs": [],
+        "main_message_prefix_ref": "c5551c23906974fbfc18bf227778c453d2ae4e4b0038fc4aaddc2707abb77faa",
+        "main_prompt_base_sha256": "6aafbea4e0b2df1a2ca67e1989a6c03edf92aeb9726a8d69c881bbbd98eef2f6",
+        "main_system_ref": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+        "object_name": "SORBS1",
+        "provenance": "",
+        "relation_note_insertion": null,
+        "route": "no_text",
+        "statement_type": "Complex",
+        "stmt_i": 2,
+        "subject_name": "VCL",
+        "workload": "unique_exact_pairs_primary"
+      },
+      "8:0": {
+        "abbreviation_lines": [
+          "  In-text abbreviation: \"IL-6\" = interleukin-6 (= the object IL6)"
+        ],
+        "claim": "TET2 [Inhibition] IL6",
+        "entity_context": "Entities: TET2 (HGNC: TET2, aliases: FLJ20032, KIAA1546) | IL6 (HGNC: IL6, aliases: CDF, HGF, HSF, BSF2, IL-6, BSF-2)",
+        "entity_refs": {
+          "object": "aed949550bed4eac99a3bca89c2900885f8f3ec8409e782a63644893dd5598ff",
+          "subject": "f93d0315d2ae6a42709dcc9593802c666ad31983edb04c5de7226ffc2801b0fd"
+        },
+        "evidence_i": 0,
+        "evidence_metadata": {
+          "found_by": "Positive_activation_syntax_1_verb",
+          "is_direct": false,
+          "pmid": "26287468",
+          "raw_text": [
+            "Tet2",
+            "interleukin-6"
+          ],
+          "source_api": "reach",
+          "text": "Here we show that Tet2 selectively mediates active repression of interleukin-6 (IL-6) transcription during inflammation resolution in innate myeloid cells, including dendritic cells and macrophages."
+        },
+        "lookup_refs": [],
+        "main_message_prefix_ref": "0e6487a2982fdcc9721426826642648a1322920ad218bec4bf76f3b8b85e7176",
+        "main_prompt_base_sha256": "89192b2c585079449a84a7e4fff5835318426f518c83b813d7431c4e8fa66cd4",
+        "main_system_ref": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+        "object_name": "IL6",
+        "provenance": "",
+        "relation_note_insertion": null,
+        "route": "plain",
+        "statement_type": "Inhibition",
+        "stmt_i": 8,
+        "subject_name": "TET2",
+        "workload": "unique_exact_pairs_primary"
+      },
+      "909:0": {
+        "abbreviation_lines": [],
+        "claim": "HSP90B2P + PLG [Complex]",
+        "entity_context": "Entities: HSP90B2P (HGNC: HSP90B2P, aliases: TRAP1, GRP94B, GRP94b, HSPCP2, TRA1P1, GRP94P1) | PLG (HGNC: PLG, aliases: Plasminogen, plasminogen, Profibrinolysin)",
+        "entity_refs": {
+          "object": "937888104bbd7e55cdca79c1e44d3cd9f01c7d4977e7f9273856c94e42f2abd6",
+          "subject": "37a31a8f4b88e69e9b4291c445e1e65c7849510ac9e2af080233be8e388b9c0e"
+        },
+        "evidence_i": 0,
+        "evidence_metadata": {
+          "found_by": "",
+          "is_direct": null,
+          "pmid": "17206383",
+          "raw_text": [
+            "HSP",
+            "plasminogen"
+          ],
+          "source_api": "trips",
+          "text": "Since many hsps have also been found to be highly abundant on cell surfaces and there is evidence that bacterial surface hsps may interact with human plasminogen, the purpose of this study was to determine whether human plasminogen and angiostatin would interact with human hsps."
+        },
+        "lookup_refs": [],
+        "main_message_prefix_ref": "c5551c23906974fbfc18bf227778c453d2ae4e4b0038fc4aaddc2707abb77faa",
+        "main_prompt_base_sha256": "3b9c069cabe0395eba11fc2df0c6bb9171bfed70144ee91fc56c6aa9094dbc07",
+        "main_system_ref": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+        "object_name": "PLG",
+        "provenance": "Extraction provenance:\n  Subject: NLP extracted \"HSP\" → mapped to HSP90B2P (MISMATCH — \"HSP\" is a DIFFERENT entity, gilda: 0.56)\n  Object: NLP extracted \"plasminogen\" → PLG (confirmed alias)",
+        "relation_note_insertion": null,
+        "route": "deterministic_pseudogene",
+        "statement_type": "Complex",
+        "stmt_i": 909,
+        "subject_name": "HSP90B2P",
+        "workload": "unique_exact_pairs_primary"
+      }
+    },
+    "substrate": "data/comparison/grounding_replay",
+    "verdict_only_rows": {
+      "0:0": {
+        "abbreviation_lines": [],
+        "claim": "WT1 + ZNF224 [Complex]",
+        "entity_context": "Entities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)",
+        "entity_refs": {
+          "object": "57e4ae2cfe64f3bc5fe9f6495b4da5b1c66fc36b08aa0bbb7bfa6ebaded1997b",
+          "subject": "cfb5e048d5218ddf13cddd72c2626286238a80606dd86393806d6fc933eb6e41"
+        },
+        "evidence_i": 0,
+        "evidence_metadata": {
+          "found_by": "binding_token_5",
+          "is_direct": true,
+          "pmid": "26320177",
+          "raw_text": [
+            "WT1",
+            "ZNF224"
+          ],
+          "source_api": "reach",
+          "text": "In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia."
+        },
+        "lookup_refs": [],
+        "main_message_prefix_ref": "7ecee0380a156498d6be0429930a0e9ee2e3689bbafc121007093acb96aad2ac",
+        "main_prompt_base_sha256": "5036182c7ee1e33195cb7cde352b9c805eda41efd7df0df949259df9ce3272ca",
+        "main_system_ref": "5781a5842d11ab44989814ddd850252e028b00038d75068f6365dddf69df9fe0",
+        "object_name": "ZNF224",
+        "provenance": "",
+        "relation_note_insertion": null,
+        "route": "plain",
+        "statement_type": "Complex",
+        "stmt_i": 0,
+        "subject_name": "WT1",
+        "workload": "unique_exact_pairs_primary"
+      },
+      "2:0": {
+        "abbreviation_lines": [],
+        "claim": "VCL + SORBS1 [Complex]",
+        "entity_context": "Entities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)",
+        "entity_refs": {
+          "object": "032b35a7db1fe6a27834a88cf6f99db2fd98ffcfe3e33ee7395d9de9b09bcfd9",
+          "subject": "19a8ce1089d5ae8ddef8c81b3511d5e6e9cc023676deefa3338326a344f1b6cd"
+        },
+        "evidence_i": 0,
+        "evidence_metadata": {
+          "found_by": "binding1b",
+          "is_direct": true,
+          "pmid": "16125169",
+          "raw_text": [
+            "vinculin",
+            "Ponsin"
+          ],
+          "source_api": "reach",
+          "text": "Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor."
+        },
+        "lookup_refs": [
+          "7235dff78aec3b9090f48215712f2d22b89b24ff0c5c6d578b0903224d84ce36",
+          "838a5315e237a4ef53e6fc5d86f6479081063c077233721417ba7c3acfc0adef"
+        ],
+        "main_message_prefix_ref": "7ecee0380a156498d6be0429930a0e9ee2e3689bbafc121007093acb96aad2ac",
+        "main_prompt_base_sha256": "d8044f6830f2b95266fd9004af441443f5756d9fe21d059a0cccd0394a939cf1",
+        "main_system_ref": "d9b18778946dab85445c5a5560109fad3f160ff66b09a96618899169f82f93fb",
+        "object_name": "SORBS1",
+        "provenance": "",
+        "relation_note_insertion": null,
+        "route": "tool",
+        "statement_type": "Complex",
+        "stmt_i": 2,
+        "subject_name": "VCL",
+        "workload": "unique_exact_pairs_primary"
+      }
+    },
+    "verdict_only_substrate": "data/comparison_verdict_only/grounding_replay",
+    "workload": "unique_exact_pairs_primary"
+  },
+  "_readme": "G0-goldens — frozen live/batch request + deterministic-result contract. Captured 2026-08-01 with gilda 1.6.1, indra 1.24.0, python 3.13.7, against data/comparison/grounding_replay (mono_variant disconfirm_relnature_rf) and data/comparison_verdict_only/grounding_replay. These values are the contract C0/K1/K2 refactor against. A diff here is a behaviour change, not a test to update.",
+  "_regenerate": "GOLDEN_REGEN=1 PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_prepared_execution_goldens.py",
+  "batch_requests": {
+    "0:0": {
+      "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"",
+      "message_roles": [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "messages_len": 29,
+      "prompt_sha256": "778060f43554543c723781350a56fc68f86dcd779ee31ca009d7c4c3b3efa07c",
+      "stored_main_prompt_base_sha256": "778060f43554543c723781350a56fc68f86dcd779ee31ca009d7c4c3b3efa07c",
+      "system_len": 4630,
+      "system_sha256": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364"
+    },
+    "0:0+note": {
+      "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"\n\nRelation nature (resolved): the evidence asserts a signaling/regulatory cascade (functional, not physical binding) — \"acts upstream in a shared pathway\". A [Complex] claim requires a stated DIRECT PHYSICAL BIND between WT1 and ZNF224 — that is a grounding MISMATCH here, so the [Complex] extraction is unsupported.",
+      "message_roles": [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "messages_len": 29,
+      "prompt_sha256": "55e4ed81ac6b0270fa8f8bac5a480076b78810be48bb8789b560598525d226e8",
+      "relation_note_insertion": {
+        "empty_note_inserts_prefix": false,
+        "message_index": 28,
+        "prefix_if_nonempty": "\n\n",
+        "role": "user",
+        "utf8_byte_offset": 453
+      },
+      "system_len": 4630,
+      "system_sha256": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364"
+    },
+    "2:0": {
+      "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+      "message_roles": [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "messages_len": 29,
+      "prompt_sha256": "f794e9a60a283079bae162f47ed49c1e269fd925bc876a8acd1f1d5f2b4d6782",
+      "stored_main_prompt_base_sha256": "f794e9a60a283079bae162f47ed49c1e269fd925bc876a8acd1f1d5f2b4d6782",
+      "system_len": 5733,
+      "system_sha256": "6b0132507d102e4fa0d4748e846401ed989d3c74802b5bf1472c7465b385189c"
+    },
+    "2:0+note": {
+      "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nRelation nature (resolved): the evidence asserts a signaling/regulatory cascade (functional, not physical binding) — \"acts upstream in a shared pathway\". A [Complex] claim requires a stated DIRECT PHYSICAL BIND between VCL and SORBS1 — that is a grounding MISMATCH here, so the [Complex] extraction is unsupported.\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+      "message_roles": [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "messages_len": 29,
+      "prompt_sha256": "bdf17e209dffe16907d5212088cbd15d2a67d8a0e77363fc6b1b7406b746890f",
+      "relation_note_insertion": {
+        "empty_note_inserts_prefix": false,
+        "message_index": 28,
+        "prefix_if_nonempty": "\n\n",
+        "role": "user",
+        "utf8_byte_offset": 349
+      },
+      "system_len": 5733,
+      "system_sha256": "6b0132507d102e4fa0d4748e846401ed989d3c74802b5bf1472c7465b385189c"
+    },
+    "8:0": {
+      "final_user_message": "CLAIM: TET2 [Inhibition] IL6\nEntities: TET2 (HGNC: TET2, aliases: FLJ20032, KIAA1546) | IL6 (HGNC: IL6, aliases: CDF, HGF, HSF, BSF2, IL-6, BSF-2)\nIn-text abbreviations:\n  In-text abbreviation: \"IL-6\" = interleukin-6 (= the object IL6)\nEVIDENCE: \"Here we show that Tet2 selectively mediates active repression of interleukin-6 (IL-6) transcription during inflammation resolution in innate myeloid cells, including dendritic cells and macrophages.\"",
+      "message_roles": [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "messages_len": 29,
+      "prompt_sha256": "89192b2c585079449a84a7e4fff5835318426f518c83b813d7431c4e8fa66cd4",
+      "stored_main_prompt_base_sha256": "89192b2c585079449a84a7e4fff5835318426f518c83b813d7431c4e8fa66cd4",
+      "system_len": 4630,
+      "system_sha256": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364"
+    }
+  },
+  "deterministic_results": {
+    "2:31": {
+      "batch": {
+        "call_log": [],
+        "confidence": "high",
+        "grounding_status": "MISMATCH",
+        "provenance_triggered": false,
+        "raw_text": "Grounding mismatch: \"protein\" independently grounds to protein (CHEBI:CHEBI:36080), NOT SORBS1",
+        "score": 0.05,
+        "tier": "deterministic_mismatch",
+        "tokens": 0,
+        "verdict": "incorrect"
+      },
+      "batch_only_keys": [],
+      "live": {
+        "call_log": [],
+        "confidence": "high",
+        "grounding_status": "MISMATCH",
+        "provenance_triggered": false,
+        "raw_text": "Grounding mismatch: \"protein\" independently grounds to protein (CHEBI:CHEBI:36080), NOT SORBS1",
+        "score": 0.05,
+        "tier": "deterministic_mismatch",
+        "tokens": 0,
+        "verdict": "incorrect"
+      },
+      "live_only_keys": [],
+      "route": "deterministic_mismatch",
+      "value_differences": {}
+    },
+    "2:41": {
+      "batch": {
+        "call_log": [],
+        "confidence": "high",
+        "grounding_status": "skipped",
+        "provenance_triggered": false,
+        "raw_text": "No evidence sentence — accepted by default (database-sourced).",
+        "score": 0.95,
+        "tier": "no_text",
+        "tokens": 0,
+        "verdict": "correct"
+      },
+      "batch_only_keys": [],
+      "live": {
+        "call_log": [],
+        "confidence": "high",
+        "grounding_status": "skipped",
+        "provenance_triggered": false,
+        "raw_text": "No evidence sentence — accepted by default (database-sourced).",
+        "score": 0.95,
+        "selected_example_ids": [],
+        "selected_examples": [],
+        "tier": "no_text",
+        "tokens": 0,
+        "verdict": "correct"
+      },
+      "live_only_keys": [
+        "selected_example_ids",
+        "selected_examples"
+      ],
+      "route": "no_text",
+      "value_differences": {}
+    },
+    "909:0": {
+      "batch": {
+        "call_log": [],
+        "confidence": "high",
+        "grounding_status": "MISMATCH",
+        "provenance_triggered": false,
+        "raw_text": "Pseudogene mapping: \"HSP\" independently grounds to N-(3-carboxypropanoyl)-N-hydroxyputrescine (CHEBI:CHEBI:50430), NOT HSP90B2P",
+        "score": 0.05,
+        "tier": "deterministic_pseudogene",
+        "tokens": 0,
+        "verdict": "incorrect"
+      },
+      "batch_only_keys": [],
+      "live": {
+        "call_log": [],
+        "confidence": "high",
+        "grounding_status": "MISMATCH",
+        "provenance_triggered": false,
+        "raw_text": "Grounding mismatch: \"HSP\" independently grounds to N-(3-carboxypropanoyl)-N-hydroxyputrescine (CHEBI:CHEBI:50430), NOT HSP90B2P",
+        "score": 0.05,
+        "tier": "deterministic_pseudogene",
+        "tokens": 0,
+        "verdict": "incorrect"
+      },
+      "live_only_keys": [],
+      "route": "deterministic_pseudogene",
+      "value_differences": {
+        "raw_text": {
+          "batch": "Pseudogene mapping: \"HSP\" independently grounds to N-(3-carboxypropanoyl)-N-hydroxyputrescine (CHEBI:CHEBI:50430), NOT HSP90B2P",
+          "live": "Grounding mismatch: \"HSP\" independently grounds to N-(3-carboxypropanoyl)-N-hydroxyputrescine (CHEBI:CHEBI:50430), NOT HSP90B2P"
+        }
+      }
+    }
+  },
+  "live_requests": {
+    "": {
+      "plain@0:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "e4705f8991f4f82b5c1819112f266391d7ce9f4d1f34ba4c3439ca220dfa50e1",
+        "relation_calls": [],
+        "system_len": 3411,
+        "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517",
+        "tier": "llm_comprehension"
+      },
+      "plain@8:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: TET2 [Inhibition] IL6\nEntities: TET2 (HGNC: TET2, aliases: FLJ20032, KIAA1546) | IL6 (HGNC: IL6, aliases: CDF, HGF, HSF, BSF2, IL-6, BSF-2)\nIn-text abbreviations:\n  In-text abbreviation: \"IL-6\" = interleukin-6 (= the object IL6)\nEVIDENCE: \"Here we show that Tet2 selectively mediates active repression of interleukin-6 (IL-6) transcription during inflammation resolution in innate myeloid cells, including dendritic cells and macrophages.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "bf0857fc07abd4c44f969d9bf35416ca758a4986c1c84da41029fe177991f514",
+        "relation_calls": [],
+        "system_len": 3411,
+        "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517",
+        "tier": "llm_comprehension"
+      },
+      "tool@2:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+        "main_call_kwargs": {
+          "kind": "monolithic_tool_context",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "c19b59d679cd77d624fd10b3a10d1398b5a568e31d8940d3f682b94a93c31db5",
+        "relation_calls": [],
+        "system_len": 4514,
+        "system_sha256": "b1dbde6e47b7c56cce9ac9cfa98f1addeb89308fab755c50a452920747f1670f",
+        "tier": "llm_tool_use"
+      }
+    },
+    "disconfirm": {
+      "plain@0:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "9b843fc3cdc1a03654df4dfe965b982135ce498c907ed10340439685ed7219fc",
+        "relation_calls": [],
+        "system_len": 4065,
+        "system_sha256": "af56a2075b1cf923e86af4c6290b8c336c73b38f628d9df88af410d2b544f766",
+        "tier": "llm_comprehension"
+      },
+      "plain@8:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: TET2 [Inhibition] IL6\nEntities: TET2 (HGNC: TET2, aliases: FLJ20032, KIAA1546) | IL6 (HGNC: IL6, aliases: CDF, HGF, HSF, BSF2, IL-6, BSF-2)\nIn-text abbreviations:\n  In-text abbreviation: \"IL-6\" = interleukin-6 (= the object IL6)\nEVIDENCE: \"Here we show that Tet2 selectively mediates active repression of interleukin-6 (IL-6) transcription during inflammation resolution in innate myeloid cells, including dendritic cells and macrophages.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "9bea30716376c13a4065ef9d335525710195a54499084d27e38010d6628e7a69",
+        "relation_calls": [],
+        "system_len": 4065,
+        "system_sha256": "af56a2075b1cf923e86af4c6290b8c336c73b38f628d9df88af410d2b544f766",
+        "tier": "llm_comprehension"
+      },
+      "tool@2:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+        "main_call_kwargs": {
+          "kind": "monolithic_tool_context",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "d375c29aab58a5a43092176d067321d56e2eccadfd3ad449654fee484e97fc19",
+        "relation_calls": [],
+        "system_len": 5168,
+        "system_sha256": "923e1445a62558fecfbcdd330e7fc5a2031fd99d8b26aa4772385d5b2a933d58",
+        "tier": "llm_tool_use"
+      }
+    },
+    "disconfirm_relnature": {
+      "plain+note@0:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"\n\nRelation nature (resolved): the evidence asserts a signaling/regulatory cascade (functional, not physical binding) — \"acts upstream in a shared pathway\". A [Complex] claim requires a stated DIRECT PHYSICAL BIND between WT1 and ZNF224 — that is a grounding MISMATCH here, so the [Complex] extraction is unsupported.",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "bb49886d39d71476c6ed05efab78f917b87d6ced1315e16680301c1abd39e71c",
+        "relation_calls": [
+          {
+            "final_user_message": "Entities: WT1 (also known as: AWT1, GUD, NPHS4, WAGR, WIT-2, WT-1), ZNF224 (also known as: BMZF-2, BMZF2, Bone marrow zinc finger 2, KOX22, ZNF233, ZNF255)\nSentence: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"\nWhat relationship does the sentence assert between WT1 and ZNF224?",
+            "kwargs": {
+              "kind": "relation_nature",
+              "max_tokens": 3000,
+              "reasoning_effort": "none",
+              "response_format": {
+                "type": "json_object"
+              },
+              "temperature": 0.1
+            },
+            "message_roles": [
+              "user"
+            ],
+            "messages_len": 1,
+            "prompt_sha256": "a2061a5fceb0ec53006b381d998ae7065f629912ced849da36e9d79d8a1e1812",
+            "system_len": 1686,
+            "system_sha256": "85dd0dd61ebff6a4dc0bf31e84772f2a5212def0973f6debfa318cc9423748ed"
+          }
+        ],
+        "system_len": 4065,
+        "system_sha256": "af56a2075b1cf923e86af4c6290b8c336c73b38f628d9df88af410d2b544f766",
+        "tier": "llm_comprehension"
+      },
+      "plain@0:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "9b843fc3cdc1a03654df4dfe965b982135ce498c907ed10340439685ed7219fc",
+        "relation_calls": [
+          {
+            "final_user_message": "Entities: WT1 (also known as: AWT1, GUD, NPHS4, WAGR, WIT-2, WT-1), ZNF224 (also known as: BMZF-2, BMZF2, Bone marrow zinc finger 2, KOX22, ZNF233, ZNF255)\nSentence: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"\nWhat relationship does the sentence assert between WT1 and ZNF224?",
+            "kwargs": {
+              "kind": "relation_nature",
+              "max_tokens": 3000,
+              "reasoning_effort": "none",
+              "response_format": {
+                "type": "json_object"
+              },
+              "temperature": 0.1
+            },
+            "message_roles": [
+              "user"
+            ],
+            "messages_len": 1,
+            "prompt_sha256": "a2061a5fceb0ec53006b381d998ae7065f629912ced849da36e9d79d8a1e1812",
+            "system_len": 1686,
+            "system_sha256": "85dd0dd61ebff6a4dc0bf31e84772f2a5212def0973f6debfa318cc9423748ed"
+          }
+        ],
+        "system_len": 4065,
+        "system_sha256": "af56a2075b1cf923e86af4c6290b8c336c73b38f628d9df88af410d2b544f766",
+        "tier": "llm_comprehension"
+      },
+      "plain@8:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: TET2 [Inhibition] IL6\nEntities: TET2 (HGNC: TET2, aliases: FLJ20032, KIAA1546) | IL6 (HGNC: IL6, aliases: CDF, HGF, HSF, BSF2, IL-6, BSF-2)\nIn-text abbreviations:\n  In-text abbreviation: \"IL-6\" = interleukin-6 (= the object IL6)\nEVIDENCE: \"Here we show that Tet2 selectively mediates active repression of interleukin-6 (IL-6) transcription during inflammation resolution in innate myeloid cells, including dendritic cells and macrophages.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "9bea30716376c13a4065ef9d335525710195a54499084d27e38010d6628e7a69",
+        "relation_calls": [],
+        "system_len": 4065,
+        "system_sha256": "af56a2075b1cf923e86af4c6290b8c336c73b38f628d9df88af410d2b544f766",
+        "tier": "llm_comprehension"
+      },
+      "tool+note@2:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nRelation nature (resolved): the evidence asserts a signaling/regulatory cascade (functional, not physical binding) — \"acts upstream in a shared pathway\". A [Complex] claim requires a stated DIRECT PHYSICAL BIND between VCL and SORBS1 — that is a grounding MISMATCH here, so the [Complex] extraction is unsupported.\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+        "main_call_kwargs": {
+          "kind": "monolithic_tool_context",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "ce3d08dad53b052f4c0f484eff9e3151dbe3434686164416587df0f0d82fe675",
+        "relation_calls": [
+          {
+            "final_user_message": "Entities: VCL (also known as: MV, Metavinculin, VINC, Vinculin, metavinculin, vinculin), SORBS1 (also known as: CAP, FLJ12406, KIAA0894, KIAA1296, Ponsin, SH3 domain protein 5)\nSentence: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\nWhat relationship does the sentence assert between VCL and SORBS1?",
+            "kwargs": {
+              "kind": "relation_nature",
+              "max_tokens": 3000,
+              "reasoning_effort": "none",
+              "response_format": {
+                "type": "json_object"
+              },
+              "temperature": 0.1
+            },
+            "message_roles": [
+              "user"
+            ],
+            "messages_len": 1,
+            "prompt_sha256": "ba2338e23de2e63231c7a9dc9a32a025ace2a0d55194c8cefa62c30b6d5a241f",
+            "system_len": 1686,
+            "system_sha256": "85dd0dd61ebff6a4dc0bf31e84772f2a5212def0973f6debfa318cc9423748ed"
+          }
+        ],
+        "system_len": 5168,
+        "system_sha256": "923e1445a62558fecfbcdd330e7fc5a2031fd99d8b26aa4772385d5b2a933d58",
+        "tier": "llm_tool_use"
+      },
+      "tool@2:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+        "main_call_kwargs": {
+          "kind": "monolithic_tool_context",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "d375c29aab58a5a43092176d067321d56e2eccadfd3ad449654fee484e97fc19",
+        "relation_calls": [
+          {
+            "final_user_message": "Entities: VCL (also known as: MV, Metavinculin, VINC, Vinculin, metavinculin, vinculin), SORBS1 (also known as: CAP, FLJ12406, KIAA0894, KIAA1296, Ponsin, SH3 domain protein 5)\nSentence: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\nWhat relationship does the sentence assert between VCL and SORBS1?",
+            "kwargs": {
+              "kind": "relation_nature",
+              "max_tokens": 3000,
+              "reasoning_effort": "none",
+              "response_format": {
+                "type": "json_object"
+              },
+              "temperature": 0.1
+            },
+            "message_roles": [
+              "user"
+            ],
+            "messages_len": 1,
+            "prompt_sha256": "ba2338e23de2e63231c7a9dc9a32a025ace2a0d55194c8cefa62c30b6d5a241f",
+            "system_len": 1686,
+            "system_sha256": "85dd0dd61ebff6a4dc0bf31e84772f2a5212def0973f6debfa318cc9423748ed"
+          }
+        ],
+        "system_len": 5168,
+        "system_sha256": "923e1445a62558fecfbcdd330e7fc5a2031fd99d8b26aa4772385d5b2a933d58",
+        "tier": "llm_tool_use"
+      }
+    },
+    "disconfirm_relnature_rf": {
+      "plain+note@0:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"\n\nRelation nature (resolved): the evidence asserts a signaling/regulatory cascade (functional, not physical binding) — \"acts upstream in a shared pathway\". A [Complex] claim requires a stated DIRECT PHYSICAL BIND between WT1 and ZNF224 — that is a grounding MISMATCH here, so the [Complex] extraction is unsupported.",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "55e4ed81ac6b0270fa8f8bac5a480076b78810be48bb8789b560598525d226e8",
+        "relation_calls": [
+          {
+            "final_user_message": "Entities: WT1 (also known as: AWT1, GUD, NPHS4, WAGR, WIT-2, WT-1), ZNF224 (also known as: BMZF-2, BMZF2, Bone marrow zinc finger 2, KOX22, ZNF233, ZNF255)\nSentence: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"\nWhat relationship does the sentence assert between WT1 and ZNF224?",
+            "kwargs": {
+              "kind": "relation_nature",
+              "max_tokens": 3000,
+              "reasoning_effort": "none",
+              "response_format": {
+                "type": "json_object"
+              },
+              "temperature": 0.1
+            },
+            "message_roles": [
+              "user"
+            ],
+            "messages_len": 1,
+            "prompt_sha256": "a2061a5fceb0ec53006b381d998ae7065f629912ced849da36e9d79d8a1e1812",
+            "system_len": 1686,
+            "system_sha256": "85dd0dd61ebff6a4dc0bf31e84772f2a5212def0973f6debfa318cc9423748ed"
+          }
+        ],
+        "system_len": 4630,
+        "system_sha256": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+        "tier": "llm_comprehension"
+      },
+      "plain@0:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "778060f43554543c723781350a56fc68f86dcd779ee31ca009d7c4c3b3efa07c",
+        "relation_calls": [
+          {
+            "final_user_message": "Entities: WT1 (also known as: AWT1, GUD, NPHS4, WAGR, WIT-2, WT-1), ZNF224 (also known as: BMZF-2, BMZF2, Bone marrow zinc finger 2, KOX22, ZNF233, ZNF255)\nSentence: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"\nWhat relationship does the sentence assert between WT1 and ZNF224?",
+            "kwargs": {
+              "kind": "relation_nature",
+              "max_tokens": 3000,
+              "reasoning_effort": "none",
+              "response_format": {
+                "type": "json_object"
+              },
+              "temperature": 0.1
+            },
+            "message_roles": [
+              "user"
+            ],
+            "messages_len": 1,
+            "prompt_sha256": "a2061a5fceb0ec53006b381d998ae7065f629912ced849da36e9d79d8a1e1812",
+            "system_len": 1686,
+            "system_sha256": "85dd0dd61ebff6a4dc0bf31e84772f2a5212def0973f6debfa318cc9423748ed"
+          }
+        ],
+        "system_len": 4630,
+        "system_sha256": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+        "tier": "llm_comprehension"
+      },
+      "plain@8:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: TET2 [Inhibition] IL6\nEntities: TET2 (HGNC: TET2, aliases: FLJ20032, KIAA1546) | IL6 (HGNC: IL6, aliases: CDF, HGF, HSF, BSF2, IL-6, BSF-2)\nIn-text abbreviations:\n  In-text abbreviation: \"IL-6\" = interleukin-6 (= the object IL6)\nEVIDENCE: \"Here we show that Tet2 selectively mediates active repression of interleukin-6 (IL-6) transcription during inflammation resolution in innate myeloid cells, including dendritic cells and macrophages.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "89192b2c585079449a84a7e4fff5835318426f518c83b813d7431c4e8fa66cd4",
+        "relation_calls": [],
+        "system_len": 4630,
+        "system_sha256": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+        "tier": "llm_comprehension"
+      },
+      "tool+note@2:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nRelation nature (resolved): the evidence asserts a signaling/regulatory cascade (functional, not physical binding) — \"acts upstream in a shared pathway\". A [Complex] claim requires a stated DIRECT PHYSICAL BIND between VCL and SORBS1 — that is a grounding MISMATCH here, so the [Complex] extraction is unsupported.\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+        "main_call_kwargs": {
+          "kind": "monolithic_tool_context",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "bdf17e209dffe16907d5212088cbd15d2a67d8a0e77363fc6b1b7406b746890f",
+        "relation_calls": [
+          {
+            "final_user_message": "Entities: VCL (also known as: MV, Metavinculin, VINC, Vinculin, metavinculin, vinculin), SORBS1 (also known as: CAP, FLJ12406, KIAA0894, KIAA1296, Ponsin, SH3 domain protein 5)\nSentence: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\nWhat relationship does the sentence assert between VCL and SORBS1?",
+            "kwargs": {
+              "kind": "relation_nature",
+              "max_tokens": 3000,
+              "reasoning_effort": "none",
+              "response_format": {
+                "type": "json_object"
+              },
+              "temperature": 0.1
+            },
+            "message_roles": [
+              "user"
+            ],
+            "messages_len": 1,
+            "prompt_sha256": "ba2338e23de2e63231c7a9dc9a32a025ace2a0d55194c8cefa62c30b6d5a241f",
+            "system_len": 1686,
+            "system_sha256": "85dd0dd61ebff6a4dc0bf31e84772f2a5212def0973f6debfa318cc9423748ed"
+          }
+        ],
+        "system_len": 5733,
+        "system_sha256": "6b0132507d102e4fa0d4748e846401ed989d3c74802b5bf1472c7465b385189c",
+        "tier": "llm_tool_use"
+      },
+      "tool@2:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+        "main_call_kwargs": {
+          "kind": "monolithic_tool_context",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "f794e9a60a283079bae162f47ed49c1e269fd925bc876a8acd1f1d5f2b4d6782",
+        "relation_calls": [
+          {
+            "final_user_message": "Entities: VCL (also known as: MV, Metavinculin, VINC, Vinculin, metavinculin, vinculin), SORBS1 (also known as: CAP, FLJ12406, KIAA0894, KIAA1296, Ponsin, SH3 domain protein 5)\nSentence: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\nWhat relationship does the sentence assert between VCL and SORBS1?",
+            "kwargs": {
+              "kind": "relation_nature",
+              "max_tokens": 3000,
+              "reasoning_effort": "none",
+              "response_format": {
+                "type": "json_object"
+              },
+              "temperature": 0.1
+            },
+            "message_roles": [
+              "user"
+            ],
+            "messages_len": 1,
+            "prompt_sha256": "ba2338e23de2e63231c7a9dc9a32a025ace2a0d55194c8cefa62c30b6d5a241f",
+            "system_len": 1686,
+            "system_sha256": "85dd0dd61ebff6a4dc0bf31e84772f2a5212def0973f6debfa318cc9423748ed"
+          }
+        ],
+        "system_len": 5733,
+        "system_sha256": "6b0132507d102e4fa0d4748e846401ed989d3c74802b5bf1472c7465b385189c",
+        "tier": "llm_tool_use"
+      }
+    },
+    "typo_xyz": {
+      "plain@0:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "e4705f8991f4f82b5c1819112f266391d7ce9f4d1f34ba4c3439ca220dfa50e1",
+        "relation_calls": [],
+        "system_len": 3411,
+        "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517",
+        "tier": "llm_comprehension"
+      },
+      "plain@8:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: TET2 [Inhibition] IL6\nEntities: TET2 (HGNC: TET2, aliases: FLJ20032, KIAA1546) | IL6 (HGNC: IL6, aliases: CDF, HGF, HSF, BSF2, IL-6, BSF-2)\nIn-text abbreviations:\n  In-text abbreviation: \"IL-6\" = interleukin-6 (= the object IL6)\nEVIDENCE: \"Here we show that Tet2 selectively mediates active repression of interleukin-6 (IL-6) transcription during inflammation resolution in innate myeloid cells, including dendritic cells and macrophages.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "bf0857fc07abd4c44f969d9bf35416ca758a4986c1c84da41029fe177991f514",
+        "relation_calls": [],
+        "system_len": 3411,
+        "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517",
+        "tier": "llm_comprehension"
+      },
+      "tool@2:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+        "main_call_kwargs": {
+          "kind": "monolithic_tool_context",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "c19b59d679cd77d624fd10b3a10d1398b5a568e31d8940d3f682b94a93c31db5",
+        "relation_calls": [],
+        "system_len": 4514,
+        "system_sha256": "b1dbde6e47b7c56cce9ac9cfa98f1addeb89308fab755c50a452920747f1670f",
+        "tier": "llm_tool_use"
+      }
+    },
+    "verdict_only": {
+      "plain@0:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "e4705f8991f4f82b5c1819112f266391d7ce9f4d1f34ba4c3439ca220dfa50e1",
+        "relation_calls": [],
+        "system_len": 3411,
+        "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517",
+        "tier": "llm_comprehension"
+      },
+      "plain@8:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: TET2 [Inhibition] IL6\nEntities: TET2 (HGNC: TET2, aliases: FLJ20032, KIAA1546) | IL6 (HGNC: IL6, aliases: CDF, HGF, HSF, BSF2, IL-6, BSF-2)\nIn-text abbreviations:\n  In-text abbreviation: \"IL-6\" = interleukin-6 (= the object IL6)\nEVIDENCE: \"Here we show that Tet2 selectively mediates active repression of interleukin-6 (IL-6) transcription during inflammation resolution in innate myeloid cells, including dendritic cells and macrophages.\"",
+        "main_call_kwargs": {
+          "kind": "monolithic",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "bf0857fc07abd4c44f969d9bf35416ca758a4986c1c84da41029fe177991f514",
+        "relation_calls": [],
+        "system_len": 3411,
+        "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517",
+        "tier": "llm_comprehension"
+      },
+      "tool@2:0": {
+        "call_log": [],
+        "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+        "main_call_kwargs": {
+          "kind": "monolithic_tool_context",
+          "max_tokens": 4096,
+          "temperature": 0.1
+        },
+        "message_roles": [
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "messages_len": 29,
+        "prompt_sha256": "c19b59d679cd77d624fd10b3a10d1398b5a568e31d8940d3f682b94a93c31db5",
+        "relation_calls": [],
+        "system_len": 4514,
+        "system_sha256": "b1dbde6e47b7c56cce9ac9cfa98f1addeb89308fab755c50a452920747f1670f",
+        "tier": "llm_tool_use"
+      }
+    }
+  },
+  "profiles": {
+    "": {
+      "lookup_guidance_len": 1103,
+      "lookup_guidance_sha256": "7d8559569ae50f0d0be25856420fe39567585997eff11f0f6d621a3bca156df4",
+      "renderer": "render_example",
+      "renderer_module": "_prompts",
+      "resolved_variant": "",
+      "structured": false,
+      "system_len": 3411,
+      "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517"
+    },
+    "disconfirm": {
+      "lookup_guidance_len": 1103,
+      "lookup_guidance_sha256": "7d8559569ae50f0d0be25856420fe39567585997eff11f0f6d621a3bca156df4",
+      "renderer": "render_example",
+      "renderer_module": "_prompts_disconfirm",
+      "resolved_variant": "disconfirm",
+      "structured": true,
+      "system_len": 4065,
+      "system_sha256": "af56a2075b1cf923e86af4c6290b8c336c73b38f628d9df88af410d2b544f766"
+    },
+    "disconfirm_relnature": {
+      "lookup_guidance_len": 1103,
+      "lookup_guidance_sha256": "7d8559569ae50f0d0be25856420fe39567585997eff11f0f6d621a3bca156df4",
+      "renderer": "render_example",
+      "renderer_module": "_prompts_disconfirm",
+      "resolved_variant": "disconfirm_relnature",
+      "structured": true,
+      "system_len": 4065,
+      "system_sha256": "af56a2075b1cf923e86af4c6290b8c336c73b38f628d9df88af410d2b544f766"
+    },
+    "disconfirm_relnature_rf": {
+      "lookup_guidance_len": 1103,
+      "lookup_guidance_sha256": "7d8559569ae50f0d0be25856420fe39567585997eff11f0f6d621a3bca156df4",
+      "renderer": "render_example_reasonfirst",
+      "renderer_module": "_prompts_disconfirm",
+      "resolved_variant": "disconfirm_relnature_rf",
+      "structured": true,
+      "system_len": 4630,
+      "system_sha256": "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364"
+    },
+    "typo_xyz": {
+      "lookup_guidance_len": 1103,
+      "lookup_guidance_sha256": "7d8559569ae50f0d0be25856420fe39567585997eff11f0f6d621a3bca156df4",
+      "renderer": "render_example",
+      "renderer_module": "_prompts",
+      "resolved_variant": "typo_xyz",
+      "structured": false,
+      "system_len": 3411,
+      "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517"
+    },
+    "verdict_only": {
+      "lookup_guidance_len": 1103,
+      "lookup_guidance_sha256": "7d8559569ae50f0d0be25856420fe39567585997eff11f0f6d621a3bca156df4",
+      "renderer": "render_example",
+      "renderer_module": "_prompts",
+      "resolved_variant": "verdict_only",
+      "structured": false,
+      "system_len": 3411,
+      "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517"
+    }
+  },
+  "record_fields": {
+    "0:0": {
+      "abbreviation_lines": [],
+      "claim": "WT1 + ZNF224 [Complex]",
+      "entity_context": "Entities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)",
+      "provenance": "",
+      "user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\""
+    },
+    "2:0": {
+      "abbreviation_lines": [],
+      "claim": "VCL + SORBS1 [Complex]",
+      "entity_context": "Entities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)",
+      "provenance": "",
+      "user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\""
+    },
+    "2:31": {
+      "abbreviation_lines": [],
+      "claim": "VCL + SORBS1 [Complex]",
+      "entity_context": "Entities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)",
+      "provenance": "Extraction provenance:\n  Subject: NLP extracted \"vinculin\" → VCL (confirmed alias)\n  Object: NLP extracted \"protein\" → mapped to SORBS1 (MISMATCH — \"protein\" is a DIFFERENT entity, gilda: 0.78)\n  Reader: reach, pattern: binding1b",
+      "user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nExtraction provenance:\n  Subject: NLP extracted \"vinculin\" → VCL (confirmed alias)\n  Object: NLP extracted \"protein\" → mapped to SORBS1 (MISMATCH — \"protein\" is a DIFFERENT entity, gilda: 0.78)\n  Reader: reach, pattern: binding1b\nEVIDENCE: \"Furthermore, we have found that the l-afadin-binding protein directly bound vinculin, an F-actin-binding protein that is localized at ZA in epithelial cells, at cell-cell AJ in nonepithelial cells, and at cell-matrix AJ in both types of cells.\""
+    },
+    "2:41": {
+      "abbreviation_lines": [],
+      "claim": "VCL + SORBS1 [Complex]",
+      "entity_context": "Entities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)",
+      "provenance": "",
+      "user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"\""
+    },
+    "8:0": {
+      "abbreviation_lines": [
+        "  In-text abbreviation: \"IL-6\" = interleukin-6 (= the object IL6)"
+      ],
+      "claim": "TET2 [Inhibition] IL6",
+      "entity_context": "Entities: TET2 (HGNC: TET2, aliases: FLJ20032, KIAA1546) | IL6 (HGNC: IL6, aliases: CDF, HGF, HSF, BSF2, IL-6, BSF-2)",
+      "provenance": "",
+      "user_message": "CLAIM: TET2 [Inhibition] IL6\nEntities: TET2 (HGNC: TET2, aliases: FLJ20032, KIAA1546) | IL6 (HGNC: IL6, aliases: CDF, HGF, HSF, BSF2, IL-6, BSF-2)\nIn-text abbreviations:\n  In-text abbreviation: \"IL-6\" = interleukin-6 (= the object IL6)\nEVIDENCE: \"Here we show that Tet2 selectively mediates active repression of interleukin-6 (IL-6) transcription during inflammation resolution in innate myeloid cells, including dendritic cells and macrophages.\""
+    },
+    "909:0": {
+      "abbreviation_lines": [],
+      "claim": "HSP90B2P + PLG [Complex]",
+      "entity_context": "Entities: HSP90B2P (HGNC: HSP90B2P, aliases: TRAP1, GRP94B, GRP94b, HSPCP2, TRA1P1, GRP94P1) | PLG (HGNC: PLG, aliases: Plasminogen, plasminogen, Profibrinolysin)",
+      "provenance": "Extraction provenance:\n  Subject: NLP extracted \"HSP\" → mapped to HSP90B2P (MISMATCH — \"HSP\" is a DIFFERENT entity, gilda: 0.56)\n  Object: NLP extracted \"plasminogen\" → PLG (confirmed alias)",
+      "user_message": "CLAIM: HSP90B2P + PLG [Complex]\nEntities: HSP90B2P (HGNC: HSP90B2P, aliases: TRAP1, GRP94B, GRP94b, HSPCP2, TRA1P1, GRP94P1) | PLG (HGNC: PLG, aliases: Plasminogen, plasminogen, Profibrinolysin)\nExtraction provenance:\n  Subject: NLP extracted \"HSP\" → mapped to HSP90B2P (MISMATCH — \"HSP\" is a DIFFERENT entity, gilda: 0.56)\n  Object: NLP extracted \"plasminogen\" → PLG (confirmed alias)\nEVIDENCE: \"Since many hsps have also been found to be highly abundant on cell surfaces and there is evidence that bacterial surface hsps may interact with human plasminogen, the purpose of this study was to determine whether human plasminogen and angiostatin would interact with human hsps.\""
+    }
+  },
+  "relation_notes": {
+    "0:0": "Relation nature (resolved): the evidence asserts a signaling/regulatory cascade (functional, not physical binding) — \"acts upstream in a shared pathway\". A [Complex] claim requires a stated DIRECT PHYSICAL BIND between WT1 and ZNF224 — that is a grounding MISMATCH here, so the [Complex] extraction is unsupported.",
+    "2:0": "Relation nature (resolved): the evidence asserts a signaling/regulatory cascade (functional, not physical binding) — \"acts upstream in a shared pathway\". A [Complex] claim requires a stated DIRECT PHYSICAL BIND between VCL and SORBS1 — that is a grounding MISMATCH here, so the [Complex] extraction is unsupported."
+  },
+  "verdict_only_batch_requests": {
+    "0:0": {
+      "final_user_message": "CLAIM: WT1 + ZNF224 [Complex]\nEntities: WT1 (HGNC: WT1, aliases: GUD, AWT1, WAGR, WT-1, WT33, NPHS4) | ZNF224 (HGNC: ZNF224, aliases: BMZF2, KOX22, ZNF27, BMZF-2, ZNF233, ZNF255)\nEVIDENCE: \"In addition, our molecular data are suggestive of a regulatory loop in which WT1, by repressing the expression of ZNF224 gene, could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself, thus contributing to the WT1 pro survival role in leukemia.\"",
+      "message_roles": [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "messages_len": 29,
+      "prompt_sha256": "5036182c7ee1e33195cb7cde352b9c805eda41efd7df0df949259df9ce3272ca",
+      "stored_main_prompt_base_sha256": "5036182c7ee1e33195cb7cde352b9c805eda41efd7df0df949259df9ce3272ca",
+      "system_len": 3671,
+      "system_sha256": "5781a5842d11ab44989814ddd850252e028b00038d75068f6365dddf69df9fe0"
+    },
+    "2:0": {
+      "final_user_message": "CLAIM: VCL + SORBS1 [Complex]\nEntities: VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin) | SORBS1 (HGNC: SORBS1, aliases: CAP, SH3D5, Ponsin, SH3P12, ponsin, sh3p12)\nEVIDENCE: \"Vinexin interacts with vinculin, Sos and flotillin, and CAP and Ponsin binds to vinculin, Grb4, ataxin 7, c-Cbl and the insulin receptor.\"\n\nEntity database lookups:\nlookup_gene(\"vinculin\") candidates:\n  [0] VCL (\"vinculin\" is a known alias) score=0.778\n  [1] Vinculin (MeSH term, not a specific gene) score=0.762\nlookup_gene(\"Ponsin\") candidates:\n  [0] SORBS1 — Sorbin and SH3 domain-containing protein 1 (\"Ponsin\" is a known alias) score=0.556",
+      "message_roles": [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "messages_len": 29,
+      "prompt_sha256": "d8044f6830f2b95266fd9004af441443f5756d9fe21d059a0cccd0394a939cf1",
+      "stored_main_prompt_base_sha256": "d8044f6830f2b95266fd9004af441443f5756d9fe21d059a0cccd0394a939cf1",
+      "system_len": 4774,
+      "system_sha256": "d9b18778946dab85445c5a5560109fad3f160ff66b09a96618899169f82f93fb"
+    }
+  }
+}

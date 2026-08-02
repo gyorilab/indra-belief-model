@@ -91,9 +91,12 @@ def ece(items: Iterable[tuple[float, bool]], *, bins=BINS_8) -> float:
     score and gold label — a row-carried `tag`, a `src[source_hash]` lookup, or
     a nested eval-subset lookup — and in an `n_all` that was always the
     count of rows actually iterated. The math after that was identical. So the
-    reusable core takes pairs the caller has already resolved (`score` with its
-    `(x.get("score") or 0.5)` fallback applied, `is_correct` the gold predicate)
-    and each of the five keeps a one-line adapter. Per bin: the gap between mean
+    reusable core takes pairs the caller has already resolved (`score`, and
+    `is_correct` the gold predicate) and each of the five keeps a one-line
+    adapter. A row with NO score is EXCLUDED by its adapter, never defaulted to
+    0.5: an absent measurement is not a neutral one, and calibrating against an
+    invented midpoint is exactly the error `indra_belief.verdict` exists to make
+    unrepresentable. Per bin: the gap between mean
     predicted score and empirical correct-rate, weighted by the bin's share.
 
     Summation order matches the originals (the caller streams its rows in order

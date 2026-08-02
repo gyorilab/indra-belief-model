@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from indra_belief.scorers.monolithic._prompts import CONTRASTIVE_EXAMPLES
 from indra_belief.scorers.monolithic import _prompts_disconfirm as disc
+from indra_belief.verdict import parse_verdict
 
 
 def _correct_with_considered():
@@ -34,21 +35,26 @@ def test_at_least_two_correct_examples_carry_considered():
 
 def test_considered_renders_as_objection_with_correct_verdict():
     """Rendering a `considered` CORRECT example through the disconfirm renderer
-    yields objection != null AND verdict == correct (objection surfaced, resolved)."""
+    yields objection != null AND verdict == correct (objection surfaced, resolved).
+
+    Read back through `indra_belief.verdict` — the one parser the scorer uses on
+    real replies — so the few-shot is checked to say to the model exactly what
+    production would read back out of it."""
     with_considered = _correct_with_considered()
     assert len(with_considered) >= 2
 
     for ex in with_considered:
         _user, assistant = disc.render_example(ex)
-        parsed = disc.parse_structured(assistant)
-        assert parsed["verdict"] == "correct", (
-            f"{ex['claim']}: expected verdict=correct, got {parsed['verdict']}"
+        parsed = parse_verdict(assistant)
+        assert parsed is not None, f"{ex['claim']}: few-shot answer did not parse"
+        assert parsed.label == "correct", (
+            f"{ex['claim']}: expected verdict=correct, got {parsed.label}"
         )
-        assert parsed["objection"] is not None, (
+        assert parsed.objection is not None, (
             f"{ex['claim']}: expected non-null objection from `considered`"
         )
         # The objection the model sees IS the apparent objection we annotated.
-        assert parsed["objection"] == ex["considered"]
+        assert parsed.objection == ex["considered"]
 
 
 def test_considered_examples_span_distinct_rule_classes():

@@ -21,15 +21,31 @@ def test_grid_values_are_golden():
 
 
 def test_all_consumers_share_the_grid():
-    from indra_belief.scorers.monolithic._prompts import _SCORE_GRID, verdict_to_score
+    from indra_belief.verdict import grid_score
     from indra_belief.scorers.commitments import _VERDICT_SCORE
     from indra_belief.scorers.panel.adjudicator import _SCORE
-    assert _SCORE_GRID == _GOLDEN
     assert _VERDICT_SCORE == _GOLDEN
     assert _SCORE == _GOLDEN
     for (v, c), s in _GOLDEN.items():
-        assert verdict_to_score(v, c) == s
-    assert verdict_to_score(None, None) == 0.5  # null verdict default unchanged
+        assert grid_score(v, c) == s
+
+
+def test_an_unscorable_pair_is_absent_not_neutral():
+    """K2-one-parser. The monolithic scorer's own map used to answer a null
+    verdict with 0.5 and an off-grid confidence with a 0.50 `.get` default —
+    values not on the grid above, which no model output can produce, landing on
+    the exact point a calibration curve is most sensitive to. Both are gone: the
+    six cells are the only scores, and everything else is `None`."""
+    from indra_belief.verdict import grid_score
+
+    assert grid_score(None, None) is None
+    assert grid_score(None, "high") is None
+    assert grid_score("maybe", "high") is None
+    assert grid_score("correct", "certain") is None
+    assert 0.5 not in _GOLDEN.values() and 0.50 not in _GOLDEN.values()
+    # An ABSENT confidence is different in kind: it resolves to a REAL cell.
+    assert grid_score("correct", None) == _GOLDEN[("correct", "medium")]
+    assert grid_score("incorrect", None) == _GOLDEN[("incorrect", "medium")]
 
 
 # ---- T1: Greek normalization parity (incl. the xi/upsilon fix) ----

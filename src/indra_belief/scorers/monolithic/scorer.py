@@ -10,13 +10,21 @@ Two-tier architecture (single LLM call per (Statement, Evidence)):
     - base system prompt + adaptive contrastive examples (14 per record,
       retrieved by statement type via _TYPE_BANK + _TYPE_ADJACENCY)
     - Entity context injected from ScoringRecord
-    - Output: single JSON verdict extracted via extract_verdict()
+    - Output: a single JSON verdict, read by `indra_belief.verdict`
 
 The decomposed sibling lives in indra_belief.scorers.probes.*.
 Selection between architectures is via the CLI `--arch` flag in
-indra_belief.scorers.scorer. This module is invoked through
-`score_evidence(stmt, ev, client)` and `score_statement(stmt, client)`
-defined at the bottom — same public signatures as the decomposed path.
+indra_belief.scorers.scorer. The entry points here are `score(client, record)`
+and `score_statement(stmt, ev, client)`; the canonical `score_evidence` name
+the decomposed path also exposes is a delegate over `score_statement` in this
+package's `__init__`.
+
+The scoring profile — prompt, few-shot renderer, output contract, and whether
+the relation-nature step fires — is a `ScoringVariant` value. The profile does
+NOT select a parser: `indra_belief.verdict` reads every reply, on this path and
+on the batch replay alike. It defaults to
+`DEFAULT_VARIANT` (resolved from MONO_VARIANT once, at import) and can be
+overridden per call with `variant=`.
 
 Run:
     PYTHONPATH=src python -m indra_belief.scorers.scorer --arch monolithic ...
@@ -26,14 +34,18 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Mapping, Sequence
 
 log = logging.getLogger(__name__)
 
 from indra_belief.data.scoring_record import ScoringRecord
 from indra_belief.model_client import ModelClient
+from indra_belief.prepared_execution import PreparedExecution, prepare_from_record
 
 # CorpusIndex is imported lazily in main() — the benchmark harness is the
 # only consumer. Keeping it out of the module-level import chain means
@@ -44,53 +56,125 @@ from indra_belief.scorers.monolithic._prompts import (
     SYSTEM_PROMPT,
     CONTRASTIVE_EXAMPLES as _ALL_EXAMPLES,
     render_example as _render_example,
-    extract_verdict,
-    verdict_to_score,
 )
+from indra_belief.scorers.monolithic._prompts_disconfirm import (
+    DISCONFIRM_SYSTEM_PROMPT,
+    REASONFIRST_SYSTEM_PROMPT,
+    render_example as _render_example_disconfirm,
+    render_example_reasonfirst as _render_example_reasonfirst,
+)
+from indra_belief.scorers.monolithic._prompts_relation import resolve_relation_nature
+from indra_belief.verdict import grid_score, parse_response
 
-# MONO_VARIANT selects the scoring prompt. Unset uses disconfirm_relnature_rf
-# (the validated default); set MONO_VARIANT="" (or any other value) for the baseline.
-#   disconfirm_relnature_rf reasoning-first disconfirm + the relation-nature step
-#                        (the default)
-#   disconfirm_relnature base disconfirm + a focused relation-nature step that rejects
-#                        [Complex] claims whose evidence is not a direct physical bind
-#   disconfirm           commit-first prompt + structured parse + decision backstop
-#   "" / other           baseline prompt, byte-for-byte
-import os as _os  # noqa: E402
+# --- Scoring variants ---
+# A variant is the whole scoring profile — prompt, few-shot renderer, and the
+# two optional halves — as ONE immutable value, so a caller can select it per
+# call instead of per process. Every prompt module a variant needs is imported
+# eagerly rather than behind the branch that used to pick one: measured, the
+# two extra modules cost 3.8 ms and 12 sys.modules entries on the baseline
+# path, and pull in no gilda and no INDRA.
 
-_VARIANT = _os.environ.get("MONO_VARIANT", "disconfirm_relnature_rf").strip().lower()
-if _VARIANT in ("disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf"):
-    from indra_belief.scorers.monolithic._prompts_disconfirm import (
-        DISCONFIRM_SYSTEM_PROMPT,
-        REASONFIRST_SYSTEM_PROMPT,
-        render_example as _variant_render_base,
-        render_example_reasonfirst as _variant_render_rf,
-        parse_structured as _variant_parse,
-        derive_verdict as _variant_derive,
+
+@dataclass(frozen=True)
+class ScoringVariant:
+    """One scoring profile: the prompt, the few-shot renderer, and the two
+    optional halves.
+
+    `structured` says whether the profile's OUTPUT CONTRACT asks the model for a
+    `support`/`objection` justification alongside the verdict — so it decides
+    whether there is a committed justification to stamp, and nothing else. It
+    used to be derived from a pair of per-variant parser callables; a profile no
+    longer selects a parser, because `indra_belief.verdict` reads every reply.
+    `resolve_relation_nature` is the focused [Complex] second step.
+    """
+
+    name: str
+    system_prompt: str
+    render_example: Callable[[dict], tuple[str, str]]
+    structured: bool = False
+    resolve_relation_nature: Callable[..., str] | None = None
+
+
+VARIANTS: dict[str, ScoringVariant] = {
+    variant.name: variant
+    for variant in (
+        # baseline prompt, byte-for-byte — README.md documents MONO_VARIANT=""
+        # as the switch onto it.
+        ScoringVariant(
+            name="",
+            system_prompt=SYSTEM_PROMPT,
+            render_example=_render_example,
+        ),
+        # commit-first prompt: support + objection, then the verdict.
+        ScoringVariant(
+            name="disconfirm",
+            system_prompt=DISCONFIRM_SYSTEM_PROMPT,
+            render_example=_render_example_disconfirm,
+            structured=True,
+        ),
+        # base disconfirm + a focused relation-nature step that rejects
+        # [Complex] claims whose evidence is not a direct physical bind.
+        ScoringVariant(
+            name="disconfirm_relnature",
+            system_prompt=DISCONFIRM_SYSTEM_PROMPT,
+            render_example=_render_example_disconfirm,
+            structured=True,
+            resolve_relation_nature=resolve_relation_nature,
+        ),
+        # reasoning-first disconfirm + the relation-nature step (the default).
+        ScoringVariant(
+            name="disconfirm_relnature_rf",
+            system_prompt=REASONFIRST_SYSTEM_PROMPT,
+            render_example=_render_example_reasonfirst,
+            structured=True,
+            resolve_relation_nature=resolve_relation_nature,
+        ),
     )
-    if _VARIANT == "disconfirm_relnature_rf":
-        ACTIVE_SYSTEM_PROMPT = REASONFIRST_SYSTEM_PROMPT
-        _variant_render = _variant_render_rf
-    else:
-        ACTIVE_SYSTEM_PROMPT = DISCONFIRM_SYSTEM_PROMPT
-        _variant_render = _variant_render_base
-    # relnature Complex two-step fires for both relnature variants.
-    if _VARIANT in ("disconfirm_relnature", "disconfirm_relnature_rf"):
-        from indra_belief.scorers.monolithic._prompts_relation import resolve_relation_nature
-else:
-    ACTIVE_SYSTEM_PROMPT = SYSTEM_PROMPT
+}
 
-# Variants that use the structured commit-first parse/derive + render.
-_STRUCTURED_VARIANTS = {"disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf"}
+DEFAULT_VARIANT_NAME = "disconfirm_relnature_rf"  # the validated default
 
 
-def _relation_note(client, record) -> str:
-    """Relation-nature rejection note for [Complex] claims (relnature variant);
+def variant_from_env(env: Mapping[str, str] | None = None) -> ScoringVariant:
+    """Resolve the MONO_VARIANT environment variable to a variant.
+
+    An unrecognized NON-EMPTY value falls back to the baseline and now says so.
+    The fallback itself is unchanged; only the silence is. A plausible way to
+    reach it: `data/comparison_verdict_only/grounding_replay/manifest.json`
+    labels itself `mono_variant: "verdict_only"`, which is not a key here — a
+    reader reproducing that run from its own label would get the baseline
+    prompt with no signal. (That run itself was NOT scored that way; its
+    prompts come from scripts/build_verdict_only_replay.py, not from this
+    module.) `""` stays silent: README.md documents it as the intended
+    baseline switch.
+    """
+    source = os.environ if env is None else env
+    raw = source.get("MONO_VARIANT", DEFAULT_VARIANT_NAME).strip().lower()
+    variant = VARIANTS.get(raw)
+    if variant is None:
+        if raw:
+            log.warning(
+                "MONO_VARIANT=%r is not a known variant (%s); falling back to the "
+                "baseline prompt", raw, ", ".join(repr(k) for k in VARIANTS),
+            )
+        variant = VARIANTS[""]
+    return variant
+
+
+# Resolved ONCE, at import. A per-call environment read would let a mutated
+# environ switch prompts mid-run, and a score has to stay attributable to an
+# exact prompt+model. In-process selection is the `variant=` argument below.
+DEFAULT_VARIANT = variant_from_env()
+
+
+def _relation_note(client, record, *, variant: ScoringVariant | None = None) -> str:
+    """Relation-nature rejection note for [Complex] claims (relnature variants);
     empty for other variants or when the evidence supports a direct physical bind."""
-    if _VARIANT not in ("disconfirm_relnature", "disconfirm_relnature_rf"):
+    variant = variant or DEFAULT_VARIANT
+    if variant.resolve_relation_nature is None:
         return ""
     try:
-        return resolve_relation_nature(
+        return variant.resolve_relation_nature(
             record.subject, record.object, record.stmt_type, record.evidence_text, client)
     except Exception as e:
         log.warning(
@@ -273,109 +357,6 @@ def _example_trace_rows(examples: list[dict]) -> list[dict]:
     ]
 
 
-def _build_messages(record: ScoringRecord, examples: list[dict] | None = None,
-                    note: str = "") -> list[dict]:
-    """Build the contrastive-example + user-message conversation for a record."""
-    examples = examples if examples is not None else _select_examples(record.stmt_type)
-    _render = _variant_render if _VARIANT in _STRUCTURED_VARIANTS else _render_example
-    messages: list[dict] = []
-    for ex in examples:
-        u, a = _render(ex)
-        messages.append({"role": "user", "content": u})
-        messages.append({"role": "assistant", "content": a})
-    user = record.format_user_message()
-    if note:  # relation-nature rejection note, read by the disconfirm verdict as provenance.
-        user = user + "\n\n" + note
-    messages.append({"role": "user", "content": user})
-    return messages
-
-
-def _parse_verdict(response) -> tuple[str | None, str | None]:
-    """Extract verdict from a model response.
-
-    Strategy:
-      1. Try parsing `response.content` (final assistant message). For
-         separate-reasoning models (Gemma-4), this is CoT-free — guards
-         against hypothetical JSON in reasoning being picked up by
-         extract_verdict's last-match logic.
-      2. If content is empty OR yields no verdict, fall back to `raw_text`
-         (reasoning + content joined). Recovers truncated responses where
-         the verdict is in reasoning and final content is incomplete.
-
-    The two-step fallback is load-bearing: truncation at max_tokens
-    (finish_reason="length") can produce a non-empty content that lacks
-    the JSON verdict. Without the fallback, such records silently
-    collapse to (None, None) → score 0.5.
-    """
-    if _VARIANT in _STRUCTURED_VARIANTS:
-        # Structured parse + decision backstop. Try content then raw_text.
-        for text in (response.content, response.raw_text):
-            if not text:
-                continue
-            parsed = _variant_parse(text)
-            if parsed.get("verdict") is not None:
-                v, c, _rule = _variant_derive(parsed)
-                return v, c
-        return None, None
-    if response.content:
-        verdict, confidence = extract_verdict(response.content)
-        if verdict is not None:
-            return verdict, confidence
-    # Fall back to full raw_text (includes reasoning).
-    return extract_verdict(response.raw_text)
-
-
-def _stamp_committed_justification(response) -> None:
-    """Record the model's committed `support`/`objection` into the response's
-    reasoning trace, so a downstream interface can present the model's own
-    justification uniformly across backends. Structured variants only (baseline
-    has no support/objection). The trace dict is the SAME object the model client
-    appended to the call log, so this mutation travels with the persisted record.
-    No-op (and crash-proof) when there's no structured trace."""
-    if _VARIANT not in _STRUCTURED_VARIANTS:
-        return
-    trace = getattr(response, "reasoning_trace", None)
-    if not isinstance(trace, dict):
-        return
-    parsed = _variant_parse(response.content)
-    if parsed.get("verdict") is None:
-        parsed = _variant_parse(response.raw_text)
-    trace["committed_justification"] = {
-        "support": parsed.get("support"),
-        "objection": parsed.get("objection"),
-        "source": "answer_json",
-    }
-
-
-def _score_single(
-    client: ModelClient,
-    record: ScoringRecord,
-    max_tokens: int | None,
-    temperature: float = 0.1,
-) -> dict:
-    """Single LLM call for Tier 2 (+ optional relation-nature note). Returns result dict."""
-    examples = _select_examples(record.stmt_type)
-    note = _relation_note(client, record)
-    response = client.call(
-        system=ACTIVE_SYSTEM_PROMPT,
-        messages=_build_messages(record, examples, note=note),
-        max_tokens=max_tokens,
-        temperature=temperature,
-        kind="monolithic",
-    )
-    verdict, confidence = _parse_verdict(response)
-    _stamp_committed_justification(response)
-    selected_examples = _example_trace_rows(examples)
-    return {
-        "verdict": verdict,
-        "confidence": confidence,
-        "raw_text": response.raw_text,
-        "tokens": response.tokens,
-        "selected_example_ids": [ex["id"] for ex in selected_examples],
-        "selected_examples": selected_examples,
-    }
-
-
 _LOOKUP_GUIDANCE = """
 
 EXTERNAL LOOKUP CONTEXT — an "Entity database lookups:" block is included
@@ -400,10 +381,89 @@ lookups are already done for you.
 """
 
 
-def _format_entity_lookups(record: ScoringRecord) -> str:
-    """Pre-compute gilda lookups for ambiguous entities. Returns a
-    formatted block suitable for prompt injection, or "" when neither
-    entity benefits from lookup.
+def _prepare(record: ScoringRecord, examples: list[dict] | None = None, *,
+             route: str = "plain", lookups: Sequence[str] = (),
+             max_tokens: int | None = None, temperature: float = 0.1,
+             variant: ScoringVariant | None = None) -> PreparedExecution:
+    """Bind this module's few-shot selection to the one request value.
+
+    Everything the REQUEST is — the rendered few-shot prefix, the tool-route
+    system prompt, the body join, and the note-then-lookups splice — belongs to
+    `prepare_from_record`. What stays here is what genuinely reads this module:
+    which contrastive examples this statement type gets, and the lookup-guidance
+    block that composes the tool system prompt.
+    """
+    variant = variant or DEFAULT_VARIANT
+    examples = examples if examples is not None else _select_examples(record.stmt_type)
+    return prepare_from_record(
+        record, variant, route=route, examples=examples, lookups=lookups,
+        lookup_guidance=_LOOKUP_GUIDANCE, max_tokens=max_tokens,
+        temperature=temperature,
+    )
+
+
+def _stamp_committed_justification(response, *,
+                                   variant: ScoringVariant | None = None) -> None:
+    """Record the model's committed `support`/`objection` into the response's
+    reasoning trace, so a downstream interface can present the model's own
+    justification uniformly across backends. Structured variants only (baseline
+    does not ask for support/objection). The trace dict is the SAME object the
+    model client appended to the call log, so this mutation travels with the
+    persisted record. No-op (and crash-proof) when there's no structured trace.
+
+    A reply the parser cannot read still stamps the key, with both fields None:
+    the interface distinguishes "no justification committed" from "no trace
+    recorded", and a justification without a verdict is not a commitment."""
+    variant = variant or DEFAULT_VARIANT
+    if not variant.structured:
+        return
+    trace = getattr(response, "reasoning_trace", None)
+    if not isinstance(trace, dict):
+        return
+    parsed = parse_response(response)
+    trace["committed_justification"] = {
+        "support": None if parsed is None else parsed.support,
+        "objection": None if parsed is None else parsed.objection,
+        "source": "answer_json",
+    }
+
+
+def _score_single(
+    client: ModelClient,
+    record: ScoringRecord,
+    max_tokens: int | None,
+    temperature: float = 0.1,
+    *,
+    variant: ScoringVariant | None = None,
+) -> dict:
+    """Single LLM call for Tier 2 (+ optional relation-nature note). Returns result dict."""
+    variant = variant or DEFAULT_VARIANT
+    examples = _select_examples(record.stmt_type)
+    note = _relation_note(client, record, variant=variant)
+    execution = _prepare(record, examples, route="plain", max_tokens=max_tokens,
+                         temperature=temperature, variant=variant)
+    response = client.call(**execution.calls(note)[-1].client_kwargs())
+    parsed = parse_response(response)
+    _stamp_committed_justification(response, variant=variant)
+    selected_examples = _example_trace_rows(examples)
+    return {
+        "verdict": None if parsed is None else parsed.label,
+        "confidence": None if parsed is None else parsed.confidence,
+        "raw_text": response.raw_text,
+        "tokens": response.tokens,
+        "selected_example_ids": [ex["id"] for ex in selected_examples],
+        "selected_examples": selected_examples,
+    }
+
+
+def _format_entity_lookups(record: ScoringRecord) -> list[str]:
+    """Pre-compute gilda lookups for ambiguous entities. Returns one formatted
+    line per looked-up entity, or [] when neither entity benefits from lookup.
+
+    The "Entity database lookups:" header and the join belong to
+    `PreparedExecution.calls` — the batch replay carries the same per-entity
+    lines as separate content-addressed rows, so the block is assembled once,
+    there, from the same shape on both sides.
 
     Looks up `raw_text` (the ambiguous mention the reader extracted), not
     `name` (the already-resolved canonical symbol). Looking up the canonical
@@ -432,15 +492,15 @@ def _format_entity_lookups(record: ScoringRecord) -> str:
             log.warning("lookup_gene failed for %r: %s", lookup_target, e)
             continue
         lines.append(result)
-    if not lines:
-        return ""
-    return "Entity database lookups:\n" + "\n".join(lines)
+    return lines
 
 
 def _score_with_tools(
     client: ModelClient,
     record: ScoringRecord,
     max_tokens: int | None,
+    *,
+    variant: ScoringVariant | None = None,
 ) -> dict:
     """Tier 2 with pre-computed entity lookups. For records where grounding
     is flagged or entity symbols are short/ambiguous, gilda lookups are
@@ -448,28 +508,19 @@ def _score_with_tools(
     does not need to decide whether to call the tool — the external
     signal is always present.
     """
-    lookup_ctx = _format_entity_lookups(record)
+    variant = variant or DEFAULT_VARIANT
+    lookups = _format_entity_lookups(record)
     examples = _select_examples(record.stmt_type)
-    note = _relation_note(client, record)
-    messages = _build_messages(record, examples, note=note)
-    if lookup_ctx:
-        # Augment the user message (last message) with the lookup block.
-        augmented = messages[-1]["content"] + "\n\n" + lookup_ctx
-        messages[-1] = {"role": "user", "content": augmented}
-
-    response = client.call(
-        system=ACTIVE_SYSTEM_PROMPT + _LOOKUP_GUIDANCE,
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=0.1,
-        kind="monolithic_tool_context",
-    )
-    verdict, confidence = _parse_verdict(response)
-    _stamp_committed_justification(response)
+    note = _relation_note(client, record, variant=variant)
+    execution = _prepare(record, examples, route="tool", lookups=lookups,
+                         max_tokens=max_tokens, variant=variant)
+    response = client.call(**execution.calls(note)[-1].client_kwargs())
+    parsed = parse_response(response)
+    _stamp_committed_justification(response, variant=variant)
     selected_examples = _example_trace_rows(examples)
     return {
-        "verdict": verdict,
-        "confidence": confidence,
+        "verdict": None if parsed is None else parsed.label,
+        "confidence": None if parsed is None else parsed.confidence,
         "raw_text": response.raw_text,
         "tokens": response.tokens,
         "selected_example_ids": [ex["id"] for ex in selected_examples],
@@ -481,17 +532,24 @@ def score(
     client: ModelClient,
     record: ScoringRecord,
     max_tokens: int | None = None,
+    *,
+    variant: ScoringVariant | None = None,
 ) -> dict:
     """Score a single extraction with a single deterministic LLM call.
 
     Two-tier:
       Tier 1: deterministic grounding auto-reject (mismatch/pseudogene).
-      Tier 2: single LLM call (temp=0.1) — tool-use variant when grounding
+      Tier 2: single LLM call (temp=0.1) — tool-use path when grounding
               is flagged; otherwise straight comprehension.
+
+    `variant` selects the scoring profile (prompt, few-shot renderer, parser,
+    relation-nature step); it defaults to DEFAULT_VARIANT, resolved from
+    MONO_VARIANT at import.
 
     Returns dict with: score, verdict, confidence, raw_text, tokens,
     tier, grounding_status, provenance_triggered.
     """
+    variant = variant or DEFAULT_VARIANT
     _pop = getattr(client, "pop_call_log", lambda: [])
     _pop()
 
@@ -503,7 +561,10 @@ def score(
     # grounding + the asserted relation) is planned and will replace this branch.
     if not (record.evidence_text or "").strip():
         return {
-            "score": verdict_to_score("correct", "high"),
+            # ("correct", "high") is an on-grid pair, so this is always 0.95 —
+            # a real cell, not the neutral value the parse-failure path used to
+            # fabricate. `grid_score` can only return None off-grid.
+            "score": grid_score("correct", "high"),
             "verdict": "correct",
             "confidence": "high",
             "raw_text": "No evidence sentence — accepted by default (database-sourced).",
@@ -541,14 +602,14 @@ def score(
 
     # --- Tier 2: single LLM call (deterministic, temp=0.1) ---
     if needs_tool_use:
-        result = _score_with_tools(client, record, max_tokens)
+        result = _score_with_tools(client, record, max_tokens, variant=variant)
         verdict = result["verdict"]
         confidence = result["confidence"]
         total_tokens = result["tokens"]
         raw = result["raw_text"]
         tier = "llm_tool_use"
     else:
-        result = _score_single(client, record, max_tokens)
+        result = _score_single(client, record, max_tokens, variant=variant)
         verdict = result["verdict"]
         confidence = result["confidence"]
         total_tokens = result["tokens"]
@@ -557,7 +618,9 @@ def score(
     call_log = _pop()
 
     return {
-        "score": verdict_to_score(verdict, confidence),
+        # None when the model's reply named no scorable verdict. That absence is
+        # the result — it is not a 0.5, and no caller may make it one.
+        "score": grid_score(verdict, confidence),
         "verdict": verdict,
         "confidence": confidence,
         "raw_text": raw,
@@ -577,6 +640,7 @@ def score_statement(
     client: ModelClient,
     *,
     max_tokens: int | None = None,
+    variant: ScoringVariant | None = None,
 ) -> dict:
     """Score a single INDRA Statement + Evidence pair.
 
@@ -595,11 +659,15 @@ def score_statement(
             and scoring is driven entirely by the LLM tier.
         client: A `ModelClient` configured for the chosen backend.
         max_tokens: Per-generation token limit. Default 12000.
+        variant: Scoring profile to use. Defaults to DEFAULT_VARIANT.
 
     Returns:
         A dict with keys:
-            score            float in [0, 1]; 0.95=correct/high … 0.05=incorrect/high.
-                             Returns 0.5 when verdict cannot be parsed.
+            score            float on the six-cell grid; 0.95=correct/high …
+                             0.05=incorrect/high. **None** when the verdict
+                             cannot be parsed — an absent measurement stays
+                             absent, and 0.5 is not a value this scorer can
+                             produce.
             verdict          "correct" | "incorrect" | None (parse failure)
             confidence       "high" | "medium" | "low" | None
             tier             which scoring path produced the verdict
@@ -612,7 +680,7 @@ def score_statement(
     parse failure, not a neutral judgement.
     """
     record = ScoringRecord(statement=statement, evidence=evidence)
-    return score(client, record, max_tokens=max_tokens)
+    return score(client, record, max_tokens=max_tokens, variant=variant)
 
 
 def main():
@@ -622,7 +690,7 @@ def main():
     parser = argparse.ArgumentParser(description="Evidence quality scorer (INDRA native)")
     # Default model backend is overridable via IBR_MODEL; unchanged default
     # ('gemma-remote') keeps a transient backend from being hard-pinned here.
-    parser.add_argument("--model", default=_os.environ.get("IBR_MODEL", "gemma-remote"))
+    parser.add_argument("--model", default=os.environ.get("IBR_MODEL", "gemma-remote"))
     parser.add_argument("--holdout", default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
     parser.add_argument("--output", default=str(ROOT / "data" / "results" / "scorer_output.jsonl"))
     parser.add_argument("--max-tokens", type=int, default=12000)

@@ -203,12 +203,14 @@ def test_compact_reasoning_trace_export_projection():
 
 def test_scorer_stamps_committed_justification():
     from indra_belief.scorers.monolithic import scorer as S
-    if S._VARIANT not in S._STRUCTURED_VARIANTS:
-        pytest.skip("committed_justification only applies to structured variants")
+    # Pass the variant explicitly: the stamping branch is a property of the
+    # variant, not of the ambient MONO_VARIANT this process happens to carry.
+    variant = S.VARIANTS["disconfirm_relnature_rf"]
+    assert variant.structured
     js = ('{"support":"X binds Y","objection":"amount not activity",'
           '"verdict":"incorrect","confidence":"high"}')
     r = ModelResponse(content=js, reasoning="", tokens=1, raw_text=js, finish_reason="stop")
-    S._stamp_committed_justification(r)
+    S._stamp_committed_justification(r, variant=variant)
     cj = r.reasoning_trace["committed_justification"]
     assert cj["support"] == "X binds Y"
     assert cj["objection"] == "amount not activity"

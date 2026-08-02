@@ -35,6 +35,11 @@
 #   <arm>.err.log          accumulated runner stderr
 #   <arm>.state.json       heartbeat: phase, invocation, crash counters
 #   <arm>.COMPLETE         terminal marker: action complete (status-verified)
+#   <arm>.SETTLED          terminal marker: nothing left to schedule, but N
+#                          sources carry no verdict. Distinct from COMPLETE on
+#                          purpose — the arm is finished and must not be
+#                          restarted, and the holes must be seen before the
+#                          bundle is materialized against them.
 #   <arm>.ALERT            terminal marker: operator intervention required
 set -u
 
@@ -126,8 +131,13 @@ kill_runner() {
     pkill -f "indra_belief.comparison _run-child.*--action $ARM" 2>/dev/null
 }
 
-# Confirm the arm is really complete before writing the terminal marker.
-# Returns 0 complete, 1 definitively not complete, 2 unverifiable right now.
+# Confirm the arm is really terminal before writing a terminal marker, and say
+# WHICH terminal it reached. `settled` is reported separately from `complete`
+# because the two must not write the same marker: one means every source carries
+# a verdict, the other means some never will.
+# Returns 0 complete, 3 settled, 1 definitively not terminal, 2 unverifiable now.
+# SETTLED_COUNT carries the quarantined source count for the log line.
+SETTLED_COUNT=0
 verify_complete() {
     TRIES=0
     while [ "$TRIES" -lt 5 ]; do
@@ -141,13 +151,19 @@ except ValueError:
     print('error'); raise SystemExit(0)
 for action in value.get('actions', []):
     if action.get('action_id') == '$ARM':
-        print('complete' if action.get('status') == 'complete' else 'partial')
+        status = action.get('status')
+        if status in ('complete', 'settled'):
+            print('%s %d' % (status, action.get('settled', 0)))
+        else:
+            print('partial 0')
         break
 else:
     print('error')
 " )
-        case "$RESULT" in
+        SETTLED_COUNT=${RESULT#* }
+        case "${RESULT%% *}" in
             complete) return 0 ;;
+            settled) return 3 ;;
             partial) return 1 ;;
             *) log "completion verification attempt $TRIES failed (concurrent ledger read?); retrying in 60s"; snooze 60 ;;
         esac
@@ -161,6 +177,7 @@ TRANSIENT=0
 RPID=""
 
 [ -f "$SUP/$ARM.COMPLETE" ] && { log "COMPLETE marker present; nothing to do"; exit 0; }
+[ -f "$SUP/$ARM.SETTLED" ] && { log "SETTLED marker present; arm is terminal with quarantined sources; nothing to do"; exit 0; }
 [ -f "$SUP/$ARM.ALERT" ] && { log "ALERT marker present; refusing to start until it is cleared"; exit 0; }
 
 # Retry the lock through a predecessor's teardown window (shlock steals
@@ -267,15 +284,43 @@ if summary is not None:
     status = summary.get("status")
     failure = summary.get("failure") or {}
     kind = failure.get("kind", "")
+    # DISPOSITION, not kind. Keying on kind alone mapped all four quarantine
+    # kinds to one terminal "stuck" ALERT carrying a single failure, and said a
+    # reviewed plan amendment was required. What the operator actually needs is
+    # the LIST — how many sources are bad and which — because that is the whole
+    # of what quarantine buys against an all-or-nothing corpus: the regime, not
+    # a finished arm.
+    disposition = failure.get("disposition", "")
+    quarantined = summary.get("quarantined", 0)
+    detail = json.dumps(json.dumps({
+        "failure": failure,
+        "quarantined": quarantined,
+        "quarantined_sources": summary.get("quarantined_sources", []),
+        "quarantined_sources_truncated": summary.get(
+            "quarantined_sources_truncated", False),
+        "completed_total": summary.get("completed_total"),
+        "total": summary.get("total"),
+    }))
     if status == "complete":
         print("complete")
+    elif status == "settled":
+        # Nothing schedulable remains, but some sources have no verdict.
+        # Terminal, and NOT the same as complete.
+        print("settled " + detail)
     elif status == "spend_cap" or kind == "spend_cap":
-        print("spend_cap " + json.dumps(json.dumps(failure)))
+        print("spend_cap " + detail)
     elif status == "deadline":
         print("deadline")
-    elif kind in ("attempt_failed", "attempts_exhausted",
-                  "nonretryable_failure_on_resume", "invalid_model_output_limit"):
-        print("stuck " + json.dumps(json.dumps(failure)))
+    elif disposition == "halt" or disposition == "quarantine" or kind:
+        # Everything that stopped an arm short of complete lands here, and the
+        # distinction the operator needs is not restartable-vs-not — an arm
+        # holding a hole is never restartable, because the bundle requires every
+        # pair scored. It is WHY it stopped, and HOW MANY holes it found. The
+        # old branch keyed on `kind` alone and called all of this
+        # "stuck_under_plan_bounds", which for `invalid_model_output_limit` also
+        # claimed a plan amendment would fix it; raising max_attempts does not
+        # move the per-source invalid-output cap at all.
+        print("stopped " + detail)
     else:
         print("crash")
     raise SystemExit(0)
@@ -303,13 +348,23 @@ PYEOF
     log "invocation $INV exited code=$CODE decision=$WORD (+$((SIZE_AFTER - SIZE_BEFORE)) bytes)"
 
     case "$WORD" in
-        complete|maybe_complete)
+        complete|maybe_complete|settled)
             verify_complete
             VERDICT=$?
             if [ "$VERDICT" -eq 0 ]; then
                 date -u +%Y-%m-%dT%H:%M:%SZ > "$SUP/$ARM.COMPLETE"
                 state "complete"
                 log "action complete (status-verified); supervisor exiting"
+                exit 0
+            elif [ "$VERDICT" -eq 3 ]; then
+                # Terminal, but with holes. Its own marker, so no later reader
+                # can mistake it for a clean arm, and so the count is on disk
+                # next to the arm it belongs to.
+                printf '{"ts":"%s","arm":"%s","quarantined":%s}\n' \
+                    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ARM" "$SETTLED_COUNT" \
+                    > "$SUP/$ARM.SETTLED"
+                state "settled"
+                log "action SETTLED (status-verified): nothing left to schedule, $SETTLED_COUNT source(s) carry no verdict; the bundle must record them as exclusions"
                 exit 0
             elif [ "$VERDICT" -eq 1 ]; then
                 log "runner claimed completion but status says partial; treating as crash"
@@ -330,10 +385,16 @@ PYEOF
             state "alert_spend_cap"
             exit 0
             ;;
-        stuck)
-            alert "stuck_under_plan_bounds" "$DETAIL"
-            state "alert_stuck"
-            log "a source is terminal under the frozen plan's bounds; a reviewed plan amendment is required"
+        stopped)
+            # The arm stopped short of complete. Restarting cannot help: it
+            # either holds a hole — in which case the runner will not dispatch
+            # it again, because a bundle needs every pair scored — or it halted
+            # on a failure that is a statement about the run. Either way a human
+            # fixes the cause. The ALERT carries the quarantine COUNT and the
+            # identities, which is the diagnostic the budget was spent to buy.
+            alert "stopped_before_complete" "$DETAIL"
+            state "alert_stopped"
+            log "the arm stopped before complete; the ALERT carries the quarantined-source list and the regime. Note: raising max_attempts does NOT move the per-source invalid-output cap"
             exit 0
             ;;
         deadline)

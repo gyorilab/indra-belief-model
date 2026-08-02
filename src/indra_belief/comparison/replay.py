@@ -1,4 +1,20 @@
-"""Provider-free prompt replay, raw-row validation, and append-only resume."""
+"""Provider-free prompt replay, raw-row validation, and append-only resume.
+
+This module no longer ASSEMBLES a request. `ReplayIndex` owns the
+content-addressed component tables and resolves a row's refs against them;
+`indra_belief.prepared_execution` owns the request itself and the digest
+contract the frozen substrate commits to. `ReplayError` and `prompt_sha256`
+moved there with it and are re-exported here, so every existing importer and
+every `except ReplayError` still resolves.
+
+It no longer READS one either. `indra_belief.verdict` owns the parser and the
+(verdict, confidence) -> score grid, for this path and for the live scorer
+alike. The copies that lived here were not equivalent to the live ones: this
+one's nullish set omitted "no support", and its fallback patterns were a strict
+subset, so under truncation it lost verdicts the live path recovered. Its SCORE
+map, by contrast, was the correct half of that split, and is what the unified
+`grid_score` kept — an off-grid pair is None, and None means RETRY, not 0.5.
+"""
 
 from __future__ import annotations
 
@@ -10,13 +26,23 @@ import os
 import re
 import stat
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Iterator, Mapping, Protocol, Sequence
+
+from indra_belief.prepared_execution import (
+    RELATION_CALL_KIND,
+    PreparedCall,
+    PreparedExecution,
+    ReplayError,
+    assert_replay_digests,
+    prepare_from_replay_row,
+    prompt_sha256,
+)
+from indra_belief.verdict import grid_score, parse_response
 
 from .contracts import (
     Action,
-    ContractError,
     FileCapture,
     FileDescriptor,
     RunPlan,
@@ -33,35 +59,12 @@ CALLABLE_ROUTES = frozenset({"plain", "tool"})
 DETERMINISTIC_ROUTES = frozenset(
     {"no_text", "deterministic_mismatch", "deterministic_pseudogene"}
 )
-VERDICT_SCORES = {
-    ("correct", "high"): 0.95,
-    ("correct", "medium"): 0.80,
-    ("correct", "low"): 0.65,
-    ("incorrect", "low"): 0.35,
-    ("incorrect", "medium"): 0.20,
-    ("incorrect", "high"): 0.05,
-}
-_NULLISH = frozenset({"", "none", "null", "n/a", "na", "no objection", "-"})
-_VERDICT_OBJECT = re.compile(r'\{[^{}]*"verdict"[^{}]*\}', re.DOTALL)
-_VERDICT_PATTERNS = (
-    re.compile(r'"verdict"\s*:\s*"(correct|incorrect)"', re.I),
-    re.compile(r"(?:verdict|decision|conclusion)[^a-z]*:?[^a-z]*(correct|incorrect)", re.I),
-    re.compile(r"(?:verdict|decision|answer)\s+(?:is|=)\s*(correct|incorrect)", re.I),
-)
-_CONFIDENCE_PATTERNS = (
-    re.compile(r'"confidence"\s*:\s*"(high|medium|low)"', re.I),
-    re.compile(r"confidence[^a-z]*:?[^a-z]*(high|medium|low)", re.I),
-    re.compile(r"with\s+(high|medium|low)\s+confidence", re.I),
-)
 _FORBIDDEN_INPUT_KEYS = frozenset({
     "belief", "correct", "curation", "curations", "curator", "curator_note",
     "gold", "incorrect", "label", "labels", "model_output", "model_outputs",
     "model_response", "model_responses", "predicted_label", "prediction",
     "predictions", "tag", "tags", "verdict", "verdicts",
 })
-
-
-class ReplayError(ContractError): pass
 
 
 class ResponseLike(Protocol):
@@ -81,81 +84,6 @@ class ClientLike(Protocol):
 
 def _sha_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-def prompt_sha256(system: str, messages: Sequence[Mapping[str, Any]]) -> str:
-    return canonical_sha256({"system": system, "messages": list(messages)})
-
-
-def parse_structured(text: str) -> dict[str, str | None]:
-    result: dict[str, str | None] = {
-        "support": None, "objection": None, "verdict": None, "confidence": None
-    }
-    if not text:
-        return result
-    for match in reversed(list(_VERDICT_OBJECT.finditer(text))):
-        try:
-            value = json.loads(match.group(0))
-        except json.JSONDecodeError:
-            continue
-        for field in ("support", "objection"):
-            raw = value.get(field)
-            normalized = None if raw is None else str(raw).strip()
-            result[field] = None if (normalized or "").lower() in _NULLISH else normalized
-        verdict, confidence = value.get("verdict"), value.get("confidence")
-        result["verdict"] = verdict.lower() if isinstance(verdict, str) else None
-        result["confidence"] = confidence.lower() if isinstance(confidence, str) else None
-        if result["verdict"] in {"correct", "incorrect"}:
-            return result
-    result["verdict"] = result["confidence"] = None
-    for pattern in _VERDICT_PATTERNS:
-        matches = pattern.findall(text)
-        if matches:
-            result["verdict"] = matches[-1].lower()
-            break
-    if result["verdict"] is None:
-        return result
-    result["confidence"] = "medium"
-    for pattern in _CONFIDENCE_PATTERNS:
-        matches = pattern.findall(text)
-        if matches:
-            result["confidence"] = matches[-1].lower()
-            break
-    return result
-
-
-def parse_response(response: ResponseLike) -> tuple[str | None, str | None]:
-    for text in (response.content, response.raw_text):
-        parsed = parse_structured(text or "")
-        if parsed["verdict"] is not None:
-            return parsed["verdict"], parsed["confidence"] or "medium"
-    return None, None
-
-
-VALID_VERDICTS = frozenset({"correct", "incorrect"})
-VALID_CONFIDENCES = frozenset({"high", "medium", "low"})
-
-
-def verdict_score(verdict: str | None, confidence: str | None) -> float | None:
-    """Grid score for a (verdict, confidence) pair, or None if it is off-grid.
-
-    Returns None rather than the 0.5 midpoint this used to fabricate. 0.5 is not
-    on the six-cell grid — no model output can produce it — so writing it for an
-    answer the model did not give records an invented value as though it were a
-    measurement, and it lands exactly on the neutral point a calibration curve is
-    most sensitive to.
-
-    A None here is the caller's signal to RETRY (runner._attempt treats it as
-    InvalidModelOutput) and, once the per-source retry budget is spent, to write
-    the row as an ERROR. An absent measurement stays absent.
-
-    A missing confidence still defaults to "medium". That is deliberate and
-    different in kind: it resolves to a real grid cell (0.80 / 0.20) rather than
-    to a value outside the grid entirely.
-    """
-    if verdict not in VALID_VERDICTS:
-        return None
-    return VERDICT_SCORES.get((verdict, confidence or "medium"))
 
 
 def _canonical_rows(descriptor: FileDescriptor, *, context: str) -> tuple[list[dict[str, Any]], FileCapture]:
@@ -329,9 +257,10 @@ class ReplayIndex:
             if route not in CALLABLE_ROUTES | DETERMINISTIC_ROUTES or topology != expected_topology:
                 raise ReplayError(f"execution {number} route/call topology differs")
             if route in CALLABLE_ROUTES:
-                self.main_request(row)
-                if row.get("relation_prompt_sha256"):
-                    self.relation_request(row)
+                # `prepare` resolves every ref (and digest-checks the relation
+                # sub-call when the row carries one); this is the main prompt's
+                # own commitment.
+                assert_replay_digests(self.prepare(row), row)
             else:
                 self.deterministic_result(row)
 
@@ -376,46 +305,30 @@ class ReplayIndex:
             self.lookups, self.relation_aliases, executions
         )
 
-    @staticmethod
-    def _record(row: Mapping[str, Any]) -> tuple[str, list[str]]:
-        evidence = row["evidence_metadata"]
-        parts = [f"CLAIM: {row['claim']}"]
-        if row.get("entity_context"):
-            parts.append(str(row["entity_context"]))
-        if row.get("abbreviation_lines"):
-            parts.append("In-text abbreviations:\n" + "\n".join(row["abbreviation_lines"]))
-        if row.get("provenance"):
-            parts.append(str(row["provenance"]))
-        parts.append(f'EVIDENCE: "{evidence["text"]}"')
-        return "\n".join(parts), [str(ref) for ref in row.get("lookup_refs", [])]
+    def prepare(self, row: Mapping[str, Any], *,
+                max_tokens: int | None = None) -> PreparedExecution:
+        """Resolve this row's component refs into the one request value.
 
-    def main_request(self, row: Mapping[str, Any], *, relation_note: str = "") -> tuple[str, list[dict[str, str]]]:
-        try:
-            system = self.systems[str(row["main_system_ref"])]
-            prefix = self.prefixes[str(row["main_message_prefix_ref"])]
-            user, refs = self._record(row)
-            lookups = [self.lookups[ref] for ref in refs]
-        except (KeyError, TypeError) as exc:
-            raise ReplayError("main prompt references an absent component") from exc
-        base_user = user
-        if relation_note:
-            user += "\n\n" + relation_note
-        if lookups:
-            user += "\n\nEntity database lookups:\n" + "\n".join(lookups)
-        messages = [*(dict(message) for message in prefix), {"role": "user", "content": user}]
-        if relation_note:
-            insertion = row.get("relation_note_insertion")
-            if not isinstance(insertion, Mapping) or (
-                insertion.get("message_index") != len(prefix)
-                or insertion.get("role") != "user"
-                or insertion.get("utf8_byte_offset") != len(base_user.encode("utf-8"))
-                or insertion.get("prefix_if_nonempty") != "\n\n"
-                or insertion.get("empty_note_inserts_prefix") is not False
-            ):
-                raise ReplayError("relation-note insertion coordinates differ")
-        elif prompt_sha256(system, messages) != row.get("main_prompt_base_sha256"):
-            raise ReplayError("hydrated main prompt digest differs")
-        return system, messages
+        Ref resolution is all that is left here: the index owns the
+        content-addressed `systems` / `prefixes` / `lookups` tables, and
+        `prepare_from_replay_row` owns the request. Nothing is digest-checked
+        yet — `assert_replay_digests` does that, for both callers.
+        """
+        contract = self.manifest.get("generation_contract")
+        execution = prepare_from_replay_row(
+            row, systems=self.systems, prefixes=self.prefixes, lookups=self.lookups,
+            max_tokens=max_tokens,
+            profile_id=str(contract.get("mono_variant", ""))
+            if isinstance(contract, Mapping) else "",
+        )
+        if not row.get("relation_prompt_sha256"):
+            return execution
+        system, messages = self.relation_request(row)
+        return replace(execution, relation=PreparedCall(
+            kind=RELATION_CALL_KIND, system=system, messages=tuple(messages),
+            max_tokens=3000, temperature=0.1,
+            response_format={"type": "json_object"}, reasoning_effort="none",
+        ))
 
     def relation_request(self, row: Mapping[str, Any]) -> tuple[str, list[dict[str, str]]]:
         try:
@@ -566,31 +479,28 @@ def score_execution(index: ReplayIndex, row: Mapping[str, Any], client: ClientLi
     client.pop_call_log()
     if route not in CALLABLE_ROUTES:
         return index.deterministic_result(row)
+    execution = index.prepare(row, max_tokens=main_max_tokens)
     note = ""
-    if row.get("relation_prompt_sha256"):
-        system, messages = index.relation_request(row)
+    if execution.relation is not None:
         try:
-            response = client.call(system=system, messages=messages, max_tokens=3000,
-                                   temperature=0.1, response_format={"type": "json_object"},
-                                   reasoning_effort="none", kind="relation_nature")
+            response = client.call(**execution.relation.client_kwargs())
             note = _relation_note(response.content or response.raw_text or "",
                                   str(row["subject_name"]), str(row["object_name"]))
         except Exception:
             note = ""
-    system, messages = index.main_request(row, relation_note=note)
-    kind = "monolithic_tool_context" if route == "tool" else "monolithic"
-    response = client.call(system=system, messages=messages, max_tokens=main_max_tokens,
-                           temperature=0.1, kind=kind)
-    verdict, confidence = parse_response(response)
+    assert_replay_digests(execution, row, relation_note=note)
+    response = client.call(**execution.calls(note)[-1].client_kwargs())
+    parsed = parse_response(response)
+    verdict = None if parsed is None else parsed.label
+    confidence = None if parsed is None else parsed.confidence
     trace = getattr(response, "reasoning_trace", None)
     if isinstance(trace, dict):
-        parsed = parse_structured(response.content)
-        if parsed["verdict"] is None:
-            parsed = parse_structured(response.raw_text)
         trace["committed_justification"] = {
-            "support": parsed.get("support"), "objection": parsed.get("objection"), "source": "answer_json"
+            "support": None if parsed is None else parsed.support,
+            "objection": None if parsed is None else parsed.objection,
+            "source": "answer_json",
         }
-    return _result(verdict_score(verdict, confidence), verdict, confidence,
+    return _result(None if parsed is None else parsed.score, verdict, confidence,
                    "llm_tool_use" if route == "tool" else "llm_comprehension",
                    "flagged" if route == "tool" else "all_match", bool(row.get("provenance")),
                    response.raw_text, response.tokens, client.pop_call_log())
@@ -715,7 +625,7 @@ def validate_row(row: Mapping[str, Any], *, source: Mapping[str, Any], action: A
             raise ReplayError("deterministic scored row contains provider calls")
         if row.get("verdict") not in {None, "correct", "incorrect"} or row.get("confidence") not in {None, "high", "medium", "low"}:
             raise ReplayError("scored verdict/confidence is invalid")
-        if row.get("score") != verdict_score(row.get("verdict"), row.get("confidence")):
+        if row.get("score") != grid_score(row.get("verdict"), row.get("confidence")):
             raise ReplayError("scored row score differs from verdict/confidence")
         route = str(source["route"])
         expected_tier = (
@@ -741,6 +651,63 @@ def validate_row(row: Mapping[str, Any], *, source: Mapping[str, Any], action: A
         raise ReplayError("raw result row_status is invalid")
 
 
+# Per-source cap on unparseable model output, counted cumulatively across
+# restarts from the persisted rows (see ResumeState.invalid_outputs). It exists
+# to stop a model that CANNOT do the task from burning the whole transport-retry
+# budget, and is deliberately separate from, and much tighter than,
+# action.max_attempts.
+#
+# Raised 2 -> 5 on 2026-07-31 against measured evidence from the verdict-only
+# run. That prompt asks for two closed-enum fields, and every one of the four
+# models occasionally fills them in the wrong order — e.g. gemma-4-e2b returned
+# `{"verdict": "medium", "confidence": "medium"}`. The rate is 0.057%-0.097%
+# across all four arms, and it is sporadic rather than systematic: re-issuing
+# the SAME request for the execution that wedged returned a valid verdict on 2
+# of 3 tries. At a per-request failure probability of about a third for a hard
+# input, a cap of 2 retires a source 11% of the time, and back when the first
+# retired source halted the whole arm that is exactly what happened; gemma_26b
+# finished carrying 19 such errors purely by luck. Five leaves ~0.4%.
+#
+# This bound is PER SOURCE, and per source only.  Since quarantine landed it no
+# longer stops a systematically broken model: five attempts retire the first
+# source and the scheduler moves to the next one, so the systematic case is
+# bounded by `runner.QUARANTINE_FLOOR`/`QUARANTINE_MAX_FRACTION` — the aggregate
+# circuit breaker — and not by anything here.  It lives here rather than in the
+# runner because it is a property of the durable rows: `_settled_reason` below is
+# the only reader that decides anything with it, and the runner consumes that
+# decision.
+INVALID_MODEL_OUTPUT_LIMIT = 5
+
+
+def resolved_status(*, done: int, settled: int, total: int, any_rows: bool) -> str:
+    """The four action states, from the two disjoint counts of resolved sources.
+
+    ONE settled source is enough to make the action "settled", even with tens of
+    thousands still schedulable, and that is the whole point.  This corpus is
+    all-or-nothing: `llm._load_pairs` and `_validate_raw` require a bundle to
+    cover the exact 1,689-statement / 33,361-execution universe, so an action
+    holding a single unscored source can never be published no matter how much
+    more of it is scored.  Continuing to dispatch it spends real money on an
+    artifact that cannot exist.  "Settled" says: this action is finished, it did
+    not finish cleanly, and the cause has to be fixed rather than out-run.
+
+    `settled` is the state S2 had no name for.  Before it existed such an action
+    reported "partial" forever, so `contracts.ready_actions` re-offered it, every
+    dependent deadlocked, and each futile invocation demanded a live bearer token
+    to build zero clients and issue zero calls.
+
+    "settled" and "complete" are deliberately DISTINCT and must never be merged.
+    Only "complete" means "every source carries a verdict", and that is what the
+    bundle gate, the report and the paper all rest on; anything asking whether an
+    action finished CLEANLY must keep testing for that one string.
+    """
+    if done == total:
+        return "complete"
+    if settled:
+        return "settled"
+    return "partial" if any_rows else "pending"
+
+
 @dataclass(frozen=True)
 class ResumeState:
     status: str
@@ -748,6 +715,8 @@ class ResumeState:
     latest: Mapping[tuple[int, int], Mapping[str, Any]]
     done: frozenset[tuple[int, int]]
     attempts: Mapping[tuple[int, int], int]
+    invalid_outputs: Mapping[tuple[int, int], int]
+    settled: Mapping[tuple[int, int], str]
     verdicts: Mapping[str, int]
 
 
@@ -758,17 +727,54 @@ def _terminal_row(row: Mapping[str, Any]) -> bool:
     )
 
 
-def load_resume(path: Path, *, index: ReplayIndex, action: Action, model: str,
-                provider_model_id: str, stream: Any | None = None) -> ResumeState:
-    """Load append-only attempts without imposing a cross-source row order.
+def row_retry_class(row: Mapping[str, Any]) -> str | None:
+    if row.get("row_status") == "scored":
+        return (
+            None
+            if row.get("verdict") in {"correct", "incorrect"}
+            else "invalid_model_output"
+        )
+    if row.get("row_status") != "error":
+        return None
+    calls = row.get("call_log")
+    if (
+        isinstance(calls, list)
+        and calls
+        and calls[-1].get("provider_failure_class") == "transport_or_server"
+    ):
+        return "transport_or_server"
+    error = row.get("error")
+    if not isinstance(error, Mapping):
+        return None
+    if error.get("type") == "InvalidModelOutput":
+        return "invalid_model_output"
+    # Resume classification is name-based while live classification is
+    # isinstance-based: ActionDeadlineExceeded (a TimeoutError), WAL
+    # interruption closures, and reservation-accounting breaches record
+    # operational events, not provider verdicts, and must stay retryable
+    # across restarts.
+    if error.get("type") in {
+        "TimeoutError",
+        "ConnectionError",
+        "ActionDeadlineExceeded",
+        "InterruptedAfterDurableProviderEvidence",
+        "SpendReservationBreach",
+    }:
+        return "transport_or_server"
+    return None
 
-    Attempts must be contiguous for each source, but concurrent sources may be
-    appended in any completion order.  Historical scored rows with no valid
-    verdict remain immutable attempt evidence; they are nonterminal and may be
-    followed by the next bounded attempt.
+
+def _scan_resume(path: Path, *, index: ReplayIndex, action: Action, model: str,
+                 provider_model_id: str, stream: Any | None = None,
+                 ) -> Iterator[tuple[tuple[Any, Any], Mapping[str, Any]]]:
+    """Parse and validate the append-only attempt rows, yielding (key, row).
+
+    The single owner of the resume parse checks.  `load_resume` and
+    `resume_status` differ only in what they RETAIN from this stream, so neither
+    can drift into a second, laxer validation chain: a row is accepted by both
+    or by neither, and a corrupt file raises the same `ReplayError` for both.
+    Consume it to exhaustion — a short-circuiting fold would skip later checks.
     """
-    if stream is None and not path.exists():
-        return ResumeState("pending", (), {}, frozenset(), {}, {})
     if stream is None:
         raw = stable_read(path, context="raw output").payload
     else:
@@ -784,9 +790,8 @@ def load_resume(path: Path, *, index: ReplayIndex, action: Action, model: str,
     if raw and not raw.endswith(b"\n"):
         raise ReplayError("raw output ends in a partial JSONL row")
     sources = {source_key(row): row for row in index.executions}
-    rows: list[Mapping[str, Any]] = []
-    latest: dict[tuple[int, int], Mapping[str, Any]] = {}
     attempts: Counter[tuple[int, int]] = Counter()
+    terminal: dict[tuple[int, int], bool] = {}
     call_ids: set[str] = set()
     for number, line in enumerate(raw.splitlines(keepends=True), start=1):
         value = strict_json_loads(line[:-1], context=f"raw output row {number}")
@@ -799,7 +804,7 @@ def load_resume(path: Path, *, index: ReplayIndex, action: Action, model: str,
         attempts[key] += 1
         if value.get("attempt_ordinal") != attempts[key] or attempts[key] > action.max_attempts:
             raise ReplayError("raw output attempts are not a bounded contiguous prefix")
-        if key in latest and _terminal_row(latest[key]):
+        if terminal.get(key):
             raise ReplayError("raw output appends an attempt after a terminal scored row")
         validate_row(value, source=source, action=action, model=model,
                      provider_model_id=provider_model_id)
@@ -807,13 +812,143 @@ def load_resume(path: Path, *, index: ReplayIndex, action: Action, model: str,
         if len(ids) != len(value["call_log"]) or ids & call_ids:
             raise ReplayError("raw output repeats a provider call id")
         call_ids.update(ids)
+        yield key, value
+        terminal[key] = _terminal_row(value)
+
+
+def _settled_reason(latest: Mapping[str, Any], *, attempts: int, invalid_outputs: int,
+                    max_attempts: int) -> str | None:
+    """Why a nonterminal source can never be scored again, or None if it can.
+
+    "Settled" is a strictly weaker predicate than `_terminal_row`, and the two
+    must stay separate.  `_terminal_row` decides what may be APPENDED after
+    (`_scan_resume` rejects an attempt following a terminal row), so widening it
+    to cover exhausted sources would reject every legitimate retry.  Settled
+    decides only what may be SCHEDULED: the durable rows already answer "another
+    attempt is not permitted", so re-dispatching the source can only re-pay for
+    the identical refusal.
+
+    It is derived, never persisted.  Every input is a fold over the same
+    append-only rows plus `action.max_attempts`, so a restart recomputes the
+    identical set and no crash can silently un-settle — or silently settle — a
+    source.  Order matters only for which reason is REPORTED; the boundary
+    itself is the disjunction.
+    """
+    return _settled_reason_from_class(
+        row_retry_class(latest), attempts=attempts,
+        invalid_outputs=invalid_outputs, max_attempts=max_attempts,
+    )
+
+
+def _settled_reason_from_class(retry_class: str | None, *, attempts: int,
+                               invalid_outputs: int, max_attempts: int) -> str | None:
+    """The settled boundary itself, over the fold rather than over the row.
+
+    `load_resume` holds the latest row and `resume_status` deliberately does not,
+    so the shared decision is expressed on the only thing both can produce: the
+    retry class of that row plus the three counts.  One boundary, two callers.
+    """
+    if retry_class is None:
+        return "nonretryable_failure_on_resume"
+    if invalid_outputs >= INVALID_MODEL_OUTPUT_LIMIT:
+        return "invalid_model_output_limit"
+    if attempts >= max_attempts:
+        return "attempts_exhausted"
+    return None
+
+
+def load_resume(path: Path, *, index: ReplayIndex, action: Action, model: str,
+                provider_model_id: str, stream: Any | None = None) -> ResumeState:
+    """Load append-only attempts without imposing a cross-source row order.
+
+    Attempts must be contiguous for each source, but concurrent sources may be
+    appended in any completion order.  Historical scored rows with no valid
+    verdict remain immutable attempt evidence; they are nonterminal and may be
+    followed by the next bounded attempt.
+    """
+    if stream is None and not path.exists():
+        return ResumeState("pending", (), {}, frozenset(), {}, {}, {}, {})
+    rows: list[Mapping[str, Any]] = []
+    latest: dict[tuple[int, int], Mapping[str, Any]] = {}
+    attempts: Counter[tuple[int, int]] = Counter()
+    invalid: Counter[tuple[int, int]] = Counter()
+    for key, value in _scan_resume(path, index=index, action=action, model=model,
+                                   provider_model_id=provider_model_id, stream=stream):
         latest[key] = value
         rows.append(value)
+        attempts[key] += 1
+        if row_retry_class(value) == "invalid_model_output":
+            invalid[key] += 1
+    total = len({source_key(row) for row in index.executions})
     done = frozenset(key for key, row in latest.items() if _terminal_row(row))
-    status = "complete" if len(done) == len(sources) else ("partial" if rows else "pending")
     verdicts = Counter(str(row["verdict"]) for row in latest.values()
                        if _terminal_row(row))
-    return ResumeState(status, tuple(rows), latest, done, dict(attempts), dict(verdicts))
+    settled: dict[tuple[int, int], str] = {}
+    for key, row in latest.items():
+        if key in done:
+            continue
+        reason = _settled_reason(row, attempts=attempts[key],
+                                 invalid_outputs=invalid[key],
+                                 max_attempts=action.max_attempts)
+        if reason is not None:
+            settled[key] = reason
+    status = resolved_status(done=len(done), settled=len(settled), total=total,
+                             any_rows=bool(rows))
+    return ResumeState(status, tuple(rows), latest, done, dict(attempts),
+                       dict(invalid), settled, dict(verdicts))
+
+
+@dataclass(frozen=True)
+class ResumeStatus:
+    status: str
+    completed: int
+    attempts: int
+    settled: int = 0
+
+
+def resume_status(path: Path, *, index: ReplayIndex, action: Action, model: str,
+                  provider_model_id: str) -> ResumeStatus:
+    """Answer only what readiness asks, without retaining the parsed rows.
+
+    `prepare_run` and `inspect_plan` run this over EVERY action in the plan but
+    read only a status string and three counts, so retaining the whole file per
+    action is pure cost.  This runs the identical `_scan_resume` checks and keeps
+    four scalars per source key — the same fold `load_resume` performs, minus the
+    rows.  Both must reach the identical status for the same bytes, so the
+    settled counts are derived here rather than approximated; a status that
+    disagreed with `load_resume` would let readiness and the scheduler describe
+    different actions.  Callers that need the rows themselves — `_recover` and
+    `_reconcile` — must still use `load_resume`.
+    """
+    if not path.exists():
+        return ResumeStatus("pending", 0, 0, 0)
+    rows_seen = 0
+    terminal: dict[tuple[int, int], bool] = {}
+    retry_class: dict[tuple[int, int], str | None] = {}
+    attempts: Counter[tuple[int, int]] = Counter()
+    invalid: Counter[tuple[int, int]] = Counter()
+    for key, value in _scan_resume(path, index=index, action=action, model=model,
+                                   provider_model_id=provider_model_id):
+        rows_seen += 1
+        terminal[key] = _terminal_row(value)
+        retry_class[key] = row_retry_class(value)
+        attempts[key] += 1
+        if retry_class[key] == "invalid_model_output":
+            invalid[key] += 1
+    total = len({source_key(row) for row in index.executions})
+    completed = sum(terminal.values())
+    settled = sum(
+        1
+        for key, is_terminal in terminal.items()
+        if not is_terminal
+        and _settled_reason_from_class(
+            retry_class[key], attempts=attempts[key],
+            invalid_outputs=invalid[key], max_attempts=action.max_attempts,
+        ) is not None
+    )
+    status = resolved_status(done=completed, settled=settled, total=total,
+                             any_rows=bool(rows_seen))
+    return ResumeStatus(status, completed, rows_seen, settled)
 
 
 @dataclass

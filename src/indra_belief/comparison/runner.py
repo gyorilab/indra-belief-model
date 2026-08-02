@@ -28,6 +28,7 @@ from indra_belief.spend_guard import (
 )
 
 from .contracts import (
+    TERMINAL_STATUSES,
     Action,
     ContractError,
     RunPlan,
@@ -35,9 +36,10 @@ from .contracts import (
     canonical_json_line,
     load_run_plan,
 )
+from indra_belief.verdict import VALID_CONFIDENCES, VALID_VERDICTS, parse_response
+
 from .replay import (
-    VALID_CONFIDENCES,
-    VALID_VERDICTS,
+    INVALID_MODEL_OUTPUT_LIMIT,
     AppendLog,
     ReplayIndex,
     ResumeState,
@@ -45,12 +47,12 @@ from .replay import (
     execution_identity,
     expected_execution_id,
     load_resume,
-    parse_response,
     result_row,
+    resume_status,
+    row_retry_class,
     score_execution,
     source_key,
     validate_row,
-    verdict_score,
 )
 
 
@@ -73,25 +75,96 @@ _INVALID_OUTPUT_MESSAGE = (
 )
 
 
-# Per-source cap on unparseable model output, counted cumulatively across
-# restarts from the persisted rows (see _run_source). It exists to stop a model
-# that CANNOT do the task from burning the whole transport-retry budget, and is
-# deliberately separate from, and much tighter than, action.max_attempts.
+# Kinds a source may fail with that cost ONE SOURCE rather than the action.
 #
-# Raised 2 -> 5 on 2026-07-31 against measured evidence from the verdict-only
-# run. That prompt asks for two closed-enum fields, and every one of the four
-# models occasionally fills them in the wrong order — e.g. gemma-4-e2b returned
-# `{"verdict": "medium", "confidence": "medium"}`. The rate is 0.057%-0.097%
-# across all four arms, and it is sporadic rather than systematic: re-issuing
-# the SAME request for the execution that wedged returned a valid verdict on 2
-# of 3 tries. At a per-request failure probability of about a third for a hard
-# input, a cap of 2 stops the arm 11% of the time, which is what happened —
-# gemma_26b finished carrying 19 such errors purely by luck. Five leaves ~0.4%.
+# This is an ALLOWLIST, and the default is halt. Everything absent from it —
+# spend_cap, deadline, every auth/config/bad-request status (400/401/403/404/
+# 422), exhausted 5xx and 429 transport, ReplayError and ContractError from a
+# parser-profile or row-shape mismatch, SpendGuardError, SpendReservationBreach,
+# and any exception type nobody has classified yet — stops the whole action on
+# its first occurrence, because those are statements about the RUN, not about
+# one evidence row. A denylist would silently promote each new failure type to
+# "keep spending".
 #
-# This does NOT loosen the systematic case: a model that never emits a valid
-# verdict still stops after five attempts on its first source, long before
-# max_attempts, and the failure is still terminal rather than silently scored.
-INVALID_MODEL_OUTPUT_LIMIT = 5
+# The three settled kinds arrive from `replay._settled_reason`, which reads them
+# off the durable rows; a source in that set has already spent its budget and
+# cannot be re-attempted at all. `attempt_failed`/`InvalidModelOutput` is the
+# live case measured at 0.057%-0.097% of rows on 2026-07-31: the model returned
+# something off-grid for THIS evidence after its per-source retries, which says
+# nothing about the next row.
+_QUARANTINE_KINDS = frozenset({
+    "nonretryable_failure_on_resume",
+    "invalid_model_output_limit",
+    "attempts_exhausted",
+})
+
+# A quarantine must be visible, so the count in RunSummary is exact. The
+# identities are bounded here because a corpus-scale action can quarantine tens
+# of thousands of sources and the summary is one JSON line; the COMPLETE list is
+# always recoverable from the durable rows as `load_resume(...).settled`.
+# This bounds PRINTING only. It is not, and must never be mistaken for, a bound
+# on how many sources may be quarantined — that is the diagnostic budget below.
+QUARANTINE_IDENTITY_LIMIT = 50
+
+# THE DIAGNOSTIC BUDGET — the only reason quarantine keeps scheduling, and the
+# bound that keeps a systematic failure off the action cap. One mechanism, two
+# terms, because they are the same question asked of two regimes.
+#
+# What quarantine can and cannot buy. It CANNOT buy "finish the arm anyway":
+# this corpus is all-or-nothing, `llm._load_pairs` and `_validate_raw` require a
+# bundle to cover the exact 1,689/33,361 universe, so an action holding one
+# unscored source can never be published however much more of it is scored.
+# What it CAN buy is knowing WHICH REGIME you are in before you stop. Pre-S2 the
+# arm halted on the first bad row and the operator learned "one row is bad".
+# That single row cannot distinguish a wrong `provider_model_id` — where every
+# source will fail — from the 0.057% sporadic off-grid output that four
+# production arms actually carry.
+#
+# So: after the first quarantine, keep going only far enough to answer that, and
+# then HALT.
+#
+#   QUARANTINE_DIAGNOSTIC_LIMIT — eight retirements is a systematic breakage,
+#   not a run of bad luck at 0.057%. It trips almost immediately when every
+#   source fails, capping that case at 8 x 5 = 40 provider calls whatever the
+#   corpus size. Measured on this harness with the breaker absent, the same
+#   scenario cost 40 calls at 8 sources, 1,000 at 200, 5,000 at 1,000, and
+#   extrapolates to 33,361 x 5 = 166,805 — bounded only by the action cap
+#   ($39.96 gemma_26b_primary, $309.54 glm_5_primary) and producing zero usable
+#   rows.
+#
+#   QUARANTINE_DIAGNOSTIC_SOURCES — the sporadic ceiling. At the measured rate
+#   the next bad row is ~1,756 sources away, so enumerating them all means
+#   traversing the corpus and paying the whole cap for a bundle that cannot
+#   exist. 200 further sources costs about $0.24 on gemma_26b_primary and $1.86
+#   on glm_5_primary, and is enough to establish that failures are NOT dense.
+#   The operator gets "sporadic, here is what I found" instead of "one row is
+#   bad", at a price worth paying.
+#
+#   That price is only real because the count is anchored to the hole's own
+#   dispatch index (see `first_quarantine_at` below). Anchored to the moment the
+#   failure was DRAINED instead, it silently became drift + 200, where the drift
+#   is however far the other workers ran while the failing source worked through
+#   five attempts of exponential backoff — measured 17 extra here, and hundreds
+#   on a 15s-backoff arm. Same constant, several times the money.
+QUARANTINE_DIAGNOSTIC_LIMIT = 8
+QUARANTINE_DIAGNOSTIC_SOURCES = 200
+
+
+def _diagnostic_budget_spent(*, quarantined: int, dispatched_since_first: int) -> bool:
+    """Whether enough has been learned to stop paying to learn more."""
+    return (
+        quarantined >= QUARANTINE_DIAGNOSTIC_LIMIT
+        or dispatched_since_first >= QUARANTINE_DIAGNOSTIC_SOURCES
+    )
+
+
+def _failure_disposition(failure: Mapping[str, Any]) -> str:
+    kind = failure.get("kind")
+    if kind in _QUARANTINE_KINDS:
+        return "quarantine"
+    if kind == "attempt_failed" and failure.get("type") == "InvalidModelOutput":
+        return "quarantine"
+    return "halt"
 
 
 @dataclass(frozen=True)
@@ -101,6 +174,7 @@ class ActionStatus:
     completed: int
     total: int
     attempts: int
+    settled: int = 0
 
 
 @dataclass(frozen=True)
@@ -129,6 +203,8 @@ class RunSummary:
     verdicts: Mapping[str, int]
     spend_guard: Mapping[str, Any]
     failure: Mapping[str, Any] | None = None
+    quarantined: int = 0
+    quarantined_sources: tuple[Mapping[str, Any], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -140,6 +216,11 @@ class RunSummary:
             "verdicts": dict(self.verdicts),
             "spend_guard": dict(self.spend_guard),
             "failure": dict(self.failure) if self.failure else None,
+            "quarantined": self.quarantined,
+            "quarantined_sources": [dict(row) for row in self.quarantined_sources],
+            "quarantined_sources_truncated": (
+                len(self.quarantined_sources) < self.quarantined
+            ),
         }
 
 
@@ -163,19 +244,25 @@ def inspect_plan(plan: RunPlan | str | Path) -> PlanStatus:
     state_by_id: dict[str, str] = {}
     for action in loaded.actions:
         stage = loaded.stage_by_id[action.stage_id]
-        resume = load_resume(
+        st = resume_status(
             action.output,
             index=scopes[action.id],
             action=action,
             model=stage.model,
             provider_model_id=stage.provider_model_id,
         )
-        state_by_id[action.id] = resume.status
-        statuses.append(ActionStatus(action.id, resume.status, len(resume.done),
-                                     len(scopes[action.id].executions), len(resume.rows)))
+        state_by_id[action.id] = st.status
+        statuses.append(ActionStatus(action.id, st.status, st.completed,
+                                     len(scopes[action.id].executions), st.attempts,
+                                     st.settled))
     ready_actions = loaded.ready_actions(state_by_id)
     if not ready_actions:
-        overall = "complete"
+        # Nothing is schedulable, but "nothing left to do" is not "everything
+        # was scored". A plan holding a settled action must not answer
+        # "complete" to the supervisor's completion check.
+        overall = "settled" if any(
+            row.status == "settled" for row in statuses
+        ) else "complete"
     elif all(row.status == "pending" for row in statuses):
         overall = "pending"
     else:
@@ -271,7 +358,16 @@ class PreparedRun:
             "workload": self.action.workload,
             "total": len(self.index.executions),
             "completed": len(self.resume.done),
-            "pending": len(self.index.executions) - len(self.resume.done),
+            # Sources the durable rows have already retired. They are neither
+            # completed nor schedulable, so counting them as pending would
+            # promise work this run cannot do; `settled` is disjoint from `done`
+            # by construction, so the three still sum to `total`.
+            "quarantined": len(self.resume.settled),
+            "pending": (
+                len(self.index.executions)
+                - len(self.resume.done)
+                - len(self.resume.settled)
+            ),
             "ledger_id": snapshot["ledger_id"],
             "ledger_sequence": snapshot["sequence"],
             "caps_usd": {
@@ -382,11 +478,28 @@ def _recover(prepared: PreparedRun) -> None:
                 result = prepared.index.deterministic_result(source)
             elif successful:
                 response = SimpleNamespace(content=calls[-1]["content"], raw_text=calls[-1]["raw_text"])
-                verdict, confidence = parse_response(response)
+                parsed = parse_response(response)
                 route = str(source["route"])
-                result = None if verdict not in {"correct", "incorrect"} else {
-                    "score": verdict_score(verdict, confidence), "verdict": verdict,
-                    "confidence": confidence, "tier": "llm_tool_use" if route == "tool" else "llm_comprehension",
+                # The SAME validity gate as the live path below, deliberately
+                # written the same way. Recovery used to check the verdict only,
+                # so durable evidence parsing to an on-grid verdict with an
+                # off-grid confidence — {"verdict": "correct", "confidence":
+                # "certain"} — built a result with score=None, was written as
+                # attempt_status="completed", and then failed `validate_row`
+                # ("scored verdict/confidence is invalid") BEFORE
+                # commit_deferred_attempt_outcome below. The deferred attempt
+                # never committed, so every later prepare_run re-entered this
+                # identical path: narrow, permanent, and only escapable by hand.
+                #
+                # The gate is now the PARSER's, not a second reading of its
+                # output: a `Verdict` exists only for an on-grid (verdict,
+                # confidence) pair, so `parsed is None` IS the disjunction the
+                # three clauses used to spell out, and there is no longer a way
+                # to build a result the grid cannot score.
+                result = None if parsed is None else {
+                    "score": parsed.score, "verdict": parsed.label,
+                    "confidence": parsed.confidence,
+                    "tier": "llm_tool_use" if route == "tool" else "llm_comprehension",
                     "grounding_status": "flagged" if route == "tool" else "all_match",
                     "provenance_triggered": bool(source.get("provenance")),
                     "raw_text": calls[-1]["raw_text"], "tokens": calls[-1].get("out_tokens"),
@@ -453,8 +566,9 @@ def prepare_run(plan: RunPlan | str | Path, *, action_id: str | None = None,
     states: dict[str, str] = {}
     for action in loaded.actions:
         stage = loaded.stage_by_id[action.stage_id]
-        states[action.id] = load_resume(action.output, index=scopes[action.id], action=action,
-                                        model=stage.model, provider_model_id=stage.provider_model_id).status
+        states[action.id] = resume_status(action.output, index=scopes[action.id], action=action,
+                                          model=stage.model,
+                                          provider_model_id=stage.provider_model_id).status
     ready = loaded.ready_actions(states)
     if not ready:
         raise RunnerError("run plan is already complete")
@@ -494,7 +608,11 @@ def prepare_run(plan: RunPlan | str | Path, *, action_id: str | None = None,
                                       model=stage.model, provider_model_id=stage.provider_model_id,
                                       stream=output.stream)
         _reconcile(prepared)
-        if prepared.resume.status == "complete":
+        # Recovery can retire the last unresolved source as well as score it, and
+        # either way the action is terminal and needs no token. Re-deriving from
+        # the durable rows lets `ready_actions` drop it and hand back the next
+        # genuinely schedulable action, or raise if there is none.
+        if prepared.resume.status in TERMINAL_STATUSES:
             prepared.close()
             if action_id is not None:
                 raise RunnerError("requested action completed during WAL recovery; no token is needed")
@@ -615,43 +733,6 @@ def _factory_call(factory: Callable[..., Any], token: str, action: Action) -> An
     return factory(token, action) if len(parameters) != 1 else factory(token)
 
 
-def _row_retry_class(row: Mapping[str, Any]) -> str | None:
-    if row.get("row_status") == "scored":
-        return (
-            None
-            if row.get("verdict") in {"correct", "incorrect"}
-            else "invalid_model_output"
-        )
-    if row.get("row_status") != "error":
-        return None
-    calls = row.get("call_log")
-    if (
-        isinstance(calls, list)
-        and calls
-        and calls[-1].get("provider_failure_class") == "transport_or_server"
-    ):
-        return "transport_or_server"
-    error = row.get("error")
-    if not isinstance(error, Mapping):
-        return None
-    if error.get("type") == "InvalidModelOutput":
-        return "invalid_model_output"
-    # Resume classification is name-based while live classification is
-    # isinstance-based: ActionDeadlineExceeded (a TimeoutError), WAL
-    # interruption closures, and reservation-accounting breaches record
-    # operational events, not provider verdicts, and must stay retryable
-    # across restarts.
-    if error.get("type") in {
-        "TimeoutError",
-        "ConnectionError",
-        "ActionDeadlineExceeded",
-        "InterruptedAfterDurableProviderEvidence",
-        "SpendReservationBreach",
-    }:
-        return "transport_or_server"
-    return None
-
-
 def _retry_delay(action: Action, attempts: int) -> float:
     return min(3600.0, action.retry_backoff_seconds * (2 ** max(0, attempts - 1)))
 
@@ -663,6 +744,10 @@ class _SourceOutcome:
     failure: Mapping[str, Any] | None
 
 
+def _quarantine_failure(key: tuple[int, int], reason: str) -> dict[str, Any]:
+    return {"kind": reason, "stmt_i": key[0], "evidence_i": key[1]}
+
+
 def _run_source(
     prepared: PreparedRun,
     client: _DeadlineClient,
@@ -671,32 +756,18 @@ def _run_source(
     sleep: Callable[[float], None],
 ) -> _SourceOutcome:
     key = source_key(source)
+    # The spend-side half of the settled predicate. `_run_prepared` already
+    # keeps these sources out of `pending`, so this normally never fires; it is
+    # kept because it is the LAST gate before a provider reservation, and the
+    # invariant it enforces — a retired source is never re-attempted and never
+    # re-paid — must not depend on one caller building its list correctly.
+    reason = prepared.resume.settled.get(key)
+    if reason is not None:
+        return _SourceOutcome((), False, _quarantine_failure(key, reason))
     attempts = prepared.resume.attempts.get(key, 0)
     prior = prepared.resume.latest.get(key)
-    prior_retry_class = _row_retry_class(prior) if prior is not None else None
-    if prior is not None and prior_retry_class is None:
-        return _SourceOutcome((), False, {
-            "kind": "nonretryable_failure_on_resume",
-            "stmt_i": key[0],
-            "evidence_i": key[1],
-        })
-    invalid_outputs = sum(
-        _row_retry_class(row) == "invalid_model_output"
-        for row in prepared.resume.rows
-        if source_key(row) == key
-    )
-    if invalid_outputs >= INVALID_MODEL_OUTPUT_LIMIT:
-        return _SourceOutcome((), False, {
-            "kind": "invalid_model_output_limit",
-            "stmt_i": key[0],
-            "evidence_i": key[1],
-        })
-    if attempts >= prepared.action.max_attempts:
-        return _SourceOutcome((), False, {
-            "kind": "attempts_exhausted",
-            "stmt_i": key[0],
-            "evidence_i": key[1],
-        })
+    prior_retry_class = row_retry_class(prior) if prior is not None else None
+    invalid_outputs = prepared.resume.invalid_outputs.get(key, 0)
 
     if attempts and prior_retry_class == "transport_or_server":
         delay = _retry_delay(prepared.action, attempts)
@@ -755,15 +826,43 @@ def _run_prepared(
     if prepared.closed or prepared.started:
         raise RunnerError("prepared run is closed or already consumed")
     prepared.started = True
+    settled = prepared.resume.settled
+    pending: list[tuple[int, Mapping[str, Any]]] = []
+    # Sources the durable rows already retired are reported, not re-dispatched.
+    # Reporting them here rather than from a worker is what makes the restart
+    # free: no client is built for them, no reservation is taken, and a run
+    # whose whole remainder is quarantined never opens an executor at all.
+    failures: list[tuple[int, Mapping[str, Any]]] = []
+    for position, source in enumerate(prepared.index.executions):
+        key = source_key(source)
+        if key in prepared.resume.done:
+            continue
+        if key in settled:
+            failures.append((position, _quarantine_failure(key, settled[key])))
+        else:
+            pending.append((position, source))
+    # An action that ALREADY holds a hole is finished, whatever is still
+    # unscored. It can never cover the exact pair universe, so it can never be
+    # bundled, so every further source it scores is money spent on an artifact
+    # that cannot exist. The diagnostic pass happened in the run that found the
+    # hole; a restart re-reads it from the durable rows for free and dispatches
+    # nothing. Without this a supervisor would pay the whole budget again on
+    # every pass — the same unbounded burn, arriving in instalments.
+    if settled:
+        pending = []
+    # The pending set is computed BEFORE the credential boundary, because it
+    # decides whether there is a credential boundary at all. An action whose
+    # remainder is entirely quarantined issues no provider call, so asking the
+    # operator for a live bearer token to run it is a demand for a secret that
+    # will not be used. Readiness still goes out either way — it carries the
+    # completed/quarantined/pending partition the operator reads to decide.
     ready_writer(prepared.readiness())
-    token = token_reader()
-    if not isinstance(token, str) or not token:
-        raise RunnerError("token reader returned no bearer token")
-    pending = [
-        (position, source)
-        for position, source in enumerate(prepared.index.executions)
-        if source_key(source) not in prepared.resume.done
-    ]
+    if pending:
+        token = token_reader()
+        if not isinstance(token, str) or not token:
+            raise RunnerError("token reader returned no bearer token")
+    else:
+        token = ""
     window = min(prepared.action.workers, len(pending))
     clients: list[_DeadlineClient] = []
     raw_clients: list[Any] = []
@@ -788,52 +887,117 @@ def _run_prepared(
         token = ""
 
     completed_this_run = 0
-    failures: list[tuple[int, Mapping[str, Any]]] = []
+    live_quarantines = 0
+    budget_position = 0
+    first_quarantine_at: int | None = None
     fatal: BaseException | None = None
     next_pending = 0
-    active: dict[Future[_SourceOutcome], tuple[int, int]] = {}
+    # (slot, replay position, pending index). The last is carried ONLY for the
+    # diagnostic budget, and it has to be carried rather than derived: `position`
+    # indexes the replay universe while the budget counts DISPATCHES, and the two
+    # coordinate systems diverge by however many sources are already done or
+    # settled.
+    active: dict[Future[_SourceOutcome], tuple[int, int, int]] = {}
 
     def submit(executor: ThreadPoolExecutor, slot: int) -> None:
         nonlocal next_pending
-        position, source = pending[next_pending]
+        index = next_pending
+        position, source = pending[index]
         next_pending += 1
         future = executor.submit(
             _run_source, prepared, clients[slot], source, sleep=sleep
         )
-        active[future] = (slot, position)
+        active[future] = (slot, position, index)
 
     try:
-        with ThreadPoolExecutor(max_workers=window) as executor:
-            for slot in range(window):
-                submit(executor, slot)
-            stop_scheduling = False
-            while active:
-                finished, _ = wait(tuple(active), return_when=FIRST_COMPLETED)
-                batch = sorted(
-                    ((active.pop(future), future) for future in finished),
-                    key=lambda item: item[0][1],
-                )
-                freed: list[int] = []
-                for (slot, position), future in batch:
-                    freed.append(slot)
-                    try:
-                        outcome = future.result()
-                    except BaseException as exc:
-                        fatal = fatal or exc
-                        stop_scheduling = True
-                        continue
-                    for row in outcome.rows:
-                        prepared.output.append(row)
-                    if outcome.completed:
-                        completed_this_run += 1
-                    if outcome.failure is not None:
-                        failures.append((position, outcome.failure))
-                        stop_scheduling = True
-                if not stop_scheduling:
-                    for slot in sorted(freed):
-                        if next_pending >= len(pending):
-                            break
-                        submit(executor, slot)
+        # ThreadPoolExecutor(max_workers=0) raises. Nothing schedulable is left,
+        # but the WAL still has to be recovered and reconciled below, and the
+        # quarantines gathered above still have to be reported.
+        if pending:
+            with ThreadPoolExecutor(max_workers=window) as executor:
+                for slot in range(window):
+                    submit(executor, slot)
+                stop_scheduling = False
+                while active:
+                    finished, _ = wait(tuple(active), return_when=FIRST_COMPLETED)
+                    batch = sorted(
+                        ((active.pop(future), future) for future in finished),
+                        key=lambda item: item[0][1],
+                    )
+                    freed: list[int] = []
+                    for (slot, position, pending_index), future in batch:
+                        freed.append(slot)
+                        try:
+                            outcome = future.result()
+                        except BaseException as exc:
+                            # Nothing in _run_source is expected to raise, so an
+                            # escaping exception is a bug in this process, not a
+                            # datum about one evidence row. Unclassifiable, so
+                            # it halts.
+                            fatal = fatal or exc
+                            stop_scheduling = True
+                            continue
+                        for row in outcome.rows:
+                            prepared.output.append(row)
+                        if outcome.completed:
+                            completed_this_run += 1
+                        if outcome.failure is not None:
+                            failures.append((position, outcome.failure))
+                            if _failure_disposition(outcome.failure) == "quarantine":
+                                live_quarantines += 1
+                                budget_position = max(budget_position, position)
+                                # Anchor to WHERE THE HOLE IS, not to where the
+                                # scheduler happened to be when the hole was
+                                # noticed. A retiring source is far slower than a
+                                # healthy one — five attempts with exponential
+                                # backoff, 15+30+60+120s on the verdict-only
+                                # arms — so its siblings keep churning while it
+                                # retries, and `next_pending` at observation
+                                # time has run hundreds of sources past it.
+                                # Measured on this harness at a 200-source
+                                # fixture with the hole at index 3: the
+                                # observation-time anchor landed at 17-21 and
+                                # varied run to run, which made the amount paid
+                                # after the first hole a function of machine
+                                # load. `min` keeps it order-independent too,
+                                # since a lower-indexed hole can be drained
+                                # after a higher one.
+                                first_quarantine_at = (
+                                    pending_index
+                                    if first_quarantine_at is None
+                                    else min(first_quarantine_at, pending_index)
+                                )
+                            else:
+                                stop_scheduling = True
+                    # Once the first hole opens, this action is already
+                    # unbundlable; everything after it is bought purely to learn
+                    # WHICH REGIME the failure is. Evaluated per drained batch,
+                    # and only after that first hole — before it there is nothing
+                    # to diagnose and the arm runs normally.
+                    if first_quarantine_at is not None and not stop_scheduling:
+                        dispatched_since = next_pending - first_quarantine_at
+                        if _diagnostic_budget_spent(
+                            quarantined=live_quarantines,
+                            dispatched_since_first=dispatched_since,
+                        ):
+                            stop_scheduling = True
+                            failures.append((budget_position, {
+                                "kind": "quarantine_budget",
+                                "quarantined": live_quarantines,
+                                "dispatched_since_first_quarantine": dispatched_since,
+                                "quarantine_limit": QUARANTINE_DIAGNOSTIC_LIMIT,
+                                "source_limit": QUARANTINE_DIAGNOSTIC_SOURCES,
+                                "regime": (
+                                    "systematic"
+                                    if live_quarantines >= QUARANTINE_DIAGNOSTIC_LIMIT
+                                    else "sporadic"
+                                ),
+                            }))
+                    if not stop_scheduling:
+                        for slot in sorted(freed):
+                            if next_pending >= len(pending):
+                                break
+                            submit(executor, slot)
 
         # A worker can commit a WAL outcome immediately before an unexpected
         # local exception.  Reload the serialized raw prefix, then recover every
@@ -852,14 +1016,41 @@ def _run_prepared(
         _reconcile(prepared)
         if fatal is not None:
             raise RunnerError("worker failed after durable reconciliation") from fatal
-        failure = min(failures, key=lambda item: item[0])[1] if failures else None
-        status = "complete" if prepared.resume.status == "complete" else (
-            "spend_cap" if failure and failure["kind"] == "spend_cap" else
-            "deadline" if failure and failure["kind"] == "deadline" else "partial"
-        )
+        # Severity first, THEN replay position. Selecting on position alone let a
+        # quarantine at position 3 mask a spend_cap at position 5000 and set the
+        # summary status — and the supervisor's decision — from the wrong event.
+        failure = None
+        quarantined: list[Mapping[str, Any]] = []
+        if failures:
+            _position, selected = min(
+                failures,
+                key=lambda item: (
+                    _failure_disposition(item[1]) == "quarantine", item[0]
+                ),
+            )
+            failure = {**selected, "disposition": _failure_disposition(selected)}
+            quarantined = [
+                item for _position, item in failures
+                if _failure_disposition(item) == "quarantine"
+            ]
+        kind = failure["kind"] if failure else None
+        if prepared.resume.status == "complete":
+            status = "complete"
+        elif kind in {"spend_cap", "deadline"}:
+            status = str(kind)
+        elif prepared.resume.status == "settled":
+            # Holes exist, so the action is finished and unbundlable however it
+            # got here — including when the diagnostic budget stopped it. One
+            # terminal answer, with `failure` carrying why it stopped and
+            # `quarantined_sources` carrying what it found.
+            status = "settled"
+        else:
+            status = "partial"
         return RunSummary(status, prepared.action.id, completed_this_run,
                           len(prepared.resume.done), len(prepared.index.executions),
-                          prepared.resume.verdicts, prepared.action_guard.summary(), failure)
+                          prepared.resume.verdicts, prepared.action_guard.summary(),
+                          failure, len(quarantined),
+                          tuple(quarantined[:QUARANTINE_IDENTITY_LIMIT]))
     finally:
         prepared.close()
 

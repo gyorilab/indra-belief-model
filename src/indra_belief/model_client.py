@@ -1011,7 +1011,11 @@ class ModelClient:
         import threading as _threading
         self._tls = _threading.local()
         if model_name in LOCAL_MODELS:
-            self.config = LOCAL_MODELS[model_name]
+            # Own copy: callers mutate `client.config` per call (the runner
+            # ratchets `config["timeout"]` down to the action deadline), so the
+            # registry stays the process-wide source of truth. Values are all
+            # scalars, so a shallow copy is a full copy.
+            self.config = dict(LOCAL_MODELS[model_name])
             self.backend = self.config.get("backend", "openai_compat")
             if (
                 any(
@@ -2099,5 +2103,5 @@ class ModelClient:
         )
 
 
-# Verdict parsing and score mapping live in scorers._prompts — this module
-# is the model client, not an output parser. See _prompts.extract_verdict.
+# Verdict parsing and score mapping live in `indra_belief.verdict` — this module
+# is the model client, not an output parser.

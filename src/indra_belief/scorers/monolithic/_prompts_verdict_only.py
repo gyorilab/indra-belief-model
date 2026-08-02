@@ -29,6 +29,13 @@ confound "no scaffolding" with "stricter disposition".
 The relation-nature second call is NOT part of this variant: it is a separate
 deliberation step, and a run built on this prompt drops it (call topology
 becomes a single monolithic call per execution).
+
+The reply is read by `indra_belief.verdict`, like every other profile's. That
+parser scans for the last brace-delimited object carrying a `verdict` and
+tolerates absent support/objection, so a two-key answer needs no
+variant-specific reader — and a model that ignores the instruction and emits
+the extra fields anyway is still scored, with the extras visible in the
+persisted raw text rather than dropping the row to a parse failure.
 """
 from __future__ import annotations
 
@@ -36,7 +43,6 @@ import json
 
 from indra_belief.scorers.monolithic._prompts_disconfirm import (
     DISCONFIRM_SYSTEM_PROMPT,
-    parse_structured as _structured_parse,
 )
 
 VERDICT_ONLY_SYSTEM_PROMPT = DISCONFIRM_SYSTEM_PROMPT.split("HOW TO DECIDE")[0] + """\
@@ -80,22 +86,3 @@ def render_example(ex: dict) -> tuple[str, str]:
         ensure_ascii=True,
     )
     return user, assistant
-
-
-def parse_structured(text: str) -> dict:
-    """Reuse the structured parser. It already scans for the LAST brace-balanced
-    object carrying a `verdict` and tolerates absent support/objection, so a
-    two-key answer parses without a variant-specific reader. Keeping one parser
-    also means a model that ignores the instruction and emits extra fields anyway
-    is still scored, and the extra fields are visible in the persisted raw text
-    rather than silently dropping the row to a parse failure."""
-    return _structured_parse(text)
-
-
-def derive_verdict(parsed: dict) -> tuple[str | None, str | None, str]:
-    """Pass the model's committed verdict through unchanged — same no-override
-    doctrine as the other variants (see _prompts_disconfirm.derive_verdict)."""
-    verdict, confidence = parsed.get("verdict"), parsed.get("confidence")
-    if verdict is None:
-        return None, None, "parse_null"
-    return verdict, (confidence or "medium"), "model"

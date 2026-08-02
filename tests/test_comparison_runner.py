@@ -6,13 +6,13 @@ import os
 import subprocess
 import sys
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping
 
 import pytest
 
-from indra_belief.comparison import llm, runner
+from indra_belief.comparison import llm, replay, runner
 from indra_belief.comparison.contracts import (
     ContractError,
     canonical_json_bytes,
@@ -20,7 +20,8 @@ from indra_belief.comparison.contracts import (
     canonical_sha256,
     load_run_plan,
 )
-from indra_belief.comparison.replay import parse_structured, prompt_sha256
+from indra_belief.comparison.replay import prompt_sha256, source_key
+from indra_belief.verdict import grid_score, parse_verdict
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +48,14 @@ def _write_fixture(
     max_attempts: int = 2,
     retry_backoff_seconds: float = 0.0,
     primary_actions: bool = False,
+    distinct_claims: bool = False,
 ) -> Path:
+    """Write a run plan.
+
+    `distinct_claims` gives each execution row its own claim text, so a fixture
+    client can decide per SOURCE rather than per worker.  Off by default: every
+    other test wants the identical prompt for every row.
+    """
     plan_dir = tmp_path / "plan"
     replay_dir = plan_dir / "replay"
     replay_dir.mkdir(parents=True)
@@ -112,6 +120,16 @@ def _write_fixture(
             "a" * 64 if position == 0 else f"{position:064x}"
         )
         row["workload_metadata"]["eligible_position"] = position
+        if distinct_claims:
+            row["claim"] = f"A [Activation] B{position}"
+            row_user = f'CLAIM: {row["claim"]}\nEVIDENCE: "A activates B."'
+            row["main_user_before_relation_note_sha256"] = hashlib.sha256(
+                row_user.encode()
+            ).hexdigest()
+            row["relation_note_insertion"]["utf8_byte_offset"] = len(row_user)
+            row["main_prompt_base_sha256"] = prompt_sha256(
+                system, [{"role": "user", "content": row_user}]
+            )
         row["execution_key_sha256"] = canonical_sha256(
             [
                 workload,
@@ -386,6 +404,69 @@ class WindowClient(FakeClient):
             with self.state.lock:
                 self._active = False
                 self.state.active -= 1
+
+
+class SourceKeyedClient(FakeClient):
+    """A client whose answer depends on the SOURCE, not on which worker it is.
+
+    Quarantine is a per-source decision, so a fixture that can only fail "the
+    first client" cannot express "position 3 is unscorable while positions 0-2
+    and 4-7 are fine".  Requires `_write_fixture(distinct_claims=True)`, whose
+    claims carry the replay position.
+    """
+
+    def __init__(self, events, ledger, *, off_grid: set[int] = frozenset(),
+                 raising: set[int] = frozenset()) -> None:
+        super().__init__(events, ledger)
+        self.off_grid, self.raising = set(off_grid), set(raising)
+        self.positions: list[int] = []
+
+    def call(self, *, system, messages, max_tokens=None, temperature=0.1,
+             response_format=None, reasoning_effort=None, kind="unknown"):
+        content = messages[-1]["content"]
+        position = int(content.split("A [Activation] B")[1].split("\n")[0])
+        self.positions.append(position)
+        common = {
+            "kind": kind, "model_id": self.config["model_id"],
+            "max_tokens": max_tokens, "system": system, "messages": messages,
+        }
+        if position in self.raising:
+            self.calls += 1
+            error = ValueError("nonretryable fixture failure")
+            self.log.append({
+                **common, "content": None, "reasoning": None, "raw_text": None,
+                "prompt_tokens": None, "out_tokens": None, "finish_reason": None,
+                "error": type(error).__name__,
+            })
+            raise error
+        response = FakeResponse(
+            content=(
+                # On-grid verdict, off-grid confidence: the exact shape measured
+                # on 2026-07-31 that wedged an arm.
+                '{"support":"span","objection":null,"verdict":"correct",'
+                '"confidence":"certain"}'
+                if position in self.off_grid
+                else FakeResponse().content
+            )
+        )
+        self.calls += 1
+        self.log.append({
+            **common, "content": response.content, "reasoning": response.reasoning,
+            "raw_text": response.raw_text, "prompt_tokens": response.prompt_tokens,
+            "out_tokens": response.tokens, "finish_reason": response.finish_reason,
+        })
+        return response
+
+
+def _run_with_clients(plan, factory, *, prepared=None):
+    """Drive one action to completion with a caller-supplied client factory."""
+    run = runner.prepare_run(plan) if prepared is None else prepared
+    return runner.run_prepared(
+        run,
+        ready_writer=lambda _value: None,
+        token_reader=lambda: "secret",
+        client_factory=factory,
+    )
 
 
 def _execute(
@@ -738,7 +819,9 @@ def test_invalid_outputs_remain_capped_after_transport_limit_amendment(
         tmp_path, max_attempts=5, primary_actions=True
     )
     plan, client, _events, summary = _execute(path, invalid_responses=5)
-    assert summary.status == "partial"
+    # The fixture's one source is retired, so nothing in this action is
+    # schedulable: "settled", never "complete".
+    assert summary.status == "settled"
     assert client.calls == runner.INVALID_MODEL_OUTPUT_LIMIT == 5
     raw_prefix = plan.actions[0].output.read_bytes()
     ledger_prefix = plan.actions[0].ledger.read_bytes()
@@ -748,21 +831,295 @@ def test_invalid_outputs_remain_capped_after_transport_limit_amendment(
 
     value = _amended_attempt_limit(path)
     path.write_bytes(canonical_json_line(value))
-    resumed_plan, resumed_client, _events, resumed = _execute(path)
-    assert resumed.status == "partial"
-    assert resumed.completed_this_run == 0
-    assert resumed.failure and resumed.failure["kind"] == "invalid_model_output_limit"
-    assert resumed_client.calls == 0
+    resumed_plan = load_run_plan(path)
+    resumed_action, resumed_stage, resumed_index = _resume_scope(resumed_plan)
+    # Raising max_attempts 5 -> 10 retires `attempts_exhausted` but NOT the
+    # invalid-output cap, so the source stays settled and the action stays
+    # terminal.  Zero further calls is now guaranteed by there being no run at
+    # all: `prepare_run` refuses a terminal action rather than starting one that
+    # would demand a bearer token and build no clients.
+    assert replay.load_resume(
+        resumed_action.output, index=resumed_index, action=resumed_action,
+        model=resumed_stage.model,
+        provider_model_id=resumed_stage.provider_model_id,
+    ).settled == {(0, 0): "invalid_model_output_limit"}
+    with pytest.raises(runner.RunnerError, match="already complete"):
+        runner.prepare_run(resumed_plan)
     assert resumed_plan.actions[0].output.read_bytes() == raw_prefix
     assert resumed_plan.actions[0].ledger.read_bytes() == ledger_prefix
 
 
-def test_parser_does_not_promote_an_invalid_verdict_value() -> None:
-    parsed = parse_structured(
-        '{"support":"span","objection":"issue","verdict":"medium","confidence":"medium"}'
+def _resume_scope(plan):
+    """(action, stage, index) for the single-action fixture plans above."""
+    action = plan.actions[0]
+    stage = plan.stage_by_id[action.stage_id]
+    return action, stage, runner._scopes(plan)[action.id]
+
+
+def _attempt_projection_for(source, *, action, model, ordinal, status):
+    return {
+        "execution_id": replay.expected_execution_id(
+            source, action=action, model=model
+        ),
+        "attempt_id": hashlib.sha256(
+            f"{source['stmt_i']}:{source['evidence_i']}:{ordinal}:{status}".encode()
+        ).hexdigest()[:32],
+        "attempt_ordinal": ordinal,
+        "attempt_status": status,
+    }
+
+
+def _resume_error_row(source, *, action, model, ordinal, error_type):
+    return replay.error_row(
+        source,
+        action=action,
+        calls=[],
+        attempt=_attempt_projection_for(
+            source, action=action, model=model, ordinal=ordinal, status="error"
+        ),
+        latency_s=0.0,
+        error=error_type,
     )
-    assert parsed["verdict"] is None
-    assert parsed["confidence"] is None
+
+
+def _resume_scored_row(
+    source, *, action, model, provider_model_id, ordinal,
+    verdict="correct", call_id=None,
+):
+    attempt = _attempt_projection_for(
+        source, action=action, model=model, ordinal=ordinal, status="completed"
+    )
+    call = {
+        "execution_id": attempt["execution_id"],
+        "attempt_id": attempt["attempt_id"],
+        "attempt_ordinal": ordinal,
+        "call_ordinal": 1,
+        "call_id": call_id or hashlib.sha256(
+            f"call:{attempt['attempt_id']}".encode()
+        ).hexdigest()[:32],
+        "model_id": provider_model_id,
+        "kind": "monolithic",
+        "provider_request_sha256": hashlib.sha256(
+            attempt["attempt_id"].encode()
+        ).hexdigest(),
+    }
+    return replay.result_row(
+        source,
+        action=action,
+        result={
+            "verdict": verdict,
+            "confidence": "high",
+            "score": grid_score(verdict, "high"),
+            "tier": "llm_comprehension",
+            "grounding_status": "all_match",
+            "provenance_triggered": False,
+            "tokens": 3,
+            "call_log": [call],
+            "raw_text": "{}",
+        },
+        attempt=attempt,
+        latency_s=0.0,
+    )
+
+
+def _write_rows(action, rows) -> None:
+    action.output.parent.mkdir(parents=True, exist_ok=True)
+    action.output.write_bytes(b"".join(canonical_json_line(row) for row in rows))
+
+
+def test_invalid_output_count_is_indexed_by_source(tmp_path: Path) -> None:
+    """The invalid-output cap reads a per-source index, not a per-source scan.
+
+    `_run_source` used to re-scan every parsed row for each pending source.  The
+    count now comes from `ResumeState.invalid_outputs`, so that map must carry a
+    SEPARATE count per source key and must omit a source that has none — a
+    global total, or a default-zero entry for every source, would silently cap
+    the wrong sources.
+    """
+    path = _write_fixture(tmp_path, execution_count=3, max_attempts=5)
+    plan = load_run_plan(path)
+    action, stage, index = _resume_scope(plan)
+    rows = []
+    for position, error_types in enumerate((
+        ("InvalidModelOutput", "InvalidModelOutput"),
+        ("InvalidModelOutput", "InvalidModelOutput", "InvalidModelOutput"),
+        ("TimeoutError",),
+    )):
+        source = index.executions[position]
+        for ordinal, error_type in enumerate(error_types, start=1):
+            rows.append(_resume_error_row(
+                source, action=action, model=stage.model,
+                ordinal=ordinal, error_type=error_type,
+            ))
+    _write_rows(action, rows)
+
+    resume = replay.load_resume(
+        action.output, index=index, action=action, model=stage.model,
+        provider_model_id=stage.provider_model_id,
+    )
+    assert resume.attempts == {(0, 0): 2, (1, 0): 3, (2, 0): 1}
+    assert resume.invalid_outputs == {(0, 0): 2, (1, 0): 3}
+    assert (2, 0) not in resume.invalid_outputs
+
+    # End to end: the cap still trips at the limit, and the resumed decision is
+    # taken from the index rather than from a fresh scan.
+    capped_path = _write_fixture(
+        tmp_path / "capped", max_attempts=5, primary_actions=True
+    )
+    capped_plan, client, _events, summary = _execute(
+        capped_path, invalid_responses=5
+    )
+    assert client.calls == runner.INVALID_MODEL_OUTPUT_LIMIT == 5
+    assert summary.status == "settled"
+    capped_action, capped_stage, capped_index = _resume_scope(capped_plan)
+    capped_resume = replay.load_resume(
+        capped_action.output, index=capped_index, action=capped_action,
+        model=capped_stage.model, provider_model_id=capped_stage.provider_model_id,
+    )
+    assert capped_resume.invalid_outputs == {
+        (0, 0): runner.INVALID_MODEL_OUTPUT_LIMIT
+    }
+    assert capped_resume.settled == {(0, 0): "invalid_model_output_limit"}
+    # The capped source is the action's only source, so the action is terminal
+    # and is never offered again — the strongest form of "zero further calls".
+    with pytest.raises(runner.RunnerError, match="already complete"):
+        runner.prepare_run(capped_plan)
+
+
+def _resume_case_rows(name, *, action, stage, index):
+    """Rows for one state of the resume matrix, or None to leave no file."""
+    first, second = index.executions[0], index.executions[1]
+    scored = dict(
+        action=action, model=stage.model,
+        provider_model_id=stage.provider_model_id,
+    )
+    failed = dict(action=action, model=stage.model)
+    if name == "missing":
+        return None
+    if name == "empty":
+        return []
+    if name == "partial":
+        return [_resume_scored_row(first, ordinal=1, **scored)]
+    if name == "complete":
+        return [
+            _resume_scored_row(first, ordinal=1, **scored),
+            _resume_scored_row(second, ordinal=1, **scored),
+        ]
+    if name == "retried_then_scored":
+        return [
+            _resume_error_row(first, ordinal=1, error_type="TimeoutError", **failed),
+            _resume_scored_row(first, ordinal=2, **scored),
+            _resume_scored_row(second, ordinal=1, **scored),
+        ]
+    if name == "error_rows":
+        return [
+            _resume_error_row(first, ordinal=1, error_type="TimeoutError", **failed),
+            _resume_error_row(second, ordinal=1, error_type="InvalidModelOutput",
+                              **failed),
+        ]
+    raise AssertionError(f"unknown resume state {name!r}")
+
+
+def _corrupt_resume_bytes(name, *, action, stage, index):
+    """Raw bytes for one corruption class the parse loop must reject."""
+    first, second = index.executions[0], index.executions[1]
+    scored = dict(
+        action=action, model=stage.model,
+        provider_model_id=stage.provider_model_id,
+    )
+    if name == "non_canonical":
+        # Same object, re-encoded with default spacing and insertion order.
+        return json.dumps(_resume_scored_row(first, ordinal=1, **scored)).encode() + b"\n"
+    if name == "foreign_source":
+        row = _resume_scored_row(first, ordinal=1, **scored)
+        row["stmt_i"] = 99
+        return canonical_json_line(row)
+    if name == "noncontiguous_ordinal":
+        return canonical_json_line(_resume_scored_row(first, ordinal=2, **scored))
+    if name == "post_terminal_append":
+        return canonical_json_line(
+            _resume_scored_row(first, ordinal=1, **scored)
+        ) + canonical_json_line(_resume_error_row(
+            first, action=action, model=stage.model, ordinal=2,
+            error_type="TimeoutError",
+        ))
+    if name == "repeated_call_id":
+        shared = "c" * 32
+        return canonical_json_line(
+            _resume_scored_row(first, ordinal=1, call_id=shared, **scored)
+        ) + canonical_json_line(
+            _resume_scored_row(second, ordinal=1, call_id=shared, **scored)
+        )
+    if name == "partial_trailing_line":
+        return canonical_json_line(
+            _resume_scored_row(first, ordinal=1, **scored)
+        ).rstrip(b"\n")
+    raise AssertionError(f"unknown corruption {name!r}")
+
+
+RESUME_STATES = (
+    "missing", "empty", "partial", "complete", "retried_then_scored", "error_rows",
+)
+RESUME_CORRUPTIONS = (
+    "non_canonical", "foreign_source", "noncontiguous_ordinal",
+    "post_terminal_append", "repeated_call_id", "partial_trailing_line",
+)
+
+
+def test_resume_status_matches_load_resume(tmp_path: Path) -> None:
+    """`resume_status` is a projection of `load_resume`, never a second parser.
+
+    `prepare_run` and `inspect_plan` consume only a status, a completed count and
+    an attempt count, so they now fold the shared scanner without retaining rows.
+    That is only safe if the cheap fold ACCEPTS exactly what the full loader
+    accepts and REJECTS exactly what it rejects, with the same message — a
+    second, laxer validation chain would let a corrupt output reach readiness.
+    """
+    for name in RESUME_STATES:
+        path = _write_fixture(tmp_path / f"state_{name}", execution_count=2,
+                              max_attempts=5)
+        plan = load_run_plan(path)
+        action, stage, index = _resume_scope(plan)
+        rows = _resume_case_rows(name, action=action, stage=stage, index=index)
+        if rows is not None:
+            _write_rows(action, rows)
+        assert action.output.exists() is (rows is not None), name
+        arguments = dict(
+            index=index, action=action, model=stage.model,
+            provider_model_id=stage.provider_model_id,
+        )
+        loaded = replay.load_resume(action.output, **arguments)
+        assert replay.resume_status(action.output, **arguments) == replay.ResumeStatus(
+            loaded.status, len(loaded.done), len(loaded.rows)
+        ), name
+
+    for name in RESUME_CORRUPTIONS:
+        path = _write_fixture(tmp_path / f"corrupt_{name}", execution_count=2,
+                              max_attempts=5)
+        plan = load_run_plan(path)
+        action, stage, index = _resume_scope(plan)
+        action.output.parent.mkdir(parents=True, exist_ok=True)
+        action.output.write_bytes(
+            _corrupt_resume_bytes(name, action=action, stage=stage, index=index)
+        )
+        arguments = dict(
+            index=index, action=action, model=stage.model,
+            provider_model_id=stage.provider_model_id,
+        )
+        with pytest.raises(replay.ReplayError) as loaded_error:
+            replay.load_resume(action.output, **arguments)
+        with pytest.raises(replay.ReplayError) as status_error:
+            replay.resume_status(action.output, **arguments)
+        assert str(status_error.value) == str(loaded_error.value), name
+
+
+def test_parser_does_not_promote_an_invalid_verdict_value() -> None:
+    """A closed-enum field filled with the OTHER field's vocabulary. The reply
+    names no verdict, so there is no Verdict — and therefore no score for the
+    runner to write. That absence is what drives the retry."""
+    assert parse_verdict(
+        '{"support":"span","objection":"issue","verdict":"medium","confidence":"medium"}'
+    ) is None
 
 
 def test_descriptor_tamper_fails_before_readiness_or_token(tmp_path: Path) -> None:
@@ -945,7 +1302,11 @@ def test_widened_transport_limit_resumes_exact_missing_work(
         path,
         transport_failures=5,
     )
-    assert first.status == "partial"
+    # Under the FROZEN bounds the source is retired: five attempts, five
+    # allowed. "Settled" is relative to `max_attempts`, so it is exactly what
+    # the amendment below un-does — raising the limit makes the source
+    # schedulable again and the action partial again.
+    assert first.status == "settled"
     assert first.completed_total == 1
     assert first_client.calls == 5
     original = [
@@ -1100,7 +1461,7 @@ def test_legacy_scored_null_counts_toward_invalid_output_limit(
     _append_legacy_scored_null(path)
 
     plan, client, _events, summary = _execute(path, invalid_responses=10)
-    assert summary.status == "partial"
+    assert summary.status == "settled"
     # The pre-existing legacy row already consumes one slot, so the source may
     # make only LIMIT-1 further calls before it is capped. Written against the
     # constant rather than a literal: the POINT of this test is that a legacy
@@ -1140,9 +1501,46 @@ def test_rolling_window_reuses_only_distinct_idle_clients(tmp_path: Path) -> Non
     assert len(plan.actions[0].output.read_text().splitlines()) == 7
 
 
-def test_first_failure_stops_replenishment_then_drains_bounded_window(
+def test_two_clients_for_one_model_do_not_share_mutable_config() -> None:
+    # `_DeadlineClient.call` ratchets `client.config["timeout"]` down to the
+    # remaining action budget. Every worker in a run builds its own client for
+    # the same model, so that write must not reach a sibling worker or the
+    # process-wide registry — a shrink there would silently outlive the call.
+    import time
+
+    from indra_belief.model_client import LOCAL_MODELS, ModelClient
+
+    original = LOCAL_MODELS["local-gemma-4-26b"]["timeout"]
+    assert original == 60
+    try:
+        a = ModelClient("local-gemma-4-26b")
+        b = ModelClient("local-gemma-4-26b")
+        assert a.config is not b.config
+        assert a.config is not LOCAL_MODELS["local-gemma-4-26b"]
+
+        sentinel = object()
+        a.call = lambda *args, **kwargs: sentinel  # never contact a provider
+        bounded = runner._DeadlineClient(a, time.monotonic() + 5)
+        assert bounded.call("prompt") is sentinel
+
+        assert a.config["timeout"] <= 5  # the ratchet fired on this client
+        assert b.config["timeout"] == 60
+        assert LOCAL_MODELS["local-gemma-4-26b"]["timeout"] == 60
+    finally:
+        LOCAL_MODELS["local-gemma-4-26b"]["timeout"] = original
+
+
+def test_unclassified_failure_stops_replenishment_then_drains_bounded_window(
     tmp_path: Path,
 ) -> None:
+    """An UNCLASSIFIED failure still halts the action on its first occurrence.
+
+    `WindowClient(fail=True)` raises a bare ValueError, which classifies as
+    "other" and reaches `_failure_disposition` as an `attempt_failed` of a type
+    nobody has allowlisted.  The taxonomy defaults to halt, so the behavior here
+    is unchanged from before quarantine existed: replenishment stops, the
+    in-flight window drains, and no further source is dispatched.
+    """
     path = _write_fixture(
         tmp_path, workers=3, execution_count=8, max_attempts=1
     )
@@ -1171,9 +1569,15 @@ def test_first_failure_stops_replenishment_then_drains_bounded_window(
         token_reader=lambda: "secret",
         client_factory=factory,
     )
-    assert summary.status == "partial"
+    # The halted source has no retry class, so the durable rows retire it and
+    # the action is terminal. `quarantined == 0` is the load-bearing half: this
+    # run halted, it did not absorb anything, and the disposition says so.
+    assert summary.status == "settled"
+    assert summary.status != "complete"
     assert summary.completed_this_run == 2
     assert summary.failure and summary.failure["kind"] == "attempt_failed"
+    assert summary.failure["disposition"] == "halt"
+    assert summary.quarantined == 0
     assert state.maximum_active == 3
     assert len(clients) == 3
     assert sum(client.calls for client in clients) == 3
@@ -1184,7 +1588,15 @@ def test_first_failure_stops_replenishment_then_drains_bounded_window(
     assert sorted(row["row_status"] for row in rows) == ["error", "scored", "scored"]
 
 
-def test_drained_failures_report_lowest_replay_position(tmp_path: Path) -> None:
+def test_drained_unclassified_failures_report_lowest_replay_position(
+    tmp_path: Path,
+) -> None:
+    """Among failures of EQUAL severity, the lowest replay position is reported.
+
+    Both drained failures are unclassified halts, so severity cannot separate
+    them and the tie-break is position — the run is reported by the earliest row
+    that stopped it, not by whichever thread the scheduler observed first.
+    """
     path = _write_fixture(
         tmp_path, workers=3, execution_count=6, max_attempts=1
     )
@@ -1212,12 +1624,629 @@ def test_drained_failures_report_lowest_replay_position(tmp_path: Path) -> None:
         token_reader=lambda: "secret",
         client_factory=factory,
     )
-    assert summary.status == "partial"
+    assert summary.status != "complete"
     assert summary.failure is not None
+    assert summary.failure["disposition"] == "halt"
     assert summary.failure["message_sha256"] == hashlib.sha256(
         b"lower replay position"
     ).hexdigest()
     assert sum(client.calls for client in clients) == 3
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        # The allowlist: three settled reasons plus the live off-grid output.
+        ({"kind": "nonretryable_failure_on_resume"}, "quarantine"),
+        ({"kind": "invalid_model_output_limit"}, "quarantine"),
+        ({"kind": "attempts_exhausted"}, "quarantine"),
+        ({"kind": "attempt_failed", "type": "InvalidModelOutput"}, "quarantine"),
+        # Budget and clock are statements about the run.
+        ({"kind": "spend_cap", "type": "SpendCapReached"}, "halt"),
+        ({"kind": "spend_cap", "type": "ActionCapReached"}, "halt"),
+        ({"kind": "deadline"}, "halt"),
+        ({"kind": "deadline", "type": "ActionDeadlineExceeded"}, "halt"),
+        # Credentials, config and bad requests: every row would fail the same way.
+        ({"kind": "attempt_failed", "type": "HTTPError",
+          "provider_http_status": 401}, "halt"),
+        ({"kind": "attempt_failed", "type": "HTTPError",
+          "provider_http_status": 403}, "halt"),
+        ({"kind": "attempt_failed", "type": "HTTPError",
+          "provider_http_status": 400}, "halt"),
+        ({"kind": "attempt_failed", "type": "HTTPError",
+          "provider_http_status": 404}, "halt"),
+        # Exhausted transport, including the 429 that step 1 made retryable.
+        ({"kind": "attempt_failed", "type": "TimeoutError"}, "halt"),
+        ({"kind": "attempt_failed", "type": "HTTPError",
+          "provider_http_status": 429}, "halt"),
+        ({"kind": "attempt_failed", "type": "HTTPError",
+          "provider_http_status": 503}, "halt"),
+        # Parser / row-shape / WAL / accounting.
+        ({"kind": "attempt_failed", "type": "ReplayError"}, "halt"),
+        ({"kind": "attempt_failed", "type": "ContractError"}, "halt"),
+        ({"kind": "attempt_failed", "type": "RunnerError"}, "halt"),
+        ({"kind": "attempt_failed", "type": "SpendGuardError"}, "halt"),
+        ({"kind": "attempt_failed", "type": "SpendReservationBreach"}, "halt"),
+        # The aggregate breaker is a statement about the ACTION, so it halts
+        # even though every individual event that raised it was a quarantine.
+        # The diagnostic budget is a statement about the ACTION, so it halts
+        # even though every individual event that raised it was a quarantine.
+        ({"kind": "quarantine_budget", "quarantined": 8}, "halt"),
+        # Nothing unknown is ever admitted by default.
+        ({"kind": "attempt_failed", "type": "SomeFutureProviderError"}, "halt"),
+        ({"kind": "attempt_failed"}, "halt"),
+        ({"kind": "a_kind_nobody_has_written_yet"}, "halt"),
+        ({}, "halt"),
+    ],
+)
+def test_failure_disposition_is_an_allowlist(
+    failure: dict[str, Any], expected: str
+) -> None:
+    """Only the four quarantine cases cost one source; everything else halts.
+
+    The point of the table is the DEFAULT.  A denylist would silently promote
+    each newly observed failure type to "keep spending", so a systematic
+    breakage — a revoked key, a bad parser profile, a wrong provider model id —
+    could quarantine five thousand sources one at a time and burn the whole
+    action cap proving the same thing five thousand times.
+
+    The allowlist alone does not prevent that, because the systematic case
+    arrives AS the allowlisted kind — see
+    `test_a_systematic_failure_cannot_burn_the_action_cap`.
+    """
+    assert runner._failure_disposition(failure) == expected
+
+
+def _offgrid_run(tmp_path: Path, *, execution_count: int, workers: int,
+                 max_attempts: int, off_grid: set[int]):
+    """Run one action against a client that is off-grid for chosen positions."""
+    path = _write_fixture(
+        tmp_path, workers=workers, execution_count=execution_count,
+        max_attempts=max_attempts, distinct_claims=True,
+    )
+    plan = load_run_plan(path)
+    clients: list[SourceKeyedClient] = []
+
+    def factory(_token: str, _action: Any) -> SourceKeyedClient:
+        client = SourceKeyedClient([], plan.actions[0].ledger, off_grid=off_grid)
+        clients.append(client)
+        return client
+
+    summary = _run_with_clients(plan, factory)
+    dispatched = {position for client in clients for position in client.positions}
+    return plan, summary, sum(client.calls for client in clients), dispatched
+
+
+def test_a_systematic_failure_cannot_burn_the_action_cap(tmp_path: Path) -> None:
+    """The invariant that outranks quarantine: no unbounded spend, ever.
+
+    Quarantine's allowlist contains `attempt_failed`/`InvalidModelOutput`, and a
+    systematic breakage arrives AS that kind for every single source — a wrong
+    `provider_model_id`, a provider that starts prefixing refusals, a
+    `main_max_output_tokens` that truncates every reply.  Each one is
+    individually "off-grid for this evidence", so per-source retirement never
+    stops it.  Measured on this harness with the budget absent: 8 sources
+    against a client off-grid for all of them cost 40 paid calls, 200 cost
+    1,000, 1,000 cost 5,000, extrapolating to 33,361 x 5 = 166,805 bounded only
+    by the action cap ($39.96 gemma_26b_primary, $309.54 glm_5_primary) for zero
+    usable rows.
+
+    The diagnostic budget stops the whole class after a couple of handfuls of
+    sources, whatever the corpus size, and names the regime it found.  Without
+    it this test dispatches all 200.
+    """
+    _plan, summary, calls, dispatched = _offgrid_run(
+        tmp_path, execution_count=200, workers=4, max_attempts=5,
+        off_grid=set(range(200)),
+    )
+    # The bound is the limit plus at most one draining window, NOT the corpus.
+    ceiling = runner.QUARANTINE_DIAGNOSTIC_LIMIT + 4
+    assert len(dispatched) <= ceiling
+    assert calls <= ceiling * runner.INVALID_MODEL_OUTPUT_LIMIT
+    assert summary.completed_this_run == 0
+    assert summary.failure is not None
+    assert summary.failure["kind"] == "quarantine_budget"
+    # It must HALT: a quarantine disposition here would mean "keep going".
+    assert summary.failure["disposition"] == "halt"
+    # And it must say WHICH REGIME — the one thing the pre-S2 first-row halt
+    # could never tell the operator.
+    assert summary.failure["regime"] == "systematic"
+    assert summary.failure["quarantined"] >= runner.QUARANTINE_DIAGNOSTIC_LIMIT
+    # Holes exist, so the action is finished and unbundlable even though 189
+    # sources were never touched. Scoring them could not produce a bundle.
+    assert summary.status == "settled"
+    assert summary.status != "complete"
+
+
+def test_the_sporadic_regime_is_bounded_by_sources_not_by_quarantines(
+    tmp_path: Path,
+) -> None:
+    """The second term of the same bound, and the one that costs real money.
+
+    At the measured 0.057% the next bad row is ~1,756 sources away, so a
+    quarantine-count limit alone would traverse the corpus looking for eight of
+    them and spend the whole cap on a bundle that cannot exist.  The source
+    limit stops that: one hole, then a bounded look around, then halt with
+    "sporadic" — which is the answer the operator needed.
+
+    WHAT IS ASSERTED, AND WHY IT IS AN IDENTITY RATHER THAN A WINDOW.  The
+    earlier version of this test asserted `20 <= len(dispatched) <= 40` and
+    flaked in about one full-suite run in three.  Widening it would have hidden
+    the cause: the budget used to anchor on `next_pending` AT THE MOMENT THE
+    FAILURE WAS DRAINED.  A retiring source is far slower than a healthy one —
+    five attempts, with exponential backoff in production — so its siblings
+    churn on while it retries, and the anchor drifted with machine load
+    (measured 17-21 against a hole at index 3).  The budget then added its whole
+    limit ON TOP of that drift, so what an arm paid after its first hole was a
+    function of how busy the machine was.
+
+    `len(dispatched)` still cannot be pinned exactly, and that part is
+    irreducible: sources submitted before anyone knew the hole existed cannot be
+    un-dispatched.  What the fix makes exact is that the budget now ABSORBS that
+    drift instead of adding to it — the count it reports is measured from the
+    hole itself.  So the load-independent fact, and the one asserted here, is the
+    identity: the reported post-hole spend EQUALS the real post-hole dispatch.
+    Measured 18/18 across hole positions 3/40/100, limits 5/10/20 and 4/8
+    workers.  Under the old anchor it reported the limit while having dispatched
+    drift + limit, and the identity broke.
+    """
+    hole, limit, workers = 3, 20, 4
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        # 20 rather than 200 keeps the fixture small; the term under test is
+        # the one the runner reads.
+        monkeypatch.setattr(runner, "QUARANTINE_DIAGNOSTIC_SOURCES", limit)
+        _plan, summary, _calls, dispatched = _offgrid_run(
+            tmp_path, execution_count=200, workers=workers, max_attempts=5,
+            off_grid={hole},
+        )
+    finally:
+        monkeypatch.undo()
+    assert summary.failure is not None
+    since = summary.failure["dispatched_since_first_quarantine"]
+    # THE IDENTITY: what it says it spent past the hole is what it spent.
+    assert since == len(dispatched) - hole
+    # The budget was genuinely met, and stopped at the first chance thereafter.
+    assert since >= limit
+    # Ceiling from the mechanism, not from watching: the drift is at most what
+    # `workers - 1` slots can retire while one slot spends its whole
+    # invalid-output budget, plus one batch of submission granularity.
+    assert since <= limit + (workers - 1) * runner.INVALID_MODEL_OUTPUT_LIMIT + workers
+    assert len(dispatched) < 200  # the corpus was never traversed
+    assert summary.quarantined == 1
+    assert summary.failure["kind"] == "quarantine_budget"
+    assert summary.failure["regime"] == "sporadic"
+    assert summary.failure["disposition"] == "halt"
+    assert summary.status == "settled"
+
+
+def test_the_budget_is_anchored_to_the_hole_not_to_when_it_was_noticed(
+    tmp_path: Path,
+) -> None:
+    """The same hole, reached after very different amounts of prior work.
+
+    This is the property the flake was a symptom of: what an arm PAYS after its
+    first hole must be a function of where the hole is, not of how long the
+    scheduler took to notice it.  A hole 100 sources into the corpus and a hole
+    3 sources in must cost the SAME amount of post-hole work.
+
+    The old anchor could not express that.  It measured from wherever the
+    scheduler happened to be when the failure was drained, so it always reported
+    exactly the limit while having actually dispatched drift + limit past the
+    hole — the reported number and the real number were different, and only the
+    real one is money.
+    """
+    limit, workers = 20, 4
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(runner, "QUARANTINE_DIAGNOSTIC_SOURCES", limit)
+        spend: dict[int, int] = {}
+        for hole in (3, 100):
+            _plan, summary, _calls, dispatched = _offgrid_run(
+                tmp_path / f"hole{hole}", execution_count=300, workers=workers,
+                max_attempts=5, off_grid={hole},
+            )
+            assert summary.failure is not None
+            since = summary.failure["dispatched_since_first_quarantine"]
+            # The identity, at both positions: reported spend IS real spend.
+            assert since == len(dispatched) - hole, (hole, since, len(dispatched))
+            spend[hole] = since
+    finally:
+        monkeypatch.undo()
+    # And the post-hole spend does not grow with how deep the hole is. Under the
+    # old anchor this comparison had no stable answer at all.
+    ceiling = limit + (workers - 1) * runner.INVALID_MODEL_OUTPUT_LIMIT + workers
+    assert all(limit <= value <= ceiling for value in spend.values()), spend
+
+
+def test_a_run_with_no_holes_at_all_is_never_bounded(tmp_path: Path) -> None:
+    """The budget must not fire on a clean arm.
+
+    It is armed by the FIRST quarantine and is inert before it, or the bound
+    would throttle every healthy run in the fleet.
+    """
+    _plan, summary, _calls, dispatched = _offgrid_run(
+        tmp_path, execution_count=200, workers=4, max_attempts=5,
+        off_grid=set(),
+    )
+    assert len(dispatched) == 200
+    assert summary.completed_this_run == 200
+    assert summary.quarantined == 0
+    assert summary.status == "complete"
+    assert summary.failure is None
+
+
+def test_an_action_holding_a_hole_is_never_dispatched_again(
+    tmp_path: Path,
+) -> None:
+    """A restart must not pay the budget again, and again, and again.
+
+    One hole makes the action unbundlable, so every further source it scores is
+    money spent on an artifact that cannot exist.  The holes are re-derived from
+    the durable rows for free, the action is not offered as ready, and nothing
+    is dispatched — which is also what stops a supervisor delivering the
+    unbounded burn in instalments of one budget per restart.
+    """
+    path = _write_fixture(
+        tmp_path, workers=4, execution_count=200, max_attempts=5,
+        distinct_claims=True,
+    )
+    plan = load_run_plan(path)
+    first = _run_with_clients(plan, lambda _t, _a: SourceKeyedClient(
+        [], plan.actions[0].ledger, off_grid=set(range(200))
+    ))
+    assert first.status == "settled"
+    raw_prefix = plan.actions[0].output.read_bytes()
+    ledger_prefix = plan.actions[0].ledger.read_bytes()
+
+    # Not offered, so no process, no readiness, no token, no client, no call.
+    with pytest.raises(runner.RunnerError, match="already complete"):
+        runner.prepare_run(plan)
+    status = runner.inspect_plan(plan)
+    assert status.status == "settled"
+    assert status.ready_action_ids == ()
+    assert plan.actions[0].output.read_bytes() == raw_prefix
+    assert plan.actions[0].ledger.read_bytes() == ledger_prefix
+
+
+def test_a_run_with_nothing_schedulable_never_reaches_the_bearer_token(
+    tmp_path: Path,
+) -> None:
+    """Defence in depth for the ready-before-token boundary.
+
+    `ready_actions` already refuses to offer a settled action, so in practice no
+    such run is ever prepared.  This drives `_run_prepared` directly with an
+    injected hole because that ordering — readiness written, pending computed,
+    token read ONLY if there is something to spend on — is the property the
+    operator feels: before it, every futile invocation demanded a live bearer
+    token to build zero clients and issue zero calls.
+    """
+    path = _write_fixture(
+        tmp_path, workers=4, execution_count=8, max_attempts=1,
+        distinct_claims=True,
+    )
+    plan = load_run_plan(path)
+    prepared = runner.prepare_run(plan)
+    prepared.resume = replace(
+        prepared.resume,
+        settled={source_key(row): "attempts_exhausted"
+                 for row in prepared.index.executions},
+    )
+    readiness: list[Mapping[str, Any]] = []
+
+    def refuse_token() -> str:
+        raise AssertionError("a run with nothing schedulable demanded a token")
+
+    summary = runner.run_prepared(
+        prepared,
+        ready_writer=readiness.append,
+        token_reader=refuse_token,
+        client_factory=lambda _t, _a: pytest.fail("no client may be built"),
+    )
+    assert summary.quarantined == 8
+    # Readiness still goes out — it carries the partition the operator reads.
+    assert len(readiness) == 1
+    assert readiness[0]["status"] == "ready_for_bearer_token"
+    assert readiness[0]["pending"] == 0
+    assert readiness[0]["quarantined"] == 8
+    assert readiness[0]["token_read"] is False
+
+
+def test_one_offgrid_source_is_quarantined_and_the_rest_of_the_arm_is_scored(
+    tmp_path: Path,
+) -> None:
+    """The 2026-07-31 production halt, as a test.
+
+    An arm died mid-corpus after 163 MB of progress because ONE evidence row
+    came back with an off-grid confidence: the first failure of any kind stopped
+    replenishment, and the operator had to raise a constant by hand.  Now that
+    row costs exactly one source — every other source in the same run is still
+    dispatched and scored.
+    """
+    path = _write_fixture(
+        tmp_path, workers=3, execution_count=8, max_attempts=1,
+        distinct_claims=True,
+    )
+    plan = load_run_plan(path)
+    clients: list[SourceKeyedClient] = []
+
+    def factory(_token: str, _action: Any) -> SourceKeyedClient:
+        client = SourceKeyedClient(
+            [], plan.actions[0].ledger, off_grid={0}
+        )
+        clients.append(client)
+        return client
+
+    summary = _run_with_clients(plan, factory)
+    # Seven scored and one retired resolves all eight, so the action is
+    # terminal — but "settled", never "complete", because one source has no
+    # verdict and `llm.materialize_model_bundle` has to be told about it.
+    assert summary.status == "settled"
+    # Every source was attempted exactly once: the wedge did not block the
+    # seven behind it, and nothing was attempted twice.
+    assert sum(client.calls for client in clients) == 8
+    assert sorted(
+        position for client in clients for position in client.positions
+    ) == list(range(8))
+    assert summary.completed_this_run == 7
+    assert summary.completed_total == 7
+    assert summary.quarantined == 1
+    assert summary.failure is not None
+    assert summary.failure["kind"] == "attempt_failed"
+    assert summary.failure["type"] == "InvalidModelOutput"
+    assert summary.failure["disposition"] == "quarantine"
+
+    # Quarantines are visible by identity, not just by count.
+    assert summary.as_dict()["quarantined_sources"] == [
+        {"kind": "attempt_failed", "type": "InvalidModelOutput",
+         "message_sha256": summary.failure["message_sha256"],
+         "provider_http_status": None}
+    ]
+    assert summary.as_dict()["quarantined_sources_truncated"] is False
+
+    rows = [json.loads(line) for line in plan.actions[0].output.read_text().splitlines()]
+    assert len(rows) == 8
+    assert sorted(row["row_status"] for row in rows) == ["error"] + ["scored"] * 7
+    error = next(row for row in rows if row["row_status"] == "error")
+    assert (error["stmt_i"], error["evidence_i"]) == (0, 0)
+    assert error["error"]["type"] == "InvalidModelOutput"
+
+
+def test_a_high_position_halt_is_never_masked_by_a_low_position_quarantine(
+    tmp_path: Path,
+) -> None:
+    """Severity outranks position when selecting the reported failure.
+
+    Selecting by position alone would report the quarantine at position 0 and
+    set the summary status — and therefore the supervisor's decision — from a
+    one-row event while a real halt at position 5 went unmentioned.
+    """
+    path = _write_fixture(
+        tmp_path, workers=3, execution_count=8, max_attempts=1,
+        distinct_claims=True,
+    )
+    plan = load_run_plan(path)
+    clients: list[SourceKeyedClient] = []
+
+    def factory(_token: str, _action: Any) -> SourceKeyedClient:
+        client = SourceKeyedClient(
+            [], plan.actions[0].ledger, off_grid={0}, raising={5}
+        )
+        clients.append(client)
+        return client
+
+    summary = _run_with_clients(plan, factory)
+    # Schedulability and disposition are separate answers, and only the second
+    # is deterministic here: whether the two sources behind the halt were
+    # dispatched before replenishment stopped is a thread race, so the action
+    # may end either fully resolved ("settled") or with sources untouched
+    # ("partial").  What must hold in both is that it is not "complete" and that
+    # the reported failure is the halt, not the quarantine.
+    assert summary.status in {"partial", "settled"}
+    assert summary.failure is not None
+    assert summary.failure["disposition"] == "halt"
+    assert summary.failure["type"] == "ValueError"
+    assert summary.failure["message_sha256"] == hashlib.sha256(
+        b"nonretryable fixture failure"
+    ).hexdigest()
+    # The quarantine still happened and is still counted; it just does not get
+    # to speak for the run.
+    assert summary.quarantined == 1
+    assert 5 in [
+        position for client in clients for position in client.positions
+    ]
+
+
+def test_a_quarantined_source_is_never_re_attempted_or_re_paid(
+    tmp_path: Path,
+) -> None:
+    """A settled action is not offered again, and costs nothing if it is.
+
+    The quarantine is durable because it is DERIVED from the rows already on
+    disk, not held in process memory: `load_resume` recomputes it.  Seven scored
+    plus one retired resolves every source, so the action is terminal and
+    `prepare_run` refuses it outright rather than re-offering an action with
+    nothing to schedule.  That refusal is the point: before `settled` existed the
+    action stayed "partial" forever, so `ready_actions` kept naming it and every
+    futile invocation demanded a live bearer token to make zero provider calls.
+
+    The bytes on both durable surfaces are asserted unchanged either way, which
+    is the no-double-spend invariant itself.
+    """
+    path = _write_fixture(
+        tmp_path, workers=3, execution_count=8, max_attempts=1,
+        distinct_claims=True,
+    )
+    plan = load_run_plan(path)
+
+    def factory(_token: str, _action: Any) -> SourceKeyedClient:
+        return SourceKeyedClient([], plan.actions[0].ledger, off_grid={0})
+
+    first = _run_with_clients(plan, factory)
+    assert first.quarantined == 1
+    assert first.status == "settled"
+    raw_prefix = plan.actions[0].output.read_bytes()
+    ledger_prefix = plan.actions[0].ledger.read_bytes()
+
+    with pytest.raises(runner.RunnerError, match="already complete"):
+        runner.prepare_run(plan)
+    assert runner.inspect_plan(plan).status == "settled"
+    assert runner.inspect_plan(plan).ready_action_ids == ()
+    assert plan.actions[0].output.read_bytes() == raw_prefix
+    assert plan.actions[0].ledger.read_bytes() == ledger_prefix
+
+
+def test_a_hole_stops_the_action_even_with_sources_left_unscored(
+    tmp_path: Path,
+) -> None:
+    """One hole is enough, and leftover pending work does not change that.
+
+    This is the shape that used to look like "the action still has work to do":
+    source 0 is retired, sources 1-2 remain.  Scoring them cannot produce a
+    bundle — `llm._validate_raw` requires a final scored verdict for EVERY pair
+    in the exact universe — so dispatching them would buy nothing at real cost.
+    The action is terminal, is not re-offered, and neither durable surface grows.
+    """
+    path = _write_fixture(
+        tmp_path, workers=1, execution_count=3, max_attempts=1,
+        distinct_claims=True,
+    )
+    plan = load_run_plan(path)
+    first = _run_with_clients(plan, lambda _t, _a: SourceKeyedClient(
+        [], plan.actions[0].ledger, off_grid={0}
+    ))
+    assert first.quarantined == 1
+    assert first.status == "settled"
+    assert first.completed_total < first.total  # sources really are left over
+
+    raw_prefix = plan.actions[0].output.read_bytes()
+    ledger_prefix = plan.actions[0].ledger.read_bytes()
+    with pytest.raises(runner.RunnerError, match="already complete"):
+        runner.prepare_run(plan)
+    assert plan.actions[0].output.read_bytes() == raw_prefix
+    assert plan.actions[0].ledger.read_bytes() == ledger_prefix
+
+
+def test_settled_source_reports_settled_and_never_reports_complete(
+    tmp_path: Path,
+) -> None:
+    """A quarantined hole must never be reported as a COMPLETED action.
+
+    S2 wrote this test to assert "partial" forever, on the reasoning that
+    pending/partial/complete were the only statuses and only "partial" kept the
+    holes from shipping.  The intent below is deliberately narrowed, because
+    "partial" bought that safety with three defects: `ready_actions` re-offered
+    an action with nothing schedulable, every dependent deadlocked permanently
+    (in the shipped plan, all three primary arms sit behind the sensitivity
+    actions), and each futile invocation demanded a live bearer token for a run
+    that builds zero clients.
+
+    What actually had to hold was never "partial" — it was NOT "complete".  A
+    settled action is terminal for scheduling and distinct from clean, and it is
+    `llm.materialize_model_bundle`'s explicit exclusion list, not a status
+    string, that stops the holes from shipping silently.  So this asserts the
+    real invariant: the status is "settled", it is not "complete", and `done`
+    and `settled` stay disjoint.
+    """
+    path = _write_fixture(tmp_path, execution_count=2, max_attempts=5)
+    plan = load_run_plan(path)
+    action, stage, index = _resume_scope(plan)
+    first, second = index.executions[0], index.executions[1]
+    rows = [
+        _resume_scored_row(
+            first, action=action, model=stage.model,
+            provider_model_id=stage.provider_model_id, ordinal=1,
+        )
+    ]
+    rows += [
+        _resume_error_row(
+            second, action=action, model=stage.model, ordinal=ordinal,
+            error_type="InvalidModelOutput",
+        )
+        for ordinal in range(1, replay.INVALID_MODEL_OUTPUT_LIMIT + 1)
+    ]
+    _write_rows(action, rows)
+
+    resume = replay.load_resume(
+        action.output, index=index, action=action, model=stage.model,
+        provider_model_id=stage.provider_model_id,
+    )
+    assert resume.status == "settled"
+    assert resume.status != "complete"
+    assert resume.done == frozenset({(0, 0)})
+    assert resume.settled == {(1, 0): "invalid_model_output_limit"}
+    assert not (resume.done & set(resume.settled))
+    # The two status producers must agree byte for byte on the same rows:
+    # `resume_status` discards the rows `load_resume` retains, so a drift here
+    # would let readiness and the scheduler describe different actions.
+    assert replay.resume_status(
+        action.output, index=index, action=action, model=stage.model,
+        provider_model_id=stage.provider_model_id,
+    ) == replay.ResumeStatus("settled", 1, 6, 1)
+    plan_status = runner.inspect_plan(plan)
+    assert plan_status.status == "settled"
+    assert plan_status.status != "complete"
+    # Terminal means terminal: nothing is re-offered.
+    assert plan_status.ready_action_ids == ()
+    assert plan_status.actions[0].settled == 1
+
+
+def test_settled_sources_are_neither_completed_nor_pending_at_readiness(
+    tmp_path: Path,
+) -> None:
+    """Readiness must not promise work the run cannot do.
+
+    `pending` is what the operator reads to decide whether handing over a bearer
+    token can accomplish anything.  Counting retired sources there would promise
+    work no client will ever be built for.
+
+    One worker makes the first run strictly sequential: position 0 is
+    quarantined and scheduling continues, positions 1-2 score, position 3 raises
+    an unclassified failure and halts the action, and positions 4-7 are never
+    dispatched.  That is the mixed state — done, settled and never-touched all
+    at once — that the three counts have to partition.  They must still sum to
+    `total` even though the never-touched four will not in fact be dispatched:
+    the action holds holes, so it is terminal, and `pending` describes the
+    corpus rather than promising a plan.
+    """
+    path = _write_fixture(
+        tmp_path, workers=1, execution_count=8, max_attempts=1,
+        distinct_claims=True,
+    )
+    plan = load_run_plan(path)
+
+    def factory(_token: str, _action: Any) -> SourceKeyedClient:
+        return SourceKeyedClient(
+            [], plan.actions[0].ledger, off_grid={0}, raising={3}
+        )
+
+    first = _run_with_clients(plan, factory)
+    assert first.status == "settled"
+    assert first.failure and first.failure["disposition"] == "halt"
+    assert first.quarantined == 1
+
+    action, stage, index = _resume_scope(plan)
+    resume = replay.load_resume(
+        action.output, index=index, action=action, model=stage.model,
+        provider_model_id=stage.provider_model_id,
+    )
+    assert resume.settled == {
+        (0, 0): "attempts_exhausted",
+        (3, 0): "nonretryable_failure_on_resume",
+    }
+    assert len(resume.done) == 2
+    assert not (resume.done & set(resume.settled))
+    partition = (
+        len(resume.done)
+        + len(resume.settled)
+        + (len(index.executions) - len(resume.done) - len(resume.settled))
+    )
+    assert partition == len(index.executions) == 8
+
+    # And the action is never offered again, so no bearer token is ever asked
+    # for on its behalf.
+    with pytest.raises(runner.RunnerError, match="already complete"):
+        runner.prepare_run(plan)
 
 
 def test_action_cap_refuses_call_after_credential_boundary(tmp_path: Path) -> None:
@@ -1385,6 +2414,84 @@ def test_wal_recovery_projects_invalid_provider_evidence_as_retryable_error(
         recovered.close()
 
 
+def test_wal_recovery_of_an_offgrid_confidence_does_not_wedge_the_action(
+    tmp_path: Path,
+) -> None:
+    """Recovery gates on the SCORE, not on the verdict alone.
+
+    A WAL-recovered attempt whose durable provider evidence parses to
+    ("correct", "certain") has an on-grid verdict and an off-grid confidence, so
+    it has no score.  Gating on the verdict alone built that row with
+    score=None and attempt_status="completed"; `validate_row` then rejected it
+    inside `_recover`, BEFORE the deferred attempt was committed.  Nothing was
+    written, so the next `prepare_run` re-entered the identical path and raised
+    again — narrow, permanent, and only escapable by hand.  The recovered row
+    must instead be the same retryable InvalidModelOutput error the live path
+    writes for the same evidence.
+
+    K2-one-parser MOVED ONE VALUE HERE, and only this one: `score_execution` used
+    to hand back ("correct", "certain") with score=None, and the runner's gate
+    then refused it.  There is now no window in which that pair exists as a
+    result at all — `indra_belief.verdict` builds a Verdict only for a pair the
+    grid can score, so the reading itself refuses it and the result is
+    (None, None, None).  Every OTHER assertion below is unchanged and still
+    passes: the recovered row is still a retryable InvalidModelOutput at
+    ordinal 1, the action is still not settled, and the escape is still not a
+    one-shot.  The property this test exists for is preserved; what moved is the
+    intermediate the property used to be reached through, and it moved from a
+    promoted-then-rejected pair to an absence.
+    """
+    path = _write_fixture(tmp_path, max_attempts=5, distinct_claims=True)
+    plan = load_run_plan(path)
+    prepared = runner.prepare_run(plan)
+    source = prepared.index.executions[0]
+    base = SourceKeyedClient([], plan.actions[0].ledger, off_grid={0})
+    client = runner._DeadlineClient(
+        runner.GuardedModelClient(base, prepared.action_guard), prepared.deadline
+    )
+    context = prepared.action_guard.attempt(runner.execution_identity(source))
+    context.__enter__()
+    result = runner.score_execution(
+        prepared.index,
+        source,
+        client,
+        main_max_tokens=prepared.action.main_max_output_tokens,
+    )
+    assert (result["verdict"], result["confidence"]) == (None, None)
+    assert result["score"] is None
+    # The refusal is the PARSER's, not a second reading of its output: the same
+    # reply body read directly yields no Verdict at all, so no caller can build
+    # a result carrying an unscorable pair.
+    assert parse_verdict(
+        '{"support":"span","objection":null,"verdict":"correct",'
+        '"confidence":"certain"}'
+    ) is None
+    prepared.close()  # process loss after settled response evidence
+    del context
+
+    recovered = runner.prepare_run(plan)
+    try:
+        assert recovered.resume.status == "partial"
+        assert recovered.resume.done == frozenset()
+        row = recovered.resume.rows[0]
+        assert row["row_status"] == "error"
+        assert row["error"]["type"] == "InvalidModelOutput"
+        assert row["attempt_ordinal"] == 1
+        assert replay.row_retry_class(row) == "invalid_model_output"
+        assert recovered.resume.settled == {}
+    finally:
+        recovered.close()
+
+    # The escape is not a one-shot: recovery committed the attempt, so a second
+    # prepare_run neither re-enters the recovery path nor appends a second row.
+    again = runner.prepare_run(plan)
+    try:
+        assert len(again.resume.rows) == 1
+        assert again.resume.attempts == {(0, 0): 1}
+    finally:
+        again.close()
+
+
 @pytest.mark.parametrize("failure", ["token", "factory", "config"])
 def test_boundary_failure_always_releases_output_and_ledger_locks(
     tmp_path: Path, failure: str
@@ -1490,4 +2597,4 @@ def test_row_retry_class_keeps_operational_interruptions_retryable(
     error_type: str, expected: str | None
 ) -> None:
     row = {"row_status": "error", "error": {"type": error_type}, "call_log": []}
-    assert runner._row_retry_class(row) == expected
+    assert replay.row_retry_class(row) == expected

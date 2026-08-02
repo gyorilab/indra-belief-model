@@ -1,8 +1,9 @@
 """Derive a verdict-only replay substrate from the frozen reasoning-first one.
 
 The paid comparison runner never builds a prompt: it hydrates one from a
-content-addressed store and digest-checks it (``replay.ReplayIndex.main_request``
-raises ``ReplayError("hydrated main prompt digest differs")`` on any deviation).
+content-addressed store and digest-checks it
+(``prepared_execution.assert_replay_digests`` raises
+``ReplayError("hydrated main prompt digest differs")`` on any deviation).
 The scoring prompt is therefore frozen INSIDE the substrate — the shipped one
 carries ``"mono_variant": "disconfirm_relnature_rf"`` and few-shots that instruct
 ``Output JSON: {"relation_check": ..., "support": ..., "objection": ...,
@@ -11,9 +12,10 @@ does not touch any of that. Removing the scaffolding means a new substrate, and
 the repo has no generator for one.
 
 This is that generator, and it DERIVES rather than regenerates. The user message
-is not stored as text — ``ReplayIndex._record`` rebuilds it from structured row
-fields (claim, entity_context, abbreviation_lines, provenance, evidence text,
-lookup refs). None of those change. So exactly four things do:
+is not stored as text — ``prepared_execution.prepare_from_replay_row`` rebuilds
+it from structured row fields (claim, entity_context, abbreviation_lines,
+provenance, evidence text, lookup refs). None of those change. So exactly four
+things do:
 
   1. the main system prompt        -> verdict-only (plain and tool variants)
   2. the few-shot message prefix   -> verdict-only, per statement type
@@ -46,9 +48,9 @@ from indra_belief.comparison.replay import (  # noqa: E402
     CALLABLE_ROUTES,
     DETERMINISTIC_ROUTES,
     ReplayIndex,
-    prompt_sha256,
 )
 from indra_belief.hashing import canonical_json_line, canonical_sha256  # noqa: E402
+from indra_belief.prepared_execution import prepare_from_replay_row  # noqa: E402
 from indra_belief.scorers.monolithic._prompts_verdict_only import (  # noqa: E402
     VERDICT_ONLY_SYSTEM_PROMPT,
     render_example,
@@ -172,14 +174,13 @@ def build() -> None:
             prefix_ref = prefix_refs[str(row["statement_type"])]
             out["main_system_ref"] = system_ref
             out["main_message_prefix_ref"] = prefix_ref
-            # Reproduce main_request's hydration EXACTLY, lookups block included:
-            # that string is what the digest commits to.
-            user, refs = ReplayIndex._record(row)
-            block = [lookups[str(ref)] for ref in refs]
-            if block:
-                user += "\n\nEntity database lookups:\n" + "\n".join(block)
-            messages = [*prefixes[prefix_ref], {"role": "user", "content": user}]
-            out["main_prompt_base_sha256"] = prompt_sha256(systems[system_ref], messages)
+            # The digest commits to the hydrated request, so it is computed by
+            # the SAME producer the runner hydrates through — no hand-copied
+            # tail to keep in step. (`out` carries the new refs; every body
+            # field is the source row's, unchanged.)
+            execution = prepare_from_replay_row(
+                out, systems=systems, prefixes=prefixes, lookups=lookups)
+            out["main_prompt_base_sha256"] = execution.calls()[-1].prompt_sha256()
             out["call_topology"] = ["monolithic_tool_context" if route == "tool" else "monolithic"]
         elif route in DETERMINISTIC_ROUTES:
             out["call_topology"] = []

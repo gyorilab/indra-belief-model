@@ -457,7 +457,22 @@ def _status_from_provider_exception(error: BaseException) -> int | None:
 def classify_provider_failure(
     error: BaseException | None,
 ) -> tuple[str | None, int | None]:
-    """Return the narrow retry class used by the comparison runner."""
+    """Return the narrow retry class used by the comparison runner.
+
+    408 (request timeout) and 429 (rate limited) join the 5xx transport class.
+    Both say "ask again later", not "this request is wrong", and the runner
+    turns the class straight into its bounded exponential backoff — no new pause
+    machinery, still capped by the action's `max_attempts` and deadline.
+
+    Calling them "other" was survivable only while the FIRST failure of any kind
+    halted the whole action.  Once a source can be quarantined instead, a
+    non-retryable class makes it *permanently* settled, so one 429 would have
+    retired a source that a second request would have scored.
+
+    This changes the `provider_failure_class` written at `_settle` for NEW 429
+    and 408 rows only; rows already on disk keep the class they were written
+    with, and `replay.row_retry_class` reads that stored class as it always has.
+    """
 
     if error is None:
         return None, None
@@ -476,7 +491,11 @@ def classify_provider_failure(
         match = re.search(r"\bBedrock (?:Responses|Chat) HTTP\s+(\d{3})\b", str(error))
         status = int(match.group(1)) if match else None
     if status is not None:
-        return ("transport_or_server" if 500 <= status <= 599 else "other"), status
+        return (
+            "transport_or_server"
+            if 500 <= status <= 599 or status in {408, 429}
+            else "other"
+        ), status
     return "other", None
 
 
@@ -644,6 +663,8 @@ def _initialize_ledger_state(target: Any) -> None:
     target._starts = {}
     target._attempt_ids_by_execution = {}
     target._reservations = {}
+    target._calls_by_attempt = {}
+    target._calls_with_nonstr_attempt = []
     target._evidence = {}
     target._settlements = {}
     target._outcomes = {}
@@ -876,6 +897,8 @@ class SpendGuard:
         self._starts = replay._starts
         self._attempt_ids_by_execution = replay._attempt_ids_by_execution
         self._reservations = replay._reservations
+        self._calls_by_attempt = replay._calls_by_attempt
+        self._calls_with_nonstr_attempt = replay._calls_with_nonstr_attempt
         self._evidence = replay._evidence
         self._settlements = replay._settlements
         self._outcomes = replay._outcomes
@@ -946,6 +969,32 @@ class SpendGuard:
             or observed_runs != expected_runs
         ):
             raise SpendLedgerCorrupt("cached spend commitments differ from ledger replay")
+
+    def _calls_for_attempt(self, attempt_id: Any) -> list[dict[str, Any]]:
+        """The reservations for ``attempt_id``, in ledger order.
+
+        Replaces three full scans of ``_reservations`` -- it is an accelerator
+        and nothing more.  The candidate set is a SUPERSET of what those scans
+        saw, by construction and for any Python values a JSON ledger can carry:
+        a stored ``str`` id can only be ``==`` to an equal ``str``, and such a
+        query reads exactly that raw-``str`` bucket; every non-``str`` stored id
+        is unconditionally in the overflow list, which every lookup unions in.
+        The residual ``==`` then keeps the comparison the scans made byte for
+        byte, so the result is neither bigger nor smaller than theirs.  The
+        lookup is total: an unhashable JSON ``attempt_id`` is not a ``str``, so
+        it takes the ``else`` branch and never reaches ``dict.get``.
+        """
+
+        candidates = (
+            self._calls_by_attempt.get(attempt_id, ())
+            if isinstance(attempt_id, str)
+            else ()
+        )
+        return [
+            item
+            for item in (*candidates, *self._calls_with_nonstr_attempt)
+            if item.get("attempt_id") == attempt_id
+        ]
 
     def _event_identity_matches(
         self, event: Mapping[str, Any], reservation: Mapping[str, Any]
@@ -1065,11 +1114,7 @@ class SpendGuard:
                 or row.get("execution_id") != start.get("execution_id")
                 or row.get("attempt_ordinal") != start.get("attempt_ordinal")
                 or row.get("run_id") != start.get("run_id")
-                or row.get("call_ordinal")
-                != 1 + sum(
-                    item.get("attempt_id") == attempt_id
-                    for item in self._reservations.values()
-                )
+                or row.get("call_ordinal") != 1 + len(self._calls_for_attempt(attempt_id))
             ):
                 raise SpendLedgerCorrupt("call reservation is malformed")
             reserved_input = row.get("reserved_input_tokens")
@@ -1102,6 +1147,28 @@ class SpendGuard:
             if not isinstance(request, dict) or _sha256(request) != row.get("provider_request_sha256"):
                 raise SpendLedgerCorrupt("call reservation request commitment differs")
             self._reservations[call_id] = row
+            # Side index, maintained at the ONE insertion site so it cannot drift
+            # from _reservations.  Buckets are keyed by the RAW str attempt id;
+            # every other id lands in the overflow list, which every lookup
+            # unions in.  That split buys a superset property that holds by
+            # construction, for any Python values a JSON ledger can carry: a
+            # stored str can only be ``==`` to a str, and a str query reads
+            # exactly its own raw-str bucket, so a matching stored str is always
+            # a candidate; every non-str stored id is unconditionally a
+            # candidate via the overflow.  No reachability argument is needed.
+            # Keying on str(attempt_id) instead would need ``x == y`` to imply
+            # ``str(x) == str(y)``, which is false in Python (1 == 1.0 == True).
+            # It happens to be unreachable here -- the fifth clause above,
+            # ``attempt_id in self._finishes``, raises TypeError on an
+            # unhashable id before any row is stored, and no two HASHABLE JSON
+            # values are ``==`` with different 32-char str()s -- but that safety
+            # rests on the order of a check this index is forbidden to touch,
+            # so the index does not lean on it.
+            attempt_key = row.get("attempt_id")
+            if isinstance(attempt_key, str):
+                self._calls_by_attempt.setdefault(attempt_key, []).append(row)
+            else:
+                self._calls_with_nonstr_attempt.append(row)
             self._adjust_commitment(
                 row,
                 _ledger_decimal(
@@ -1187,9 +1254,7 @@ class SpendGuard:
             attempt_id = row.get("attempt_id")
             start = self._starts.get(str(attempt_id))
             raw_row = row.get("raw_row")
-            calls = [
-                item for item in self._reservations.values() if item.get("attempt_id") == attempt_id
-            ]
+            calls = self._calls_for_attempt(attempt_id)
             if (
                 start is None
                 or attempt_id in self._outcomes
@@ -1749,11 +1814,7 @@ class SpendGuard:
             attempt_id = str(start["attempt_id"])
             calls: list[dict[str, Any]] = []
             reservations = sorted(
-                (
-                    item
-                    for item in self._reservations.values()
-                    if item.get("attempt_id") == attempt_id
-                ),
+                self._calls_for_attempt(attempt_id),
                 key=lambda item: item["call_ordinal"],
             )
             for reservation in reservations:
@@ -1882,6 +1943,7 @@ class _LedgerReplay:
     _recomputed_commitments = SpendGuard._recomputed_commitments
     _validate_commitment_cache = SpendGuard._validate_commitment_cache
     _event_identity_matches = SpendGuard._event_identity_matches
+    _calls_for_attempt = SpendGuard._calls_for_attempt
 
     def __init__(self) -> None:
         _initialize_ledger_state(self)

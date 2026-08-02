@@ -576,6 +576,37 @@ def test_transport_failure_is_evidenced_and_retry_classified(tmp_path: Path):
     spend.close()
 
 
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (429, "transport_or_server"),   # rate limited: ask again later
+        (408, "transport_or_server"),   # request timeout: ask again later
+        (500, "transport_or_server"),
+        (503, "transport_or_server"),
+        (400, "other"),                 # the request itself is wrong
+        (401, "other"),
+        (403, "other"),
+        (404, "other"),
+        (422, "other"),
+    ],
+)
+def test_rate_limits_are_transport_not_a_verdict_on_the_row(
+    status: int, expected: str
+):
+    """429/408 must reach the runner's EXISTING bounded backoff.
+
+    They say "ask again later", not "this request is wrong".  Classifying them
+    as "other" was survivable only while the first failure of any kind halted
+    the action; once a source can be quarantined instead, a non-retryable class
+    would retire a source permanently on a rate limit that a second request
+    would have scored.  4xx codes that ARE a verdict on the request — bad
+    credentials, bad model id, malformed body — stay non-retryable so they halt
+    the run instead of being retried 5,000 times.
+    """
+    error = RuntimeError(f"Bedrock Chat HTTP {status} from the provider")
+    assert classify_provider_failure(error) == (expected, status)
+
+
 def test_usage_above_reservation_is_recorded_then_raises(tmp_path: Path):
     spend = guard(tmp_path)
     response = Response(prompt_tokens=100_000, tokens=100_000)

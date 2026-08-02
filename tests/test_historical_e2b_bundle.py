@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from collections import Counter, defaultdict
 from decimal import Decimal
 from pathlib import Path
@@ -9,8 +10,21 @@ from typing import Any
 
 from indra_belief.comparison import llm
 
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from scripts.reproduce_published_statement_beliefs import (  # noqa: E402
+    published_reproduction,
+)
+
+# The statement_belief.py bytes that produced this bundle. The live file is
+# allowed to differ from it; what may not differ is what the file COMPUTES,
+# which `published_reproduction` re-derives from the frozen observations. The
+# constant stays spelled out so drift in the published artifact stays visible.
+HISTORICAL_STATEMENT_BELIEF_SHA256 = (
+    "8327ff74a8f34a4872abbe37a3754255031605bf9bece07c38e4ba4f6425ed06"
+)
+
 BUNDLE_DIR = ROOT / "data/comparison/models/gemma_4_e2b"
 MANIFEST_PATH = BUNDLE_DIR / "manifest.json"
 RUN_ID = (
@@ -248,11 +262,26 @@ def test_historical_e2b_bundle_is_audited_under_the_canonical_contract() -> None
     assert manifest["run_id"] == RUN_ID
 
     implementation = manifest["implementation"]
-    current_digest, current_components = llm._implementation_digest()
-    assert implementation["implementation_digest"] == current_digest
+    # The implementation freeze is BEHAVIOURAL for statement_belief and byte-exact
+    # for the other two components. The old assertion proved one file had not been
+    # touched; this one proves the 13460 published scores still re-derive from the
+    # frozen observations that produced them — the property the numbers depend on,
+    # and one a comment-only edit cannot break while a logic edit cannot survive.
+    # The published JSON keeps its recorded digest: it is the historical record of
+    # the code that produced those numbers, and llm._implementation_digest() is
+    # unchanged, so new bundles still record the live digest.
+    _, current_components = llm._implementation_digest()
+    frozen_components = dict(current_components)
+    frozen_components["statement_belief"] = HISTORICAL_STATEMENT_BELIEF_SHA256
+    assert implementation["implementation_digest"] == llm._sha256(
+        llm._canonical(frozen_components)
+    )
     assert implementation["training_data_sha256"] is None
     notes = implementation["notes"]
-    assert notes["implementation_components"] == current_components
+    assert notes["implementation_components"] == frozen_components
+    assert published_reproduction().ok, [
+        mismatch.describe() for mismatch in published_reproduction().mismatches
+    ]
     assert notes["served_model"] == SERVED_MODEL
     assert notes["provider_model_id"] == PROVIDER_MODEL
     assert notes["workload"] == WORKLOAD

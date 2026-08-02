@@ -44,7 +44,15 @@ def _ledger_bytes(payloads: list[dict[str, Any]]) -> bytes:
     return _jsonl(rows)
 
 
-def _fixture(tmp_path: Path) -> dict[str, Any]:
+def _fixture(
+    tmp_path: Path, *, final_error_pairs: frozenset[int] = frozenset()
+) -> dict[str, Any]:
+    """Bundle inputs for a completed run.
+
+    `final_error_pairs` replaces the named pairs' attempts with a single FAILING
+    one, so the pair ends carrying no verdict — the durable shape a quarantined
+    source leaves behind.
+    """
     statements = [
         {
             "id": "s0",
@@ -106,6 +114,11 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         [("completed", "provider")],
         [("completed", "provider")],
     ]
+    # A quarantined pair's durable shape: it can never be "scored then failed",
+    # because `replay._scan_resume` refuses to append anything after a terminal
+    # scored row.
+    for pair_index in sorted(final_error_pairs):
+        topology[pair_index] = [("error", "conservative")]
     verdicts = ["correct", "correct", "incorrect", "correct"]
     ledger_payloads: list[dict[str, Any]] = [
         {"event": "ledger_initialized", "global_cap_usd": "10"},
@@ -137,7 +150,33 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             }
             is_parser_abstention = pair_index == 1 and ordinal == 1
             row = None
-            if status != "error":
+            if status == "error" and pair_index in final_error_pairs:
+                # The runner DOES persist a raw error row for a source it
+                # retires; only pair 0's historical transport failure is absent
+                # from the raw output.
+                row = {
+                    "stmt_i": stmt_i,
+                    "evidence_i": evidence_i,
+                    "run_id": RUN_ID,
+                    "source_hash": mapped["source_hash"],
+                    "paper_statement_hash": mapped["paper_statement_hash"],
+                    "evidence_json_sha256": mapped["evidence_json_sha256"],
+                    "source_api": mapped["source_api"],
+                    "row_status": "error",
+                    "verdict": None,
+                    "confidence": None,
+                    "tier": None,
+                    "error": {"type": "InvalidModelOutput"},
+                    "call_log": [
+                        {
+                            "kind": "monolithic",
+                            "model_id": PROVIDER_MODEL,
+                            "prompt_tokens": None,
+                            "out_tokens": None,
+                        }
+                    ],
+                }
+            elif status != "error":
                 row = {
                     "stmt_i": stmt_i,
                     "evidence_i": evidence_i,
@@ -426,6 +465,38 @@ def test_materializes_true_reader_panel_and_retry_inclusive_shared_cost(
 
     with pytest.raises(FileExistsError, match="refusing to clobber"):
         llm.materialize_model_bundle(**arguments)
+
+
+def test_a_quarantined_pair_can_never_be_bundled(tmp_path: Path) -> None:
+    """The total-coverage gate, and why it must NOT be relaxed for quarantine.
+
+    Pair (0, 1) ends on a failed attempt carrying no verdict — exactly what a
+    quarantined source leaves on disk.  The bundle refuses, and that refusal is
+    load-bearing rather than incidental.
+
+    The tempting relaxation is to let the bundle publish while withholding the
+    unscored pair's measurement from the belief fold.  It is tempting because
+    NOTHING STRUCTURAL BREAKS: measured on this fixture, a bundle built that way
+    keeps every census identical to a clean one — 3 statement predictions, 2
+    reader predictions, 4 attempt rows, 2 reader attempt rows, the same
+    `ExpectedCounts`, the same statement IDs — because predictions are emitted
+    per STATEMENT and no statement disappears.  `assemble._prediction_rows`
+    checks row count and statement coverage, and both still match.
+
+    What moves is the number.  Statement s0's published belief went from
+    0.97935 to 0.65 — a third of the scale — with every coverage check in the
+    system still green and nothing downstream able to notice.  These arms are
+    compared at the third decimal of AP and AUROC, so a panel folded from
+    less evidence than it claims is not a slightly worse panel; it is a
+    different measurement wearing the same shape.  The corpus is all-or-nothing
+    by design, and this is the gate that enforces it.
+    """
+    arguments = _fixture(tmp_path, final_error_pairs=frozenset({1}))
+    with pytest.raises(
+        llm.LlmMaterializationError, match="lacks one final scored verdict"
+    ):
+        llm.materialize_model_bundle(**arguments)
+    assert not (arguments["output_dir"] / "manifest.json").exists()
 
 
 def test_rejects_partial_raw_without_publishing_manifest(tmp_path: Path) -> None:
