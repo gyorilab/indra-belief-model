@@ -1,0 +1,30 @@
+# The build context must never carry the corpus. data/ is tens of GB of
+# gitignored substrate, ledgers and attempt logs; it is MOUNTED at runtime,
+# never baked. Everything here is excluded first and re-included explicitly.
+*
+
+# The package and its entry points.
+!pyproject.toml
+!README.md
+!src/
+!scripts/
+
+# Tests enter the build context for the `test` STAGE, which runs them with
+# neither gilda nor indra installed and fails the build if they are red. They
+# are NOT copied into the runtime image, and pytest is not installed there.
+!tests/
+
+# Re-exclusions inside the allow-list above.
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+
+# Never, under any circumstance.
+.venv/
+.env
+data/
+viewer/
+research/
+.git/
+.claude/
