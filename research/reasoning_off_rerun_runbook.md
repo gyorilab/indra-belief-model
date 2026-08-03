@@ -1,5 +1,11 @@
 # Verdict-only re-run of the INDRA paper comparison — runbook
 
+> **Status: run COMPLETE 2026-07-31.** All four arms carry `.COMPLETE` in
+> `data/comparison_verdict_only/supervisor/` and every `.state.json` reads
+> `phase: complete` (latest 2026-07-31T15:47:15Z). The procedures below are the
+> record of how it was run; the self-heal crontab from §Reboot self-heal is
+> still installed — remove it with `crontab -r`.
+
 Re-scores the SAME corpus as the 2026-07-20..23 Bedrock run with the scorer's
 reasoning removed **at both levels**: the provider's chain-of-thought, and the
 prompt scaffolding that made the model deliberate in its answer.
@@ -32,7 +38,7 @@ prompts from a content-addressed store and digest-checks them. The scaffolding
 was frozen into the substrate, and no generator for one existed.
 
 `scripts/build_verdict_only_replay.py` is that generator. It DERIVES rather than
-regenerates: the user message is rebuilt by `ReplayIndex._record` from structured
+regenerates: the user message is rebuilt by `prepared_execution.prepare_from_replay_row` from structured
 row fields that do not change, so exactly four things do — the main system
 prompt, the few-shot prefixes, `main_prompt_base_sha256`, and the removal of the
 relation-nature call. Rules 1-7 of the prompt are reused byte-identically from
@@ -131,10 +137,10 @@ Also confirm the plan loads and the corpus size matches:
 
 ```
 PYTHONPATH=src python -m indra_belief.comparison status \
-    --plan data/comparison_noreason/run_plan.json
+    --plan data/comparison_verdict_only/run_plan.json
 ```
 
-Expect three `pending` actions at `total: 33361`. `status` never opens a
+Expect four `pending` actions at `total: 33361`. `status` never opens a
 ledger, so it is safe and cheap to re-run at any time.
 
 ## Launch
@@ -190,7 +196,7 @@ Order matters once the self-heal is installed:
 ```
 crontab -r                                     # FIRST, or cron restarts within 10 min
 pkill -f monitor_comparison_fleet.sh           # else the monitor heals it back
-bash scripts/supervise_comparison_all.sh stop data/comparison_noreason/run_plan.json
+bash scripts/supervise_comparison_all.sh stop data/comparison_verdict_only/run_plan.json
 ```
 
 `supervise_comparison_all.sh stop` alone does **not** stop the run: it kills
@@ -213,7 +219,7 @@ run-plan contract caps `max_attempts` at ten, so the budget is genuinely small:
   `NETFAIL_KILL_TICKS=2` stops the runner after ~60s of failed probes. Roughly
   2-3 ordinals burn per wake instead of ~6.
 - Ordinals are cumulative across restarts, and only the `workers` sources in
-  flight at sleep time are affected (6/6/8), so a given source is unlikely to be
+  flight at sleep time are affected (8 per arm), so a given source is unlikely to be
   hit twice across a run of 33,361.
 
 If an arm does exhaust ten attempts on one source it writes
@@ -229,7 +235,7 @@ LaunchAgent route is TCC-blocked on `~/Documents` (the failures are recorded in
 as user `noot`. Install:
 
 ```
-( crontab -l 2>/dev/null; echo '*/10 * * * * SUPERVISOR_CAFFEINATE=0 NETFAIL_KILL_TICKS=2 /bin/bash /Users/noot/Documents/indra-belief-model/scripts/supervise_comparison_all.sh start data/comparison_noreason/run_plan.json >> /Users/noot/Documents/indra-belief-model/data/comparison_noreason/supervisor/cron.log 2>&1' ) | crontab -
+( crontab -l 2>/dev/null; echo '*/10 * * * * SUPERVISOR_CAFFEINATE=0 NETFAIL_KILL_TICKS=2 STAGGER_SECONDS=60 /bin/bash /Users/noot/Documents/indra-belief-model/scripts/supervise_comparison_all.sh start data/comparison_verdict_only/run_plan.json >> /Users/noot/Documents/indra-belief-model/data/comparison_verdict_only/supervisor/cron.log 2>&1' ) | crontab -
 ```
 
 `start` is idempotent: it skips arms whose supervisor is already running, and
@@ -273,11 +279,11 @@ Back up the five thinking-run artifacts first, then pass explicit paths:
 
 ```
 python -m indra_belief.comparison model-bundle \
-    --inputs data/comparison_noreason/inputs.json \
-    --plan data/comparison_noreason/run_plan.json --action <arm>      # x3
+    --inputs data/comparison_verdict_only/inputs.json \
+    --plan data/comparison_verdict_only/run_plan.json --action <arm>  # x4
 
 python -m indra_belief.comparison materialize \
-    --inputs data/comparison_noreason/inputs.json \
+    --inputs data/comparison_verdict_only/inputs.json \
     --output data/results/indra_belief_comparison_noreason_spec.json
 
 python -m indra_belief.comparison metrics \
@@ -293,7 +299,7 @@ python -m indra_belief.comparison report \
 
 Never `--force`. `model-bundle` resolves `aggregation.json` and `pricing.json`
 from the **inputs file's own parent directory**, which is why both were copied
-byte-for-byte into `data/comparison_noreason/` — copied rather than re-derived so
+byte-for-byte into `data/comparison_verdict_only/` — copied rather than re-derived so
 the cost tariffs stay identical and the cost-Pareto comparison remains valid.
 
 ## Aggregation is hard-gate on BOTH sides — keep it that way
@@ -310,7 +316,7 @@ three pairs are clean at statement grain as well as evidence grain. This holds
 because `aggregation.json` was **copied byte-for-byte** from the thinking run.
 
 The one thing that would break it: setting a non-null `reader_profile` in
-`data/comparison_noreason/aggregation.json`. That would put a calibrated reader
+`data/comparison_verdict_only/aggregation.json`. That would put a calibrated reader
 on the reasoning-off side against a hard-gate thinking side and manufacture an
 aggregation confound out of nothing. Don't.
 

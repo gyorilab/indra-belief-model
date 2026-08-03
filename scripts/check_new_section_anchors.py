@@ -1,13 +1,33 @@
-"""Section-scoped anchor guard for research/serving_architecture.md.
+"""Section-scoped anchor guard for research/serving_architecture.md. SUPERSEDED.
 
-`scripts/check_doc_anchors.py` cannot simply take this document into its `DOCS`
-list: sections 1-8 carry pre-existing unstable numeric anchors — 16 of them, by
-this module's own `find_dead_anchors` outside the guarded spans, so the count is
-re-derivable rather than remembered — and repairing them belongs to the modularity
-audit, not to the nodes appending new sections.
-So this guard reuses that module's `find_dead_anchors` unchanged and scopes it to
-the sections the serving-architecture hypergraph appends — a new section cannot
-introduce anchor drift, while the older debt stays visible and untouched.
+WHAT CHANGED, and read this before trusting anything below it. Two things this
+module was built on are no longer true:
+
+  * The premise. `scripts/check_doc_anchors.py` could not take this document into
+    its `DOCS` list because sections 1-8 carried pre-existing unstable numeric
+    anchors, and repairing them belonged to the modularity audit rather than to
+    the nodes appending new sections. **That debt is now ZERO** — the doc-drift
+    audit converted all of it to symbol citations — so `check_doc_anchors.py`
+    scans this document like any other `research/*.md`, unscoped and ungrandfathered.
+  * The count. This docstring used to say the debt was "16 of them, by this
+    module's own `find_dead_anchors` outside the guarded spans, so the count is
+    re-derivable rather than remembered". Re-deriving it at 96cc1b7 gave **12**,
+    not 16, against a byte-identical document and a byte-identical guard. The
+    module whose purpose is stopping remembered-not-derived numbers carried one.
+    It is recorded here rather than quietly corrected.
+
+So this file is a compatibility surface, not the guard. `check_doc_anchors.py`
+owns `DOCS` (a `research/*.md` glob), the grandfather table and the symbol check;
+this module imports those and keeps only the title-scoped machinery plus the
+5-code exit contract that `tests/test_doc_anchors.py` pins. Retiring it means
+retargeting those tests, which is a `tests/` change and out of scope for the pass
+that wrote this note. Until then: a new section appended to
+research/serving_architecture.md is checked TWICE, by this module's scoped run and
+by the corpus-wide run, and neither can pass what the other fails.
+
+Historically: this guard reused `find_dead_anchors` unchanged and scoped it to
+the sections the serving-architecture hypergraph appends — a new section could not
+introduce anchor drift, while the older debt stayed visible and untouched.
 
 Sections are located by TITLE, never by section number. Sibling nodes append to
 this same document in the same wave, so the integer is resolved at write time and
@@ -49,17 +69,20 @@ below closes that: a cited symbol must resolve in the tree.
     `symbol_coverage` returns the checked/unchecked split so a caller can see how
     much of the document this actually reads.
 
-    SCOPE differs from the anchor check ON PURPOSE. Anchors are scoped to the
-    registered sections because §1-§8 carry pre-existing NUMERIC debt this guard
-    deliberately leaves visible. There is no equivalent pre-existing SYMBOL debt —
-    the modularity audit repaired all fourteen — so the symbol check reads the
-    WHOLE document. Scoping it to the tail would have left the §1 diagram and the
-    §4 refactor plan, where half the dead citations were, permanently unread.
+    SCOPE differs from the anchor check ON PURPOSE. Anchors were scoped to the
+    registered sections because §1-§8 carried pre-existing NUMERIC debt this guard
+    deliberately left visible. There was no equivalent pre-existing SYMBOL debt in
+    THIS document — the modularity audit repaired all fourteen — so the symbol
+    check reads the WHOLE document. That scoping sentence was also the corpus's
+    most-read statement of symbol coverage, and it was true of one file: run over
+    all seventeen research docs, the same check reported FOUR dead symbols in two
+    other documents, one of them a live operational runbook. Corpus-wide symbol
+    checking is now `check_doc_anchors.py`'s job.
 
-The real fix is a `SECTION_SCOPED_DOCS` registry inside `check_doc_anchors.py` so
-one guard owns the whole-doc, the section-scoped and the symbol modes instead of
-them being duplicated here; that file is out of scope for the nodes appending
-sections, and remains the right place for this to end up.
+The real fix was a registry inside `check_doc_anchors.py` so one guard owns the
+whole-doc, the section-scoped and the symbol modes instead of them being
+duplicated here. That is done: `DOCS` is a `research/*.md` glob there, the symbol
+machinery moved there, and this module imports it.
 
 Exit codes:
     0  every checked section is clean
@@ -78,16 +101,26 @@ Usage:
 """
 from __future__ import annotations
 
-import ast
 import re
 import sys
-from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from check_doc_anchors import find_dead_anchors  # noqa: E402
+from check_doc_anchors import (  # noqa: E402
+    SYMBOL_ROOTS,
+    find_dead_anchors,
+    resolve_symbol,
+)
+from check_doc_anchors import find_dead_symbols as _find_dead_symbols  # noqa: E402
+from check_doc_anchors import symbol_coverage as _symbol_coverage  # noqa: E402
+
+__all__ = [
+    "DOC", "SECTION_TITLES", "SYMBOL_ROOTS", "find_dead_anchors",
+    "find_dead_symbols", "resolve_symbol", "scoped_misses", "section_span",
+    "symbol_coverage", "top_level_headings", "unregistered_sections",
+]
 
 DOC = ROOT / "research" / "serving_architecture.md"
 
@@ -171,234 +204,24 @@ def unregistered_sections(
     ]
 
 
-# ── symbol resolution ────────────────────────────────────────────────────────
+# ── symbol resolution — MOVED ────────────────────────────────────────────────
 #
-# The tree is read through `ast` rather than imported: importing
-# `indra_belief.scorers.monolithic.scorer` to ask whether it defines a name would
-# resolve MONO_VARIANT from the ambient environment and pull in the heavy
-# closure. A guard must not have opinions that depend on how it was invoked.
-
-SYMBOL_ROOTS = ("src", "scripts")
-
-# A file extension in the tail position means the chain is a FILENAME, not a
-# symbol — `cost.py`, `manifest.json`. Without this, `cost.py` resolves its head
-# to src/indra_belief/corpus/cost.py and then reports the absence of a name `py`.
-_FILE_SUFFIXES = frozenset({
-    "py", "json", "jsonl", "md", "ts", "svelte", "txt", "sh", "yml", "yaml",
-    "toml", "csv", "html", "ndjson", "lock", "cfg", "ini", "log",
-})
-
-# A dotted chain of Python identifiers. The left boundary rejects a chain that is
-# really a path segment (`corpus/cost.py`) or the tail of a longer word.
-_DOTTED = re.compile(
-    r"(?<![A-Za-z0-9_./])"
-    r"(?P<chain>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)"
-)
-_BACKTICK_SPAN = re.compile(r"`([^`]+)`")
-
-
-@lru_cache(maxsize=1)
-def _tree_index() -> tuple[dict[str, Path], dict[str, tuple[Path, ...]], frozenset[str]]:
-    """(module name -> file, class name -> defining files, package names).
-
-    Modules are indexed under their dotted path relative to a root (so
-    `indra_belief.comparison.replay`) and under every SUFFIX of it that is unique
-    across the whole scan — `comparison.replay`, `replay` — because that is how
-    this repository's prose actually cites them. An ambiguous suffix is
-    deliberately absent: `scorer` names two files, so a citation using it is
-    reported UNCHECKED rather than resolved against a coin flip.
-    """
-    modules: dict[str, Path] = {}
-    suffixes: dict[str, list[Path]] = {}
-    classes: dict[str, list[Path]] = {}
-    packages: set[str] = set()
-    for root_name in SYMBOL_ROOTS:
-        root = ROOT / root_name
-        if not root.is_dir():
-            continue
-        for path in sorted(root.rglob("*.py")):
-            rel = path.relative_to(root).with_suffix("")
-            dotted = ".".join(rel.parts)
-            if dotted.endswith(".__init__"):
-                packages.add(dotted[: -len(".__init__")])
-                dotted = dotted[: -len(".__init__")]
-            modules.setdefault(dotted, path)
-            parts = dotted.split(".")
-            for start in range(1, len(parts)):
-                suffixes.setdefault(".".join(parts[start:]), []).append(path)
-            for part_count in range(1, len(rel.parts)):
-                packages.add(".".join(rel.parts[:part_count]))
-            try:
-                tree = ast.parse(path.read_text())
-            except (SyntaxError, UnicodeDecodeError):
-                continue
-            for node in tree.body:
-                if isinstance(node, ast.ClassDef):
-                    classes.setdefault(node.name, []).append(path)
-    # Package suffixes too, so `scorers.monolithic` resolves the way it is cited.
-    package_suffixes: dict[str, list[str]] = {}
-    for package in packages:
-        parts = package.split(".")
-        for start in range(1, len(parts)):
-            package_suffixes.setdefault(".".join(parts[start:]), []).append(package)
-    packages |= {name for name, owners in package_suffixes.items() if len(owners) == 1}
-    for name, paths in suffixes.items():
-        if len(paths) == 1:
-            modules.setdefault(name, paths[0])
-    return (modules,
-            {name: tuple(paths) for name, paths in classes.items()},
-            frozenset(packages))
-
-
-def _module_names(path: Path) -> tuple[frozenset[str], dict[str, ast.ClassDef]]:
-    """(every name the module's top level binds, its top-level classes).
-
-    Imports count. A module that re-exports a name — `comparison.replay` imports
-    `parse_response` from `indra_belief.verdict` — genuinely provides it, and a
-    doc citing `replay.parse_response` is citing something a reader can reach.
-    """
-    try:
-        tree = ast.parse(path.read_text())
-    except (SyntaxError, UnicodeDecodeError, OSError):
-        return frozenset(), {}
-    names: set[str] = set()
-    class_defs: dict[str, ast.ClassDef] = {}
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            names.add(node.name)
-        elif isinstance(node, ast.ClassDef):
-            names.add(node.name)
-            class_defs[node.name] = node
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    names.add(target.id)
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            names.add(node.target.id)
-        elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            for alias in node.names:
-                names.add(alias.asname or alias.name.split(".")[0])
-    return frozenset(names), class_defs
-
-
-def _class_members(node: ast.ClassDef) -> frozenset[str]:
-    names: set[str] = set()
-    for child in node.body:
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            names.add(child.name)
-        elif isinstance(child, ast.Assign):
-            for target in child.targets:
-                if isinstance(target, ast.Name):
-                    names.add(target.id)
-        elif isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name):
-            names.add(child.target.id)
-    return frozenset(names)
-
-
-def resolve_symbol(chain: str) -> tuple[str, str]:
-    """Resolve a dotted citation. Returns (verdict, detail).
-
-    verdict is "ok", "missing", or "unchecked". "unchecked" is not a pass — it
-    means this guard cannot say, and `symbol_coverage` counts it so the guard
-    never claims coverage it does not have.
-    """
-    segments = chain.split(".")
-    if segments[-1].lower() in _FILE_SUFFIXES:
-        return "unchecked", "reads as a filename, not a symbol"
-    modules, classes, packages = _tree_index()
-
-    if chain in modules or chain in packages:
-        return "ok", "module"
-
-    # Longest module prefix first: `indra_belief.comparison.replay.ReplayIndex`
-    # must bind to the module, not to the `indra_belief` package.
-    for cut in range(len(segments) - 1, 0, -1):
-        head = ".".join(segments[:cut])
-        if head in modules:
-            return _resolve_in_module(modules[head], segments[cut:], head)
-        if head in packages:
-            return "unchecked", f"{head} is a package; {segments[cut]} is not a module in it"
-
-    head = segments[0]
-    if head in classes:
-        paths = classes[head]
-        if len(paths) != 1:
-            return "unchecked", f"class {head} is defined in {len(paths)} files"
-        return _resolve_in_module(paths[0], segments, f"<{paths[0].name}>")
-    return "unchecked", f"{head} is not a module or class in {'/'.join(SYMBOL_ROOTS)}"
-
-
-def _resolve_in_module(path: Path, segments: list[str], where: str) -> tuple[str, str]:
-    names, class_defs = _module_names(path)
-    rel = path.relative_to(ROOT).as_posix()
-    first = segments[0]
-    if first not in names:
-        return "missing", f"{first} is not defined in {rel}"
-    if len(segments) == 1:
-        return "ok", rel
-    if first not in class_defs:
-        return "unchecked", f"{first} in {rel} is imported or not a class"
-    members = _class_members(class_defs[first])
-    if segments[1] not in members:
-        return "missing", f"{first}.{segments[1]} is not defined in {rel}"
-    if len(segments) > 2:
-        return "unchecked", f"deeper than {first}.{segments[1]} in {rel}"
-    return "ok", rel
-
-
-def _citations(lines: list[str]) -> list[tuple[int, str]]:
-    """1-based (line, dotted chain) for every backticked or fenced citation.
-
-    Fenced blocks are read as well as inline spans: the `## 1.` architecture
-    diagram is a fenced block, and four of the fourteen dead citations lived in
-    it. Chains whose head is not a repo module or class fall out as UNCHECKED, so
-    `python -m vllm.entrypoints.openai.api_server` in a launch command costs
-    nothing.
-    """
-    found, fenced = [], False
-    for lineno, line in enumerate(lines, 1):
-        if line.lstrip().startswith("```"):
-            fenced = not fenced
-            continue
-        spans = [line] if fenced else [m.group(1) for m in _BACKTICK_SPAN.finditer(line)]
-        for span in spans:
-            for m in _DOTTED.finditer(span):
-                found.append((lineno, m.group("chain")))
-    return found
+# `SYMBOL_ROOTS`, `_tree_index`, `resolve_symbol`, `find_dead_symbols` and
+# `symbol_coverage` used to be defined here. They now live in
+# `scripts/check_doc_anchors.py`, which runs them over the WHOLE research corpus
+# rather than over this one document — the move this module's docstring asked for.
+# The two wrappers below keep this module's `DOC`-defaulted signatures, which the
+# pytest guard and the exit-code contract are written against.
 
 
 def find_dead_symbols(doc: Path = DOC) -> list[dict]:
-    """Symbols the document cites that no longer resolve. Whole document.
-
-    Each record is {"doc": str, "line": int, "symbol": str, "reason": str} —
-    the same shape `find_dead_anchors` returns, so both can be printed by one
-    loop and neither has to know about the other.
-    """
-    lines = Path(doc).read_text().splitlines()
-    rel = _rel_doc(doc)
-    misses, seen = [], set()
-    for lineno, chain in _citations(lines):
-        verdict, detail = resolve_symbol(chain)
-        if verdict == "missing" and (lineno, chain) not in seen:
-            seen.add((lineno, chain))
-            misses.append({"doc": rel, "line": lineno, "symbol": chain,
-                           "reason": f"dead symbol — {detail}"})
-    return misses
+    """`check_doc_anchors.find_dead_symbols`, defaulted to this module's DOC."""
+    return _find_dead_symbols(doc)
 
 
 def symbol_coverage(doc: Path = DOC) -> dict[str, int]:
-    """How many cited chains this guard actually read. Honesty, not correctness.
-
-    A guard that reports "OK" without saying how much it declined to check
-    invites exactly the misreading that let 14 dead citations ship green.
-    """
-    counts = {"checked": 0, "unchecked": 0, "missing": 0}
-    for _lineno, chain in _citations(Path(doc).read_text().splitlines()):
-        verdict, _detail = resolve_symbol(chain)
-        counts["unchecked" if verdict == "unchecked" else "checked"] += 1
-        if verdict == "missing":
-            counts["missing"] += 1
-    return counts
+    """`check_doc_anchors.symbol_coverage`, defaulted to this module's DOC."""
+    return _symbol_coverage(doc)
 
 
 def _rel_doc(doc: Path) -> str:

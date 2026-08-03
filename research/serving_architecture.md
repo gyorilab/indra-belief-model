@@ -49,9 +49,12 @@ sit at the top level of the package rather than inside either consumer: both
 either. What the two paths can still drift on is everything the join does not
 cover; F1 below now names exactly what that is.
 
-**Deployment surface today:** no Dockerfile, no compose file, no API server (no
-fastapi/flask/uvicorn anywhere), one console script (`indra-belief-comparison`).
-The realtime path is a library import, not a service.
+**Deployment surface when this was written:** no Dockerfile, no compose file, no
+API server (no fastapi/flask/uvicorn anywhere), one console script
+(`indra-belief-comparison`). **Since then a `Dockerfile` (ae9ab1e) and a
+`docker-compose.yml` (401ded6) landed, both batch-only — see
+`research/serving_deployment.md`. There is still no API server**, and the realtime
+path is still a library import, not a service.
 
 ---
 
@@ -82,7 +85,8 @@ only when something actually grounds. The lazy-import discipline already works.
 
 3.6 GB of files → 8.3 GB resident (**2.6× amplification**), whole-file reads,
 single-threaded canonical-JSON revalidation. `prepare_run` does this for **every
-action in the plan**, not just the one being run (`runner.py:453-457`). Machine has
+action in the plan**, not just the one being run — `prepare_run`'s loop over
+`loaded.actions` and `_scopes`, both in `src/indra_belief/comparison/runner.py`. Machine has
 137 GB RAM but swap is already 12.9/14 GB used.
 
 ### Prompt shape **[M]**
@@ -185,15 +189,20 @@ conditions beside it.
 
 Both scans are now a single `dict[attempt_id] -> list` lookup, `_calls_for_attempt`
 on `SpendGuard` in `src/indra_belief/spend_guard.py`, aliased into `_LedgerReplay`
-alongside the other borrowed methods. Cited by symbol rather than by line exactly
+alongside the other borrowed methods. (`_calls_for_attempt`'s own docstring says it
+"Replaces three full scans"; that is the module-wide count. Two of the three were
+in `_apply` — the quadratic pair this finding is about — and the third is in
+`_attempt_rows`, outside the replay loop. Both counts are right at their own
+scope.) Cited by symbol rather than by line exactly
 because the fix moved the lines. This was the highest leverage-to-effort change in
 the repository.
 
 ### F3 — 32 workers is contractually impossible **[V] HIGH**
 
-`contracts.py:30` sets `MAX_WORKERS = 8`; `:553` rejects more. And
-`AMENDABLE_FIELDS = {"workers": (6, MAX_WORKERS)}` — the **only legal amendment is
-exactly 6→8**. Raising it edits the module, changes `plan.sha256`, and invalidates
+`contracts.MAX_WORKERS` is 8, and `load_run_plan` rejects more ("workers cannot
+exceed eight"). And `AMENDABLE_FIELDS["workers"]` is `(6, MAX_WORKERS)` — the
+**only legal amendment to `workers` is exactly 6→8** (`max_attempts` has its own
+5→10 transition). Raising it edits the module, changes `plan.sha256`, and invalidates
 every amendment's `predecessor_sha256`. There is no measurement behind the 8, and
 we have zero 429s at 32 concurrent.
 
@@ -210,7 +219,7 @@ execution row** — are the proof. Storing the bodies adds no provenance.
 
 ### F5 — Sharding reintroduces double-spend **[R] HIGH**
 
-`contracts.py:611-621` checks unique action ids, run_ids, output paths and
+`load_run_plan` in `src/indra_belief/comparison/contracts.py` checks unique action ids, run_ids, output paths and
 `(stage_id, workload)` lanes. There is **no check that two actions'
 `execution_keys` are disjoint**; `ReplayIndex.select` rejects repeats only *within*
 one action. Shard 90M rows across N actions and nothing prevents paying twice for
@@ -220,27 +229,34 @@ partition concept exists in `src/`, and the lane check plus `(model, workload)`
 execution identity already make cross-action collision impossible for every plan
 shape the loader admits.
 
-### F6 — One bad row halts the whole action **[R] HIGH**
+### F6 — One bad row halted the whole action **[R] HIGH — CLOSED by a10df62**
 
-`runner.py:823,831` — any worker exception or `outcome.failure` sets
-`stop_scheduling = True`. At the measured 0.057–0.097% off-grid rate, 90M rows
-gives ~63,000 wedge candidates. Head-of-line blocking is not a viable failure mode
-at that scale. Quarantine the source, keep scheduling.
+Any worker exception or `outcome.failure` used to set `stop_scheduling = True`. At
+the measured 0.057–0.097% off-grid rate, 90M rows gives ~63,000 wedge candidates.
+Head-of-line blocking is not a viable failure mode at that scale. **Closed:**
+`_failure_disposition` in `src/indra_belief/comparison/runner.py` routes a
+quarantinable failure to `_quarantine_failure` and keeps scheduling; only a
+non-quarantine failure or an escaping exception still halts. How far the run
+continues past the first hole is bounded by `_diagnostic_budget_spent` /
+`QUARANTINE_DIAGNOSTIC_LIMIT`, and the count surfaces on `RunSummary.quarantined`.
 
 ### F7 — Semantic dependencies fail open **[R] HIGH**
 
 Gilda and ontology exceptions become empty results rather than errors
-(`entity.py:409`, `:472`), which changes routing and prompt content instead of
+(`_cached_ground` and `_get_fplx_members` in `src/indra_belief/data/entity.py`), which changes routing and prompt content instead of
 surfacing a dependency failure. A missing few-shot bank logs a warning and scores
-with no examples (`scorer.py:114`). For a scientific scorer these should fail
+with no examples (the example-bank load in `src/indra_belief/scorers/monolithic/scorer.py`). For a scientific scorer these should fail
 closed or be a separately versioned mode.
 
-### F8 — Statement belief can report `correct` with belief 0.0 **[R] HIGH**
+### F8 — Statement belief could report `correct` with belief 0.0 **[R] HIGH — CLOSED by a10df62**
 
-A low-confidence `incorrect` row is excluded from the belief numerator but does not
-count as a credible rejection (`_CREDIBLE_LLM_CONF = {"high","medium"}`), so
-`verdict_statement` can be `"correct"` while the hard gate returns 0.0. I flagged
-the same gap independently earlier this session from the retry-policy angle.
+A low-confidence `incorrect` row was excluded from the belief numerator but did not
+count as a credible rejection, so `verdict_statement` could be `"correct"` while the
+hard gate returned 0.0. I flagged the same gap independently earlier this session
+from the retry-policy angle. **Closed:** the confidence gate on the route is gone.
+`src/indra_belief/statement_belief.py` now states the invariant in its own module
+docstring — `verdict_statement == "correct"` implies `n_incorrect == 0` — and the
+constant this finding named no longer exists in the tree.
 
 ---
 
@@ -278,17 +294,23 @@ over adding. Each names the SOLID principle only where it clarifies the change.
 
 ### Fix (small, surgical)
 
-4. **Two dict indexes in `_apply`** → O(n²) becomes O(n). **[F2]**
-5. **Index `resume.rows` by source key** — `runner.py:683` scans all rows per
-   pending source.
-6. **Preflight only the selected action** (`runner.py:453-457`).
-7. **Quarantine wedged sources** instead of `stop_scheduling` **[F6]**.
+4. ~~**Two dict indexes in `_apply`** → O(n²) becomes O(n).~~ — **LANDED [F2].**
+   One index, `_calls_for_attempt` on `SpendGuard`; see F2.
+5. ~~**Index `resume.rows` by source key**~~ — **LANDED.** `_scan_resume` in
+   `src/indra_belief/comparison/replay.py` builds `latest` / `attempts` /
+   `invalid_outputs` / `settled` keyed by source key, and `_run_source` reads them
+   by key rather than re-scanning.
+6. **Preflight only the selected action** — still open: `prepare_run` calls
+   `resume_status` for every action in `loaded.actions`, and `_scopes` scopes every
+   action.
+7. ~~**Quarantine wedged sources** instead of `stop_scheduling`~~ — **LANDED
+   [F6]**; see F6 for the shipped shape and its diagnostic budget.
 8. ~~**Cross-action `execution_keys` disjointness check** at plan load~~ —
    **WITHDRAWN.** The global form rejects two shipped plans and the narrow form is
    vacuous; see §10, which specifies what sharding would require instead. **[F5]**
-9. **`dict(LOCAL_MODELS[model_name])`** at `model_client.py:1014` — all workers
-   currently alias one mutable config dict, and `runner.py:522` writes `timeout`
-   into it.
+9. ~~**`dict(LOCAL_MODELS[model_name])`**~~ — **LANDED** in `ModelClient.__init__`
+   (`src/indra_belief/model_client.py`). Each client now owns its copy, so the
+   runner's per-call `config["timeout"]` ratchet no longer mutates the registry.
 10. **`MAX_WORKERS` to a measured value** — we have zero 429s at 32 **[F3]**.
 
 ### Add (only these)
@@ -334,7 +356,7 @@ a different image.
 
 **Realtime cannot skip the heavy stage for novel input.** `ScoringRecord` is typed
 on INDRA `Statement`/`Evidence` and `__post_init__` calls `resolve_entities()`
-unconditionally (`scoring_record.py:37-38`). So a live API over arbitrary new
+unconditionally (`ScoringRecord.__post_init__` in `src/indra_belief/data/scoring_record.py`). So a live API over arbitrary new
 statements needs the 7.1 GB resident, or an upstream service that hands it
 pre-resolved `ResolvedPair` records. That is a genuine design constraint, not a
 packaging detail — and it is the strongest argument for treating realtime as a
@@ -350,12 +372,18 @@ consumer of the same resolver rather than a second implementation of it.
   *not grounding*, which the lazy imports already achieve in one image. Two images
   buy **image size and dependency surface** (`.venv` is 1.5 GB), not RSS. That is a
   real but much smaller benefit, and it adds a class of silent generator/worker
-  version skew. One image is the parsimonious default.
+  version skew. One image was the parsimonious default. **Superseded by what
+  shipped:** the `Dockerfile` at ae9ab1e is batch-only and omits gilda and indra,
+  taking the split on dependency-surface grounds exactly as this bullet argued —
+  and it installs deps explicitly rather than via `pip install .`, which is the
+  next bullet's prescription. A live/grounding image is named there as a separate
+  build.
 - **Relatedly:** `pip install .` installs the heavy closure regardless of lazy
   imports, so anyone pursuing a lean image must split the *dependency* declaration,
   not just the import sites.
-- **A critic claimed the spend ledger is "~4,000 lines."** It is **2,163**
-  (`spend_guard.py`). 3,928 is the total for `spend_guard` + `replay` + `runner`.
+- **A critic claimed the spend ledger is "~4,000 lines."** It was **2,163**
+  (`spend_guard.py`) — **2,225** at 96cc1b7. 3,928, now **4,316**, is the total for
+  `spend_guard` + `replay` + `runner`.
 - **A critic computed "32 workers × 8.3 GB = 265.6 GB RAM."** That conflates the
   paid runner's preflight with the proposed lean workers, which do not preflight at
   all. The 8.3 GB is a property of `prepare_run`, not of a shard consumer.
@@ -400,7 +428,7 @@ consumer of the same resolver rather than a second implementation of it.
    verdict-only *derivation* script is. The generator that produced
    `data/comparison/grounding_replay` — which every shipped paper number rests on —
    cannot be re-run. Replay is reproducible; regeneration is not.
-2. **`scripts/` is ~36,000 LOC**, comparable to `src/`, unpackaged, outside
+2. **`scripts/` is ~37,600 LOC**, comparable to `src/` (36,752), unpackaged, outside
    `testpaths`, and reaches into private symbols (`scorer._select_examples` and
    `scorer._LOOKUP_GUIDANCE` from `scripts/build_verdict_only_replay.py`,
    `metrics._rankdata_avg` from two paper-table scripts). Some of it is contract,
@@ -408,7 +436,7 @@ consumer of the same resolver rather than a second implementation of it.
    `scripts/build_verdict_only_replay.py` re-implementing the batch renderer's
    tail — is gone: it calls the public `prepare_from_replay_row` now.
 3. **Calibration identity** fingerprints only the `system` string of `monolithic`
-   calls (`calibration_constants.py:180`) — excluding few-shot content, the example
+   calls (`_call_log_fingerprints` in `src/indra_belief/calibration_constants.py`) — excluding few-shot content, the example
    bank, and all `monolithic_tool_context` calls (8.1% of executions). A run can
    claim a profile while behaviour-changing prompt material differs.
 4. **Whether realtime is needed at all.** There is no consumer, latency target,
@@ -651,7 +679,7 @@ separate question and is held constant across every arm here.
 **Correction to the premise this section was commissioned under, and it matters
 for which flag is the control.** The claim that `enable_prefix_caching` and
 `enable_chunked_prefill` both default TRUE in current vLLM **cannot be verified in
-this workspace** — there is no vllm, sglang or torch in `.venv` and the machine is
+this workspace** — there is no vllm and no sglang in `.venv` and the machine is
 Apple silicon with no CUDA device — so it is marked **[R]**, not [M]. It is paired
 with a protocol step rather than trusted: **before the first arm, the runner
 confirms the effective defaults from both the server's own startup log and
@@ -1127,15 +1155,18 @@ owns, an ordering policy says in what sequence it sends them.
 ### 10.6 Verdict — do not implement
 
 **There is no partition concept to fix.**
-`grep -rn "shard\|partition" src/indra_belief --include="*.py"` returns seven
+`grep -rn "shard\|partition" src/indra_belief --include="*.py"` returns eight
 lines [M]: **three** `str.partition()` string splits (one in
 `src/indra_belief/model_client.py`, two in `src/indra_belief/comparison/cli.py`);
 **two** prose strings — a `provider_source` label in
 `src/indra_belief/model_client.py` and a `does not partition its errors` message in
-`src/indra_belief/comparison/report.py`; and **two** comments in
+`src/indra_belief/comparison/report.py`; and **three** comments — two in
 `src/indra_belief/results.py` about strict *bucket* partitioning in the stratified
-residual — a different sense of the word. None is a corpus shard. The only "shard"
-string in the repository is a comment in `scripts/modularity_baseline.py`. F5's
+residual, one in `src/indra_belief/comparison/runner.py` about the
+completed/quarantined/pending partition — a different sense of the word. None is a
+corpus shard. The only "shard" strings in the repository are a comment in
+`scripts/modularity_baseline.py` and this section's own title, registered in
+`scripts/check_new_section_anchors.py`. F5's
 failure mode cannot occur today, and 10.1 shows why: the lane check, plus
 `(model, workload)`-derived execution identity, plus `ReplayIndex.select`'s
 within-action repeat rejection, cover every shape the loader admits.

@@ -193,8 +193,9 @@ vacuous. **[V]** That is §4.1's observe-don't-mirror discipline applied to a sh
 `ReplayIndex` took the insertion-coordinate branch whenever a relation note was set and
 never compared a digest; the branch that checks `main_prompt_base_sha256` was only
 reached on the no-note path. Reproduced by accepting an arbitrary note string on a real
-row. **[M]** **17,235 of 33,361 rows carried a note and therefore had no prompt-digest
-constraint at all.** The goldens now record the note-case digest itself under a fixed
+row. **[M]** **17,235 of the 33,361 primary-workload rows carried a note and therefore
+had no prompt-digest constraint at all.** (The manifest's 17,257 / 33,413 counts both
+workloads — the same rows plus 22 of 52 `alternate_prompt_sensitivity` rows.) The goldens now record the note-case digest itself under a fixed
 literal, assert the insertion coordinates, and prove the coordinates *are* enforced by
 tampering with the byte offset and requiring a `ReplayError`. **[V]** at
 `tests/test_prepared_execution_goldens.py`.
@@ -343,7 +344,7 @@ now warns on an unknown value instead of silently falling through. **[V]**
   wrong: three extra arms add ~11–13% of peak, not 3x. Rescoped to narrowing
   **retention**, measured 6,692 → 5,140 MB (−23%), 34.3 → 21.9 s (−36%). **[M]**
 - **"11 prefix strings" vs "18" was not an error at all.** 11 counts components
-  (2 systems × 9 prefixes), 18 counts co-occurring `(system, prefix)` **pairs**, which
+  (2 systems + 9 prefixes), 18 counts co-occurring `(system, prefix)` **pairs**, which
   are the cacheable units; over the whole file it is 25 from 3×16, so 2×9=18 is
   coincidence, not a cross product. **[M]** Relatedly, the corpus is already
   prefix-grouped and vLLM defaults `enable_prefix_caching` on, so "sort shards by
@@ -619,7 +620,9 @@ attempts log is an operator call.
    literals against themselves, and its `sys.settrace(None)` clobbers any outer tracer.
    **[V]** **8 of the 10 line anchors in the surviving 5 duplicate-site rows are now
    wrong** — two point into `replay.py` at code that moved to `prepared_execution.py`
-   entirely, and four more moved within their files. **[V]** The instrument-hardening
+   entirely, and four more moved within their files. **[V]** (That breakdown accounts
+   for six of the eight; the headline 8-of-10 is the exact count, re-derived cell by
+   cell, and the two unclassified cells were not re-traced.) The instrument-hardening
    half of the audit (rewrite the instrument, freeze a baseline JSON, add
    `tests/test_modularity_baseline.py`) was rescoped out and **does not exist**; all
    three gaming attacks the audit reproduced are still live. Any future modularity claim
@@ -642,13 +645,19 @@ attempts log is an operator call.
    stopped reproducing, nothing in CI would notice. The pattern to copy already exists:
    `tests/test_published_statement_belief_reproduction.py` hard-requires its data rather
    than skipping.
-4. **`research/serving_architecture.md` §3 and §4 have gone partly stale.** §3's F8 is
-   still written as an open `[R] HIGH` finding and still names `_CREDIBLE_LLM_CONF` as
-   live code — the constant no longer exists in `src/`. **[V]** F6 is likewise unmarked
-   after quarantine landed, while sibling findings F1/F2/F5 *did* get closure markers, so
-   a reader reasonably takes F8/F6 as still open. §4's "Fix (small, surgical)" items
-   4, 5, 6, 7 and 9 all landed in this tree but are still written in the imperative.
-   **[V]**
+4. ~~**`research/serving_architecture.md` §3 and §4 have gone partly stale.**~~
+   **DISCHARGED — the doc-drift audit applied the repairs.** As recorded: §3's F8 was
+   still written as an open `[R] HIGH` finding and still named `_CREDIBLE_LLM_CONF` as
+   live code — the constant no longer exists in `src/` **[V]**; F6 was likewise
+   unmarked after quarantine landed, while sibling findings F1/F2/F5 *did* get closure
+   markers, so a reader reasonably took F8/F6 as still open. Both now carry
+   `CLOSED by a10df62`. §4's "Fix (small, surgical)" items 4, 5, 7 and 9 had all landed
+   in this tree while still written in the imperative **[V]**; all four are now struck
+   through and marked LANDED. **Correction to this item as first written:** item 6
+   ("Preflight only the selected action") did NOT land and is not stale prose — it is a
+   refuted premise, as §3.4 bullet 1 of this same document records. `runner.inspect_plan`
+   and `runner.prepare_run` still fold over the whole `loaded.actions` set on purpose,
+   so §4 item 6 now says so explicitly rather than claiming a landing. **[V]**
 5. **`PreparedExecution.parser_id` and `.profile_id` are write-only.** Zero readers
    across `src/`, `tests/` and `scripts/` **[V]**, while the module docstring sells
    `profile_id` as the provenance that keeps a score attributable to an exact prompt.

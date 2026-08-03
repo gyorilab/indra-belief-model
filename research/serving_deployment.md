@@ -12,7 +12,8 @@ Every claim below is labelled:
 * **[R]** reasoned — an inference from [M]/[V], never given to three significant figures.
 
 Citations name a file and a symbol, never a line number: line numbers rot, and
-`scripts/check_new_section_anchors.py` now validates cited symbols against the tree.
+`scripts/check_doc_anchors.py` now validates cited symbols against the tree, over every
+`research/*.md` including this one.
 
 Some measurements were produced by throwaway scripts in a session scratchpad under
 `/private/tmp`. That directory is ephemeral and is **not** a durable citation. Where a
@@ -230,9 +231,9 @@ protein_vs_protein — a real collision candidate                              9
 The 137 are `ABL1 / "Abl" → HGNC:76`, `CCL5 / "RANTES" → HGNC:10632`,
 `ADARB1 / "ADAR2" → HGNC:226` — flagged AMBIGUOUS today only because [V]
 `GroundedEntity._verify_raw_text` compares the re-grounded text against gilda's *single*
-top hit for the claim rather than against the agent's whole ref set. That is 3.5× the blast
-radius of the identity fix, uses only data already in hand, and is a strictly better
-comparison. It does not remove the grounding call.
+top hit for the claim rather than against the agent's whole ref set. That is 4.7× the blast
+radius of the identity fix (1,185 slot observations against 251), uses only data already in
+hand, and is a strictly better comparison. It does not remove the grounding call.
 
 The 147 cross-namespace ones (`AMPK / "AMP-activated protein kinase" → MESH:D055372`) are
 the same "same entity, different namespace" artifact that produced the misleading 72%.
@@ -302,22 +303,34 @@ verification is irreducible on this corpus; §6 lists the one query that could c
 
 ### 3.1 The measured table
 
-[M] Per-call, from the real attempts logs
-(`data/comparison_verdict_only/runs/*/attempts.jsonl`, and
-`data/comparison/runs/gemma_26b_primary/attempts.jsonl` for the reasoning arm — the latter
-is a 2.1 GB file, mtime Jul 22 03:13):
+[M] From the real attempts logs — all four verdict-only arms
+(`data/comparison_verdict_only/runs/*/attempts.jsonl`) and all three reasoning arms
+(`data/comparison/runs/{gemma_26b,gemma_31b,glm_5}_primary/attempts.jsonl`; the 26b one is
+a 2.1 GB file, mtime Jul 22 03:13). Percentile by index over every row, both cuts stated
+because they are not the same quantity:
 
-| arm | model | p50 | p90 | p99 |
-|---|---|---|---|---|
-| verdict-only | e2b | 0.751 | 1.246 | 2.257 |
-| verdict-only | gemma-26b | 0.730 | 1.828 | 5.542 |
-| verdict-only | glm-5 | 0.855 | 2.307 | 12.671 |
-| reasoning | gemma-26b | 3.955 | 11.464 | 38.495 |
-| reasoning | glm-5 | 6.635 | 20.548 | 63.271 |
+| arm | model | call p50 | call p90 | call p99 | attempt p50 | attempt p90 | attempt p99 |
+|---|---|---|---|---|---|---|---|
+| verdict-only | e2b | 0.767 | 1.318 | 2.733 | 0.788 | 1.347 | 2.766 |
+| verdict-only | gemma-26b | 0.698 | 1.374 | 5.222 | 0.722 | 1.365 | 5.201 |
+| verdict-only | gemma-31b | 0.945 | 1.962 | 26.165 | 0.952 | 1.946 | 24.096 |
+| verdict-only | glm-5 | 0.851 | 2.512 | 12.591 | 0.862 | 2.451 | 12.476 |
+| reasoning | gemma-26b | 4.080 | 12.267 | 39.772 | 6.572 | 17.200 | 50.271 |
+| reasoning | gemma-31b | 3.782 | 12.984 | 83.931 | 6.035 | 19.498 | 105.228 |
+| reasoning | glm-5 | 6.618 | 21.500 | 63.869 | 10.757 | 28.865 | 81.708 |
 
-All in seconds. [M] These are *attempt*-level; the call-level `duration_s` p50 for
-gemma-26b verdict-only is 0.698, so ~0.030 s per attempt is client-side work — JSON build,
-parse, digesting, ledger write.
+All in seconds. **A call is not a request on the reasoning arms, and this table used to
+conflate them.** [M] The verdict-only arms issue 0.97 calls per attempt, so there the two
+cuts nearly coincide and the difference — ~0.024 s — is client-side work: JSON build,
+parse, digesting, ledger write. The reasoning arms issue **1.49** (50,484 calls over 33,904
+attempts for gemma-26b; the relation sub-call of Correction 3, on ~51.7% of pairs), so
+their per-*request* p50 is the ATTEMPT column: 6.57 s for gemma-26b and 10.76 s for glm-5,
+not 4.08 and 6.62. Read §5.1's synchronous-request argument off the attempt column.
+
+Superseded numbers, recorded so a reader who remembers them knows they were withdrawn: an
+earlier five-row version of this table stated e2b p99 = 2.257 (contradicting §3.3's 2.73,
+which is the correct one) and a p90 column — e2b 1.246, gemma-26b 1.828, glm-5 2.307 — that
+reproduces neither cut. It named no statistic and no row filter. This one does.
 
 ### 3.2 The decomposition: the call is network-bound
 
@@ -439,7 +452,8 @@ the cheapest available fix and it is entirely in our code.
 today                                             0.720 s
 + connection reuse (removes 2.02 of 4.04 RTT)     0.486 s   (−32.5%)
 + drop "confidence" from the JSON (14 → 8 tokens) 0.453 s
-+ client colocated in us-east-1 (RTT → ~1 ms)     0.256 s   (−64%)
+client colocated in us-east-1, 14-token reply     0.256 s   (−64% vs today, NOT stacked
+                                                            on the row above)
 provider-only floor, all network removed          0.252 s
 ```
 
@@ -470,7 +484,8 @@ remote-with-keep-alive-and-colocation on p50, and it buys its number by giving u
 
 ### 3.6 The single biggest lever: HTTP connection reuse
 
-[M] Size: 0.2343 s per call = 32.5% of the mean call, and 50.09% of all off-model time.
+[M] Size: 0.2343 s per call = 32.5% of the mean call, and 50.07% of all off-model time
+(the 50.09% in §3.2 is a different ratio — `connect()` over the fresh cycle).
 
 [V] `src/indra_belief/bedrock_responses_transport.py` constructs a connection via
 `_connection_factory` inside `call()` and closes it on the way out; the same shape is in
@@ -650,7 +665,11 @@ the thing §2.5 warns would be deleted by dropping gilda.
 * **Prompt and model attribution.** [V] `PreparedCall.prompt_sha256`,
   `PreparedExecution.profile_id` (the variant name), a constant parser id, and
   `provider_request_sha256` / `provider_wire_request_sha256` binding the ledger row to the
-  exact wire bytes.
+  exact wire bytes. One caveat that belongs beside the mechanism: `profile_id` and
+  `parser_id` are today **write-only** — zero readers across `src/`, `tests/` and
+  `scripts/` — so they are a field that would carry the attribution, not attribution
+  something currently checks. See `research/kernel_unification_findings.md` §7.2 item 5.
+  `prompt_sha256` by contrast is genuinely read, by `assert_replay_digests`.
 * **No double spend under retry — already exists.** [V] `SpendGuard.attempt` derives an
   execution id by hashing model, workload mode and the caller's identity mapping, and
   `SpendGuard._start_attempt` raises `AttemptLimitReached` on a replayed completed

@@ -378,11 +378,17 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 ### Cluster C — Architecture Hygiene (E-PAR: all parity-gated)
 
 #### C1 — ScorerConfig threading (M4)
-- **Intent.** `MONO_VARIANT` resolves to the import-time `_VARIANT` global in
-  `src/indra_belief/scorers/monolithic/scorer.py`, so no test can flip the variant
-  in-process and the branch-selection paths in `_build_messages`, `_parse_verdict`,
-  and `score` plus the baseline else-branch are untested. Make the
-  variant an injectable config; env var becomes the default factory.
+- **Intent (SUPERSEDED — landed by `a10df62`).** The original premise was that
+  `MONO_VARIANT` resolved to an import-time global in
+  `src/indra_belief/scorers/monolithic/scorer.py`, so no test could flip the variant
+  in-process and the branch-selection paths plus the baseline else-branch were
+  untested. That is no longer true: `scorer.py` now defines `ScoringVariant`,
+  `VARIANTS`, `variant_from_env` and `DEFAULT_VARIANT`, every scoring entry point
+  takes `variant=`, and
+  `tests/test_monolithic_variant_profile.py::test_in_process_variant_injection_matches_the_golden`
+  exercises exactly what this node said was impossible. The two render/parse helpers
+  the premise named no longer exist. **Node closed; the text below is the plan as
+  written, kept as the record.**
 - **MAP.** Confirm the global resolution and the untested branch-selection fork. Spec a `ScorerConfig` dataclass
   (system_prompt, render/parse/derive callables, relnature flag) threaded through `score()`/`score_statement()`.
 - **DO.** Implement in a worktree. Env var → default factory. Add tests that exercise disconfirm/baseline branch
@@ -392,8 +398,9 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** `ScorerConfig`; threaded entry points; branch-selection tests; golden fixture.
 - **Gate.** Golden diff = 0; in-process variant switch works.
 - **Risk.** None if parity-gated (pure plumbing; touches no prompt/threshold/verdict logic).
-- **Targets.** `src/indra_belief/scorers/monolithic/scorer.py` (`_VARIANT`,
-  `_build_messages`, `_parse_verdict`, `score`, `score_statement`, `main`).
+- **Targets (historical).** `src/indra_belief/scorers/monolithic/scorer.py` — now
+  `ScoringVariant`, `VARIANTS`, `variant_from_env`, `DEFAULT_VARIANT`, `score`,
+  `score_statement`, `main`.
 
 #### C2 — Unify result schema + collapse `_score_single`/`_score_with_tools` (M5)
 - **Intent.** The two scoring paths are ~90% duplicated and the result-dict schema is maintained in 3+ places
@@ -422,7 +429,7 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **DO.** Implement in a worktree; selection must be *identical* (same pairs, keyed by tag not index).
 - **REVIEW.** **I-PARITY:** assert the same 14 examples are selected for a sample of statement types; assert the
   default no longer imports the probes package; golden diff = 0.
-- **Artifacts.** tag-keyed universal registry; `_shared._extract_json/llm_classify`; import-graph test.
+- **Artifacts.** tag-keyed universal registry; `probes._llm._extract_json` / `probes._llm.llm_classify` relocated into `scorers/_shared.py`; import-graph test.
 - **Gate.** Identical selection; probes no longer transitively imported; golden diff = 0.
 - **Risk.** None (selection-preserving + relocation).
 - **Targets.** `src/indra_belief/scorers/monolithic/scorer.py` (`_UNIVERSAL_PAIRS`);
@@ -475,7 +482,8 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
   similarity accelerates degradation; verification is a synthesis/citation task (the degraded regime). Ensure the
   substrate hands the LLM *resolved, minimal* facts (one competing grounding, not a candidate dump) and that the
   claim is rendered in vocabulary close to the evidence span.
-- **MAP.** Audit `ScoringRecord.format_user_message`, `format_provenance`, and
+- **MAP.** Audit `ScoringRecord.execution_body` (rendered by `ExecutionBody.render`),
+  `format_provenance`, and
   `format_entity_context` in `src/indra_belief/data/scoring_record.py` for distractor
   mass; cross-reference B2's effective-context number for the budget. Spec the trim +
   the alignment (surface raw-text forms as a lexical bridge, already partially done by `_verify_raw_text`).
@@ -486,7 +494,7 @@ The objective-grain findings fold into B1 (not a new objective node — that wou
 - **Artifacts.** trimmed substrate output; n=1606 non-inferiority report.
 - **Gate.** Distractor tokens ↓, err-F1 non-inferior, flag-gating preserved.
 - **Risk.** Context surgery can remove a load-bearing fact — non-inferiority gate guards it.
-- **Targets.** `src/indra_belief/data/scoring_record.py` (`ScoringRecord.format_user_message` and its entity/provenance helpers).
+- **Targets.** `src/indra_belief/data/scoring_record.py` (`ScoringRecord.execution_body` and its entity/provenance helpers).
 
 #### D3 — *Spike:* asymmetric candidate→check verification
 - **Intent.** Frontier (medium-confidence): reallocating compute from search to *backward verification* (start from

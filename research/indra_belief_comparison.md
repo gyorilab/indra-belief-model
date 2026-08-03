@@ -1,10 +1,14 @@
 # INDRA belief comparison
 
-Status: active. The canonical scorer registry, shared-gold inputs, historical
-Gemma 4 E2B bundle, and paid sensitivity gates are materialized. The viewer
-currently shows the 200-resample E2B diagnostic. The Gemma 4 31B, Gemma 4 26B,
-and GLM-5 primary Bedrock lanes are running concurrently with six workers each;
-the human review and publication artifact are not complete.
+Status: run complete 2026-07-23; publication artifact open. All four LLM
+bundles are materialized (`data/comparison/models/`), all three primaries
+carry `.COMPLETE` in `data/comparison/supervisor/`, and the final
+10,000-resample metrics artifact
+(`data/results/indra_belief_comparison_metrics.json`) carries every arm on
+both panels. The blinded human review and the published report are the
+remaining work. Sections below that read in the present tense about a
+running fleet are the July 20-23 execution record; see the paid run plan for
+the three quiescent amendments that closed it.
 This is the only execution and handoff document for the comparison.
 
 ## Goal
@@ -69,7 +73,7 @@ flowchart LR
 
   X[33,361 unique evidence executions] --> G31[Gemma 4 31B: 6 workers]
   X --> G26[Gemma 4 26B: 6 workers]
-  X --> GLM[GLM-5: 6 workers]
+  X --> GLM[GLM-5: 6 -> 8 workers]
   G31 --> B[Four LLM bundles: all-source + true reader aggregation]
   G26 --> B
   GLM --> B
@@ -128,10 +132,15 @@ flowchart LR
 
 ## Current readout
 
-The artifact currently rendered at `/frontier?view=belief` is a fast
-200-bootstrap diagnostic; it includes the canonical INDRA arms and historical
-E2B, while the other three LLM arms remain explicitly excluded. The publication
-run will use 10,000 resamples after all four LLM bundles exist. It must not be
+The readout below is the July diagnostic, retained as the record of the
+E2B-only stage. It is superseded: the shipped artifact
+`data/results/indra_belief_comparison_metrics.json` is the 10,000-resample run
+(`provenance.bootstrap_resamples = 10000`) and carries all four LLM arms
+(`llm_gemma_4_e2b`, `llm_gemma_4_26b`, `llm_gemma_4_31b`, `llm_glm_5`) on both
+the `paper_all_source` and `paper_readers` substrates. As written, the artifact
+rendered at `/frontier?view=belief` was a fast
+200-bootstrap diagnostic; it included the canonical INDRA arms and historical
+E2B, while the other three LLM arms remained explicitly excluded. It must not be
 presented as a released parity or superiority result. Gemma 4 E2B reaches
 pooled average precision 0.9252 on the all-source panel and 0.9239 on the
 five-reader panel. The fitted
@@ -200,13 +209,15 @@ document.
 | 3 | Gemma 4 26B prompt sensitivity | 52 | complete — `$0.04332150` |
 | 4 | Gemma 4 31B prompt sensitivity | 52 | complete — `$0.03650828` |
 | 5 | GLM-5 prompt sensitivity | 52 | complete in 53 attempts — `$0.4558090` |
-| 6a | Gemma 4 31B primary | 33,361 | running — `$39.96349172` |
-| 6b | Gemma 4 26B primary | 33,361 | running — `$39.95667850` |
-| 6c | GLM-5 primary | 33,361 | running — `$309.544191` |
+| 6a | Gemma 4 31B primary | 33,361 | complete (33,361/33,361) — max `$39.96349172` |
+| 6b | Gemma 4 26B primary | 33,361 | complete (33,361/33,361) — max `$39.95667850` |
+| 6c | GLM-5 primary | 33,361 | complete (33,361/33,361) — max `$309.544191` |
 
 Sensitivity extrapolations remain planning diagnostics, not reported run
 costs. The frozen dependency graph now releases all three primaries together.
-Each uses six Bedrock workers, for 18 concurrent provider calls across models.
+Each started at six Bedrock workers, for 18 concurrent provider calls across
+models; the third amendment raised `glm_5_primary` to eight after both Gemma
+primaries completed.
 Initial live throughput implies roughly 16--25 hours of wall time, with GLM-5
 the likely longest pole; long-tail calls can move that estimate.
 
@@ -309,18 +320,16 @@ order.
 
 ## Remaining work
 
-- Complete the three concurrent Gemma 4 31B, Gemma 4 26B, and GLM-5 primaries;
-  stop any lane on budget, coverage, or output reconciliation failure.
-- Materialize all four canonical LLM bundles, including independently
-  aggregated all-source and reader predictions, and assemble the complete arm
-  sets.
-- Produce the final metrics artifact and inspect paired deltas, calibration,
-  cost/frontier positions, and exclusions.
 - Complete the human pilot and freeze the codebook; run both independent
   blinded full-census reviews, resolve every disagreement, and report exact
   defensible and non-defensible error counts and proportions.
-- Replace the 200-resample diagnostic with the final 10,000-resample artifact,
-  publish the report, and verify that the viewer reads the identical metrics.
+- Publish the report and verify that the viewer reads the identical metrics
+  artifact.
+
+Done, and kept here as the closing record: the three concurrent primaries ran
+to 33,361/33,361 each; all four canonical LLM bundles are materialized with
+independently aggregated all-source and reader predictions; and the
+10,000-resample metrics artifact replaced the 200-resample diagnostic.
 
 ## Known limitations that must remain visible
 
