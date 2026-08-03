@@ -176,7 +176,7 @@ specified for the 12-slide storyboard so anyone tuning back in could re-anchor.
 
 **Say:** "The hard gate throws information away; the soft 'clean' form — the one we ship — keeps the read and just re-rates how wrong it's likely to be, given the verdict. Within a source we take the geometric mean of those per-read wrong-rates; independent sources multiply, exactly as our product does. And the whole instrument is this card — two numbers per reader, nothing hidden. **[WAKE-UP]** At a single read it's self-calibrating: one confirmed gemma read gives 1 minus 0.183 — 0.817. That's not a tuned knob; it's the measured probability a confirmed read is actually right. We also tried a third axis — the model's own reported confidence — watched it fail to separate right from wrong, and killed it. I'm showing you the strike-through on purpose."
 
-**Sources:** gemma {0.183, 0.869=1−0.131} / medpsy {0.243, 0.873=1−0.127} — calibration_constants.py:42-43 (W1/W2), the canonical clean/production weights, fit n=1606 balanced. Framing P(read wrong|confirmed/rejected) — constants.py:5-6 (W3; note 0.869 is the noisy-OR n=1 per-read failure rate, not the curation-sense rejected-read-wrong rate 0.131). 0.817 = 1−0.183 self-calibrating at n=1 — constants.py:16-17, noise_model.py:285 (W4). Within-source geomean / across-source product — noise_model.py:321,326 (W5). Confidence axis collapsed/cut (gemma 1596/1606 high) — archive/completed_phases/calibration_task_hypergraph.md:11,26 (W6).
+**Sources:** gemma {0.183, 0.869=1−0.131} / medpsy {0.243, 0.873=1−0.127} — calibration_constants.py:42-43 (W1/W2), the canonical clean/production weights, fit n=1606 balanced. Framing P(read wrong|confirmed/rejected) — constants.py:5-6 (W3; note 0.869 is the noisy-OR n=1 per-read failure rate, not the curation-sense rejected-read-wrong rate 0.131). 0.817 = 1−0.183 self-calibrating at n=1 — constants.py:16-17, noise_model.py:285 (W4). Within-source geomean / across-source product — noise_model.py:321,326 (W5). Confidence axis collapsed/cut (gemma 1596/1606 high) — measured on the eval_curation_v1 run (gemma 1596/1606 high); the calibration-arc record is in git history (W6).
 
 ---
 
@@ -361,7 +361,7 @@ Every asserted value, traced to a real source. Status: exact = verbatim in the f
 | W3 | 7 | = P(read wrong\|confirmed), P(read wrong\|rejected) | calibration_constants.py:5-6 (0.869 = noisy-OR n=1 failure rate) | exact (nuance) |
 | W4 | 7 | 1 − 0.183 = 0.817 = P(correct\|confirmed) at n=1 | calibration_constants.py:16-17; noise_model.py:285 | exact |
 | W5 | 7 | within-source geomean; across-source product | noise_model.py:321,326 | exact |
-| W6 | 7 | confidence axis tried→collapsed→cut (gemma 1596/1606 high) | archive/completed_phases/calibration_task_hypergraph.md:11,26 | exact |
+| W6 | 7 | confidence axis tried→collapsed→cut (gemma 1596/1606 high) | measured on the eval_curation_v1 run (gemma 1596/1606 high); the calibration-arc record is in git history | exact |
 | P1 | 8 | refit rand on n=9,342 (INDRA assembly benchmark), syst held | calibration_constants.py:48-50 | exact (attribution: upstream benchmark, not fresh curation) |
 | P2 | 8 | rand = 1 − accuracy − syst | calibration_constants.py:49,12 | exact |
 | P3 | 8 | reach 0.30 → 0.462 (n=3802, acc 0.488) | calibration_constants.py:54 | exact (file=0.462; deck rounded ~0.46) |

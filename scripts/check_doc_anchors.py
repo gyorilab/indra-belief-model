@@ -119,10 +119,12 @@ DOCS = tuple(sorted(DOC_ROOT.glob("*.md")))
 #
 # `research/ben_gyori_deck_outline.md` carries the remaining 54 occurrences over
 # 33 distinct keys. It is a dated deck handoff ("CURRENT DECK CONTRACT —
-# 2026-07-13") for a deck that has shipped, and the cheaper resolution is to move
-# it to research/archive/completed_phases/ — 54 anchors would leave the live
-# corpus by removing a quantity rather than by grandfathering one. That is an
-# owner decision, not this guard's; until it is taken, the debt is explicit here.
+# 2026-07-13") for a deck that has shipped, and it is now the SOLE holder of
+# anchor debt in the corpus. Retiring it removes 54 anchors by removing a
+# quantity rather than by grandfathering one. That is an owner decision, not
+# this guard's; until it is taken, the debt is explicit here. (research/archive/
+# was itself removed, so archiving is no longer the cheap route — the choice is
+# repair the 54 anchors or retire the document.)
 GRANDFATHERED_ANCHORS: dict[str, dict[str, int]] = {
     "research/ben_gyori_deck_outline.md": {
         "analyze_external_gold.py:5": 1,

@@ -1,7 +1,8 @@
 """Historical Calibration Stage C0 — reliability curve, zero model change.
 
-The decision gate (G0) for the whole calibration arc. See
-``research/archive/completed_phases/calibration_task_hypergraph.md``. Touches NO production code path —
+The decision gate (G0) for the whole calibration arc: it decides whether
+recalibration has enough AUPRC headroom to be worth doing at all. Touches NO
+production code path —
 it joins the existing eval_curation_v1 run outputs to gold and asks three
 questions:
 
