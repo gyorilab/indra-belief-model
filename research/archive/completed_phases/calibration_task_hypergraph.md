@@ -173,7 +173,7 @@ imputed zeros). This executes the doc's own **D5 / C3.2** "travels with the run"
 commitment for the calibration products themselves — the reliability curve must
 travel with the run, not be a global figure file the viewer points at. Unlocks:
 the viewer presentation stages **C4 / C5** (which live in
-`research/belief_instrument_task_graph.md`).
+`research/archive/completed_phases/belief_instrument_task_graph.md`).
 
 ---
 
@@ -229,9 +229,9 @@ the viewer presentation stages **C4 / C5** (which live in
 
 ---
 
-## Presentation handoff — viewer surfaces (shipped; live in `research/belief_instrument_task_graph.md`)
+## Presentation handoff — viewer surfaces (shipped; live in `research/archive/completed_phases/belief_instrument_task_graph.md`)
 
-**Resolved handoff.** The June 17 gap (only residual `{mae, bias}`, no reliability/ECE/Brier route, no `metrics.json` home) is historical. E5, C4, and C5 are now shipped. `research/belief_instrument_task_graph.md` owns the current viewer IA and perceptual doctrine; the nodes retain the `C#`/`G#` vocabulary here for cross-reference. Device: **route = register** (`/runs/[run_id]` = single-run palette; `/compare` = A/B/gold comparison grammar). Both consume persisted metrics; neither recomputes them.
+**Resolved handoff.** The June 17 gap (only residual `{mae, bias}`, no reliability/ECE/Brier route, no `metrics.json` home) is historical. E5, C4, and C5 are now shipped. `research/archive/completed_phases/belief_instrument_task_graph.md` owns the current viewer IA and perceptual doctrine; the nodes retain the `C#`/`G#` vocabulary here for cross-reference. Device: **route = register** (`/runs/[run_id]` = single-run palette; `/compare` = A/B/gold comparison grammar). Both consume persisted metrics; neither recomputes them.
 
 - **C4 — Run-on-its-own calibration surface (shipped).** `viewer/src/lib/data/queries.ts` (`getRunCalibration`) and the `/runs/[run_id]` route serve `ReliabilityDiagram` + `BrierBar` + `ConfusionMosaic` from `metrics.json`; the **Tier toggle** `?tier=ev|stmt` keeps Tier-1 and Tier-2 labeled and separate. → **G4:** served numbers == persisted metrics; single-palette register; named-empty on no-gold.
 - **C5 — Run-comparison calibration mode (shipped).** `viewer/src/routes/compare/+page.svelte` implements `?mode=calib`: L0 swaps the verdict 2×2 for overlaid reliability curves + ΔECE/ΔBrier, with hard/parametric/hybrid series tied to G2; L1–L3 reuse the comparison drill skeleton. → **G5v:** viewer deltas equal persisted outputs; comparison register preserved.

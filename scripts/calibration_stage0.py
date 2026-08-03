@@ -1,7 +1,7 @@
 """Historical Calibration Stage C0 — reliability curve, zero model change.
 
 The decision gate (G0) for the whole calibration arc. See
-``research/calibration_task_hypergraph.md``. Touches NO production code path —
+``research/archive/completed_phases/calibration_task_hypergraph.md``. Touches NO production code path —
 it joins the existing eval_curation_v1 run outputs to gold and asks three
 questions:
 

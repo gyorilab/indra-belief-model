@@ -7,7 +7,7 @@
 > rename would reach into guarded tooling that is out of scope for a docs-only
 > pass. The divergence is cosmetic; the file's role is unchanged._
 
-Status: drafted + first execution pass landed 2026-05-10. T1 fully complete (E0 belief primitive, E1 findings, E2 run-narrative, E3 probe attribution, E4 residual distribution). T2 6/6 complete (focus card, findings strip, validity-as-section, run feed, `/runs/[run_id]` page, demolitions — the run page **shipped**; the earlier "deferred until multiple runs" note is retired). **T6 — calibration surfaces added 2026-06-17** (C4 run-on-its-own + C5 run-comparison; new substrate edge E5 render primitives; consumes the calibration arc's per-run `metrics.json`; see `research/calibration_task_hypergraph.md`). T3 perceptual instruments landed inline with T2 (probe bars, residual sparkline, bias-axis cleanup, verdict pillbar). T4 wayfinding 3/4 (deep-link focus + relevance-sort matrix already work; deep-dive reframed; keyboard nav deferred). T5 gates pending. Successor to `rasmachine_task_graph.md` (closed). The R-phase shipped a *working* interface; this hypergraph reframes it as a *truthful* one.
+Status: drafted + first execution pass landed 2026-05-10. T1 fully complete (E0 belief primitive, E1 findings, E2 run-narrative, E3 probe attribution, E4 residual distribution). T2 6/6 complete (focus card, findings strip, validity-as-section, run feed, `/runs/[run_id]` page, demolitions — the run page **shipped**; the earlier "deferred until multiple runs" note is retired). **T6 — calibration surfaces added 2026-06-17** (C4 run-on-its-own + C5 run-comparison; new substrate edge E5 render primitives; consumes the calibration arc's per-run `metrics.json`; see `research/archive/completed_phases/calibration_task_hypergraph.md`). T3 perceptual instruments landed inline with T2 (probe bars, residual sparkline, bias-axis cleanup, verdict pillbar). T4 wayfinding 3/4 (deep-link focus + relevance-sort matrix already work; deep-dive reframed; keyboard nav deferred). T5 gates pending. Successor to `rasmachine_task_graph.md` (closed). The R-phase shipped a *working* interface; this hypergraph reframes it as a *truthful* one.
 
 ## Frame
 
@@ -63,7 +63,7 @@ Histogram of `(our_belief − indra_belief)` over a run, 11 bins on `[-1, +1]`. 
 
 ### E5 — Calibration render primitives
 
-Three reusable Svelte components for the calibration arc (`research/calibration_task_hypergraph.md`):
+Three reusable Svelte components for the calibration arc (`research/archive/completed_phases/calibration_task_hypergraph.md`):
 - `ReliabilityDiagram.svelte` — `BINS_8` bins; x = mean predicted score, y = empirical correct-rate; diagonal = perfect; marks sized by bin-n so sparse bins don't lie (mirrors the `n_total ≥ 30` validity guard). This is the curve the viewer does not have today.
 - `BrierBar.svelte` — one stacked bar, Murphy decomposition `reliability − resolution + uncertainty`; the narrative spine (low reliability good, high resolution good, uncertainty the irreducible floor) makes the calibration arc's D8 story — a monotone post-hoc map lowers reliability while collapsing resolution — *visible*.
 - `ConfusionMosaic.svelte` — 2×2 TP/FP/FN/TN, area ∝ count; reuses the `/compare` mosaic geometry, single-palette for the run-on-its-own register.
@@ -140,7 +140,7 @@ Reused across C4 (run-on-its-own) and C5 (run-comparison) — ≥2 nodes. **Read
 
 ## Phase T6 — calibration surfaces (C4 / C5)
 
-The calibration math arc (C0–C3 in `research/calibration_task_hypergraph.md`) emits products to disk; T6 renders them in the live instrument. Same device as the rest of this doc — **route = register**: `/runs/[run_id]` is the single-run register, `/compare` the comparison register. Node IDs keep the calibration arc's `C#`/`G#` vocabulary so the two docs cross-reference cleanly.
+The calibration math arc (C0–C3 in `research/archive/completed_phases/calibration_task_hypergraph.md`) emits products to disk; T6 renders them in the live instrument. Same device as the rest of this doc — **route = register**: `/runs/[run_id]` is the single-run register, `/compare` the comparison register. Node IDs keep the calibration arc's `C#`/`G#` vocabulary so the two docs cross-reference cleanly.
 
 | node | deliverable | perceptual contract | depends |
 |------|-------------|---------------------|---------|
