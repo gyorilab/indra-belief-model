@@ -39,7 +39,9 @@ def test_partial_resume_uses_latest_valid_attempt_and_ignores_truncation(tmp_pat
 
 def test_atomic_final_is_requested_dictionary(tmp_path):
     path = tmp_path / "verdicts.json.gz"
-    payload = {"101": {"verdict": "correct", "confidence": "high"}}
+    payload = {
+        "101": {"11": {"verdict": "correct", "confidence": "high"}}
+    }
     runner.write_final_atomic(path, payload)
     with gzip.open(path, "rt") as fh:
         assert json.load(fh) == payload
@@ -51,8 +53,8 @@ def test_finalize_builds_hash_dictionary(tmp_path):
     write_jobs(
         shard,
         [
-            {"job_id": "1:0", "stmt_hash": 101},
-            {"job_id": "2:0", "stmt_hash": -202},
+            {"job_id": "1:0", "stmt_hash": 101, "source_hash": 11},
+            {"job_id": "2:0", "stmt_hash": -202, "source_hash": 22},
         ],
     )
     latest = {
@@ -61,8 +63,35 @@ def test_finalize_builds_hash_dictionary(tmp_path):
     }
     payload, missing = runner.finalize(shard, latest, None)
     assert payload == {
-        "101": {"verdict": "correct", "confidence": "high"},
-        "-202": {"verdict": "incorrect", "confidence": "medium"},
+        "101": {"11": {"verdict": "correct", "confidence": "high"}},
+        "-202": {
+            "22": {"verdict": "incorrect", "confidence": "medium"}
+        },
+    }
+    assert missing == []
+
+
+def test_finalize_keeps_multiple_evidences_for_one_statement(tmp_path):
+    shard = tmp_path / "grounded-000000.jsonl.gz"
+    write_jobs(
+        shard,
+        [
+            {"job_id": "1:0", "stmt_hash": 101, "source_hash": 11},
+            {"job_id": "2:0", "stmt_hash": 101, "source_hash": 22},
+        ],
+    )
+    latest = {
+        "1:0": {"verdict": "incorrect", "confidence": "low"},
+        "2:0": {"verdict": "correct", "confidence": "high"},
+    }
+
+    payload, missing = runner.finalize(shard, latest, None)
+
+    assert payload == {
+        "101": {
+            "11": {"verdict": "incorrect", "confidence": "low"},
+            "22": {"verdict": "correct", "confidence": "high"},
+        }
     }
     assert missing == []
 
@@ -76,6 +105,7 @@ def test_tier1_does_not_call_model():
         {
             "job_id": "1:0",
             "stmt_hash": 101,
+            "source_hash": 11,
             "needs_llm": False,
             "tier1_result": {"verdict": "incorrect", "confidence": "high"},
         },

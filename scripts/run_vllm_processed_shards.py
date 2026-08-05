@@ -116,7 +116,7 @@ def ensure_append_boundary(path: Path) -> None:
             fh.write(b"\n")
 
 
-def write_final_atomic(path: Path, payload: dict[str, dict[str, str]]) -> None:
+def write_final_atomic(path: Path, payload: dict[str, Any]) -> None:
     """Publish a complete gzip JSON dictionary with one atomic rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.parent / f".{path.name}.tmp"
@@ -180,7 +180,11 @@ def score_job(
     temperature: float,
 ) -> dict[str, Any]:
     """Return the minimal row needed for resume and finalization."""
-    base = {"job_id": job_id(job), "stmt_hash": str(job["stmt_hash"])}
+    base = {
+        "job_id": job_id(job),
+        "stmt_hash": str(job["stmt_hash"]),
+        "source_hash": str(job["source_hash"]),
+    }
 
     if not job.get("needs_llm", True):
         result = job.get("tier1_result") or {}
@@ -237,9 +241,9 @@ def finalize(
     input_path: Path,
     latest: dict[str, dict[str, Any]],
     limit: int | None,
-) -> tuple[dict[str, dict[str, str]], list[str]]:
-    """Build exactly ``{stmt_hash: {verdict, confidence}}``."""
-    payload: dict[str, dict[str, str]] = {}
+) -> tuple[dict[str, dict[str, dict[str, str]]], list[str]]:
+    """Build ``{stmt_hash: {source_hash: {verdict, confidence}}}``."""
+    payload: dict[str, dict[str, dict[str, str]]] = {}
     missing: list[str] = []
     for job in iter_jobs(input_path, limit):
         result = latest.get(job_id(job))
@@ -247,9 +251,8 @@ def finalize(
             missing.append(job_id(job))
             continue
         stmt_hash = str(job["stmt_hash"])
-        if stmt_hash in payload:
-            raise ValueError(f"duplicate stmt_hash in shard: {stmt_hash}")
-        payload[stmt_hash] = {
+        source_hash = str(job["source_hash"])
+        payload.setdefault(stmt_hash, {})[source_hash] = {
             "verdict": str(result["verdict"]),
             "confidence": str(result["confidence"]),
         }
@@ -342,9 +345,11 @@ def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
 
     write_final_atomic(final_path, payload)
     partial_path.unlink(missing_ok=True)
+    evidence_results = sum(len(by_source) for by_source in payload.values())
     print(
-        f"completed shard {shard_index}: {len(payload):,} results in "
-        f"{elapsed / 60:.2f} minutes ({len(payload) / max(elapsed, 1e-9):.2f} jobs/s)"
+        f"completed shard {shard_index}: {evidence_results:,} evidence results "
+        f"for {len(payload):,} statements in {elapsed / 60:.2f} minutes "
+        f"({evidence_results / max(elapsed, 1e-9):.2f} jobs/s)"
     )
     print(f"output={final_path}")
     return 0
