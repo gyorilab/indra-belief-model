@@ -235,11 +235,22 @@ _JSON_VERDICT_REV = re.compile(
 
 _VERDICT_PHRASE_PATTERNS = [
     re.compile(r'"verdict"\s*:\s*"(correct|incorrect)"', re.IGNORECASE),
+    # Some local instruction models omit JSON punctuation but preserve one
+    # field per line: ``verdict correct``.
+    re.compile(
+        r'^\s*(?:final\s+)?(?:verdict|decision|conclusion)\s*[=:]?\s*'
+        r'["\'\*]*(correct|incorrect)\b',
+        re.IGNORECASE | re.MULTILINE,
+    ),
     re.compile(r'(?:final\s+)?(?:verdict|decision|conclusion)[^a-z]*?:[^a-z]*?(?:["\'\*]*)(correct|incorrect)', re.IGNORECASE),
     re.compile(r'\b(?:verdict|decision|answer)\s+(?:is|should be|would be|=)\s*[:"\'\*]*\s*(correct|incorrect)', re.IGNORECASE),
 ]
 _CONFIDENCE_PHRASE_PATTERNS = [
     re.compile(r'"confidence"\s*:\s*"(high|medium|low)"', re.IGNORECASE),
+    re.compile(
+        r'^\s*confidence\s*[=:]?\s*["\'\*]*(high|medium|low)\b',
+        re.IGNORECASE | re.MULTILINE,
+    ),
     re.compile(r'confidence[^a-z]*?:[^a-z]*?(?:["\'\*]*)(high|medium|low)', re.IGNORECASE),
     re.compile(r'confidence\s+(?:is|level)?[^a-z]*?(high|medium|low)', re.IGNORECASE),
     re.compile(r'with\s+(high|medium|low)\s+confidence', re.IGNORECASE),

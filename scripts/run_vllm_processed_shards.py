@@ -127,19 +127,34 @@ def write_final_atomic(path: Path, payload: dict[str, Any]) -> None:
 
 
 class MonolithicPrompt:
-    """Reuse the repo's baseline monolithic prompt, examples, and parser."""
+    """Reuse the repo's commit-first disconfirm_relnature workflow."""
 
     def __init__(self):
-        os.environ["MONO_VARIANT"] = ""
         from indra_belief.scorers.monolithic import scorer as mono
-        from indra_belief.scorers.monolithic._prompts import (
-            extract_verdict,
+        from indra_belief.scorers.monolithic._prompts_disconfirm import (
+            DISCONFIRM_SYSTEM_PROMPT,
+            derive_verdict,
+            parse_structured,
             render_example,
         )
+        from indra_belief.scorers.monolithic._prompts_relation import (
+            _NATURE_LABEL,
+            _RELATION_SYSTEM,
+            _norm_nature,
+            _user_message,
+        )
+        from indra_belief.scorers.probes._llm import _extract_json
 
         self.mono = mono
-        self.extract_verdict = extract_verdict
+        self.system_prompt = DISCONFIRM_SYSTEM_PROMPT
+        self.relation_system_prompt = _RELATION_SYSTEM
+        self.derive_verdict = derive_verdict
+        self.parse_structured = parse_structured
         self.render_example = render_example
+        self.extract_json = _extract_json
+        self.nature_label = _NATURE_LABEL
+        self.normalize_nature = _norm_nature
+        self.relation_user_message = _user_message
 
     @lru_cache(maxsize=None)
     def examples(self, stmt_type: str) -> tuple[dict[str, str], ...]:
@@ -150,11 +165,57 @@ class MonolithicPrompt:
             messages.append({"role": "assistant", "content": assistant})
         return tuple(messages)
 
-    def request(self, job: dict[str, Any]) -> tuple[str, list[dict[str, str]]]:
+    def relation_request(
+        self, job: dict[str, Any]
+    ) -> tuple[str, list[dict[str, str]]] | None:
+        """Build the extra relation-nature call used only for Complex jobs."""
+        if str(job.get("stmt_type")) != "Complex":
+            return None
+        subject = str(job.get("subject") or "")
+        object_ = str(job.get("object") or "")
+        evidence = str(job.get("evidence_text") or "")
+        if not subject or not object_ or subject == "?" or object_ == "?" or not evidence:
+            return None
+        user = self.relation_user_message(
+            subject,
+            object_,
+            evidence,
+            job.get("subject_grounding"),
+            job.get("object_grounding"),
+        )
+        return self.relation_system_prompt, [{"role": "user", "content": user}]
+
+    def relation_note(
+        self, job: dict[str, Any], content: str, reasoning: str
+    ) -> str:
+        """Turn a non-binding Complex classification into a rejection note."""
+        obj = self.extract_json(content)
+        if not isinstance(obj, dict) and reasoning:
+            obj = self.extract_json(reasoning)
+        if not isinstance(obj, dict):
+            return ""
+        nature = self.normalize_nature(obj.get("nature"))
+        if nature is None or nature == "physicalbinding":
+            return ""
+        span = str(obj.get("span") or "")[:160]
+        label = self.nature_label.get(nature, "not a direct physical interaction")
+        suffix = f' — "{span}"' if span else ""
+        return (
+            f"Relation nature (resolved): the evidence asserts {label}{suffix}. "
+            f"A [Complex] claim requires a stated DIRECT PHYSICAL BIND between "
+            f"{job['subject']} and {job['object']} — that is a grounding MISMATCH "
+            "here, so the [Complex] extraction is unsupported."
+        )
+
+    def request(
+        self, job: dict[str, Any], relation_note: str = ""
+    ) -> tuple[str, list[dict[str, str]]]:
         user_message = job.get("user_message")
         if not isinstance(user_message, str) or not user_message.strip():
             raise ValueError("LLM job has no user_message")
-        system = self.mono.ACTIVE_SYSTEM_PROMPT
+        if relation_note:
+            user_message += "\n\n" + relation_note
+        system = self.system_prompt
         if job.get("lookup_guidance_required"):
             system += self.mono._LOOKUP_GUIDANCE
         messages = list(self.examples(str(job.get("stmt_type") or "Unknown")))
@@ -162,11 +223,15 @@ class MonolithicPrompt:
         return system, messages
 
     def parse(self, content: str, reasoning: str) -> tuple[str | None, str | None]:
-        verdict, confidence = self.extract_verdict(content)
-        if verdict is not None:
-            return verdict, confidence
-        combined = f"{reasoning}\n{content}" if reasoning else content
-        return self.extract_verdict(combined)
+        texts = [content]
+        if reasoning:
+            texts.append(f"{reasoning}\n{content}")
+        for text in texts:
+            parsed = self.parse_structured(text)
+            if parsed.get("verdict") is not None:
+                verdict, confidence, _ = self.derive_verdict(parsed)
+                return verdict, confidence
+        return None, None
 
 
 def score_job(
@@ -197,8 +262,47 @@ def score_job(
             }
         return {**base, "verdict": None, "confidence": None, "error": "bad tier1"}
 
+    relation_note = ""
     try:
-        system, messages = prompt.request(job)
+        relation_builder = getattr(prompt, "relation_request", None)
+        relation_request = relation_builder(job) if relation_builder else None
+        if relation_request is not None:
+            relation_system, relation_messages = relation_request
+            relation_response = client.post(
+                endpoint,
+                json={
+                    "model": model_id,
+                    "messages": [
+                        {"role": "system", "content": relation_system}
+                    ]
+                    + relation_messages,
+                    "max_tokens": max_tokens,
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"},
+                },
+            )
+            relation_response.raise_for_status()
+            relation_payload = relation_response.json()
+            relation_message = relation_payload["choices"][0].get("message") or {}
+            relation_content = str(relation_message.get("content") or "")
+            relation_reasoning = str(
+                relation_message.get("reasoning_content")
+                or relation_message.get("reasoning")
+                or ""
+            )
+            relation_note = prompt.relation_note(
+                job, relation_content, relation_reasoning
+            )
+    except Exception:
+        # Match the monolithic scorer: an unavailable or unparseable focused
+        # step leaves the holistic Complex verdict untouched.
+        relation_note = ""
+
+    try:
+        if relation_note:
+            system, messages = prompt.request(job, relation_note)
+        else:
+            system, messages = prompt.request(job)
     except Exception as exc:
         return {
             **base,

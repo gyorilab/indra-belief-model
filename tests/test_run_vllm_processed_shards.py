@@ -166,3 +166,91 @@ def test_unparseable_response_keeps_diagnostic_preview():
     assert row["finish_reason"] == "stop"
     assert row["completion_tokens"] == 7
     assert "I cannot decide" in row["response_preview"]
+
+
+def test_parser_accepts_gemma_plain_field_lines():
+    from indra_belief.scorers.monolithic._prompts import extract_verdict
+
+    text = (
+        "relation_check way to a biological process is licensed\n"
+        'support "Heart ischemia induces cardiac myocyte death"\n'
+        "objection null\n"
+        "verdict correct\n"
+        "confidence high"
+    )
+
+    assert extract_verdict(text) == ("correct", "high")
+
+
+def test_processed_runner_uses_commit_first_disconfirm_prompt():
+    from indra_belief.scorers.monolithic._prompts_disconfirm import (
+        DISCONFIRM_SYSTEM_PROMPT,
+    )
+
+    prompt = runner.MonolithicPrompt()
+
+    assert prompt.system_prompt == DISCONFIRM_SYSTEM_PROMPT
+    assert len(prompt.examples("Activation")) == 28  # 7 pairs / 14 examples
+
+
+def test_complex_job_runs_relation_nature_before_verdict():
+    class Response:
+        def __init__(self, content):
+            self.content = content
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {"message": {"content": self.content}, "finish_reason": "stop"}
+                ],
+                "usage": {"completion_tokens": 20},
+            }
+
+    class Client:
+        def __init__(self):
+            self.calls = []
+            self.responses = iter(
+                [
+                    Response(
+                        '{"nature":"signaling_cascade","span":"activates Y"}'
+                    ),
+                    Response("verdict incorrect\nconfidence high"),
+                ]
+            )
+
+        def post(self, _endpoint, json):
+            self.calls.append(json)
+            return next(self.responses)
+
+    client = Client()
+    row = runner.score_job(
+        {
+            "job_id": "1:0",
+            "stmt_hash": 101,
+            "source_hash": 11,
+            "needs_llm": True,
+            "stmt_type": "Complex",
+            "subject": "X",
+            "object": "Y",
+            "evidence_text": "X activates Y.",
+            "user_message": "CLAIM: X binds Y [Complex]\nEVIDENCE: X activates Y.",
+            "subject_grounding": {"aliases": ["X alias"]},
+            "object_grounding": {"aliases": ["Y alias"]},
+        },
+        client=client,
+        prompt=runner.MonolithicPrompt(),
+        endpoint="http://vllm/v1/chat/completions",
+        model_id="served-model",
+        max_tokens=1000,
+        temperature=0.1,
+    )
+
+    assert row["verdict"] == "incorrect"
+    assert row["confidence"] == "high"
+    assert len(client.calls) == 2
+    assert client.calls[0]["response_format"] == {"type": "json_object"}
+    assert "X alias" in client.calls[0]["messages"][-1]["content"]
+    assert "Relation nature (resolved)" in client.calls[1]["messages"][-1]["content"]
