@@ -118,3 +118,51 @@ def test_tier1_does_not_call_model():
     )
     assert row["source"] == "tier1"
     assert row["verdict"] == "incorrect"
+
+
+def test_unparseable_response_keeps_diagnostic_preview():
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {"content": "I cannot decide."},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"completion_tokens": 7},
+            }
+
+    class Client:
+        def post(self, *_args, **_kwargs):
+            return Response()
+
+    class Prompt:
+        def request(self, _job):
+            return "system", [{"role": "user", "content": "question"}]
+
+        def parse(self, _content, _reasoning):
+            return None, None
+
+    row = runner.score_job(
+        {
+            "job_id": "1:0",
+            "stmt_hash": 101,
+            "source_hash": 11,
+            "needs_llm": True,
+        },
+        client=Client(),
+        prompt=Prompt(),
+        endpoint="unused",
+        model_id="unused",
+        max_tokens=1000,
+        temperature=0.1,
+    )
+
+    assert row["error"] == "unparseable model response"
+    assert row["finish_reason"] == "stop"
+    assert row["completion_tokens"] == 7
+    assert "I cannot decide" in row["response_preview"]

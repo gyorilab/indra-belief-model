@@ -16,7 +16,7 @@ Test the first 1,000 jobs of shard 0::
 Run one complete shard::
 
     PYTHONPATH=src python scripts/run_vllm_processed_shards.py \
-      --shard-index 0 --workers 64
+      --shard-index 800 --workers 64
 
 Run all shards; completed output shards are skipped::
 
@@ -222,7 +222,9 @@ def score_job(
         choice = payload["choices"][0]
         message = choice.get("message") or {}
         content = str(message.get("content") or "")
-        reasoning = str(message.get("reasoning_content") or "")
+        reasoning = str(
+            message.get("reasoning_content") or message.get("reasoning") or ""
+        )
         verdict, confidence = prompt.parse(content, reasoning)
         if verdict in VALID_VERDICTS and confidence in VALID_CONFIDENCE:
             return {
@@ -231,7 +233,21 @@ def score_job(
                 "confidence": confidence,
                 "source": "llm",
             }
-        error = "unparseable model response"
+        return {
+            **base,
+            "verdict": None,
+            "confidence": None,
+            "error": "unparseable model response",
+            "finish_reason": choice.get("finish_reason"),
+            "completion_tokens": (payload.get("usage") or {}).get(
+                "completion_tokens"
+            ),
+            # Diagnostic only: store at most 4,000 characters of the model's
+            # response object, never the input prompt.
+            "response_preview": json.dumps(
+                message, ensure_ascii=False, default=str
+            )[:4000],
+        }
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
     return {**base, "verdict": None, "confidence": None, "error": error}
