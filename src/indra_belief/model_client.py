@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 LOCAL_MODELS: dict[str, dict] = {
     "vllm-local": {
         "base_url": "http://127.0.0.1:8000/v1",
-        "model_id": "google/gemma-3-27b-it",
+        "model_id": "google/gemma-4-26B-A4B-it",
         "reasoning_in_content": False,
         "max_tokens": 1000,
         "timeout": 120,
