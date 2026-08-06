@@ -227,8 +227,8 @@ coverage in its success output and **classifies** what it declined to read. **[V
 
 Three shipped tests were separately found unfalsifiable: the goldens mirrored the
 assembly instead of driving it (§4.1); the `variant=` seam's only test checked the
-*signature*, which holds under both the correct and the broken implementation (**this one
-was never fixed** — see §7.2); and the
+*signature*, which holds under both the correct and the broken implementation (**fixed
+after the arc closed** — see §7.2 item 10); and the
 parser's ordering contract passed 4/4 under **both** orders because the fixture built
 `raw_text` so its last verdict object equalled `content`'s.
 
@@ -697,19 +697,21 @@ attempts log is an operator call.
    `data/comparison/grounding_replay/manifest.json` commits to, re-derived through the
    live producer by `tests/test_prepared_execution_parity.py`. **[V]**
 
-10. **The `variant=` seam is still untested behaviourally.** §2.6 lists three shipped
-    tests found unfalsifiable during the arc. Two were fixed — the goldens now drive
-    production (§4.1), and the parser's ordering contract now has a case that
-    discriminates. The third was not.
-    `tests/test_monolithic_variant_profile.py::test_score_entry_points_accept_a_variant`
-    asserts only `inspect.signature(fn).parameters.get("variant")` and that the parameter
-    is keyword-only. **[V]** That holds under both the correct implementation and one
-    where `score` accepts `variant=` and silently ignores it, so the seam C0 exists to
-    provide has no behavioural gate. The reason it survives is that no test passes a
-    non-default variant to the *public* entry points — the in-process injection proof
-    goes through `_prepare` instead. **[V]** Settled by a test that scores the same record
-    twice through the public entry point under two variants with different system prompts
-    and asserts the two requests differ. Cheap, and it closes the last of the three.
+10. ~~**The `variant=` seam is still untested behaviourally.**~~
+    **DISCHARGED — the last of the three unfalsifiable tests now has a behavioural gate.**
+    The signature assertion remains and is still not a behavioural test on its own:
+    `test_score_entry_points_accept_a_variant` holds under both the correct
+    implementation and one where `score` accepts `variant=` and silently ignores it.
+    What was missing was a test that passes a non-default variant to the *public*
+    entry points rather than proving injection through `_prepare`. **[V]** Four now do,
+    in `tests/test_monolithic_variant_profile.py`: `score` puts the requested variant's
+    system prompt on the wire, every registered variant reaches the wire through
+    `score`, the variant selects the CALL TOPOLOGY and not only the prompt (whether the
+    relation-nature sub-call fires), and `score_statement` / `score_evidence` — the seams
+    the API layer holds — pass it through. The property gated is the one the frozen
+    golden cannot see, because the golden was captured when a process had exactly one
+    profile: the variant handed to a CALL is the variant that reaches the wire on that
+    call. **[V]**
 
 - **The mutation counts** (10 of 16 parser mutants killed; the ledger's 6/6) and every
   quantity above — 13,460 published scores, 11,645 off-grid, 32,357 re-derived rows, the

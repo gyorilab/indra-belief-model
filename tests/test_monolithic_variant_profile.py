@@ -41,6 +41,17 @@ re-baselining, not testing. As of K2 the probe cannot run against the pristine
 worktree either — it reads the parse off ``indra_belief.verdict``, which does
 not exist there — so the fixture is now frozen outright. That is the intended
 end state for a value nothing is allowed to move.
+
+The tests below split into two families. The frozen-golden family compares the
+whole probed surface, byte for byte, against the pre-refactor capture; it drives
+the PRIVATE helpers ``_score_single`` / ``_score_with_tools``. The second family
+(everything built on ``_wire``) gates the PUBLIC entry points — ``score``,
+``score_statement``, ``score_evidence`` — on the narrower property the golden
+cannot see, because the golden was captured when a process had exactly one
+profile: the variant handed to a CALL is the variant that reaches the wire on
+that call. That is what makes two profiles in one process possible, and it is
+the property a ``score()`` that accepted ``variant=`` and quietly dropped it
+would violate while every golden still matched.
 """
 from __future__ import annotations
 
@@ -139,6 +150,19 @@ class _StubRecord:
         from indra_belief.prepared_execution import ExecutionBody
 
         return ExecutionBody(claim=self._claim, evidence_text=self.evidence_text)
+
+    # The two members `score()` reads that the private helpers never did:
+    # scorer.py:581 (`record.tier1_auto_reject()`, the deterministic Tier-1
+    # gate) and scorer.py:588 (`record.format_provenance()`). Answering "no
+    # auto-reject, no provenance" is what carries a probe past Tier 1 and into
+    # the Tier-2 LLM call whose bytes the variant controls. Both are inert on
+    # the `_dump()` script path, which never reaches `score()`.
+
+    def tier1_auto_reject(self):
+        return None
+
+    def format_provenance(self) -> str:
+        return ""
 
 
 def _records() -> list[_StubRecord]:
@@ -537,3 +561,157 @@ def test_the_parser_is_not_variant_selected():
     assert (read.label, read.confidence, read.score) == ("incorrect", "low", 0.35)
     assert all(entry["parse_verdict"] == _EXPECTED[""]["parse_verdict"]
                for entry in _EXPECTED.values())
+
+
+# --------------------------------------------------------------------------
+# The public seam: the variant handed to a CALL is the one that reaches the wire
+#
+# The golden above drives `_score_single` / `_score_with_tools` directly. These
+# gate `score`, `score_statement` and `score_evidence` — the seams a caller
+# actually holds — where the keyword has one more layer to survive.
+# --------------------------------------------------------------------------
+
+# The registry's keys. Unlike `_PROBED_ENVS` these are the four REAL profiles:
+# "bogus_typo" is an env-string that resolves to the baseline, not an entry.
+_VARIANT_KEYS = ("", "disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf")
+
+
+def _wire(invoke, *, variant=_MISSING):
+    """Drive one public entry point once and report what reached the wire.
+
+    `invoke(client, **kw)` adapts the entry point's own argument order; `kw`
+    carries `variant=` only when one was asked for, so the same helper covers
+    the ambient-default control arm.
+
+    Returns `(kinds, main_call)`. `kinds` is the call topology in order — the
+    relation-nature sub-call fires FIRST on the relnature profiles, so the
+    scoring call is identified by its `kind`, never as `calls[0]`.
+    """
+    client = _StubClient()
+    invoke(client, **({} if variant is _MISSING else {"variant": variant}))
+    kinds = [call["kwargs"]["kind"] for call in client.calls]
+    main = [call for call in client.calls
+            if call["kwargs"]["kind"] != _RELATION_KIND]
+    assert len(main) == 1, f"expected exactly one scoring call, saw {kinds}"
+    return kinds, main[0]
+
+
+def test_score_puts_the_requested_variant_on_the_wire():
+    """The discriminating gate: same record, two profiles, one process.
+
+    Asserting only that the two arms DIFFER would pass on a `score()` that
+    swapped them, so each arm is pinned to the identity of the profile it
+    asked for. The third arm passes no variant at all: it is what a `score()`
+    that accepted `variant=` and dropped it would record on all three arms, and
+    it matches neither of the other two — so the assertions above it are
+    load-bearing rather than accidentally true.
+    """
+    from indra_belief.scorers.monolithic import scorer as S
+
+    before = S.DEFAULT_VARIANT
+    record = _records()[0]  # entities=False -> the plain non-tool route
+
+    def drive(client, **kw):
+        return S.score(client, record, 64, **kw)
+
+    with _fake_gilda():
+        _, baseline = _wire(drive, variant=S.VARIANTS[""])
+        _, disconfirm = _wire(drive, variant=S.VARIANTS["disconfirm"])
+        _, ambient = _wire(drive)
+
+    assert baseline["system"] != disconfirm["system"]
+    # The few-shot renderer is variant-selected too, so the whole assembled
+    # body must move, not only the system prompt.
+    assert baseline["messages"] != disconfirm["messages"]
+
+    assert baseline["system"] is S.VARIANTS[""].system_prompt
+    assert disconfirm["system"] is S.VARIANTS["disconfirm"].system_prompt
+
+    assert ambient["system"] is S.DEFAULT_VARIANT.system_prompt
+    assert ambient["system"] != baseline["system"]
+    assert ambient["system"] != disconfirm["system"]
+
+    # Passing a variant is an argument, never a mutation.
+    assert S.DEFAULT_VARIANT is before
+
+
+@pytest.mark.parametrize("name", _VARIANT_KEYS)
+def test_every_registered_variant_reaches_the_wire_through_score(name):
+    """Coverage of the registry, one profile per case.
+
+    Only THREE distinct system prompts exist across the four profiles —
+    `VARIANTS["disconfirm"].system_prompt is VARIANTS["disconfirm_relnature"]
+    .system_prompt`. So the assertion is identity to the REQUESTED profile;
+    claiming four distinct prompts would go red on correct code. What separates
+    that pair is the call topology, gated by the next test.
+    """
+    from indra_belief.scorers.monolithic import scorer as S
+
+    assert sorted(S.VARIANTS) == sorted(_VARIANT_KEYS)
+    record = _records()[0]
+    with _fake_gilda():
+        kinds, main = _wire(lambda client, **kw: S.score(client, record, 64, **kw),
+                            variant=S.VARIANTS[name])
+
+    assert kinds == ["monolithic"]
+    assert main["kwargs"]["kind"] == "monolithic"
+    assert main["system"] is S.VARIANTS[name].system_prompt
+
+
+def test_the_variant_selects_the_call_topology_not_only_the_prompt():
+    """The second behavioural axis: whether the relation-nature sub-call fires.
+
+    The `[Complex]` claim is required — measured, no profile fires the sub-call
+    on the Phosphorylation record, so this test would be vacuous on it. The
+    assertion is on the recorded `kind` sequence and not on the note text:
+    `_RELATION_REPLY` names nature "cascade", which production logs as
+    `unrecognized nature 'cascade'; treating as non-binding`. That log is
+    expected and harmless — the sub-call still fires, and it is the firing that
+    is being gated.
+    """
+    from indra_belief.scorers.monolithic import scorer as S
+
+    record = _StubRecord(
+        "Complex", "CCC3", "DDD4",
+        "CCC3 and DDD4 act downstream of the same receptor.",
+        "CCC3 binds DDD4 [Complex]",
+    )
+    with _fake_gilda():
+        seen = {
+            name: _wire(lambda client, **kw: S.score(client, record, 64, **kw),
+                        variant=S.VARIANTS[name])[0]
+            for name in _VARIANT_KEYS
+        }
+
+    for name in _RELNATURE_ENVS:
+        assert seen[name] == [_RELATION_KIND, "monolithic"], seen
+    assert seen[""] == ["monolithic"], seen
+    assert seen["disconfirm"] == ["monolithic"], seen
+
+
+def test_the_delegate_entry_points_pass_the_variant_through(monkeypatch):
+    """`score_statement` and `score_evidence` — the seams the API layer holds.
+
+    Both build a real `ScoringRecord` from an INDRA Statement, which grounds
+    live and is orthogonal to what is gated here, so the constructor is
+    replaced by the stub. `score_statement` resolves `ScoringRecord` out of
+    module globals at call time, and one patch reaches both entry points
+    because `score_evidence` delegates to `_score_evidence_monolithic`, which
+    IS `scorer.score_statement`.
+    """
+    from indra_belief.scorers.monolithic import scorer as S
+    from indra_belief.scorers import monolithic as pkg
+
+    record = _records()[0]
+    monkeypatch.setattr(S, "ScoringRecord", lambda **kw: record)
+
+    with _fake_gilda():
+        for entry in (S.score_statement, pkg.score_evidence):
+            for name in ("", "disconfirm"):
+                _, main = _wire(
+                    lambda client, **kw: entry(None, None, client, **kw),
+                    variant=S.VARIANTS[name],
+                )
+                assert main["system"] is S.VARIANTS[name].system_prompt, (
+                    f"{entry.__name__} dropped variant {name!r}"
+                )
