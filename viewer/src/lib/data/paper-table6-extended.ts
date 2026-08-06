@@ -61,6 +61,7 @@
  * validator. All filesystem work lives in `$lib/server/paper-table6-extended`.
  */
 
+import { budget, fail, record, number, unit, text, nonNegativeInteger, positiveInteger } from './paper-validate.ts';
 import { PAPER_LITERAL_ARM_SPECS, type ShippedProse } from './paper-literal.ts';
 
 /**
@@ -815,57 +816,20 @@ export interface PaperTable6ExtendedContext {
 
 type UnknownRecord = Record<string, unknown>;
 
-function fail(context: string, message: string): never {
-	throw new Error(`${context}: ${message}`);
-}
 
-function record(value: unknown, context: string): UnknownRecord {
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		fail(context, 'expected an object');
-	}
-	return value as UnknownRecord;
-}
 
-/** Any finite number — tie gifts and deviations are legitimately signed. */
-function number(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		fail(context, 'expected a finite number');
-	}
-	return value;
-}
 
-function unit(value: unknown, context: string): number {
-	const parsed = number(value, context);
-	if (parsed < 0 || parsed > 1) fail(context, 'expected a number in [0, 1]');
-	return parsed;
-}
 
 function nullableUnit(value: unknown, context: string): number | null {
 	return value === null ? null : unit(value, context);
 }
 
-function positiveInteger(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
-		fail(context, 'expected a positive integer');
-	}
-	return value;
-}
 
 function nullablePositiveInteger(value: unknown, context: string): number | null {
 	return value === null ? null : positiveInteger(value, context);
 }
 
-function nonNegativeInteger(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-		fail(context, 'expected a non-negative integer');
-	}
-	return value;
-}
 
-function text(value: unknown, context: string): string {
-	if (typeof value !== 'string' || value.length === 0) fail(context, 'expected a non-empty string');
-	return value;
-}
 
 function boolean(value: unknown, context: string): boolean {
 	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
@@ -970,12 +934,6 @@ export function fmtSigned4(value: number): string {
 	return `${value >= 0 ? '+' : '-'}${Math.abs(value).toFixed(4)}`;
 }
 
-function budget(value: string, chars: number, context: string): string {
-	if (value.length > chars) {
-		fail(context, `"${value}" is ${value.length} chars; the gutter budget is ${chars}`);
-	}
-	return value;
-}
 
 interface ParsedRow {
 	label: string;

@@ -1,3 +1,4 @@
+import { fail, record, number, unit, positiveInteger } from './paper-validate.ts';
 /**
  * Typed data contract for the TIE-INFLATION explainer that sits directly beneath
  * the paper's-own-metric comparison.
@@ -238,35 +239,10 @@ export interface TieInflationContext {
 
 type UnknownRecord = Record<string, unknown>;
 
-function fail(context: string, message: string): never {
-	throw new Error(`${context}: ${message}`);
-}
 
-function record(value: unknown, context: string): UnknownRecord {
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		fail(context, 'expected an object');
-	}
-	return value as UnknownRecord;
-}
 
-/** Signed finite number: inflation deltas legitimately go negative. */
-function number(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isFinite(value)) fail(context, 'expected a finite number');
-	return value;
-}
 
-function unit(value: unknown, context: string): number {
-	const parsed = number(value, context);
-	if (parsed < 0 || parsed > 1) fail(context, 'expected a number in [0, 1]');
-	return parsed;
-}
 
-function positiveInteger(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
-		fail(context, 'expected a positive integer');
-	}
-	return value;
-}
 
 function parseArm(spec: (typeof PAPER_LITERAL_ARM_SPECS)[number], pointMetrics: UnknownRecord): TieInflationArm {
 	const context = `point_metrics[${spec.label}]`;

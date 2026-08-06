@@ -1,3 +1,4 @@
+import { budget, fail, record, number, unit, text, positiveInteger } from './paper-validate.ts';
 /**
  * Typed data contract for the STATEMENT-GRAIN ERROR-CLASS F1 surface: the margin
  * the 2023 INDRA paper's own panel actually supports, named rather than implied.
@@ -929,37 +930,10 @@ export interface StatementErrorF1Context {
 
 type UnknownRecord = Record<string, unknown>;
 
-function fail(context: string, message: string): never {
-	throw new Error(`${context}: ${message}`);
-}
 
-function record(value: unknown, context: string): UnknownRecord {
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		fail(context, 'expected an object');
-	}
-	return value as UnknownRecord;
-}
 
-/** Any finite number — deltas and interval bounds are legitimately signed. */
-function number(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		fail(context, 'expected a finite number');
-	}
-	return value;
-}
 
-function unit(value: unknown, context: string): number {
-	const parsed = number(value, context);
-	if (parsed < 0 || parsed > 1) fail(context, 'expected a number in [0, 1]');
-	return parsed;
-}
 
-function positiveInteger(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
-		fail(context, 'expected a positive integer');
-	}
-	return value;
-}
 
 function count(value: unknown, context: string): number {
 	if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
@@ -968,12 +942,6 @@ function count(value: unknown, context: string): number {
 	return value;
 }
 
-function text(value: unknown, context: string): string {
-	if (typeof value !== 'string' || value.trim().length === 0) {
-		fail(context, 'expected a non-empty string');
-	}
-	return value;
-}
 
 function boolean(value: unknown, context: string): boolean {
 	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
@@ -991,12 +959,6 @@ function exactly(value: unknown, want: boolean, context: string): boolean {
 	return parsed;
 }
 
-function budget(value: string, chars: number, context: string): string {
-	if (value.length > chars) {
-		fail(context, `"${value}" is ${value.length} chars; the gutter budget is ${chars}`);
-	}
-	return value;
-}
 
 /**
  * Signed, four decimals, ASCII sign. ASCII '+'/'-' on purpose: the readout

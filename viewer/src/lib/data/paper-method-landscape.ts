@@ -1,3 +1,4 @@
+import { fail, record } from './paper-validate.ts';
 /**
  * Strict display adapter for the checksum-pinned method summaries published with
  * the 2023 INDRA assembly paper.
@@ -124,16 +125,7 @@ export type PaperMethodLandscapeLoad =
 
 type UnknownRecord = Record<string, unknown>;
 
-function fail(context: string, message: string): never {
-	throw new Error(`${context}: ${message}`);
-}
 
-function record(value: unknown, context: string): UnknownRecord {
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		fail(context, 'expected an object');
-	}
-	return value as UnknownRecord;
-}
 
 function exactKeys(value: UnknownRecord, keys: readonly string[], context: string): void {
 	const got = Object.keys(value).sort();

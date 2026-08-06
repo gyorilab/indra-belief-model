@@ -290,6 +290,190 @@ function renderExpressions(template) {
 }
 
 // ---------------------------------------------------------------------------
+// (a0) no VALUE-import cycle among the paper-* data modules
+//
+// paper-literal.ts value-imports validateApDecomposition from
+// paper-ap-decomposition.ts. That module value-imported standingOfBounds back,
+// and the two formed a runtime cycle for six days. Nothing caught it: svelte-check
+// passes, the bundler tolerates cycles, and the comments in the second module
+// still declared the dependency one-way. What a cycle costs is initialisation
+// order — whichever module evaluates second sees a partially initialised first.
+// It was survivable only because standingOfBounds is a hoisted function; one
+// module-level const calling it is a TDZ error at runtime with no compile warning.
+//
+// WHAT COUNTS AS AN EDGE, and this is the part that is easy to get wrong:
+// .svelte-kit/tsconfig.json sets verbatimModuleSyntax, so ONLY `import type {…}`
+// is erased. `import { type A, type B } from './x.ts'` still emits
+// `import {} from './x.ts'` — a real runtime edge carrying no bindings. A checker
+// that treats the braced-type form as erased measures nothing and passes forever.
+// ---------------------------------------------------------------------------
+console.log('\n(a0) the paper-* data modules have no value-import cycle');
+
+/**
+ * NORMALISE BEFORE MATCHING. The first version of this checker hardcoded single
+ * quotes and the `./` prefix, and a brutalist review broke it three ways in ten
+ * minutes: the original cycle re-planted with DOUBLE quotes reported "0 cycles";
+ * the `$lib/data/` alias every component and all 14 server modules already use
+ * was invisible; and `import d, { x } from` was missed. There is no .prettierrc
+ * and no eslint config in viewer/, so nothing forces the dialect this guard
+ * happened to be written against.
+ *
+ * It also FALSE-positived: reflowing an existing comment onto one line made it
+ * report a cycle on an acyclic tree, because a commented-out import is not an
+ * import. Comments are stripped first.
+ *
+ * Four guards on this project shipped green while checking nothing. This one was
+ * nearly the fifth, on exactly the shape it was written to catch.
+ */
+function normaliseModuleSource(text) {
+	return text
+		.replace(/\/\*[\s\S]*?\*\//g, ' ') // block comments
+		.replace(/^[ \t]*\/\/.*$/gm, ' ') // whole-line comments
+		.replace(/"/g, "'") // quote dialect is not semantics
+		.replace(/'\$lib\/data\//g, "'./"); // the alias is the same module
+}
+
+function valueImportEdges(sources) {
+	const edges = new Map();
+	for (const [name, raw] of sources) {
+		const text = normaliseModuleSource(raw);
+		const deps = new Set();
+		// EVERY FORM THAT SURVIVES TO RUNTIME. `export { x } from './y.ts'` is a
+		// re-export and is every bit an edge — paper-literal.ts uses exactly that
+		// form twice to keep the moved prose and interval kits importable from
+		// their old home. A checker matching only `import` would call this graph
+		// acyclic while a re-export cycle shipped.
+		const patterns = [
+			// import {…} / import type {…}, optionally with a default binding first
+			/\bimport\s+(type\s+)?(?:[A-Za-z_$][\w$]*\s*,\s*)?\{[^}]*\}\s*from\s*'\.\/(paper-[a-z0-9-]+)\.ts'/g,
+			// export {…} from / export type {…} from
+			/\bexport\s+(type\s+)?\{[^}]*\}\s*from\s*'\.\/(paper-[a-z0-9-]+)\.ts'/g,
+			// export * from / export * as ns from
+			/\bexport\s+()\*(?:\s+as\s+[A-Za-z_$][\w$]*)?\s*from\s*'\.\/(paper-[a-z0-9-]+)\.ts'/g,
+			// import X from / import * as X from
+			/\bimport\s+()(?:[A-Za-z_$][\w$]*|\*\s+as\s+[A-Za-z_$][\w$]*)\s+from\s*'\.\/(paper-[a-z0-9-]+)\.ts'/g,
+			// bare side-effect import, and dynamic import()
+			/\bimport\s+()'\.\/(paper-[a-z0-9-]+)\.ts'/g,
+			/\bimport\s*\(\s*()'\.\/(paper-[a-z0-9-]+)\.ts'/g
+		];
+		for (const pattern of patterns) {
+			for (const match of text.matchAll(pattern)) {
+				const [, typeOnly, dep] = match;
+				if (typeOnly) continue; // only the `type` keyword form is erased outright
+				deps.add(dep); // the braced form emits `import {}` even with no bindings
+			}
+		}
+		edges.set(name, deps);
+	}
+	return edges;
+}
+
+/** Every cycle reachable in the edge map, as a readable path. */
+function cyclesIn(edges) {
+	const found = [];
+	const state = new Map();
+	const stack = [];
+	const walk = (node) => {
+		state.set(node, 'open');
+		stack.push(node);
+		for (const next of edges.get(node) ?? []) {
+			if (!edges.has(next)) continue;
+			if (state.get(next) === 'open') {
+				found.push([...stack.slice(stack.indexOf(next)), next].join(' -> '));
+			} else if (!state.has(next)) {
+				walk(next);
+			}
+		}
+		stack.pop();
+		state.set(node, 'closed');
+	};
+	for (const node of edges.keys()) if (!state.has(node)) walk(node);
+	return found;
+}
+
+const dataModules = readdirSync(new URL('../src/lib/data/', import.meta.url))
+	.filter((file) => file.startsWith('paper-') && file.endsWith('.ts'))
+	.map((file) => [file.slice(0, -3), read(`../src/lib/data/${file}`)]);
+const liveCycles = cyclesIn(valueImportEdges(dataModules));
+ok(liveCycles.length === 0, `value-import cycle: ${liveCycles.join(' | ')}`);
+console.log(`  ${dataModules.length} modules walked, ${liveCycles.length} cycles`);
+
+// NOT VACUOUS, and proven on the shape that actually shipped. Four guards on this
+// project passed green while checking nothing; this one is driven by an input it
+// must reject before it is trusted on the real tree.
+const planted = [
+	['paper-alpha', "import { validateBeta } from './paper-beta.ts';"],
+	['paper-beta', "import { alphaThing, type T } from './paper-alpha.ts';"]
+];
+eq(cyclesIn(valueImportEdges(planted)).length, 1, '(a0) catches a planted value cycle');
+const plantedTypeOnly = [
+	['paper-alpha', "import { validateBeta } from './paper-beta.ts';"],
+	['paper-beta', "import type { AlphaThing } from './paper-alpha.ts';"]
+];
+eq(cyclesIn(valueImportEdges(plantedTypeOnly)).length, 0, '(a0) allows a type-only back-edge');
+// The exact form that fooled the eye: braced types, no value bindings, still an edge.
+const plantedBraced = [
+	['paper-alpha', "import { validateBeta } from './paper-beta.ts';"],
+	['paper-beta', "import { type AlphaThing } from './paper-alpha.ts';"]
+];
+eq(cyclesIn(valueImportEdges(plantedBraced)).length, 1, '(a0) counts `import { type X }` as an edge');
+// The forms a naive `import`-only matcher misses. paper-literal.ts really does
+// re-export two moved kits, so this is not a hypothetical shape.
+for (const [label, back] of [
+	['export { x } from', "export { alphaThing } from './paper-alpha.ts';"],
+	['export * from', "export * from './paper-alpha.ts';"],
+	['default import', "import alphaThing from './paper-alpha.ts';"],
+	['namespace import', "import * as alpha from './paper-alpha.ts';"],
+	['side-effect import', "import './paper-alpha.ts';"]
+]) {
+	eq(
+		cyclesIn(valueImportEdges([
+			['paper-alpha', "import { validateBeta } from './paper-beta.ts';"],
+			['paper-beta', back]
+		])).length,
+		1,
+		`(a0) counts a ${label} back-edge`
+	);
+}
+// THE DIALECTS THAT BROKE THE FIRST VERSION. Each is the SAME cycle, written the
+// way a future edit might write it. Nothing in viewer/ enforces a quote style or
+// a path prefix, so each of these is reachable by an ordinary edit.
+for (const [label, back] of [
+	['double-quoted', 'import { standingOfBounds } from "./paper-alpha.ts";'],
+	['$lib-aliased', "import { standingOfBounds } from '$lib/data/paper-alpha.ts';"],
+	['default + named', "import dflt, { standingOfBounds } from './paper-alpha.ts';"],
+	['export * as ns', "export * as alpha from './paper-alpha.ts';"],
+	['dynamic import()', "const m = await import('./paper-alpha.ts');"]
+]) {
+	eq(
+		cyclesIn(valueImportEdges([
+			['paper-alpha', "import { validateBeta } from './paper-beta.ts';"],
+			['paper-beta', back]
+		])).length,
+		1,
+		`(a0) counts a ${label} back-edge`
+	);
+}
+// ...and a commented-out import is NOT an edge. Reflowing a comment onto one line
+// made the first version report a cycle on an acyclic tree.
+eq(
+	cyclesIn(valueImportEdges([
+		['paper-alpha', "import { validateBeta } from './paper-beta.ts';"],
+		['paper-beta', "// import { standingOfBounds } from './paper-alpha.ts';"]
+	])).length,
+	0,
+	'(a0) ignores a commented-out back-edge'
+);
+eq(
+	cyclesIn(valueImportEdges([
+		['paper-alpha', "import { validateBeta } from './paper-beta.ts';"],
+		['paper-beta', "export type { AlphaThing } from './paper-alpha.ts';"]
+	])).length,
+	0,
+	'(a0) allows a type-only re-export back-edge'
+);
+
+// ---------------------------------------------------------------------------
 // (a) no frozen join key in a render position
 // ---------------------------------------------------------------------------
 const JOIN_KEY_ACCESS = /\.\s*(label|labels|armLabel|gateLabel)\b/;

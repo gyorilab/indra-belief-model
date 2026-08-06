@@ -1,3 +1,4 @@
+import { budget, fail, record, unit, text, nonNegativeInteger, positiveInteger } from './paper-validate.ts';
 /**
  * Typed data contract for AGAINST INDRA'S OWN BELIEF — the replication figure.
  *
@@ -1248,16 +1249,7 @@ export interface DeployedBaselineProse {
 
 type UnknownRecord = Record<string, unknown>;
 
-function fail(context: string, message: string): never {
-	throw new Error(`${context}: ${message}`);
-}
 
-function record(value: unknown, context: string): UnknownRecord {
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		fail(context, 'expected an object');
-	}
-	return value as UnknownRecord;
-}
 
 function array(value: unknown, context: string): unknown[] {
 	if (!Array.isArray(value)) fail(context, 'expected an array');
@@ -1283,37 +1275,14 @@ function finite(value: unknown, context: string): number {
 	return value;
 }
 
-function unit(value: unknown, context: string): number {
-	const parsed = finite(value, context);
-	if (parsed < 0 || parsed > 1) fail(context, 'expected a number in [0, 1]');
-	return parsed;
-}
 
-function positiveInteger(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
-		fail(context, 'expected a positive integer');
-	}
-	return value;
-}
 
-function nonNegativeInteger(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-		fail(context, 'expected a non-negative integer');
-	}
-	return value;
-}
 
 function boolean(value: unknown, context: string): boolean {
 	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
 	return value;
 }
 
-function text(value: unknown, context: string): string {
-	if (typeof value !== 'string' || value.length === 0) {
-		fail(context, 'expected a non-empty string');
-	}
-	return value;
-}
 
 function optionalText(value: unknown, context: string): string | null {
 	if (value === null || value === undefined) return null;
@@ -2486,12 +2455,6 @@ export function pct0(value: number): string {
 	return `${Math.round(value * 100)}%`;
 }
 
-function budget(value: string, chars: number, context: string): string {
-	if (value.length > chars) {
-		fail(context, `"${value}" is ${value.length} chars; the gutter budget is ${chars}`);
-	}
-	return value;
-}
 
 /**
  * The census chip under each row label, built from the panel's own fields.

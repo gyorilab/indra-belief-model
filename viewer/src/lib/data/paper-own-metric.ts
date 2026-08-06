@@ -1,3 +1,4 @@
+import { budget, fail } from './paper-validate.ts';
 /**
  * The 2023 INDRA paper's OWN metric, with our arms placed on the same axis.
  *
@@ -294,9 +295,6 @@ export interface PaperOwnMetricProvenance {
 	reproduction: PaperLiteralReproduction | null;
 }
 
-function fail(context: string, message: string): never {
-	throw new Error(`${context}: ${message}`);
-}
 
 /** Three decimals, matching the precision the paper prints its table at. */
 export function fmt3(value: number): string {
@@ -307,12 +305,6 @@ function readout(mean: number, sd: number): string {
 	return `${fmt3(mean)} ±${fmt3(sd)}`;
 }
 
-function budget(text: string, chars: number, context: string): string {
-	if (text.length > chars) {
-		fail(context, `"${text}" is ${text.length} chars; the gutter budget is ${chars}`);
-	}
-	return text;
-}
 
 function publishedMark(row: PaperMethodRow, group: PaperOwnMetricGroup): PaperOwnMetricMark {
 	return {

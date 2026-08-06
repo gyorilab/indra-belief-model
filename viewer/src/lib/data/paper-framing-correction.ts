@@ -1,3 +1,4 @@
+import { fail, record, unit, text, nonNegativeInteger, positiveInteger } from './paper-validate.ts';
 /**
  * Typed data contract for the FRAMING CORRECTION panel — /paper's beat 2.
  *
@@ -602,16 +603,7 @@ export type FramingCorrectionLoad = FramingCorrectionOk | FramingCorrectionUnava
 
 type UnknownRecord = Record<string, unknown>;
 
-function fail(context: string, message: string): never {
-	throw new Error(`${context}: ${message}`);
-}
 
-function record(value: unknown, context: string): UnknownRecord {
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		fail(context, 'expected an object');
-	}
-	return value as UnknownRecord;
-}
 
 function finite(value: unknown, context: string): number {
 	if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -620,36 +612,14 @@ function finite(value: unknown, context: string): number {
 	return value;
 }
 
-function unit(value: unknown, context: string): number {
-	const parsed = finite(value, context);
-	if (parsed < 0 || parsed > 1) fail(context, 'expected a number in [0, 1]');
-	return parsed;
-}
 
-function nonNegativeInteger(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-		fail(context, 'expected a non-negative integer');
-	}
-	return value;
-}
 
-function positiveInteger(value: unknown, context: string): number {
-	const parsed = nonNegativeInteger(value, context);
-	if (parsed < 1) fail(context, 'expected a positive integer');
-	return parsed;
-}
 
 function boolean(value: unknown, context: string): boolean {
 	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
 	return value;
 }
 
-function text(value: unknown, context: string): string {
-	if (typeof value !== 'string' || value.length === 0) {
-		fail(context, 'expected a non-empty string');
-	}
-	return value;
-}
 
 function textList(value: unknown, context: string): string[] {
 	if (!Array.isArray(value)) fail(context, 'expected an array');

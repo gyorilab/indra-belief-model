@@ -28,15 +28,25 @@
  * or drifted payload fails the whole paper load closed rather than silently
  * dropping the figure.
  *
- * No dependency on `paper-literal.ts` (which imports THIS module) — the fan slot
+ * ONE-WAY BY CONSTRUCTION, and it was not always. `paper-literal.ts` value-imports
+ * `validateApDecomposition` from this module. This module used to value-import
+ * `standingOfBounds` back, which made a genuine runtime cycle that svelte-check
+ * and the bundler both tolerated. `standingOfBounds` now comes from the leaf
+ * `paper-interval.ts`, and what remains from `paper-literal.ts` is `import type`,
+ * which is erased. `scripts/test-paper-render-invariants.mjs` fails if the edge
+ * comes back — the fan slot
  * table below repeats the five canonical arm labels deliberately, and the
  * contract test asserts they still match `PAPER_LITERAL_ARM_SPECS` label-for-
  * label and kind-for-kind.
  */
 
-// Type-only, so the `paper-literal` -> `paper-ap-decomposition` import stays a
-// one-way RUNTIME dependency (this import is erased at build time).
-import { standingOfBounds, type PaperArmKind, type ShippedProse, type Standing } from './paper-literal.ts';
+import { budget, fail, record, unit, text, nonNegativeInteger, positiveInteger } from './paper-validate.ts';
+import { standingOfBounds, type Standing } from './paper-interval.ts';
+// `import type` and NOT `import { type … }`: verbatimModuleSyntax is on
+// (.svelte-kit/tsconfig.json:18), so the braced form still emits `import {} from
+// './paper-literal.ts'` — a real runtime edge back to the module that imports
+// THIS one. Only the `import type` form is erased outright.
+import type { PaperArmKind, ShippedProse } from './paper-literal.ts';
 
 /**
  * THE PLAIN HALF OF EVERY TWIN THIS MODULE EMITS.
@@ -572,16 +582,7 @@ export interface ApDecomposition {
 
 type UnknownRecord = Record<string, unknown>;
 
-function fail(context: string, message: string): never {
-	throw new Error(`${context}: ${message}`);
-}
 
-function record(value: unknown, context: string): UnknownRecord {
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		fail(context, 'expected an object');
-	}
-	return value as UnknownRecord;
-}
 
 function finite(value: unknown, context: string): number {
 	if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -590,24 +591,8 @@ function finite(value: unknown, context: string): number {
 	return value;
 }
 
-function unit(value: unknown, context: string): number {
-	const parsed = finite(value, context);
-	if (parsed < 0 || parsed > 1) fail(context, 'expected a number in [0, 1]');
-	return parsed;
-}
 
-function nonNegativeInteger(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-		fail(context, 'expected a non-negative integer');
-	}
-	return value;
-}
 
-function positiveInteger(value: unknown, context: string): number {
-	const parsed = nonNegativeInteger(value, context);
-	if (parsed < 1) fail(context, 'expected a positive integer');
-	return parsed;
-}
 
 function exactly(value: unknown, expected: number, context: string): number {
 	const parsed = nonNegativeInteger(value, context);
@@ -620,12 +605,6 @@ function boolean(value: unknown, context: string): boolean {
 	return value;
 }
 
-function text(value: unknown, context: string): string {
-	if (typeof value !== 'string' || value.length === 0) {
-		fail(context, 'expected a non-empty string');
-	}
-	return value;
-}
 
 function numberList(value: unknown, length: number, context: string): number[] {
 	if (!Array.isArray(value) || value.length !== length) {
@@ -1160,12 +1139,6 @@ function signedPts(value: number): string {
 	return `${value >= 0 ? '+' : MINUS}${Math.abs(value).toFixed(2)}`;
 }
 
-function budget(value: string, chars: number, context: string): string {
-	if (value.length > chars) {
-		fail(context, `"${value}" is ${value.length} chars; the gutter budget is ${chars}`);
-	}
-	return value;
-}
 
 /**
  * Lay out the banding-sensitivity strip for one arm — by default the arm the
