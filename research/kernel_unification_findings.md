@@ -641,12 +641,19 @@ attempts log is an operator call.
    **[V]** The earlier census mislabelled the first — the two `_relation_note`
    *functions* are not twins (live dispatches a call, batch formats a stored reply); the
    twin is one level down, in the label table.
-3. **No test runs `scripts/replay_parser_diff.py`.** The 228,812-response equivalence is
-   the load-bearing population claim behind "one parser" and is cited in
-   `tests/test_verdict_parser.py`'s module docstring as standing evidence. **[V]** If it
-   stopped reproducing, nothing in CI would notice. The pattern to copy already exists:
-   `tests/test_published_statement_belief_reproduction.py` hard-requires its data rather
-   than skipping.
+3. ~~**No test runs `scripts/replay_parser_diff.py`.**~~
+   **DISCHARGED — `tests/test_replay_parser_diff.py` freezes the population.**
+   `tests/goldens/parser_diff_population.json` holds the Part A / Part B totals and the
+   row census (238,039 rows / 228,812 considered LLM responses, 15 logs), the seeded
+   constants that define the mutant population, the full untruncated text of all six
+   truncation mutants a parser pair disagreed on, and 29 stored responses all four
+   parsers agree on. **[M]** The 8.5 GiB of attempt logs are a gitignored published
+   artifact, so the corpus-wide scan is skipped only when the corpus is WHOLLY ABSENT —
+   present-and-different FAILS, and there is no env var that disables it. The six
+   mutants and the 29 agreeing texts are re-read by all four parsers from the fixture
+   itself, so those run on a fresh checkout with no `data/` at all. Read-only is proven
+   positively rather than by `git status`, which is vacuous over a gitignored tree: a
+   per-log `(size, st_mtime_ns)` is recorded at import and re-asserted after the scan.
 4. ~~**`research/serving_architecture.md` §3 and §4 have gone partly stale.**~~
    **DISCHARGED — the doc-drift audit applied the repairs.** As recorded: §3's F8 was
    still written as an open `[R] HIGH` finding and still named `_CREDIBLE_LLM_CONF` as

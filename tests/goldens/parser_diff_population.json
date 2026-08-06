@@ -1,0 +1,468 @@
+{
+  "_readme": "X2-parser-diff — the frozen population of scripts/replay_parser_diff.py. Captured 2026-08-03 at commit ccf53bf against the 15 gitignored attempt logs under data/comparison*/runs/*/attempts.jsonl (8.5 GiB). Frozen here: the Part A / Part B totals and row census, the seeded constants that define the mutant population, the full untruncated text of every mutant a parser pair disagreed on, and a small sample of stored responses all four parsers agree on. A diff here is a corpus or parser change, not a test to update.",
+  "_regenerate": "PARSER_DIFF_REGEN=1 PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_replay_parser_diff.py",
+  "agreeing_stored": [
+    {
+      "label": "e2b_sensitivity:4",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "Thinking Process:\n1.  **Analyze the Claim:** CLAIM: CTBP1 + HDGF [Complex].\n2.  **Analyze the Evidence:** EVIDENCE: \"HDGF binds CtBP through a non canonical binding motif (PKDLF) within the PWWP domain, as substitutional mutation of DL to AS abolished HDGF and CtBP interaction and diminished the trans-repressive effect of HDGF without affecting DNA binding.\"\n3.  **Analyze Entities/Grounding:**\n    *   CTBP1 (Entity 1)\n    *   HDGF (Entity 2)\n    *   Provenance notes: NLP mapped \"CtBP\" to CTBP1 (LOW CONFIDENCE). HDGF is an exact match.\n4.  **Check Relation:** The claim asserts a [Complex]. The evidence states \"HDGF binds CtBP\". This is a direct physical interaction.\n5.  **Determine Verdict:** The evidence explicitly states that HDGF binds CtBP (which is CTBP1). This supports the [Complex] claim.\n6.  **Formulate Output:** Relation is direct binding, evidence supports the complex.\n{\"relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"\\\"HDGF binds CtBP through a non canonical binding motif (PKDLF) within the PWWP domain, as substitutional mutation of DL to AS abolished HDGF and CtBP interaction and diminished the trans-repressive effect of HDGF without affecting DNA binding.\\\"\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "e2b_sensitivity:5",
+      "reading": [
+        "incorrect",
+        "medium",
+        0.2
+      ],
+      "text": "Thinking Process:\n1.  **Analyze the Claim:** CLAIM: COPS5 [Inhibition] BRSK2.\n2.  **Analyze the Evidence:** EVIDENCE: \"Importantly, treatment with proteasome inhibitor MG132 rescued BRSK2 reduction mediated by Jab1 (C), suggesting that Jab1 induced BRSK2 degradation through proteosome pathway.\"\n3.  **Determine the Relationship:** The claim asserts COPS5 inhibits BRSK2. The evidence discusses Jab1 inducing BRSK2 degradation.\n4.  **Check Grounding/Entities:**\n    *   COPS5 is the subject (via Jab1 mapping).\n    *   BRSK2 is the object.\n    *   The evidence talks about Jab1 and BRSK2 degradation via the proteasome pathway. This suggests Jab1 *targets* BRSK2 for degradation.\n    *   We need to confirm if COPS5 is Jab1, or if the relationship stated (COPS5 inhibits BRSK2) is supported.\n5.  **Evaluate the Claim vs. Evidence:** The claim is COPS5 inhibits BRSK2. The evidence mentions Jab1 mediates BRSK2 degradation. Although Jab1 was linked to COPS5 (low confidence), the evidence does not directly support the COPS5 -> Inhibition of BRSK2 relationship. The evidence describes a different mechanism (Jab1 -> BRSK2 degradation).\n6.  **Formulate Relation Check:** Need to check if COPS5 inhibits BRSK2.\n7.  **Formulate Support:** Look for direct evidence of COPS5 inhibiting BRSK2.\n8.  **Formulate Objection:** The evidence describes Jab1 causing BRSK2 degradation, not COPS5.\n9.  **Conclusion:** The claim is unsupported.\n{\"relation_check\": \"no direct span: The evidence links Jab1 to BRSK2 degradation, not COPS5 to BRSK2 inhibition.\", \"support\": null, \"objection\": \"The evidence links Jab1 to BRSK2 degradation, not COPS5 to BRSK2 inhibition.\", \"verdict\": \"incorrect\", \"confidence\": \"medium\"}"
+    },
+    {
+      "label": "e2b_smoke:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "Thinking Process:\n1.  **Analyze the Claim:** IL1 [IncreaseAmount] IL6 (previous question, answered) -> Current Claim: TGFB [IncreaseAmount] CLDN4.\n2.  **Analyze the Evidence:** \"In this study, we illustrated that TGF-beta upregulates the expression of Claudin-4 at the transcriptional level and the effect is mediated by c-Jun.\"\n3.  **Analyze Entities and Grounding:**\n    *   CLAIM Entity 1: TGFB (protein family).\n    *   CLAIM Entity 2: CLDN4.\n    *   Extraction Provenance note: MISMATCH — \"Claudin-4\" is a DIFFERENT entity, gilda: 0.78.\n    *   Lookups: TGF-beta points to TGFB family (score 1.0). Claudin-4 points to CLDN4 (score 0.762).\n4.  **Evaluate Relationship:** The evidence states TGF-beta upregulates Claudin-4 expression.\n5.  **Check Claim against Evidence:**\n    *   Claim: TGFB [IncreaseAmount] CLDN4.\n    *   Evidence: TGF-beta upregulates the expression of Claudin-4.\n    *   Relationship type: IncreaseAmount (gene expression).\n6.  **Check Confidence/Objections:**\n    *   The claim involves a family (TGFB) and a specific gene (CLDN4).\n    *   The extraction provenance flags a potential mismatch, but the lookups strongly support the intended entities (TGFB family and CLDN4 gene).\n    *   The relationship type is IncreaseAmount, which is supported by \"upregulates the expression.\"\n7.  **Conclusion:** The evidence supports the claim, despite the provenance warning, as the entities map correctly.\n{\"relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"In this study, we illustrated that TGF-beta upregulates the expression of Claudin-4 at the transcriptional level and the effect is mediated by c-Jun.\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "gemma_26b_primary:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "The user wants to know if the claim \"WT1 + ZNF224 [Complex]\" is supported by the evidence.\n\n\"WT1 + ZNF224 [Complex]\"\nWT1 and ZNF224 form a complex.\n\n    - \"Here, we demonstrate that ZNF224 is able to counteract the repressive effect of oncogenic WT1 on the tumor suppressor IRF8, providing novel insights into the regulative mechanisms triggered by the WT1 and ZNF224 complex in leukemic cells.\"\n    - \"This work shows that the myeloid tumor suppressor IRF8 is induced in leukemic cells by the commonly used cytostatic drug cytarabine.\"\n\n    - The text says \"...triggered by the WT1 and ZNF224 complex in leukemic cells.\"\n    - This explicitly names a \"WT1 and ZNF224 complex\".\n\n    - The claim is [Complex].\n    - The evidence states \"the WT1 and ZNF224 complex\".\n    - This is a direct statement of a physical complex.\n    - The claim is supported.\n\n    - relation_check: direct statement of the complex formation\n    - support: \"providing novel insights into the regulative mechanisms triggered by the WT1 and ZNF224 complex in leukemic cells.\"\n    - objection: null\n    - verdict: correct\n    - confidence: high\n```json\n{\"relation_check\": \"direct statement of the complex formation\", \"support\": \"providing novel insights into the regulative mechanisms triggered by the WT1 and ZNF224 complex in leukemic cells.\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}\n```"
+    },
+    {
+      "label": "gemma_26b_primary:2",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "The claim is that WT1 and ZNF224 form a complex (interact).\nThe evidence says: \"ZNF224 specifically binds to DNA on the promoter of the aldolase A gene, but can also indirectly bind to certain promoters interaction with the transcription factor WT1, thus fine tuning the effect of WT1 on transcription.\"\n\nLet's break down the evidence sentence:\n1. \"ZNF224 specifically binds to DNA on the promoter of the aldolase A gene\" -> ZNF224-DNA interaction.\n2. \"but can also indirectly bind to certain promoters interaction with the transcription factor WT1\" -> This part is grammatically messy. It says ZNF224 \"can also indirectly bind to certain promoters [through] interaction with the transcription factor WT1\".\n3. \"thus fine tuning the effect of WT1 on transcription\" -> Consequence of the interaction.\n\nThe evidence states that ZNF224 can bind to promoters via its interaction with WT1. This implies a protein-protein interaction between ZNF224 and WT1. In the context of \"Complex\", a protein-protein interaction is support.\n\nThe phrase \"interaction with the transcription factor WT1\" directly links ZNF224's binding behavior to an interaction with WT1.\n\nRelation: WT1 + ZNF224 [Complex]\nEvidence: \"...can also indirectly bind to certain promoters interaction with the transcription factor WT1...\"\n\nThe wording \"can also indirectly bind... interaction with... WT1\" strongly asserts an interaction exists between ZNF224 and WT1.\n\nWait, let's look for \"may/could/might\" on the relationship.\nThe text says \"can also indirectly bind...\". \"Can\" is a statement of capability/possibility of the mechanism, but in scientific literature, \"can\" often states a known capability rather than a hypothetical. However, let's compare it to rule 4. \"may/could/might on the RELATIONSHIP ITSELF = hypothesis (incorrect)\".\n\"can also indirectly bind... interaction with... WT1\"\nDoes \"can\" make this a hypothesis?\nUsually, \"can\" in this context (describing a mechanism) is used to state an observed ability.\nExample: \"A can bind B\" is a statement of fact in many papers.\nCompared to: \"ZNF224 might interact with WT1\".\nThe sentence \"ZNF224... can also indirectly bind to certain promoters interaction with the transcription factor WT1\" suggests the interaction is the mechanism that allows the binding.\n\nLet's check if there's any other interpretation.\nCould it mean ZNF224 and WT1 are just both mentioned? No, \"interaction with... WT1\" is explicitly linking them.\n\nIs it \"Complex\"? Yes, interaction implies a complex.\n\nOne detail: \"can also indirectly bind to certain promoters interaction with...\"\nThe sentence is quite fragmented (\"promoters interaction with\"). It likely means \"bind to certain promoters [via] interaction with...\".\n\nIs there a \"may/could/might\" issue?\n\"can\" vs \"might\". Rule 4 says: \"'may/could/might' on the RELATIONSHIP ITSELF = hypothesis (incorrect)\". \"Can\" is not explicitly listed in the exclusion list of \"may/could/might\", but it is semantically close. However, \"can\" often describes a property of the protein.\nLet's see if there's a direct span: \"interaction with the transcription factor WT1\". This span directly names the interaction.\n\nVerdict: correct.\n\nRelation check: direct mention of \"interaction with ... WT1\" licenses acceptance.\nSupport: \"...can also indirectly bind to certain promoters interaction with the transcription factor WT1...\"\nObjection: null.\n\nWait, checking Rule 4 again: \"'may/could/might' on the RELATIONSHIP ITSELF = hypothesis (incorrect)\".\n\"can also indirectly bind\" describes the binding, which is mediated by the interaction.\nIf the interaction itself is the subject of \"can\", it's a hypothesis.\n\"ZNF224... can also... [interact with WT1]\".\nThe sentence structure is: \"ZNF224... can also indirectly bind... [through] interaction with... WT1\".\nThe interaction is the mechanism for the binding. The statement says it *can* perform this binding via this interaction.\nIn scientific writing, \"X can Y via Z\" is a statement of fact about X's capability.\n\nLet's compare:\n1. \"ZNF224 interacts with WT1\" (Strong fact)\n2. \"ZNF224 may interact with WT1\" (Hypothesis)\n3. \"ZNF224 can bind DNA via interaction with WT1\" (Statement of mechanism)\n\nThe evidence says \"can also indirectly bind to certain promoters interaction with the transcription factor WT1\". It describes a known ability/mechanism. I will treat this as support.\n\nFinal check on grounding:\nWT1: HGNC: WT1.\nZNF224: HGNC: ZNF224.\nBoth match.\n\nOne more look at \"interaction with the transcription factor WT1\". It's a bit ungrammatical in the source, but the meaning is clear.\n\nrelation_check: direct mention of interaction with WT1 licenses acceptance.\nsupport: \"can also indirectly bind to certain promoters interaction with the transcription factor WT1\"\nobjection: null\nverdict: correct\nconfidence: high (or medium due to the grammatical awkwardness of the source text). I'll go with high because the intent is clear.\n```json\n{\"relation_check\": \"direct mention of interaction with WT1 licenses acceptance\", \"support\": \"can also indirectly bind to certain promoters interaction with the transcription factor WT1\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}\n```"
+    },
+    {
+      "label": "gemma_26b_sensitivity:4",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "The claim is `CTBP1 + HDGF [Complex]`.\nThe entities provided are `CTBP1` and `HDGF`.\n\nThe evidence says: `\"HDGF binds CtBP through a non canonical binding motif (PKDLF) within the PWWP domain, as substitutional mutation of DL to AS abolished HDGF and CtBP interaction and diminished the trans-repressive effect of HDGF without affecting DNA binding.\"`\n\nThe evidence clearly states that `HDGF binds CtBP`.\n\nNow, let's check the grounding and the provenance.\nThe extraction provenance says:\n- Subject: `NLP extracted \"CtBP\" → mapped to CTBP1 (LOW CONFIDENCE, gilda: 0.52 — not a confirmed alias)`\n- Object: `NLP extracted \"HDGF\" → HDGF (exact match)`\n\nThe lookup for `CtBP` shows `CTBP1` is the top candidate (score 0.521) but notes `\"CtBP\" is NOT a known alias for this gene`.\n\nHowever, the evidence itself says `HDGF binds CtBP`. In the context of the evidence, \"CtBP\" is clearly the same entity being discussed. Even if the lookup says it's not a *known* alias, the evidence explicitly uses \"CtBP\" to describe the interaction with \"HDGF\". The claim uses \"CTBP1\".\n\nIn biomedical literature, \"CtBP\" is a very common shorthand for C-terminal binding protein.\n\nIs there any objection?\n- Rule 6 (Grounding): A flagged MISMATCH means the reader's text does not map to the claim entity. The provenance says \"LOW CONFIDENCE\" because the lookup doesn't confirm it as a *canonical* alias, but the evidence *itself* provides the context that CtBP and HDGF interact.\n- Rule 1: @residue+position is not present.\n- Rule 2: Family-level is not applicable.\n- Rule 3: Activation/Inhibition is not relevant for Complex.\n- Rule 7: Interaction between the two entities is direct.\n\nThe evidence states \"HDGF binds CtBP\". The claim is \"CTBP1 + HDGF [Complex]\".\nGiven the evidence text, the interaction is direct. The mapping of \"CtBP\" to \"CTBP1\" is extremely standard in this field. The \"LOW CONFIDENCE\" in provenance is a technical note about the Gilda lookup, but the evidence provided *is* the ground truth for whether the claim holds.\n\nRelation check: \"direct statement of binding in evidence\"\nSupport: \"HDGF binds CtBP through a non canonical binding motif (PKDLF) within the PWWP domain, as substitutional mutation of DL to AS abolished HDGF and CtBP interaction and diminished the trans-repressive effect of HDGF without affecting DNA binding.\"\nObjection: null.\nVerdict: correct.\n```json\n{\"relation_check\": \"direct statement of binding in evidence\", \"support\": \"HDGF binds CtBP through a non canonical binding motif (PKDLF) within the PWWP domain, as substitutional mutation of DL to AS abolished HDGF and CtBP interaction and diminished the trans-repressive effect of HDGF without affecting DNA binding.\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}\n```"
+    },
+    {
+      "label": "gemma_26b_sensitivity:5",
+      "reading": [
+        "incorrect",
+        "high",
+        0.05
+      ],
+      "text": "The claim is `COPS5 [Inhibition] BRSK2`.\nThe evidence is: `\"Importantly, treatment with proteasome inhibitor MG132 rescued BRSK2 reduction mediated by Jab1 (C), suggesting that Jab1 induced BRSK2 degradation through proteosome pathway.\"`\n\nLet's break down the evidence:\n1. \"Jab1 induced BRSK2 degradation through proteosome pathway.\"\n2. This means Jab1 (COPS5) leads to the degradation of BRSK2.\n3. Degradation is an \"Amount\" form (DecreaseAmount).\n4. Rule 3 says: \"Inhibition\" is activity, \"DecreaseAmount\" is amount.\n5. However, the claim is `[Inhibition]`.\n6. The evidence says \"Jab1 induced BRSK2 degradation\". Degradation is a decrease in amount.\n7. Does \"Inhibition\" license a \"DecreaseAmount\" claim? Rule 3: \"An Activation/Inhibition claim whose evidence is only about [amount] is INCORRECT... unless...\".\n8. Looking at the evidence: \"Jab1 induced BRSK2 degradation\". This is a change in amount.\n9. Is there a rule that licenses `Inhibition` from `Degradation`?\n   Rule 3 says: \"The following are AMOUNT (Increase/DecreaseAmount)... transcription or expression, mRNA/protein levels or abundance, ... stabilization, accumulation, or proteasomal degradation.\"\n   It states: \"An Activation/Inhibition claim whose evidence is only about them is INCORRECT (objection: amount-not-activity)\".\n10. So, if the evidence only shows degradation, the claim `[Inhibition]` is technically an `amount-not-activity` error.\n\nWait, let's check the logic again.\nClaim: COPS5 [Inhibition] BRSK2.\nEvidence: Jab1 (COPS5) induces BRSK2 degradation.\nDegradation = DecreaseAmount.\nRule 3: \"Inhibition\" = activity. \"Degradation\" = amount.\nClaiming Inhibition when the evidence is about amount is incorrect.\n\nWait, look at the Extraction provenance:\n- Subject: NLP extracted \"Jab1\" -> mapped to COPS5.\n- The lookup says \"Jab1\" is NOT a known alias for COPS5.\n- However, the prompt says \"If the top candidate is a gene family (FPLX) and the evidence mentions a specific member, that is still a valid claim...\".\n- Here, \"Jab1\" is being mapped to COPS5. The lookup score is 0.50.\n- The provenance says `Subject: NLP extracted \"Jab1\" → mapped to COPS5 (LOW CONFIDENCE, gilda: 0.50 — not a confirmed alias)`.\n- If the mapping is incorrect, the claim is incorrect.\n- Even if we accept Jab1 = COPS5, the relation is \"induced degradation\", which is \"DecreaseAmount\", not \"Inhibition\".\n\nLet's re-read Rule 3: \"An Activation/Inhibition claim whose evidence is only about them is INCORRECT (objection: amount-not-activity) EVEN when the verb reads 'represses'/'suppresses'/'activates'\".\nDegradation is explicitly listed under Amount.\n\nTherefore, the claim is incorrect on two possible grounds:\n1. Mapping error (Jab1 vs COPS5).\n2. Amount vs Activity (Degradation vs Inhibition).\n\nHowever, the primary rule is about the relation type.\n`Inhibition` (activity) != `Degradation` (amount).\n\nLet's refine the `relation_check`.\nRelation: Inhibition.\nEvidence: Induced degradation.\nLicensing: No licensing form for Inhibition (Degradation is an Amount form).\n\nWait, I should check if \"Inhibition\" can be used for degradation in these datasets. Rule 3 is very explicit.\n\"The following are AMOUNT (Increase/DecreaseAmount)... proteasomal degradation.\"\n\"An Activation/Inhibition claim whose evidence is only about them is INCORRECT (objection: amount-not-activity)\".\n\nVerdict should be `incorrect`.\n\nOne more thing: the extraction provenance says \"Jab1\" mapped to COPS5 has LOW CONFIDENCE and is NOT a confirmed alias. This is a grounding issue. But the Amount vs Activity is a more direct violation of the logic rules provided.\n\nActually, let's look at the evidence again: \"Jab1 induced BRSK2 degradation\".\nIf the claim were `COPS5 [DecreaseAmount] BRSK2`, it might be correct (assuming Jab1 = COPS5).\nSince it's `[Inhibition]`, it's `incorrect`.\n\nWait, does \"induced degradation\" imply inhibition of the protein's function? Usually, yes, but the rules distinguish these strictly.\n\nLet's look at the prompt example:\n`CLAIM: PRDM1 [Inhibition] CIITA`\n`EVIDENCE: PRDM1 acts as a transcriptional repressor that... represses CIITA transcription, lowering CIITA mRNA and protein levels.`\nThe model outputted `incorrect` with objection `Amount-not-activity`.\nThis confirms that \"represses transcription/lowering levels\" is an amount-not-activity objection for an `Inhibition` claim.\nSimilarly, \"induced degradation\" is an amount-not-activity objection for an `Inhibition` claim.\n\nFinal check:\nClaim: COPS5 [Inhibition] BRSK2\nEvidence: Jab1 (COPS5) induces BRSK2 degradation.\nRelation check: Degradation is an Amount form, not an Inhibition (activity) form.\nObjection: amount-not-activity.\nVerdict: incorrect.\n```json\n{\"relation_check\": \"no licensing form: 'induced BRSK2 degradation' is an amount-change (DecreaseAmount), not an inhibition of BRSK2's enzymatic or functional activity.\", \"support\": \"Jab1 induced BRSK2 degradation through proteosome pathway.\", \"objection\": \"amount-not-activity: the evidence describes protein degradation (DecreaseAmount), not a change in the target's functional/enzymatic activity (Inhibition).\", \"verdict\": \"incorrect\", \"confidence\": \"high\"}\n```"
+    },
+    {
+      "label": "gemma_31b_primary:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "The claim is that WT1 and ZNF224 form a complex.\nThe evidence states, \"We conclude that ZNF224 binds to WT1 (+/-) in the nucleus\".\nIt also mentions, \"To find further evidence for interaction between WT1 (+/-) and ZNF224 on the promoter, we performed chromatin immunoprecipitation (ChIP) experiments.\"\n\"ZNF224 binds to WT1\" explicitly states a physical interaction/binding between the two proteins.\nThis constitutes a [Complex] relation.\n{\"relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"We conclude that ZNF224 binds to WT1 (+/-) in the nucleus\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "gemma_31b_primary:2",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "The claim is that WT1 and ZNF224 form a complex (physical interaction).\nThe evidence states: \"ZNF224 ... can also indirectly bind to certain promoters interaction with the transcription factor WT1, thus fine tuning the effect of WT1 on transcription.\"\n\n\"interaction with the transcription factor WT1\" suggests that ZNF224 interacts with WT1.\nThe text mentions that ZNF224 binds indirectly to certain promoters *via* interaction with WT1. This implies a protein-protein interaction (complex) between ZNF224 and WT1.\n\n- Relation check: The text explicitly mentions an \"interaction with the transcription factor WT1\" enabling ZNF224 to bind promoters.\n- Support: \"can also indirectly bind to certain promoters interaction with the transcription factor WT1\"\n- Objection: None.\n- Verdict: Correct.\n{\"relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"can also indirectly bind to certain promoters interaction with the transcription factor WT1\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "gemma_31b_sensitivity:4",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "*   Claim: CTBP1 + HDGF [Complex]\n    *   Evidence: \"HDGF binds CtBP through a non canonical binding motif (PKDLF) within the PWWP domain, as substitutional mutation of DL to AS abolished HDGF and CtBP interaction and diminished the trans-repressive effect of HDGF without affecting DNA binding.\"\n    *   Entities:\n        *   CTBP1 (mapped from \"CtBP\").\n        *   HDGF (mapped from \"HDGF\").\n    *   Extraction Provenance:\n        *   Subject \"CtBP\" -> CTBP1 (LOW CONFIDENCE, gilda score 0.52).\n        *   Object \"HDGF\" -> HDGF.\n    *   Lookups:\n        *   \"CtBP\" mapping to CTBP1 (score 0.52, not a known alias).\n        *   \"HDGF\" mapping to HDGF (known alias).\n\n    *   The evidence says \"HDGF binds CtBP\" and \"abolished HDGF and CtBP interaction\".\n    *   Does \"CtBP\" map to \"CTBP1\"?\n    *   CtBP (C-terminal Binding Protein) is a family of proteins (CTBP1, CTBP2).\n    *   In many biological contexts, \"CtBP\" is used as a generic term for the family or specifically for CtBP1.\n    *   The lookup for CTBP1 says \"CtBP\" is NOT a known alias, but the score is 0.52.\n    *   Wait, rule 2 says: \"Family-level claims: if the claim names a protein family (JUN, AKT, ERK, CK2, MAPK, PKA), evidence about any specific member SUPPORTS it\".\n    *   Is CTBP a family? Yes, the CTBP family contains CTBP1 and CTBP2.\n    *   The claim specifies \"CTBP1\". The evidence specifies \"CtBP\".\n    *   Is \"CtBP\" a synonym/alias for \"CTBP1\"? Looking at NCBI/UniProt, CTBP1 is often referred to as CtBP or CtBP1.\n    *   However, the lookup says \"not a known alias\".\n    *   Wait, look at the evidence again: \"HDGF binds CtBP\". This explicitly states a binding interaction between HDGF and CtBP.\n    *   Even if \"CtBP\" refers to the family, CTBP1 is a primary member.\n    *   Most importantly, \"HDGF binds CtBP\" is a direct statement of a physical interaction (Complex).\n\n    *   `relation_check`: \"direct statement of interaction\" (or \"HDGF binds CtBP\").\n    *   `support`: \"HDGF binds CtBP through a non canonical binding motif (PKDLF) within the PWWP domain, as substitutional mutation of DL to AS abolished HDGF and CtBP interaction\"\n    *   `objection`: The provenance notes \"LOW CONFIDENCE\" for \"CtBP\" -> \"CTBP1\". However, in biochemical literature, \"CtBP\" is widely used to refer to the C-terminal binding protein (often CTBP1). If CtBP is treated as a family-level term or a generic name for the protein, it supports CTBP1. Even if we strictly follow the \"not a known alias\" note, the evidence explicitly says \"HDGF binds CtBP\".\n    *   Is there a grounds for \"incorrect\"? Rule 6 says \"a flagged MISMATCH means the reader's text does not map to the claim entity — a strong incorrect signal unless the evidence independently names it.\" Here, it's \"LOW CONFIDENCE\", not \"MISMATCH\".\n    *   The evidence says \"HDGF binds CtBP\". Since the claim is CTBP1 + HDGF, and \"CtBP\" is the core name of the CTBP1 protein, this is a strong positive.\n\n    *   `relation_check`: \"direct statement of binding licenses acceptance\"\n    *   `support`: \"HDGF binds CtBP through a non canonical binding motif (PKDLF) within the PWWP domain, as substitutional mutation of DL to AS abolished HDGF and CtBP interaction\"\n    *   `objection`: null (The mapping is plausible and the interaction is explicit).\n    *   `verdict`: correct.\n```json\n{\"relation_check\": \"direct statement of binding licenses acceptance\", \"support\": \"HDGF binds CtBP through a non canonical binding motif (PKDLF) within the PWWP domain, as substitutional mutation of DL to AS abolished HDGF and CtBP interaction\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}\n```"
+    },
+    {
+      "label": "gemma_31b_sensitivity:5",
+      "reading": [
+        "incorrect",
+        "high",
+        0.05
+      ],
+      "text": "The claim is `COPS5 [Inhibition] BRSK2`.\nLooking at the evidence: \"Importantly, treatment with proteasome inhibitor MG132 rescued BRSK2 reduction mediated by Jab1 (C), suggesting that Jab1 induced BRSK2 degradation through proteosome pathway.\"\n\n1.  **Entity Grounding**:\n    *   Object: `BRSK2` matches exactly.\n    *   Subject: `Jab1`. The extraction provenance says \"Jab1\" was mapped to `COPS5` with LOW CONFIDENCE and that it is NOT a confirmed alias.\n    *   Checking the provided database lookup: `lookup_gene(\"Jab1\")` candidates show `COPS5` (Jun activation domain-binding protein 1) but explicitly state `\"Jab1\" is NOT a known alias for this gene`.\n    *   Wait, looking at common biological knowledge (though I must rely on the provided info), JAB1 usually stands for \"Jun Activation domain-Binding protein 1\", which is indeed COPS5. However, the prompt's lookup explicitly says it's NOT a known alias and the score is low.\n    *   Wait, the \"Entities\" line says: `COPS5 (HGNC: COPS5, aliases: CSN5, JAB1, SGN5, MOV-34)`. This contradicts the lookup block. Let's re-read.\n    *   Entities line: `COPS5 (HGNC: COPS5, aliases: CSN5, JAB1, SGN5, MOV-34)` -> JAB1 is listed here as an alias.\n    *   Lookup block: `[0] COPS5 — Jun activation domain-binding protein 1 (\"Jab1\" is NOT a known alias for this gene) score=0.502`.\n    *   Usually, the \"Entities\" line provided in the prompt takes precedence or represents the grounded a-priori knowledge for the claim. Let's assume for a moment COPS5 = Jab1.\n\n2.  **Relation**:\n    *   Evidence: \"Jab1 induced BRSK2 degradation through proteosome pathway.\"\n    *   Degradation = DecreaseAmount.\n    *   Claim: `COPS5 [Inhibition] BRSK2`.\n    *   Rule 3 states: \"Activation/Inhibition\" is a change in the target's activity STATE... NOT a change in its AMOUNT... proteasomal degradation... is [DecreaseAmount]\".\n    *   Therefore, \"induced degradation\" = `DecreaseAmount`, not `Inhibition`.\n\n3.  **Verdict**:\n    *   Even if we accept Jab1 = COPS5, the relation is \"induced degradation\", which is explicitly identified by Rule 3 as \"amount-not-activity\" for an Inhibition claim.\n\nConclusion: Incorrect based on Rule 3.\n```json\n{\"relation_check\": \"no licensing form: 'induced BRSK2 degradation' = DecreaseAmount, not Inhibition of activity per rule 3.\", \"support\": null, \"objection\": \"amount-not-activity: the evidence describes proteasomal degradation (DecreaseAmount), not a change in the functional activity state of BRSK2.\", \"verdict\": \"incorrect\", \"confidence\": \"high\"}\n```"
+    },
+    {
+      "label": "glm_5_primary:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"relation_check\": \"direct statement of the relation licenses acceptance: 'the ZNF224 and WT1 complex itself' presupposes the complex exists; hedging scopes the regulatory loop mechanism, not the complex.\", \"support\": \"the ZNF224 and WT1 complex itself\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "glm_5_primary:2",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"the WT1 and ZNF224 complex\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "glm_5_sensitivity:4",
+      "reading": [
+        "incorrect",
+        "high",
+        0.05
+      ],
+      "text": "{\"relation_check\": \"Evidence states \\\"HDGF binds CtBP\\\" — direct physical interaction. However, \\\"CtBP\\\" grounding to CTBP1 is LOW CONFIDENCE and not a confirmed alias.\", \"support\": \"\\\"HDGF binds CtBP through a non canonical binding motif (PKDLF) within the PWWP domain, as substitutional mutation of DL to AS abolished HDGF and CtBP interaction and diminished the trans-repressive effect of HDGF without affecting DNA binding.\\\"\", \"objection\": \"Grounding mismatch: \\\"CtBP\\\" is NOT a confirmed alias for CTBP1 (LOW CONFIDENCE 0.52). Evidence uses \\\"CtBP\\\" which could refer to CTBP1, CTBP2, or the CtBP family, but claim specifies CTBP1 without independent evidence naming CTBP1.\", \"verdict\": \"incorrect\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "glm_5_sensitivity:5",
+      "reading": [
+        "incorrect",
+        "high",
+        0.05
+      ],
+      "text": "relation_check\": \"no licensing form: 'induced BRSK2 degradation' = DecreaseAmount, not Inhibition. Degradation removes protein; it doesn't suppress BRSK2's kinase activity.\", \"support\": \"Jab1 induced BRSK2 degradation through proteosome pathway\", \"objection\": \"Amount-not-activity: 'Jab1 induced BRSK2 degradation' = DecreaseAmount, not Inhibition. Degradation removes protein; it doesn't suppress BRSK2's kinase activity.\", \"verdict\": \"incorrect\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "gemma_26b_noreason_primary:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "```json\n{\"relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"could prevent the proapoptotic effect of the ZNF224 and WT1 complex itself\", \"objection\": \"the word 'could' scopes over the prevention of proapoptotic effect, not the existence of the complex, which is mentioned as a component of a regulatory loop\", \"verdict\": \"correct\", \"confidence\": \"high\"}\n```"
+    },
+    {
+      "label": "gemma_26b_noreason_primary:2",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "```json\n{\"relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"providing novel insights into the regulative mechanisms triggered by the WT1 and ZNF224 complex in leukemic cells.\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}\n```"
+    },
+    {
+      "label": "gemma_31b_noreason_primary:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"analyzed the effects of WT1-ZNF224 interaction on the expression of apoptosis-regulating genes\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "gemma_31b_noreason_primary:2",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"providing novel insights into the regulative mechanisms triggered by the WT1 and ZNF224 complex in leukemic cells.\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "glm_5_noreason_primary:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"the ZNF224 and WT1 complex itself\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "glm_5_noreason_primary:2",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"relation_check\": \"direct statement of the relation licenses acceptance\", \"support\": \"This suggestion was strengthened by the identification of specific interaction between ZNF224 or ZNF255 and WT1.\", \"objection\": null, \"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "e2b_vo_primary:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "e2b_vo_primary:2",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "gemma_26b_vo_primary:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "gemma_26b_vo_primary:2",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "gemma_31b_vo_primary:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "gemma_31b_vo_primary:2",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "glm_5_vo_primary:1",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"verdict\": \"correct\", \"confidence\": \"high\"}"
+    },
+    {
+      "label": "glm_5_vo_primary:2",
+      "reading": [
+        "correct",
+        "high",
+        0.95
+      ],
+      "text": "{\"verdict\": \"correct\", \"confidence\": \"high\"}"
+    }
+  ],
+  "constants": {
+    "cuts": 4,
+    "reservoir": 400,
+    "seed": 1234
+  },
+  "divergent_mutants": [
+    {
+      "label": "gemma_26b_primary:19198#cut0@1859",
+      "readings": {
+        "new": [
+          "incorrect",
+          "medium",
+          0.2
+        ],
+        "old_batch": [
+          null,
+          null,
+          null
+        ],
+        "old_live": [
+          "incorrect",
+          "medium",
+          0.2
+        ],
+        "old_live_baseline": [
+          "incorrect",
+          "medium",
+          0.2
+        ]
+      },
+      "text": "The user wants me to judge a biomedical text-mining extraction.\n\n- CLAIM: RAS [Activation] RAS\n- Entities: RAS (protein family, includes HRAS, KRAS, NRAS)\n- EVIDENCE: \"In thymocytes, Ras is activated by the Ras guanine exchange factors (RasGEFs) Sos1, Sos2, and RasGRP1.\"\n\n1.  **Relation Check**: The claim is RAS [Activation] RAS. The evidence says \"Ras is activated by the Ras guanine exchange factors...\". This means an agent (RasGEFs) activates Ras. But the claim says \"RAS [Activation] RAS\". This implies Ras activates Ras (autocatalysis or a feedback loop).\n2.  **Evidence analysis**: The evidence says \"Ras is activated by the Ras guanine exchange factors (RasGEFs) Sos1, Sos2, and RasGRP1.\" It does *not* say Ras activates itself. It says RasGEFs activate Ras.\n3.  **Rules**:\n    - Rule 7: The two entities must interact with EACH OTHER. The evidence states Ras is activated by RasGEFs. The claim states Ras is activated by Ras.\n    - Does the evidence support Ras activating Ras? No. It supports RasGEFs activating Ras.\n    - Is there any mention of Ras activating Ras? No.\n\nWait, let me re-read the claim: `RAS [Activation] RAS`. This usually means the subject activates the object.\nThe evidence: `Ras is activated by the Ras guanine exchange factors (RasGEFs) ...`.\nThe subject in the evidence's passive construction is \"Ras\". The agent is \"RasGEFs\".\nSo RasGEFs $\\rightarrow$ Ras.\nThe claim is Ras $\\rightarrow$ Ras.\nThis is a mismatch.\n\nIs it possible the claim is interpreted as \"The Ras family activates the Ras family\"? Even so, the evidence describes an external activation by GEFs.\n\nLet's check if \"Ras\" in the subject and \"Ras\" in the object refer to different things? No, they are both RAS.\nThe evidence says Ras is activated by GEFs. It doesn't mention Ras activating Ras.\n\nVerdict should be incorrect.\n\nOne more thing: \"RAS [Activation] R"
+    },
+    {
+      "label": "gemma_26b_primary:25226#cut3@3458",
+      "readings": {
+        "new": [
+          "incorrect",
+          "medium",
+          0.2
+        ],
+        "old_batch": [
+          null,
+          null,
+          null
+        ],
+        "old_live": [
+          "incorrect",
+          "medium",
+          0.2
+        ],
+        "old_live_baseline": [
+          "incorrect",
+          "medium",
+          0.2
+        ]
+      },
+      "text": "The user wants me to judge a biomedical text-mining extraction.\n\nA claim that HGF (HGF) activates ARF6 (ARF6).\n\n    *   HGF (HGNC: HGF, aliases: SF, HGFB, HPTA, F-TCF, DFNB39, Scatter factor)\n    *   ARF6 (HGNC: ARF6, aliases: ARF6 Protein, Protein, ARF6)\n\"We therefore tested the hypothesis that CNK3 and IPCEF is required for activation of Arf6 by HGF.\"\n\n- HGF is the agent/stimulus.\n- Arf6 is the target.\n- Relation: Activation.\n- The evidence says: \"tested the hypothesis that ... CNK3 and IPCEF is required for activation of Arf6 by HGF.\"\n- Rule 4: \"may/could/might\" on the RELATIONSHIP ITSELF = hypothesis (incorrect).\n- However, let's look closer. \"We therefore tested the hypothesis that [Mechanism] is required for [Activation of Arf6 by HGF]\".\n- This phrase actually contains the relationship \"activation of Arf6 by HGF\" as part of the hypothesis being tested.\n- Does \"tested the hypothesis that X is required for Y\" imply Y is the relationship?\n- Usually, \"tested whether X does Y\" is an aim.\n- But here, the object of the hypothesis is \"activation of Arf6 by HGF\".\n- Let's re-read rule 4: \"METHODS/AIM framing ('to examine/test whether X Ys Z', 'we asked whether') poses the experiment, not support.\"\n- The evidence is: \"We therefore tested the hypothesis that CNK3 and IPCEF is required for activation of Arf6 by HGF.\"\n- This sentence describes an aim/experiment. It doesn't state that the activation *happens*, but that they tested if some proteins are required for it.\n- Wait, the claim is HGF [Activation] ARF6.\n- The sentence expresses that they are testing if specific proteins are required for an activation that is *assumed* or being investigated.\n- Comparing to Rule 4: \"tested the hypothesis that...\" is framing the experiment.\n- If the evidence only states the hypothesis or the aim, it is not support.\n- \"We therefore tested the hypothesis that CNK3 and IPCEF is required for activation of Arf6 by HGF.\"\n- This is an aim: to test if CNK3/IPCEF are required for the activation of Arf6 by HGF.\n- It does not provide the result of the test (i.e., whether HGF *actually* activates Arf6).\n- Therefore, the relationship itself is being hypothesized/tested, not asserted as a fact.\n\nLet's double check.\n- If I say \"We investigated whether A activates B\", I haven't said A activates B.\n- This sentence says \"We tested the hypothesis that [Mechanism] is required for [Activation of Arf6 by HGF]\".\n- This is very similar to \"We tested whether X activates Y\".\n- It does not assert that HGF activates ARF6. It describes a study to see if certain molecules mediate that activation.\n\nWait, let's look for a direct span.\n- There is no direct span of assertion. The span \"activation of Arf6 by HGF\" is part of the hypothesis being tested.\n\nVerdict should be incorrect.\n\nLet's check for other rules.\n- Grounding: HGF and ARF6 are correct.\n- Relation: Activation.\n- Rule 4: METHODS/AIM framing \"to examine/test whether X Ys Z\" poses the experiment, not support.\n\nThe sentence \"We therefore tested the hypothesis that [X] is required for [Y]\" is an AIM.\n\nFinal check of the evidence: \"We therefore tested the hypothesis that CNK3 and IPCEF is required for activation of Arf6 by HGF.\"\nThis is clearly framing the goal of the study or a specific sub-experiment. It does not provide the outcome.\n\nResult: incorrect.\n\nRelation check: The evidence describes a hypothesis being tested rather than asserting the relationship.\nSupport: null.\nObjection: The evid"
+    },
+    {
+      "label": "gemma_26b_primary:26740#cut3@2434",
+      "readings": {
+        "new": [
+          "incorrect",
+          "medium",
+          0.2
+        ],
+        "old_batch": [
+          null,
+          null,
+          null
+        ],
+        "old_live": [
+          "incorrect",
+          "medium",
+          0.2
+        ],
+        "old_live_baseline": [
+          "incorrect",
+          "medium",
+          0.2
+        ]
+      },
+      "text": "The claim is TNF [Activation] MIR155.\nThe entities are TNF and MIR155.\nThe evidence states: \"Results indicate that miR-155 was slightly induced by TNF-alpha and IL-1beta while its level decreased following TGF-beta stimulation (XREF_FIG).\"\n\n\"miR-155 was slightly induced by TNF-alpha\".\n\"Induced\" in the context of miRNA levels usually refers to expression levels (amount).\nRule 3: \"Activation\"/\"Inhibition\" = a change in the target's activity STATE... NOT a change in its AMOUNT. \"The following are AMOUNT (Increase/DecreaseAmount)... transcription or expression, mRNA/protein levels or abundance...\".\nThe evidence says miR-155 was \"induced\", which in the context of miRNA is an expression/abundance change (Amount).\nHowever, Rule 3 also says: \"A miRNA reducing a target = Inhibition OR DecreaseAmount (accept either; don't reject a miRNA DecreaseAmount claim).\"\nWait, the rule says \"A miRNA reducing a target = Inhibition OR DecreaseAmount\". This is about the miRNA being the agent.\nHere, the miRNA is the target.\nThe claim is TNF [Activation] MIR155.\nThe evidence says TNF-alpha induced miR-155.\n\"Induced\" for a miRNA typically means increased transcription/expression/levels.\nAccording to Rule 3, \"induction\" of expression/levels is an Amount change, not an Activation (activity state) change.\nIs there a licensing form?\nRule 3 says: \"...an Activation/Inhibition claim whose evidence is only about them [Amount] is INCORRECT (objection: amount-not-activity) EVEN when the verb reads 'represses'/'suppresses'/'activates': transcription or expression, mRNA/protein levels or abundance...\".\nThe claim is [Activation]. The evidence is \"induced\" (expression level).\nTherefore, this is an \"amount-not-activity\" objection.\n\nLet's double-check.\nClaim: TNF [Activation] MIR155.\nEvidence: miR-155 was slightly induced by TNF-alpha.\n\"Induced\" for miRNA = IncreaseAmount.\nRule 3 says Amount is NOT Activation.\nVerdict should be incorrect.\n\nWait, let's look at the miRNA rule again: \"A miRNA reducing a target = Inhibition OR DecreaseAmount (accept either; don't reject a miRNA DecreaseAmount claim).\"\nThis rule says if the claim is [Inhibition/Activation] and the evidence is [DecreaseAmount/IncreaseAmount] *when the miRNA is the agent*, it's acceptable.\nBut here, the miRNA is the target.\nThe rule for the target being an amount is: \"The following are AMOUNT (Increase/DecreaseAmount), so an Activation/Inhibition claim whose evidence is onl"
+    },
+    {
+      "label": "gemma_26b_sensitivity:39#cut0@1624",
+      "readings": {
+        "new": [
+          "correct",
+          "medium",
+          0.8
+        ],
+        "old_batch": [
+          null,
+          null,
+          null
+        ],
+        "old_live": [
+          "correct",
+          "medium",
+          0.8
+        ],
+        "old_live_baseline": [
+          "correct",
+          "medium",
+          0.8
+        ]
+      },
+      "text": "The claim is `VCL + RAVER1 [Complex]`.\nThe entities are `VCL` (Vinculin) and `RAVER1`.\n\nLooking at the evidence:\n\"Surprisingly, here we report that metavinculin, unlike vinculin, can bind to raver1 in its closed conformation and that this interaction is permissive for raver1 to bind to vinculin RNA.\"\n\nThe evidence states \"metavinculin ... can bind to raver1\".\nMetavinculin is an isoform/variant of vinculin (VCL).\nBinding between two proteins (metavinculin and raver1) suggests a complex.\n\nLet's check rule 2: \"Family-level claims: if the claim names a protein family (JUN, AKT, ERK, CK2, MAPK, PKA), evidence about any specific member SUPPORTS it\". While VCL/Metavinculin aren't strictly a \"family\" in the sense listed (JUN, etc.), metavinculin is a version of vinculin (VCL).\n\nThe evidence says: \"metavinculin ... can bind to raver1\".\nClaim: VCL + RAVER1 [Complex].\nThis is a direct statement of a physical interaction (binding) between a form of VCL (metavinculin) and RAVER1.\n\nThe relation check should identify this as a direct statement of binding.\nThe support is the exact quote.\nThere are no obvious objections.\n\nOne detail: \"metavinculin, unlike vinculin, can bind to raver1\".\nThis means metavinculin binds raver1, but vinculin (the standard version) does not (or at least is being contrasted).\nHowever, metavinculin is a form of VCL (as seen in the entities line: \"VCL (HGNC: VCL, aliases: MV, VINC, Vinculin, vinculin, Metavinculin, metavinculin)\").\nSince the claim is about VCL, and metavinculin is a type of VCL, the claim is supported.\n\nVerdict should be correct.\n\nRelation check: \"metavinculin (a VCL isofor"
+    },
+    {
+      "label": "gemma_26b_sensitivity:41#cut1@4793",
+      "readings": {
+        "new": [
+          "incorrect",
+          "medium",
+          0.2
+        ],
+        "old_batch": [
+          null,
+          null,
+          null
+        ],
+        "old_live": [
+          "incorrect",
+          "medium",
+          0.2
+        ],
+        "old_live_baseline": [
+          "incorrect",
+          "medium",
+          0.2
+        ]
+      },
+      "text": "The claim is ZBTB16 + RNF112 [Complex].\nThe evidence says: \"We found that Plzf interacted with Znf179 and recruited Znf179 to the nuclear bodies.\"\n\nLet's check the entities:\n- Subject: \"Plzf\". Lookup for \"Plzf\" shows ZBTB16 (score 0.54). The extraction provenance says ZBTB16 is a confirmed alias, but the lookup note says \"Plzf is NOT a known alias\". Regardless, the claim uses ZBTB16 and the evidence uses Plzf. If ZBTB16 is the intended target, this is likely a match.\n- Object: \"Znf179\". Lookup for \"Znf179\" shows RNF112 (score 0.502). The extraction provenance flags this as LOW CONFIDENCE and notes it's not a confirmed alias. The claim uses RNF112.\n\nThe relation is [Complex].\nThe evidence says \"Plzf interacted with Znf179\".\n\"Interacted with\" supports a complex (physical binding/interaction).\n\nNow, let's check the grounding.\nThe \"Extraction provenance\" says:\n- Subject: \"Plzf\" -> ZBTB16 (confirmed alias).\n- Object: \"Znf179\" -> RNF112 (LOW CONFIDENCE, gilda: 0.50 — not a confirmed alias).\n\nThe \"Entity database lookups\" confirm:\n- \"Plzf\" -> ZBTB16\n- \"Znf179\" -> RNF112\n\nDespite the \"LOW CONFIDENCE\" and \"NOT a known alias\" notes in the lookup, the evidence explicitly states \"Plzf interacted with Znf179\". The claim is mapping these to their canonical/other names (ZBTB16 and RNF112).\nIf the reader/NLP is mapping \"Plzf\" to ZBTB16 and \"Znf179\" to RNF112, and the evidence says they interact, the claim is correct based on those mappings.\n\nWait, let's look at the \"Extraction provenance\" again.\n\"Object: NLP extracted 'Znf179' -> mapped to RNF112 (LOW CONFIDENCE, gilda: 0.50 — not a confirmed alias)\".\n\"Subject: NLP extracted 'Plzf' -> ZBTB16 (confirmed alias)\".\n\nThe evidence clearly states \"Plzf interacted with Znf179\".\nIf we accept the mappings provided in the provenance (even if the lookup says \"not a known alias\"), the relation is \"ZBTB16 interacts with RNF112\".\nThe evidence provides direct support for this interaction between the identified entities.\n\nIs there a mismatch?\nClaim: ZBTB16 + RNF112.\nEvidence: Plzf + Znf179.\nMappings: Plzf=ZBTB16, Znf179=RNF112.\nIf the mappings are correct, the claim is supported.\nThe prompt says: \"treat MISMATCH / LOW_CONFIDENCE as strong signals the claim is probably incorrect\".\nThe provenance says the mapping for the object (Znf179 -> RNF112) is LOW_CONFIDENCE.\nThe lookup says \"Znf179 is NOT a known alias for RNF112\".\n\nIf the grounding is failed, it's incorrect.\nLet's look at the claim again. ZBTB16 + RNF112.\nEvidence: \"Plzf interacted with Znf179\".\nIf Znf179 is not RNF112, then the claim is incorrect.\nThe Gilda lookup for \"Znf179\" suggests RNF112 is the top candidate but notes it's not a known alias.\nIn biomedical mining, sometimes names change or are slightly different.\nHowever, the rule 6 says: \"a flagged MISMATCH means the reader's text does not map to the claim entity — a strong incorrect signal unless the evidence independently names it.\"\nThe extraction provenance flags the object mapping as LOW_CONFIDENCE.\n\nIs there any other way \"Znf179\" relates to \"RNF112\"?\nZNf179 is an alias for RNF112? The lookup says \"Znf179 is NOT a known alias for this gene\".\nThe extraction provenance says \"not a confirmed alias\".\nIf the mapping is untrustworthy, the claim is likely incorrect.\n\nWait, let's look closer at the evidence: \"Plzf interacted with Znf179\".\nIf the claim is ZBTB16 + RNF112, and we cannot be sure Znf179 = RNF112, then the claim's object is ungrounded or mismatched.\nThe provenance says \"LOW CONFIDENCE\".\nTherefore, the verdict should be incorrect.\n\nLet's double check.\nClaim: ZBTB16 (Subject) + RNF112 (Object).\nEvidence: Plzf (Subject) + Znf179 (Object).\nIf Plzf = ZBTB16 and Znf179 = RNF112, then it's correct.\nBut the provenance warns \"LOW CONFIDENCE\" and the lookup says \"not a known alias\".\nRule 6: \"a flagged MISMATCH means the reader's text does not map to the claim entity — a strong incorrect signal\".\nThe provenance doesn't explicitly say \"MISMATCH\", it says \"LOW CONFIDENCE\" and \"not a confirmed alias\".\nHowever, the lookup also says \"not a known alias\".\nUsually, in these tasks, if the provenance/lookup provides these warnings, it's a signal to reject.\n\nLet's re-read Rule 6. \"a flagged MISMATCH means the reader's text does not map to the claim entity — a strong incorrect signal unless the evidence independently names it.\"\nThe extraction provenance *does* say the object is mapped to RNF112, but with LOW_CONFIDENCE.\n\nIs it possible Znf179 and RNF112 are the same?\nSearching my internal knowledge: Znf179 is indeed sometimes referred to as RNF112 (or it's a synonym). But the prompt instructions tell me to rely on the provided lookups.\nThe lookups say \"Znf179 is NOT a known alias for RNF112\".\nThe provenance says \"not a confirmed alias\".\nThe guidance says \"treat MISMATCH / LOW_CONFIDENCE a"
+    },
+    {
+      "label": "gemma_31b_primary:27223#cut0@2624",
+      "readings": {
+        "new": [
+          "incorrect",
+          "medium",
+          0.2
+        ],
+        "old_batch": [
+          null,
+          null,
+          null
+        ],
+        "old_live": [
+          "incorrect",
+          "medium",
+          0.2
+        ],
+        "old_live_baseline": [
+          "incorrect",
+          "medium",
+          0.2
+        ]
+      },
+      "text": "The claim is that CD274 (PD-L1) inhibits IFNG (IFN-gamma).\nThe evidence states: \"stimulation of PD-L1 expression in vitro could attenuate the stimulatory ability on allogeneic T cell proliferation and its cytokine production, including IFN-gamma and IL-2...\"\n\"Attenuate... cytokine production\" refers to reducing the amount of IFN-gamma produced.\nPer Rule 3, \"Activation\"/\"Inhibition\" refers to a change in activity STATE, not AMOUNT. However, Rule 3 also says: \"A miRNA reducing a target = Inhibition OR DecreaseAmount (accept either; don't reject a miRNA DecreaseAmount claim).\"\nDoes this \"attenuation of cytokine production\" count as Inhibition?\nUsually, in the context of cytokines, reducing the *production* (amount) is seen as the primary effect. The claim is `[Inhibition]`.\nWait, Rule 3 says: \"amount-not-activity... even when the verb reads 'represses'/'suppresses'/'activates': transcription or expression, mRNA/protein levels or abundance...\".\n\"Attenuate... cytokine production\" is a change in the amount of cytokine released/produced.\nIs IFN-gamma (IFNG) acting as an entity whose activity is inhibited, or is the *production* of the protein being inhibited?\nIf it's \"production\", it's an amount change.\nHowever, \"IFN-gamma\" is the *product* here. CD274 isn't inhibiting the function of the IFN-gamma protein itself (like a neutralizing antibody would); it's inhibiting the process/cell that makes it.\nTherefore, this is a \"DecreaseAmount\" type of relation (reducing the amount of cytokine produced).\nIs \"Inhibition\" acceptable for a cytokine's production?\nRule 3: \"The following are AMOUNT (Increase/DecreaseAmount), so an Activation/Inhibition claim whose evidence is only about them is INCORRECT (objection: amount-not-activity)... transcription or expression, mRNA/protein levels or abundance...\"\nAttenuating production is clearly an amount change.\nTherefore, \"Inhibition\" is incorrect; it should be \"DecreaseAmount\".\n\nWait, let me double check the rules.\nRule 3: \"... amount-not-activity... transcription or expression, mRNA/protein levels or abundance...\".\n\"Cytokine production\" is essentially the expression and secretion of the protein.\nSo, CD274 inhibits the *production* of IFNG.\nThe claim is `CD274 [Inhibition] IFNG`.\nSince it's about the production (amount), not the activity of the IFNG protein itself, the verdict should be incorrect.\n```json\n{\"relation_check\": \"no licensing form: 'attenuate the stimulatory ability... and its cytokine production, including IFN-gamma' refers to a reduction in the amount of cytokine produced, not an inhibition of the IFN-gamma protein's activity.\", \"support\": n"
+    }
+  ],
+  "population": {
+    "census": {
+      "err:BedrockChatConnectionError": 185,
+      "err:BedrockChatTransportError": 181,
+      "err:BedrockResponsesConnectionError": 326,
+      "err:BedrockResponsesTransportError": 646,
+      "err:InterruptedAfterDurableProviderEvidence": 83,
+      "err:InvalidModelOutput": 40,
+      "err:SpendReservationBreach": 1,
+      "err:TimeoutError": 191,
+      "error": 1653,
+      "scored": 236386,
+      "scored_llm_empty_raw_text": 1
+    },
+    "files": 15,
+    "mutants": {
+      "considered": 16756,
+      "off_grid": 11645,
+      "pairs": {
+        "old_batch!=new": 6,
+        "old_live!=new": 0,
+        "old_live!=old_batch": 6,
+        "old_live_baseline!=new": 0
+      },
+      "rows": 16756
+    },
+    "stored": {
+      "considered": 228812,
+      "off_grid": 0,
+      "pairs": {
+        "old_batch!=new": 0,
+        "old_live!=new": 0,
+        "old_live!=old_batch": 0,
+        "old_live_baseline!=new": 0
+      },
+      "rows": 238039
+    }
+  }
+}

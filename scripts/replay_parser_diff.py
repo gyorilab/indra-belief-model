@@ -274,7 +274,7 @@ PAIRS = (
 class Diff:
     """Counts + a handful of examples per divergence class."""
 
-    def __init__(self) -> None:
+    def __init__(self, examples_cap: int = EXAMPLES_PER_CLASS) -> None:
         self.rows = 0
         self.considered = 0
         self.pair_counts: Counter[str] = Counter()
@@ -282,6 +282,10 @@ class Diff:
         self.examples: dict[tuple, list] = {}
         self.fabricated = 0            # old_live wrote a score the grid has no cell for
         self.fabricated_examples: list = []
+        # How many examples per class to keep. The report shows five; a caller
+        # that wants EVERY divergence (tests/test_replay_parser_diff.py freezes
+        # them) raises it. Counts never depend on this.
+        self._examples_cap = examples_cap
 
     def observe(self, text: str, label: str = "") -> None:
         self.considered += 1
@@ -292,14 +296,17 @@ class Diff:
                 self.pair_counts[f"{left}!={right}"] += 1
                 self.classes[key] += 1
                 bucket = self.examples.setdefault(key, [])
-                if len(bucket) < EXAMPLES_PER_CLASS:
-                    bucket.append((label, text[-240:]))
+                if len(bucket) < self._examples_cap:
+                    # The FULL text is kept; the report tail-slices at the print
+                    # site. A parser is a function of the whole reply, so an
+                    # example truncated at store time cannot be re-read.
+                    bucket.append((label, text))
         live_score = read["old_live"][2]
         if live_score not in _RETIRED_GRID.values():
             self.fabricated += 1
-            if len(self.fabricated_examples) < EXAMPLES_PER_CLASS:
+            if len(self.fabricated_examples) < self._examples_cap:
                 self.fabricated_examples.append(
-                    (label, read["old_live"][:2], read["new"], text[-240:]))
+                    (label, read["old_live"][:2], read["new"], text))
 
     def merge(self, other: "Diff") -> None:
         self.rows += other.rows
@@ -309,10 +316,10 @@ class Diff:
         self.fabricated += other.fabricated
         for key, bucket in other.examples.items():
             mine = self.examples.setdefault(key, [])
-            mine.extend(bucket[: max(0, EXAMPLES_PER_CLASS - len(mine))])
+            mine.extend(bucket[: max(0, self._examples_cap - len(mine))])
         self.fabricated_examples.extend(
             other.fabricated_examples[
-                : max(0, EXAMPLES_PER_CLASS - len(self.fabricated_examples))]
+                : max(0, self._examples_cap - len(self.fabricated_examples))]
         )
 
     def summary(self) -> str:
@@ -320,6 +327,20 @@ class Diff:
                          for left, right in PAIRS)
         return (f"rows={self.rows} considered={self.considered} {pairs} "
                 f"off_grid_live_score={self.fabricated}")
+
+    def totals(self) -> dict:
+        """The same numbers `summary()` prints, as data.
+
+        Every PAIRS key is present even at zero — the zeroes ARE the claim, and
+        a `dict(self.pair_counts)` would drop them.
+        """
+        return {
+            "rows": self.rows,
+            "considered": self.considered,
+            "pairs": {f"{left}!={right}": self.pair_counts.get(f"{left}!={right}", 0)
+                      for left, right in PAIRS},
+            "off_grid": self.fabricated,
+        }
 
 
 def _attempt_files() -> list[Path]:
@@ -330,9 +351,10 @@ def _attempt_files() -> list[Path]:
     )
 
 
-def _scan(path: Path, rng: random.Random) -> tuple[Diff, Diff, Counter]:
+def _scan(path: Path, rng: random.Random, *,
+          examples_cap: int = EXAMPLES_PER_CLASS) -> tuple[Diff, Diff, Counter]:
     """One pass: Part A over every scored LLM row, plus a reservoir for Part B."""
-    stored, mutants = Diff(), Diff()
+    stored, mutants = Diff(examples_cap), Diff(examples_cap)
     census: Counter[str] = Counter()
     reservoir: list[tuple[str, str]] = []
     seen = 0
@@ -372,21 +394,46 @@ def _scan(path: Path, rng: random.Random) -> tuple[Diff, Diff, Counter]:
     return stored, mutants, census
 
 
+def run(files: list[Path] | None = None, *,
+        examples_cap: int = EXAMPLES_PER_CLASS) -> dict:
+    """The whole scan, as values. `main()` is this plus printing.
+
+    Returns the two totalled `Diff`s, the row census, the scanned file list and
+    the per-file `(relative path, stored, mutants)` triples in scan order — so
+    the report re-expresses these numbers rather than re-deriving them, and a
+    test can assert on the same objects the report was printed from.
+    """
+    paths = list(_attempt_files() if files is None else files)
+    total_stored, total_mutants = Diff(examples_cap), Diff(examples_cap)
+    total_census: Counter[str] = Counter()
+    per_file: list[tuple[str, Diff, Diff]] = []
+    for path in paths:
+        rng = random.Random(SEED)
+        stored, mutants, census = _scan(path, rng, examples_cap=examples_cap)
+        total_stored.merge(stored)
+        total_mutants.merge(mutants)
+        total_census.update(census)
+        per_file.append((str(path.relative_to(ROOT)), stored, mutants))
+    return {
+        "files": [str(path.relative_to(ROOT)) for path in paths],
+        "per_file": per_file,
+        "stored": total_stored,
+        "mutants": total_mutants,
+        "census": total_census,
+    }
+
+
 def main() -> int:
     files = _attempt_files()
     if not files:
         print("no data/comparison*/runs/*/attempts.jsonl found", file=sys.stderr)
         return 1
-    total_stored, total_mutants = Diff(), Diff()
-    total_census: Counter[str] = Counter()
+    result = run(files)
+    total_stored, total_mutants = result["stored"], result["mutants"]
+    total_census = result["census"]
     print(f"# {len(files)} attempt logs\n")
-    for path in files:
-        rng = random.Random(SEED)
-        stored, mutants, census = _scan(path, rng)
-        total_stored.merge(stored)
-        total_mutants.merge(mutants)
-        total_census.update(census)
-        print(f"{path.relative_to(ROOT)}")
+    for name, stored, mutants in result["per_file"]:
+        print(f"{name}")
         print(f"  A stored  {stored.summary()}")
         print(f"  B mutants {mutants.summary()}")
 
@@ -397,13 +444,13 @@ def main() -> int:
         for key, count in diff.classes.most_common():
             pair, left, right = key
             print(f"\n  [{pair}] x{count}: {left} vs {right}")
-            for label, tail in diff.examples[key]:
-                print(f"    {label}: ...{tail!r}")
+            for label, text in diff.examples[key]:
+                print(f"    {label}: ...{text[-240:]!r}")
         if diff.fabricated:
             print(f"\n  [old_live wrote an off-grid score] x{diff.fabricated}")
-            for label, live_pair, new_read, tail in diff.fabricated_examples:
+            for label, live_pair, new_read, text in diff.fabricated_examples:
                 print(f"    {label}: live={live_pair} new={new_read}")
-                print(f"      ...{tail!r}")
+                print(f"      ...{text[-240:]!r}")
 
     print(f"\n{'=' * 72}\nROW CENSUS\n{'=' * 72}")
     for key, count in sorted(total_census.items()):
