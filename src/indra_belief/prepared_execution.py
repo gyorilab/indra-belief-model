@@ -40,8 +40,24 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Protocol, Sequence
 
-from indra_belief.comparison.contracts import ContractError
 from indra_belief.hashing import canonical_sha256
+
+
+class ContractError(ValueError):
+    """A committed contract no longer holds.
+
+    Defined here rather than in `comparison.contracts` for the same reason this
+    module owns the request: BOTH sides raise it and neither may own it.
+    `ReplayError` below is a ContractError, and a base class may not live deeper
+    in the tree than the subclass that needs it — reaching into the comparison
+    harness for it was the one import that ran core -> research, in a module
+    whose own Home note already argues the rule it was breaking.
+
+    `comparison.contracts` re-exports the name, exactly as `comparison.replay`
+    re-exports `ReplayError`, so every `from ...comparison.contracts import
+    ContractError`, every `except ContractError`, `RunnerError(ContractError)`
+    and every `pytest.raises(ContractError)` still binds THIS class.
+    """
 
 # The main call's `kind` is a function of the route and nothing else. A route
 # absent from this mapping is deterministic — it reaches no model at all.

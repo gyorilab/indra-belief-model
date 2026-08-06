@@ -23,6 +23,15 @@ from indra_belief.hashing import (
     canonical_sha256,
 )
 
+# `ContractError` moved to `indra_belief.prepared_execution` and is re-exported
+# here. It is the base of that module's `ReplayError`, so owning it here made the
+# serving kernel import the comparison harness — the one core -> research edge in
+# the tree, now guarded by scripts/check_import_boundary.py. The name is
+# unchanged and so is the class: every importer of
+# `comparison.contracts.ContractError`, every `except ContractError`, and
+# `runner.RunnerError` still bind the same object.
+from indra_belief.prepared_execution import ContractError
+
 
 SHA256 = re.compile(r"[0-9a-f]{64}")
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -35,9 +44,6 @@ AMENDABLE_FIELDS: dict[str, tuple[int, int]] = {
     "max_attempts": (5, MAX_ATTEMPTS),
     "workers": (6, MAX_WORKERS),
 }
-
-
-class ContractError(ValueError): pass
 
 
 def _fail(message: str) -> NoReturn:
