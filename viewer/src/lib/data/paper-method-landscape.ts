@@ -1,4 +1,4 @@
-import { fail, record } from './paper-validate.ts';
+import { fail, record, text } from './paper-validate.ts';
 /**
  * Strict display adapter for the checksum-pinned method summaries published with
  * the 2023 INDRA assembly paper.
@@ -135,11 +135,6 @@ function exactKeys(value: UnknownRecord, keys: readonly string[], context: strin
 	}
 }
 
-function string(value: unknown, context: string): string {
-	if (typeof value !== 'string' || value.length === 0) fail(context, 'expected a non-empty string');
-	return value;
-}
-
 function integer(value: unknown, context: string, minimum = 0): number {
 	if (typeof value !== 'number' || !Number.isInteger(value) || value < minimum) {
 		fail(context, `expected an integer >= ${minimum}`);
@@ -147,7 +142,7 @@ function integer(value: unknown, context: string, minimum = 0): number {
 	return value;
 }
 
-function finite(value: unknown, context: string, minimum: number, maximum: number): number {
+function numberInRange(value: unknown, context: string, minimum: number, maximum: number): number {
 	if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
 		fail(context, `expected a finite number in [${minimum}, ${maximum}]`);
 	}
@@ -194,7 +189,7 @@ function parseMethod(value: unknown, context: string): PaperMethodRow {
 		],
 		context
 	);
-	const tableId = string(obj.table_id, `${context}.table_id`);
+	const tableId = text(obj.table_id, `${context}.table_id`);
 	if (tableId !== 'paper_table_6' && tableId !== 'paper_not_table_6') {
 		fail(`${context}.table_id`, 'expected paper_table_6 or paper_not_table_6');
 	}
@@ -203,11 +198,11 @@ function parseMethod(value: unknown, context: string): PaperMethodRow {
 	if (cell !== expectedCell) fail(`${context}.notebook_cell_index`, `must be ${expectedCell}`);
 	const row = integer(obj.row, `${context}.row`, 1);
 	const expectedId = `${tableId}:${String(row).padStart(2, '0')}`;
-	const methodId = string(obj.method_id, `${context}.method_id`);
+	const methodId = text(obj.method_id, `${context}.method_id`);
 	if (methodId !== expectedId) fail(`${context}.method_id`, `must be ${expectedId}`);
 	const folds = integer(obj.fold_count, `${context}.fold_count`, 1);
 	if (folds !== 10) fail(`${context}.fold_count`, 'must be 10');
-	const method = string(obj.method, `${context}.method`);
+	const method = text(obj.method, `${context}.method`);
 	const configuration = sliceOf(method, `${context}.method`);
 	return {
 		method_id: methodId,
@@ -219,13 +214,13 @@ function parseMethod(value: unknown, context: string): PaperMethodRow {
 		notebook_cell_index: cell as 47 | 48,
 		row,
 		fold_count: 10,
-		fold_mean_trapezoidal_pr_auc: finite(
+		fold_mean_trapezoidal_pr_auc: numberInRange(
 			obj.fold_mean_trapezoidal_pr_auc,
 			`${context}.fold_mean_trapezoidal_pr_auc`,
 			0,
 			1
 		),
-		fold_population_sd: finite(obj.fold_population_sd, `${context}.fold_population_sd`, 0, 1)
+		fold_population_sd: numberInRange(obj.fold_population_sd, `${context}.fold_population_sd`, 0, 1)
 	};
 }
 

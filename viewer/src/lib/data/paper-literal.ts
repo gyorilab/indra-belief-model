@@ -47,7 +47,7 @@
  * and not as a number that is wrong.
  */
 
-import { fail, record, number, unit, text, positiveInteger } from './paper-validate.ts';
+import { fail, number, positiveInteger, record, unit } from './paper-validate.ts';
 import { validateApDecomposition, type ApDecomposition } from './paper-ap-decomposition.ts';
 
 // ---------------------------------------------------------------------------
@@ -224,9 +224,10 @@ export const PAPER_LITERAL_ARM_SPECS: readonly PaperLiteralArmSpec[] = [
 // import cycle with paper-ap-decomposition.ts. Re-exported below so the 6
 // consumers that import them from here keep working.
 //
-// The history that matters is in paper-interval.ts: this replaced a boolean named
-// `excludesZero` whose two-way branch shipped SIX times, most recently printing
-// "Clears zero." over an interval of −0.0256 to −0.0061.
+// The history — why three classes and not a boolean, and the six times a two-way
+// branch on `excludesZero` shipped — is in paper-interval.ts's own docblock. It
+// was not, until this comment was checked: the redirect pointed at a file that
+// did not carry it, which is worse than no redirect.
 // ---------------------------------------------------------------------------
 import { standingOfBounds, type Standing } from './paper-interval.ts';
 export { standingOfBounds, type Standing };

@@ -1,4 +1,4 @@
-import { budget, fail, record, number, unit, text, positiveInteger } from './paper-validate.ts';
+import { boolean, budget, fail, number, positiveInteger, record, text, unit } from './paper-validate.ts';
 /**
  * Typed data contract for the ROBUSTNESS surface: how the head-to-head margin
  * behaves under two standard checks that a pointwise interval cannot answer.
@@ -472,10 +472,6 @@ type UnknownRecord = Record<string, unknown>;
 
 
 
-function boolean(value: unknown, context: string): boolean {
-	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
-	return value;
-}
 
 /** Exactly `want`, or the figure gates. Used where a false value would relabel
  *  the sensitivity panel as the primary one. */

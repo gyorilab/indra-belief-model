@@ -1,7 +1,11 @@
 /**
  * THE {shipped, plain} TWIN KIT — pairing, anchoring, gating. One mechanism.
  *
- * A LEAF MODULE: imports only the validator kit, so any loader may depend on it.
+ * A TRUE LEAF: it imports NOTHING. An earlier version pulled in `fail`, `record`
+ * and `text` from the validator kit and used none of them — the only two `text(`
+ * occurrences in this file are inside comments — so its own "imports only the
+ * validator kit" line described an edge that existed for no reason. `tsconfig`
+ * sets no `noUnusedLocals`, so nothing would ever have said so.
  *
  * WHY THIS IS ITS OWN FILE. These helpers lived in `paper-literal.ts`, which is
  * also the arm registry and was, until today, the interval classifier as well —
@@ -26,8 +30,6 @@
  * fidelity — a plain half that drops a number, a negation or a named model its
  * shipped half carries is a failure.
  */
-import { fail, record, text } from './paper-validate.ts';
-
 /**
  * A SHIPPED STRING AND THE PLAIN SENTENCE THAT REPLACES IT ON SCREEN.
  *

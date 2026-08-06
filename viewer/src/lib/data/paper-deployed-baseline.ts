@@ -1,4 +1,4 @@
-import { budget, fail, record, unit, text, nonNegativeInteger, positiveInteger } from './paper-validate.ts';
+import { boolean, budget, fail, nonNegativeInteger, number, positiveInteger, record, text, unit } from './paper-validate.ts';
 /**
  * Typed data contract for AGAINST INDRA'S OWN BELIEF — the replication figure.
  *
@@ -1268,20 +1268,10 @@ function scopeProse(scopeId: string, note: string, context: string): ShippedPros
 	return { shipped: note, plain };
 }
 
-function finite(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		fail(context, 'expected a finite number');
-	}
-	return value;
-}
 
 
 
 
-function boolean(value: unknown, context: string): boolean {
-	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
-	return value;
-}
 
 
 function optionalText(value: unknown, context: string): string | null {
@@ -1295,10 +1285,10 @@ function close(got: number, want: number, context: string, message: string): voi
 
 function parseSpread(value: unknown, context: string): DeployedBaselineSpread {
 	const obj = record(value, context);
-	const min = finite(obj.min, `${context}.min`);
-	const max = finite(obj.max, `${context}.max`);
-	const mean = finite(obj.mean, `${context}.mean`);
-	const median = finite(obj.median, `${context}.median`);
+	const min = number(obj.min, `${context}.min`);
+	const max = number(obj.max, `${context}.max`);
+	const mean = number(obj.mean, `${context}.mean`);
+	const median = number(obj.median, `${context}.median`);
 	// A census that does not bracket its own mean is not a census.
 	if (!(min <= mean && mean <= max)) fail(context, 'the mean must lie inside [min, max]');
 	if (!(min <= median && median <= max)) fail(context, 'the median must lie inside [min, max]');
@@ -1323,8 +1313,8 @@ function parseSpread(value: unknown, context: string): DeployedBaselineSpread {
 
 function parseBootstrap(value: unknown, context: string): DeployedBaselineBootstrap {
 	const obj = record(value, context);
-	const low = finite(obj.ci95_low, `${context}.ci95_low`);
-	const high = finite(obj.ci95_high, `${context}.ci95_high`);
+	const low = number(obj.ci95_low, `${context}.ci95_low`);
+	const high = number(obj.ci95_high, `${context}.ci95_high`);
 	if (!(low <= high)) fail(context, 'ci95_low must not exceed ci95_high');
 	const nValid = positiveInteger(obj.n_valid_resamples, `${context}.n_valid_resamples`);
 	const nBoot = positiveInteger(obj.n_bootstrap, `${context}.n_bootstrap`);
@@ -1352,7 +1342,7 @@ function parseVariant(
 	const obj = record(value, context);
 	const variantKey = text(obj.key, `${context}.key`);
 	const auroc = unit(obj.auroc, `${context}.auroc`);
-	const deltaAuroc = finite(obj.delta_auroc, `${context}.delta_auroc`);
+	const deltaAuroc = number(obj.delta_auroc, `${context}.delta_auroc`);
 	close(
 		deltaAuroc,
 		gateAuroc - auroc,
@@ -1378,7 +1368,7 @@ function parseVariant(
 		const x = record(obj.cross_check, xc);
 		const siblingAuroc = unit(x.sibling_auroc, `${xc}.sibling_auroc`);
 		const thisAuroc = unit(x.this_auroc, `${xc}.this_auroc`);
-		const delta = finite(x.delta_vs_sibling, `${xc}.delta_vs_sibling`);
+		const delta = number(x.delta_vs_sibling, `${xc}.delta_vs_sibling`);
 		close(thisAuroc, auroc, `${xc}.this_auroc`, 'must be the variant’s own AUROC');
 		close(delta, thisAuroc - siblingAuroc, `${xc}.delta_vs_sibling`, 'must equal this minus the sibling');
 		// Reading INDRA's own resource must never have produced an EASIER
@@ -1689,7 +1679,7 @@ function parsePanel(value: unknown, index: number): DeployedBaselinePanel {
 		fail(`${context}.incumbent.fitted`, 'must be the fitted flag of the variant it drew');
 	}
 	// The rule's price, and it must be the price the variants imply.
-	const selectionCost = finite(obj.selection_cost_auroc, `${context}.selection_cost_auroc`);
+	const selectionCost = number(obj.selection_cost_auroc, `${context}.selection_cost_auroc`);
 	close(
 		selectionCost,
 		strongest.auroc - weakest.auroc,
@@ -1700,13 +1690,13 @@ function parsePanel(value: unknown, index: number): DeployedBaselinePanel {
 		fail(`${context}.weakest_variant_key`, 'must name the weakest sourceable form');
 	}
 	close(
-		finite(obj.weakest_variant_auroc, `${context}.weakest_variant_auroc`),
+		number(obj.weakest_variant_auroc, `${context}.weakest_variant_auroc`),
 		weakest.auroc,
 		`${context}.weakest_variant_auroc`,
 		'must equal the weakest variant’s AUROC'
 	);
 
-	const deltaAuroc = finite(obj.delta_auroc, `${context}.delta_auroc`);
+	const deltaAuroc = number(obj.delta_auroc, `${context}.delta_auroc`);
 	close(
 		deltaAuroc,
 		gateAuroc - incumbentAuroc,
@@ -1739,8 +1729,8 @@ function parsePanel(value: unknown, index: number): DeployedBaselinePanel {
 			fail(`${rc}.key`, `expected ${DEPLOYED_BASELINE_ARM_KEYS.research}`);
 		}
 		const rAuroc = unit(r.auroc, `${rc}.auroc`);
-		const gateMinus = finite(r.delta_auroc_gate_minus_research, `${rc}.delta_auroc_gate_minus_research`);
-		const researchMinus = finite(
+		const gateMinus = number(r.delta_auroc_gate_minus_research, `${rc}.delta_auroc_gate_minus_research`);
+		const researchMinus = number(
 			r.delta_auroc_research_minus_incumbent,
 			`${rc}.delta_auroc_research_minus_incumbent`
 		);
@@ -1776,7 +1766,7 @@ function parsePanel(value: unknown, index: number): DeployedBaselinePanel {
 		const sc = `${context}.gate_sensitivity`;
 		const s = record(obj.gate_sensitivity, sc);
 		const sAuroc = unit(s.auroc, `${sc}.auroc`);
-		const sDelta = finite(s.delta_auroc, `${sc}.delta_auroc`);
+		const sDelta = number(s.delta_auroc, `${sc}.delta_auroc`);
 		close(sDelta, sAuroc - incumbentAuroc, `${sc}.delta_auroc`, 'must equal this variant − incumbent');
 		const sNoteProse = anchoredShippedProse(
 			text(s.note, `${sc}.note`),
@@ -1802,7 +1792,7 @@ function parsePanel(value: unknown, index: number): DeployedBaselinePanel {
 		const cc = `${context}.evidence_matched_control`;
 		const c = record(obj.evidence_matched_control, cc);
 		const cAuroc = unit(c.auroc, `${cc}.auroc`);
-		const gap = finite(c.delta_auroc_incumbent_minus_control, `${cc}.delta_auroc_incumbent_minus_control`);
+		const gap = number(c.delta_auroc_incumbent_minus_control, `${cc}.delta_auroc_incumbent_minus_control`);
 		close(gap, incumbentAuroc - cAuroc, `${cc}.delta_auroc_incumbent_minus_control`, 'must equal incumbent − control');
 		if (boolean(c.at_or_below_chance, `${cc}.at_or_below_chance`) !== cAuroc <= DEPLOYED_BASELINE_AXIS_MIN) {
 			fail(`${cc}.at_or_below_chance`, 'must be the comparison it reports, not a claim');
@@ -2156,8 +2146,8 @@ export function validateDeployedBaseline(raw: unknown): DeployedBaseline {
 	const rc = `${context}.replication`;
 	const rep = record(obj.replication, rc);
 	const deltas = panels.map((p) => p.deltaAuroc);
-	const deltaMin = finite(rep.delta_min, `${rc}.delta_min`);
-	const deltaMax = finite(rep.delta_max, `${rc}.delta_max`);
+	const deltaMin = number(rep.delta_min, `${rc}.delta_min`);
+	const deltaMax = number(rep.delta_max, `${rc}.delta_max`);
 	close(deltaMin, Math.min(...deltas), `${rc}.delta_min`, 'must be the minimum panel delta');
 	close(deltaMax, Math.max(...deltas), `${rc}.delta_max`, 'must be the maximum panel delta');
 	const nFavoring = nonNegativeInteger(rep.n_panels_favoring_gate, `${rc}.n_panels_favoring_gate`);
@@ -2191,7 +2181,7 @@ export function validateDeployedBaseline(raw: unknown): DeployedBaseline {
 	if (largestAtTop !== (largest.deltaAuroc === Math.max(...deltas))) {
 		fail(`${rc}.largest_panel_is_at_top_of_range`, 'must be the comparison it reports, not a claim');
 	}
-	const costMax = finite(rep.selection_cost_auroc_max, `${rc}.selection_cost_auroc_max`);
+	const costMax = number(rep.selection_cost_auroc_max, `${rc}.selection_cost_auroc_max`);
 	close(
 		costMax,
 		Math.max(...panels.map((p) => p.selectionCostAuroc)),
@@ -2205,12 +2195,12 @@ export function validateDeployedBaseline(raw: unknown): DeployedBaseline {
 	// sentence on the page rests on a number nothing checks.
 	const readMeans = panels.map((p) => p.heterogeneity.evidenceReadsPerStatement.mean);
 	const singleShares = panels.map((p) => p.heterogeneity.evidenceReadsPerStatement.shareSingle);
-	const readMin = finite(rep.reads_per_statement_mean_min, `${rc}.reads_per_statement_mean_min`);
-	const readMax = finite(rep.reads_per_statement_mean_max, `${rc}.reads_per_statement_mean_max`);
+	const readMin = number(rep.reads_per_statement_mean_min, `${rc}.reads_per_statement_mean_min`);
+	const readMax = number(rep.reads_per_statement_mean_max, `${rc}.reads_per_statement_mean_max`);
 	close(readMin, Math.min(...readMeans), `${rc}.reads_per_statement_mean_min`, 'must be the thinnest panel’s mean');
 	close(readMax, Math.max(...readMeans), `${rc}.reads_per_statement_mean_max`, 'must be the densest panel’s mean');
 	if (!(readMin > 0)) fail(`${rc}.reads_per_statement_mean_min`, 'a fold span needs a positive denominator');
-	const foldSpan = finite(rep.evidence_regime_fold_span, `${rc}.evidence_regime_fold_span`);
+	const foldSpan = number(rep.evidence_regime_fold_span, `${rc}.evidence_regime_fold_span`);
 	close(foldSpan, readMax / readMin, `${rc}.evidence_regime_fold_span`, 'must be the ratio of the two extremes');
 	const singleMin = unit(rep.share_single_evidence_min, `${rc}.share_single_evidence_min`);
 	const singleMax = unit(rep.share_single_evidence_max, `${rc}.share_single_evidence_max`);
@@ -2299,7 +2289,7 @@ export function validateDeployedBaseline(raw: unknown): DeployedBaseline {
 			deltaMin,
 			deltaMax,
 			largestPanelKey: largest.key,
-			largestPanelDelta: finite(rep.largest_panel_delta, `${rc}.largest_panel_delta`),
+			largestPanelDelta: number(rep.largest_panel_delta, `${rc}.largest_panel_delta`),
 			largestPanelIsAtTopOfRange: largestAtTop,
 			selectionCostAurocMax: costMax,
 			readsPerStatementMeanMin: readMin,

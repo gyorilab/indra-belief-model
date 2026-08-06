@@ -1,4 +1,4 @@
-import { fail, record, unit, text, nonNegativeInteger, positiveInteger } from './paper-validate.ts';
+import { boolean, fail, nonNegativeInteger, number, positiveInteger, record, text, unit } from './paper-validate.ts';
 /**
  * Typed data contract for the FRAMING CORRECTION panel — /paper's beat 2.
  *
@@ -605,20 +605,10 @@ type UnknownRecord = Record<string, unknown>;
 
 
 
-function finite(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		fail(context, 'expected a finite number');
-	}
-	return value;
-}
 
 
 
 
-function boolean(value: unknown, context: string): boolean {
-	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
-	return value;
-}
 
 
 function textList(value: unknown, context: string): string[] {
@@ -801,7 +791,7 @@ function parseSubtractive(value: unknown, context: string, panelN: number): Fram
 		if (nAtExactlyZero + nNonzero !== panelN) {
 			fail(armContext, 'n_at_exactly_zero + n_nonzero must equal the panel size');
 		}
-		const maxAbove = finite(arm.max_belief_above_noisy_or, `${armContext}.max_belief_above_noisy_or`);
+		const maxAbove = number(arm.max_belief_above_noisy_or, `${armContext}.max_belief_above_noisy_or`);
 		if (maxAbove > 0) {
 			fail(`${armContext}.max_belief_above_noisy_or`, 'must not be positive');
 		}
@@ -849,7 +839,7 @@ function parseSubtractive(value: unknown, context: string, panelN: number): Fram
 		arms,
 		nComparisons,
 		nExceedingNoisyOr: 0,
-		maxBeliefAboveNoisyOr: finite(obj.max_belief_above_noisy_or, `${context}.max_belief_above_noisy_or`),
+		maxBeliefAboveNoisyOr: number(obj.max_belief_above_noisy_or, `${context}.max_belief_above_noisy_or`),
 		crossCheckArtifact: text(crossCheck.artifact, `${context}.cross_check.artifact`),
 		crossCheckSha256: text(crossCheck.sha256, `${context}.cross_check.sha256`)
 	};
@@ -857,7 +847,7 @@ function parseSubtractive(value: unknown, context: string, panelN: number): Fram
 
 function parseReachable(value: unknown, context: string, panelN: number): FramingReachable {
 	const obj = record(value, context);
-	const tolerance = finite(obj.tolerance, `${context}.tolerance`);
+	const tolerance = number(obj.tolerance, `${context}.tolerance`);
 	if (!(tolerance > 0)) fail(`${context}.tolerance`, 'expected a positive tolerance');
 
 	const search = record(obj.search, `${context}.search`);
@@ -1215,7 +1205,7 @@ export function validateNonReadingControl(raw: unknown): NonReadingControl {
 				: fail(`${context}.dropped_routes`, 'expected an array'),
 			nEvidenceScored: positiveInteger(row.n_evidence_scored, `${context}.n_evidence_scored`),
 			averagePrecision: unit(row.average_precision, `${context}.average_precision`),
-			deltaVsRawNoisyOr: finite(row.delta_vs_raw_noisy_or, `${context}.delta_vs_raw_noisy_or`),
+			deltaVsRawNoisyOr: number(row.delta_vs_raw_noisy_or, `${context}.delta_vs_raw_noisy_or`),
 			note: noteProse.shipped,
 			noteProse
 		};
@@ -1236,7 +1226,7 @@ export function validateNonReadingControl(raw: unknown): NonReadingControl {
 	if (!(control.averagePrecision < baseline.averagePrecision)) {
 		fail('non_reading_control.rows', 'the control must sit below the ungated baseline');
 	}
-	const controlMinusRaw = finite(
+	const controlMinusRaw = number(
 		obj.control_minus_raw_average_precision,
 		'non_reading_control.control_minus_raw_average_precision'
 	);
@@ -1264,11 +1254,11 @@ export function validateNonReadingControl(raw: unknown): NonReadingControl {
 			'non_reading_control.contrast.label'
 		),
 		averagePrecision: contrastAp,
-		deltaVsRawNoisyOr: finite(
+		deltaVsRawNoisyOr: number(
 			contrastRaw.delta_vs_raw_noisy_or,
 			'non_reading_control.contrast.delta_vs_raw_noisy_or'
 		),
-		deltaVsFullControl: finite(
+		deltaVsFullControl: number(
 			contrastRaw.delta_vs_full_control,
 			'non_reading_control.contrast.delta_vs_full_control'
 		)

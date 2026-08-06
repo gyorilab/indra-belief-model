@@ -1,4 +1,4 @@
-import { fail, record, number, unit, text, positiveInteger } from './paper-validate.ts';
+import { boolean, fail, number, positiveInteger, record, text, unit } from './paper-validate.ts';
 /**
  * Typed data contract for the BELIEF-MODEL LADDER figure — /paper's beat 3.
  *
@@ -711,20 +711,9 @@ type UnknownRecord = Record<string, unknown>;
 
 
 
-/** Any finite number (deltas are signed). */
-function finite(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		fail(context, 'expected a finite number');
-	}
-	return value;
-}
 
 
 
-function boolean(value: unknown, context: string): boolean {
-	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
-	return value;
-}
 
 
 function close(got: number, want: number, context: string, message: string): void {
@@ -812,7 +801,7 @@ function parseEntry(
 		obj.recorded_average_precision,
 		`${context}.recorded_average_precision`
 	);
-	const disagreementVsRecorded = finite(
+	const disagreementVsRecorded = number(
 		obj.disagreement_vs_recorded,
 		`${context}.disagreement_vs_recorded`
 	);
@@ -828,7 +817,7 @@ function parseEntry(
 	}
 
 	// THE identity the bar geometry rests on: the bar IS ap − baseline.
-	const deltaVsNoisyOrBaseline = finite(
+	const deltaVsNoisyOrBaseline = number(
 		obj.delta_vs_noisy_or_baseline,
 		`${context}.delta_vs_noisy_or_baseline`
 	);
@@ -889,7 +878,7 @@ function namedDelta(
 ): BeliefLadderNamedDelta {
 	const entry = byLabel.get(label);
 	if (!entry) fail(context, `names ${label}, which is not a rung on this ladder`);
-	const delta = finite(value, context);
+	const delta = number(value, context);
 	close(delta, against - entry.averagePrecision, context, `must equal the gate minus ${label}`);
 	return { label, display: entry.display, delta };
 }
@@ -904,7 +893,7 @@ function parseModifier(
 	const entry = byLabel.get(label);
 	if (!entry) fail(`${context}.label`, `names ${label}, which is not a rung on this ladder`);
 	const averagePrecision = unit(obj.average_precision, `${context}.average_precision`);
-	const deltaVsNoisyOrBaseline = finite(
+	const deltaVsNoisyOrBaseline = number(
 		obj.delta_vs_noisy_or_baseline,
 		`${context}.delta_vs_noisy_or_baseline`
 	);
@@ -954,8 +943,8 @@ function parseGate(
 	if (!Array.isArray(rangeRaw) || rangeRaw.length !== 2) {
 		fail(`${context}.delta_vs_best_paper_model_range`, 'expected a (low, high) pair');
 	}
-	const low = finite(rangeRaw[0], `${context}.delta_vs_best_paper_model_range[0]`);
-	const high = finite(rangeRaw[1], `${context}.delta_vs_best_paper_model_range[1]`);
+	const low = number(rangeRaw[0], `${context}.delta_vs_best_paper_model_range[0]`);
+	const high = number(rangeRaw[1], `${context}.delta_vs_best_paper_model_range[1]`);
 	const deltas = deltaVsBestPaperModel.map((item) => item.delta);
 	close(
 		low,
@@ -992,7 +981,7 @@ function parseProximity(value: unknown, context: string): BeliefLadderProximity 
 		obj.paper_literal_rf_promoter,
 		`${context}.paper_literal_rf_promoter`
 	);
-	const absoluteGap = finite(obj.absolute_gap, `${context}.absolute_gap`);
+	const absoluteGap = number(obj.absolute_gap, `${context}.absolute_gap`);
 	close(
 		absoluteGap,
 		Math.abs(reimplementedRfFullFeatures - paperLiteralRfPromoter),
@@ -1047,7 +1036,7 @@ function parseGuardrails(
 		const entry = byLabel.get(label);
 		const where = `${context}.flat_against_baseline[${label}]`;
 		if (!entry) fail(where, `names ${label}, which is not a rung on this ladder`);
-		close(finite(delta, where), entry.deltaVsNoisyOrBaseline, where, "must equal that rung's own delta");
+		close(number(delta, where), entry.deltaVsNoisyOrBaseline, where, "must equal that rung's own delta");
 		return { label, display: entry.display, delta: entry.deltaVsNoisyOrBaseline };
 	});
 	if (flatAgainstBaseline.length === 0) {
@@ -1106,8 +1095,8 @@ function parseChecks(value: unknown, byLabel: Map<string, BeliefLadderEntry>): B
 	if (!firstEntry || !secondEntry) {
 		fail(`${context}.same_fitted_model_pair`, 'both labels must be rungs on this ladder');
 	}
-	const sameFittedModelTol = finite(obj.same_fitted_model_tol, `${context}.same_fitted_model_tol`);
-	const sameFittedModelAbsoluteGap = finite(
+	const sameFittedModelTol = number(obj.same_fitted_model_tol, `${context}.same_fitted_model_tol`);
+	const sameFittedModelAbsoluteGap = number(
 		obj.same_fitted_model_absolute_gap,
 		`${context}.same_fitted_model_absolute_gap`
 	);
@@ -1125,7 +1114,7 @@ function parseChecks(value: unknown, byLabel: Map<string, BeliefLadderEntry>): B
 		sameFittedModelPair: [first, second],
 		sameFittedModelAbsoluteGap,
 		sameFittedModelTol,
-		recordedValueAgreementTol: finite(
+		recordedValueAgreementTol: number(
 			obj.recorded_value_agreement_tol,
 			`${context}.recorded_value_agreement_tol`
 		),
@@ -1190,7 +1179,7 @@ export function validateBeliefLadder(raw: unknown): BeliefLadder {
 	};
 
 	const checksRaw = record(obj.checks, 'belief_model_ladder.checks');
-	const recordedTol = finite(
+	const recordedTol = number(
 		checksRaw.recorded_value_agreement_tol,
 		'belief_model_ladder.checks.recorded_value_agreement_tol'
 	);

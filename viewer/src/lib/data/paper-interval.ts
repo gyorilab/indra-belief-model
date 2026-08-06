@@ -19,6 +19,28 @@
  *
  * Keep this module leaf. `scripts/test-paper-render-invariants.mjs` fails on any
  * value-import cycle among `paper-*.ts`.
+ *
+ * WHY THREE CLASSES AND NOT A BOOLEAN — the history this file was pointed at for
+ * and did not contain until now.
+ *
+ * This replaced `excludesZero`, defined `ciLow > 0 || ciHigh < 0` and therefore
+ * TRUE for an interval lying entirely BELOW zero. Its name invited
+ * `x.excludesZero ? 'better' : 'not better'`, and that exact two-way branch
+ * shipped SIX times on /paper — the last in brand-new code written in a wave
+ * whose own invariants warned about it, printing "Clears zero." over an interval
+ * of −0.0256 to −0.0061. A static guard existed and missed it: the guard fires
+ * only when a directional WORD sits in the same expression, and "Clears zero."
+ * contains none. It came back once more as `clearsZero`, the same predicate under
+ * another name.
+ *
+ * So the boolean is gone rather than guarded. A two-way branch on direction
+ * cannot be written because there is no boolean to write it against; a render
+ * site that genuinely needs "significant either way" asks
+ * `standing !== 'not-significant'`, which reads as what it is.
+ *
+ * RENDER SITES SHOULD KEY A TOTAL `Record<Standing, string>` (or a `switch` with
+ * no default) so the compiler demands a sentence for every case. That discipline
+ * is what made the fix hold where the guard had not.
  */
 
 /** Where one interval sits relative to zero. There is no fourth class. */

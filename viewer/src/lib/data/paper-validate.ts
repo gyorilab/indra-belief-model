@@ -129,3 +129,15 @@ export function budget(
 	}
 	return value;
 }
+
+/**
+ * A boolean, or a gate. Nine modules defined this identically.
+ *
+ * It is here for the same reason the rest of the kit is: a primitive that exists
+ * nine times will eventually exist nine slightly different ways, and nobody will
+ * notice until the difference decides whether a figure renders.
+ */
+export function boolean(value: unknown, context: string): boolean {
+	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
+	return value;
+}

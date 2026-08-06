@@ -1,4 +1,4 @@
-import { fail, record, number, unit, positiveInteger } from './paper-validate.ts';
+import { fail, number, positiveInteger, record, unit } from './paper-validate.ts';
 /**
  * Typed data contract for the TIE-INFLATION explainer that sits directly beneath
  * the paper's-own-metric comparison.

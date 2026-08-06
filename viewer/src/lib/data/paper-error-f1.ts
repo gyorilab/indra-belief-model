@@ -1,4 +1,4 @@
-import { budget, fail, record, number, unit, text, positiveInteger } from './paper-validate.ts';
+import { boolean, budget, fail, nonNegativeInteger, number, positiveInteger, record, text, unit } from './paper-validate.ts';
 /**
  * Typed data contract for the STATEMENT-GRAIN ERROR-CLASS F1 surface: the margin
  * the 2023 INDRA paper's own panel actually supports, named rather than implied.
@@ -935,18 +935,8 @@ type UnknownRecord = Record<string, unknown>;
 
 
 
-function count(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-		fail(context, 'expected a non-negative integer');
-	}
-	return value;
-}
 
 
-function boolean(value: unknown, context: string): boolean {
-	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
-	return value;
-}
 
 /**
  * Exactly `want`, or the figure gates. Used on the artifact's own self-checks:
@@ -1025,11 +1015,11 @@ function parseOperatingPoint(
 	const point = record(raw, context);
 	// "a threshold removed" must gate: tau is required, finite and in range.
 	const tau = unit(point.tau, `${context}.tau`);
-	const flagged = count(point.flagged, `${context}.flagged`);
-	const tp = count(point.tp, `${context}.tp`);
-	const fp = count(point.fp, `${context}.fp`);
-	const fn = count(point.fn, `${context}.fn`);
-	const tn = count(point.tn, `${context}.tn`);
+	const flagged = nonNegativeInteger(point.flagged, `${context}.flagged`);
+	const tp = nonNegativeInteger(point.tp, `${context}.tp`);
+	const fp = nonNegativeInteger(point.fp, `${context}.fp`);
+	const fn = nonNegativeInteger(point.fn, `${context}.fn`);
+	const tn = nonNegativeInteger(point.tn, `${context}.tn`);
 	if (tp + fp !== flagged) fail(context, 'flagged must equal tp + fp');
 	if (tp + fn !== panelErrors) fail(context, 'tp + fn must equal the panel’s error count');
 	if (tp + fp + fn + tn !== panelN) fail(context, 'the confusion table must cover the panel');
@@ -1528,7 +1518,7 @@ function buildFigure(raw: UnknownRecord): ErrorF1Figure {
 		criticalValue,
 		pointwiseNormalCriticalValue: pointwiseZ,
 		bonferroniCriticalValue: bonferroniZ,
-		nExcludingZeroSimultaneous: count(
+		nExcludingZeroSimultaneous: nonNegativeInteger(
 			multiplicityRaw.n_excluding_zero_simultaneous,
 			'multiplicity.n_excluding_zero_simultaneous'
 		),
@@ -1816,8 +1806,8 @@ function buildFigure(raw: UnknownRecord): ErrorF1Figure {
 				`${context}.review_queue_error_recall`
 			),
 			reviewQueueErrorF1: unit(row.review_queue_error_f1, `${context}.review_queue_error_f1`),
-			reviewQueueTp: count(row.review_queue_tp, `${context}.review_queue_tp`),
-			reviewQueueFp: count(row.review_queue_fp, `${context}.review_queue_fp`),
+			reviewQueueTp: nonNegativeInteger(row.review_queue_tp, `${context}.review_queue_tp`),
+			reviewQueueFp: nonNegativeInteger(row.review_queue_fp, `${context}.review_queue_fp`),
 			thisArtifactTau: unit(row.this_artifact_tau, `${context}.this_artifact_tau`),
 			thisArtifactErrorF1: unit(row.this_artifact_error_f1, `${context}.this_artifact_error_f1`),
 			residual: number(row.residual, `${context}.residual`),

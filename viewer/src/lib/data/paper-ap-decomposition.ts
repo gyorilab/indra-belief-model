@@ -40,7 +40,7 @@
  * label and kind-for-kind.
  */
 
-import { budget, fail, record, unit, text, nonNegativeInteger, positiveInteger } from './paper-validate.ts';
+import { boolean, budget, fail, nonNegativeInteger, number, positiveInteger, record, text, unit } from './paper-validate.ts';
 import { standingOfBounds, type Standing } from './paper-interval.ts';
 // `import type` and NOT `import { type … }`: verbatimModuleSyntax is on
 // (.svelte-kit/tsconfig.json:18), so the braced form still emits `import {} from
@@ -584,12 +584,6 @@ type UnknownRecord = Record<string, unknown>;
 
 
 
-function finite(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		fail(context, 'expected a finite number');
-	}
-	return value;
-}
 
 
 
@@ -600,17 +594,13 @@ function exactly(value: unknown, expected: number, context: string): number {
 	return parsed;
 }
 
-function boolean(value: unknown, context: string): boolean {
-	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
-	return value;
-}
 
 
 function numberList(value: unknown, length: number, context: string): number[] {
 	if (!Array.isArray(value) || value.length !== length) {
 		fail(context, `expected an array of ${length} numbers`);
 	}
-	return value.map((entry, index) => finite(entry, `${context}[${index}]`));
+	return value.map((entry, index) => number(entry, `${context}[${index}]`));
 }
 
 function integerList(value: unknown, length: number, context: string): number[] {
@@ -680,7 +670,7 @@ function parseBands(value: unknown): ApDecompositionBand[] {
 			nFalse,
 			errorRate,
 			evidenceEntries: positiveInteger(band.evidence_entries, `${context}.evidence_entries`),
-			referenceContributionPts: finite(
+			referenceContributionPts: number(
 				band.reference_contribution_pts,
 				`${context}.reference_contribution_pts`
 			)
@@ -695,8 +685,8 @@ function parseArm(entry: unknown, index: number): ApDecompositionArm {
 	if (arm.name !== slot.label) {
 		fail(`${context}.name`, `expected the fixed fan order — ${slot.label}`);
 	}
-	const totalPts = finite(arm.total_pts, `${context}.total_pts`);
-	const totalDeltaAp = finite(arm.total_delta_ap, `${context}.total_delta_ap`);
+	const totalPts = number(arm.total_pts, `${context}.total_pts`);
+	const totalDeltaAp = number(arm.total_delta_ap, `${context}.total_delta_ap`);
 	const perBandNetPts = numberList(
 		arm.per_band_net_pts,
 		AP_DECOMP_BAND_COUNT,
@@ -707,8 +697,8 @@ function parseArm(entry: unknown, index: number): ApDecompositionArm {
 		AP_DECOMP_BAND_COUNT,
 		`${context}.cumulative_pts`
 	);
-	const ci95LowPts = finite(arm.ci95_low_pts, `${context}.ci95_low_pts`);
-	const ci95HighPts = finite(arm.ci95_high_pts, `${context}.ci95_high_pts`);
+	const ci95LowPts = number(arm.ci95_low_pts, `${context}.ci95_low_pts`);
+	const ci95HighPts = number(arm.ci95_high_pts, `${context}.ci95_high_pts`);
 	if (ci95LowPts > ci95HighPts) fail(context, 'ci95_low_pts must not exceed ci95_high_pts');
 	// The shipped flag is still CHECKED against the endpoints — dropping that would
 	// lose a real cross-check on the artifact — but what leaves this loader is the
@@ -764,7 +754,7 @@ function parseArm(entry: unknown, index: number): ApDecompositionArm {
 		perBandNetPts,
 		cumulativePts,
 		nBandsAgreeingWithTotalSign: agreeing,
-		largestBandShareOfTotal: finite(
+		largestBandShareOfTotal: number(
 			arm.largest_band_share_of_total,
 			`${context}.largest_band_share_of_total`
 		),
@@ -814,9 +804,9 @@ function parseBandingSensitivity(
 			const arm = record(armEntry, armContext);
 			const expected = AP_DECOMP_READER_ARM_LABELS[armIndex];
 			if (arm.arm !== expected) fail(`${armContext}.arm`, `expected ${expected}`);
-			const headPts = finite(arm.head_pts, `${armContext}.head_pts`);
-			const tailPts = finite(arm.tail_pts, `${armContext}.tail_pts`);
-			const tiltPts = finite(arm.tilt_pts, `${armContext}.tilt_pts`);
+			const headPts = number(arm.head_pts, `${armContext}.head_pts`);
+			const tailPts = number(arm.tail_pts, `${armContext}.tail_pts`);
+			const tiltPts = number(arm.tilt_pts, `${armContext}.tilt_pts`);
 			if (Math.abs(tiltPts - (headPts - tailPts)) > AP_DECOMP_PARITY_TOL) {
 				fail(`${armContext}.tilt_pts`, 'must equal head_pts − tail_pts');
 			}
@@ -825,7 +815,7 @@ function parseBandingSensitivity(
 				headPts,
 				tailPts,
 				tiltPts,
-				maxTieBreakSpreadPts: finite(
+				maxTieBreakSpreadPts: number(
 					arm.max_tie_break_spread_pts,
 					`${armContext}.max_tie_break_spread_pts`
 				)
@@ -834,11 +824,11 @@ function parseBandingSensitivity(
 		return { key: spec.key, display: spec.display, kind: spec.kind, drawn: spec.drawn, arms };
 	});
 
-	const tolerance = finite(
+	const tolerance = number(
 		obj.tie_break_spread_tolerance_pts,
 		`${context}.tie_break_spread_tolerance_pts`
 	);
-	const worst = finite(obj.max_tie_break_spread_pts, `${context}.max_tie_break_spread_pts`);
+	const worst = number(obj.max_tie_break_spread_pts, `${context}.max_tie_break_spread_pts`);
 	// A decile edge inside a block of tied scores has to fall somewhere. If the
 	// summary moves more than the tolerance between the two extreme orderings, the
 	// strip would be reporting the tie-break rather than the banding variable.
@@ -860,11 +850,11 @@ function parseBandingSensitivity(
 			`${context}.arms_whose_tilt_sign_reverses_under_mirroring`
 		),
 		nArmsCompared: positiveInteger(obj.n_arms_compared, `${context}.n_arms_compared`),
-		maxAbsTiltEndogenousPts: finite(
+		maxAbsTiltEndogenousPts: number(
 			obj.max_abs_tilt_endogenous_banding_pts,
 			`${context}.max_abs_tilt_endogenous_banding_pts`
 		),
-		maxAbsTiltExogenousPts: finite(
+		maxAbsTiltExogenousPts: number(
 			obj.max_abs_tilt_exogenous_banding_pts,
 			`${context}.max_abs_tilt_exogenous_banding_pts`
 		),

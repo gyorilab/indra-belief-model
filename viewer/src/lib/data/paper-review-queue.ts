@@ -1,4 +1,4 @@
-import { fail, record, unit, text, nonNegativeInteger, positiveInteger } from './paper-validate.ts';
+import { boolean, fail, nonNegativeInteger, number, positiveInteger, record, text, unit } from './paper-validate.ts';
 /**
  * Typed data contract for the curator REVIEW QUEUE figure — /paper's beat 2.
  *
@@ -895,20 +895,10 @@ type UnknownRecord = Record<string, unknown>;
 
 
 
-function finite(value: unknown, context: string): number {
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		fail(context, 'expected a finite number');
-	}
-	return value;
-}
 
 
 
 
-function boolean(value: unknown, context: string): boolean {
-	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
-	return value;
-}
 
 
 function close(got: number, want: number, context: string, message: string): void {
@@ -958,7 +948,7 @@ function parsePoint(value: unknown, context: string, nErrors: number, nPanel: nu
 		recallOvershoot:
 			obj.recall_overshoot === undefined
 				? recallAchieved - targetRecall
-				: finite(obj.recall_overshoot, `${context}.recall_overshoot`),
+				: number(obj.recall_overshoot, `${context}.recall_overshoot`),
 		queueShareOfPanel:
 			obj.queue_share_of_panel === undefined
 				? queue / nPanel
@@ -1191,7 +1181,7 @@ function parseEqualYield(
 				`${ct}.budget_for_equal_yield`
 			);
 			if (budgetForEqualYield > panel.n) fail(`${ct}.budget_for_equal_yield`, 'cannot exceed the panel');
-			const extraReviews = finite(c.extra_reviews, `${ct}.extra_reviews`);
+			const extraReviews = number(c.extra_reviews, `${ct}.extra_reviews`);
 			if (extraReviews !== budgetForEqualYield - budget) {
 				fail(`${ct}.extra_reviews`, 'must equal budget_for_equal_yield − the reference budget');
 			}
@@ -1202,7 +1192,7 @@ function parseEqualYield(
 				`${ct}.precision_at_equal_yield`,
 				'must equal the reference catch / budget_for_equal_yield'
 			);
-			const errorsCaughtAtReferenceBudget = finite(
+			const errorsCaughtAtReferenceBudget = number(
 				c.errors_caught_at_reference_budget,
 				`${ct}.errors_caught_at_reference_budget`
 			);
@@ -1212,7 +1202,7 @@ function parseEqualYield(
 			) {
 				fail(`${ct}.errors_caught_at_reference_budget`, 'cannot exceed the reviews or the errors');
 			}
-			const shortfallAtReferenceBudget = finite(
+			const shortfallAtReferenceBudget = number(
 				c.shortfall_at_reference_budget,
 				`${ct}.shortfall_at_reference_budget`
 			);
@@ -1303,7 +1293,7 @@ function parseEqualYield(
 		if (!Array.isArray(row) || row.length !== budgets.length) {
 			fail(at, `expected ${budgets.length} values, one per budget`);
 		}
-		const values = row.map((entry, index) => finite(entry, `${at}[${index}]`));
+		const values = row.map((entry, index) => number(entry, `${at}[${index}]`));
 		if (values[0] !== 0) fail(`${at}[0]`, 'zero reviews find zero errors');
 		close(
 			values[values.length - 1],
@@ -1339,7 +1329,7 @@ function parseEqualYield(
 	const referenceRow = errorsCaught[reference.arm];
 	const comparatorRow = errorsCaught[comparator.arm];
 	const advantage = sweepRaw.advantage.map((entry, index) => {
-		const parsed = finite(entry, `${sweepAt}.advantage[${index}]`);
+		const parsed = number(entry, `${sweepAt}.advantage[${index}]`);
 		close(
 			parsed,
 			referenceRow[index] - comparatorRow[index],
@@ -1377,7 +1367,7 @@ function parseEqualYield(
 	const peakBudget = nonNegativeInteger(sweepRaw.peak_budget, `${sweepAt}.peak_budget`);
 	const peakIndex = budgets.indexOf(peakBudget);
 	if (peakIndex < 0) fail(`${sweepAt}.peak_budget`, 'must be one of the swept budgets');
-	const peakAdvantage = finite(sweepRaw.peak_advantage, `${sweepAt}.peak_advantage`);
+	const peakAdvantage = number(sweepRaw.peak_advantage, `${sweepAt}.peak_advantage`);
 	close(peakAdvantage, advantage[peakIndex], `${sweepAt}.peak_advantage`, 'must be the advantage there');
 	if (advantage.some((value) => value > peakAdvantage + REVIEW_QUEUE_PARITY_TOL)) {
 		fail(`${sweepAt}.peak_budget`, 'a larger advantage occurs at another budget');
@@ -1474,8 +1464,8 @@ function parseRobustnessPanel(
 	if (budget !== Math.floor(share * nStatements)) {
 		fail(`${context}.budget`, 'must be floor(budget_share x n_statements)');
 	}
-	const maxT = finite(obj.max_t_critical_value, `${context}.max_t_critical_value`);
-	const bonferroni = finite(obj.bonferroni_critical_value, `${context}.bonferroni_critical_value`);
+	const maxT = number(obj.max_t_critical_value, `${context}.max_t_critical_value`);
+	const bonferroni = number(obj.bonferroni_critical_value, `${context}.bonferroni_critical_value`);
 	if (!(maxT > pointwiseZ) || !(maxT <= bonferroni)) {
 		fail(
 			`${context}.max_t_critical_value`,
@@ -1493,16 +1483,16 @@ function parseRobustnessPanel(
 		const at = `${context}.arms["${name}"]`;
 		const row = record(rawArms[name], at);
 		const errorRecall = unit(row.error_recall, `${at}.error_recall`);
-		const delta = finite(row.delta, `${at}.delta`);
+		const delta = number(row.delta, `${at}.delta`);
 		close(delta, errorRecall - referenceErrorRecall, `${at}.delta`, 'must equal this arm’s error recall − the reference’s');
-		const low = finite(row.simultaneous_low, `${at}.simultaneous_low`);
-		const high = finite(row.simultaneous_high, `${at}.simultaneous_high`);
+		const low = number(row.simultaneous_low, `${at}.simultaneous_low`);
+		const high = number(row.simultaneous_high, `${at}.simultaneous_high`);
 		if (!(low < high)) fail(`${at}.simultaneous_low`, 'must be below simultaneous_high');
 		if (delta < low - REVIEW_QUEUE_PARITY_TOL || delta > high + REVIEW_QUEUE_PARITY_TOL) {
 			fail(at, 'the simultaneous band must contain its own point estimate');
 		}
-		const ci95Low = finite(row.ci95_low, `${at}.ci95_low`);
-		const ci95High = finite(row.ci95_high, `${at}.ci95_high`);
+		const ci95Low = number(row.ci95_low, `${at}.ci95_low`);
+		const ci95High = number(row.ci95_high, `${at}.ci95_high`);
 		if (!(ci95Low < ci95High)) fail(`${at}.ci95_low`, 'must be below ci95_high');
 		// A simultaneous band is the pointwise one widened; it can never be inside it.
 		if (low > ci95Low + REVIEW_QUEUE_PARITY_TOL || high < ci95High - REVIEW_QUEUE_PARITY_TOL) {
@@ -1526,10 +1516,10 @@ function parseRobustnessPanel(
 			arm: name,
 			errorRecall,
 			delta,
-			deltaBootstrapMean: finite(row.delta_bootstrap_mean, `${at}.delta_bootstrap_mean`),
+			deltaBootstrapMean: number(row.delta_bootstrap_mean, `${at}.delta_bootstrap_mean`),
 			ci95Low,
 			ci95High,
-			bootstrapSe: finite(row.bootstrap_se, `${at}.bootstrap_se`),
+			bootstrapSe: number(row.bootstrap_se, `${at}.bootstrap_se`),
 			pGreaterThanZero: unit(row.p_greater_than_zero, `${at}.p_greater_than_zero`),
 			simultaneousLow: low,
 			simultaneousHigh: high,
@@ -1616,7 +1606,7 @@ function parseRobustness(
 	if (budgetShare <= 0 || budgetShare >= 1) {
 		fail(`${context}.budget_share`, 'expected a share strictly inside (0, 1)');
 	}
-	const pointwiseZ = finite(
+	const pointwiseZ = number(
 		multiplicity.pointwise_normal_critical_value,
 		`${context}.multiplicity.pointwise_normal_critical_value`
 	);

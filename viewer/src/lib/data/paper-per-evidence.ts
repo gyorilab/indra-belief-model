@@ -1,4 +1,4 @@
-import { fail, record, number, unit, text, nonNegativeInteger, positiveInteger } from './paper-validate.ts';
+import { boolean, budget, fail, nonNegativeInteger, number, positiveInteger, record, text, unit } from './paper-validate.ts';
 /**
  * Typed data contract for the PER-EVIDENCE grain surface.
  *
@@ -543,10 +543,6 @@ function array(value: unknown, context: string): unknown[] {
 
 
 
-function boolean(value: unknown, context: string): boolean {
-	if (typeof value !== 'boolean') fail(context, 'expected a boolean');
-	return value;
-}
 
 /** Exactly `want`, or the figure gates. Used where a flipped flag would present
  *  an unverified reconciliation as a verified one. */
@@ -575,18 +571,6 @@ export function laneNameFits(value: string): boolean {
 export function readoutFits(value: string): boolean {
 	const g = PAPER_PER_EVIDENCE_GEOMETRY;
 	return value.length * g.readoutUnitsPerChar <= g.width - g.readoutX;
-}
-
-function budget(
-	value: string,
-	fits: (candidate: string) => boolean,
-	chars: number,
-	context: string
-): string {
-	if (!fits(value)) {
-		fail(context, `"${value}" is ${value.length} chars; the gutter budget is ${chars}`);
-	}
-	return value;
 }
 
 /**
@@ -830,11 +814,15 @@ export function buildPaperPerEvidence(raw: unknown): PaperPerEvidenceFigure {
 		// The gutter budget guards THIS module's own display table: the drawn name
 		// is the canonical one, so a longer name added here — not there — is what
 		// would clip its leading glyphs in silence.
+		// The kit's argument order, with this figure's own predicate passed last.
+		// Two `budget` signatures existed for a while — the kit's
+		// (value, chars, context, fits?) and a local (value, fits, chars, context)
+		// — which is precisely the transposition a reader cannot see and tsc can.
 		budget(
 			canonical,
-			laneNameFits,
 			PAPER_PER_EVIDENCE_LABEL_BUDGET_CHARS,
-			`PAPER_PER_EVIDENCE_DISPLAY[${id}]`
+			`PAPER_PER_EVIDENCE_DISPLAY[${id}]`,
+			laneNameFits
 		);
 		// The drift guard, pointed at the artifact's OWN expected name rather than
 		// at the on-screen one: renaming a lane in English must not gate the
@@ -900,9 +888,9 @@ export function buildPaperPerEvidence(raw: unknown): PaperPerEvidenceFigure {
 
 		const readout = budget(
 			`${fmt3(auroc)} ev · ${fmt3(statementAuroc)} stmt`,
-			readoutFits,
 			PAPER_PER_EVIDENCE_READOUT_BUDGET_CHARS,
-			`arms[${id}].readout`
+			`arms[${id}].readout`,
+			readoutFits
 		);
 
 		extents.push(evidence.low, evidence.high, auroc, statementAuroc);
