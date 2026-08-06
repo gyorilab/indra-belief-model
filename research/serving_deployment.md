@@ -39,8 +39,9 @@ own header: the batch path does not ground, it hydrates every prompt from
 content-addressed refs in a frozen substrate. Deps are installed explicitly rather than
 via `pip install .` because `pyproject.toml` declares both as hard requirements.
 [V] `Dockerfile` states the saving as ~1.44 GB — indra 187 MB installed plus a 470 MB
-ontology cache, gilda 2.5 MB installed plus 784 MB of resource files. I did not
-independently re-weigh those four figures; they are the Dockerfile's own measurement.
+ontology cache, gilda 2.5 MB installed plus 784 MB of resource files. Those four figures
+were not independently re-weighed when this section was written; §7.1 now re-weighs all
+four, and the saving is ~724 MB — the package half reproduces, the resource half does not.
 
 **The omission is gated at build time, not asserted in prose.** [V] `Dockerfile` carries a
 `test` stage that runs the batch suites inside the container with neither package
@@ -190,8 +191,9 @@ three ways.
 
 [M] The id → names/members table covering this whole corpus is 1,644 entries / 519.2 KB.
 The **full** HGNC + FPLX table (45,654 HGNC ids, 642 FPLX ids) is 6,499,410 bytes = 6.2 MB.
-Against the ~1.44 GB the Dockerfile attributes to gilda + indra that is a ~230× reduction,
-and it removes the matcher, not merely the data.
+Against the ~1.44 GB the Dockerfile attributes to gilda + indra that is a ~230× reduction;
+against the re-weighed ~724 MB of §7.1 — the figure this document stands behind — it is
+~117×. Either way it removes the matcher, not merely the data.
 
 **IRREDUCIBLY A GROUNDING CALL — string → entity, with no db_ref anywhere for it.**
 Everything inside [V] `GroundedEntity._verify_raw_text`: re-grounding the reader's
@@ -376,8 +378,9 @@ digits into that than it has.
 [M] The provider's prefix cache is already on and hitting: median
 `cached_tokens / prompt_tokens` = 0.950 (26b), 0.961 (e2b), 0.929 (31b), 0.902 (glm-5).
 Median uncached prompt is 110 tokens (26b), 85 (e2b), 202 (glm-5). Measured
-prefill : decode = 2204.9 / 14.23 = 155.0 : 1, against a static 154.5 : 1 computed from the
-prompt structure — two independent routes to the same ratio.
+prefill : decode = 2,204.6 / 14.23 = 155.0 : 1 over the whole 26b verdict-only arm; the
+154.5 : 1 owned by `research/serving_architecture.md` §9.1 is the same regime, measured
+over a different slice — one artifact at two slices, not two independent routes.
 
 So the 2,200-token prompt costs 0.007 s, because 95% of it is already resident, and
 decoding 14 tokens costs 11× more than prefilling the whole prompt. **The prefill:decode
@@ -593,12 +596,34 @@ will silently get the non-default architecture.
 
 **The unit is the (Statement, Evidence) pair, not the Statement.** [M] The paper corpus is
 1,689 statements over 33,361 evidences — mean 19.75 evidences per statement, max 759, and
-only 20.0% single-evidence. [R] A statement-grained synchronous call therefore hides a
-serial fan-out of about twenty provider calls at the median; at the measured verdict-only
-p50 that is order-of-ten-seconds median and order-of-minutes worst case. A Statement cannot
-be a synchronous request. And per Correction 3, [M] ~51.7% of pairs issue **two** provider
-calls under the default variant, so "one request = one model call" is false for about half
-of traffic.
+only 20.0% single-evidence.
+
+**Correction — the mean is not the median, and the difference decides the API.** [M] The
+distribution is heavily right-skewed: median **7**, p75 17, p90 38, p95 73, p99 261, max
+759. An earlier [R] sentence here reused the mean 19.75 as "about twenty provider calls at
+the median"; that is the MEAN. The median statement carries 7 evidences, so with the
+measured second-call rate below it a median statement is order-of-ten calls, not twenty.
+Recomputed directly from `data/corpora/indra_paper_unique_pairs_20260717_statements.json`
+(n=1,689, 33,361 evidences — reproduces this section's own totals).
+
+[M] Because the mass sits in the tail, a bound on evidence count buys most STATEMENTS
+cheaply and most EVIDENCE not at all:
+
+| cap | statements served | evidences served |
+|---|---:|---:|
+| ≤4  | 41.6% | 4.2% |
+| ≤8  | 57.1% | 9.2% |
+| ≤16 | 74.1% | 19.3% |
+| ≤32 | 88.3% | 35.7% |
+| ≤64 | 94.4% | 49.5% |
+
+So the original conclusion holds for the CORPUS and is too strong for the TYPICAL REQUEST:
+an unbounded statement-grained synchronous call is indefensible, but a BOUNDED one serves
+the majority of statements in-band. A serving layer must therefore admit on a declared cap
+rather than refuse the grain outright. And per Correction 3, [M] ~51.7% of pairs issue
+**two** provider calls under the default variant, so "one request = one model call" is
+false for about half of traffic, and any cap must be enforced against the two-call upper
+bound rather than the `estimate_calls()` floor.
 
 ### 5.2 Minimum payload and response
 
@@ -721,8 +746,10 @@ process-local, so workers are stateful and meaningfully warm. One spend guard pe
 so caps are per worker.
 
 **Two images, one kernel.** [V] The batch `Dockerfile` says of itself that the image cannot
-build a substrate and cannot score raw text. Serving raw Statements needs indra + gilda +
-the ~1.44 GB of resources. But [M] importing the monolithic scorer loads neither, so a
+build a substrate and cannot score raw text. Serving raw Statements needs indra + gilda
+plus their resources — ~724 MB all told once re-weighed in §7.1 (~531 MB of it resources
+on a volume), against the Dockerfile header's ~1.44 GB. But [M] importing the monolithic
+scorer loads neither, so a
 **prepared-payload** serving mode — the consumer sends the already-rendered body parts
 instead of a Statement — runs in the 535 MB image with zero grounding dependencies, and
 [V] `prepare_from_replay_row` in `src/indra_belief/prepared_execution.py` is already
@@ -801,12 +828,256 @@ built.
 
 ---
 
+## 7. The live image, and the re-weighed cost
+
+§1 carried the Dockerfile's ~1.44 GB saving forward without re-weighing it — re-weighed
+in §7.1 below it is ~724 MB, split ~531 MB resources-on-volume and ~193 MB
+packages-in-image — and §5.4's
+"two images, one kernel" named a grounding-capable image as a thing that did not exist.
+Both are now settled by building it. `Dockerfile.live` exists at the repo root; it is a
+scorer CLI, not a server, because §1's finding that no serving process exists still holds
+and an image implying HTTP would be the same false claim in a new place.
+
+### 7.1 The ~1.44 GB saving re-weighs to ~724 MB, and the reason is instructive
+
+[M] Re-weighed against the versions actually installed here — gilda 1.6.1, indra 1.24.0.
+The two quantities are kept apart on purpose, because they live in different places and
+only one of them is ever in a layer (`stat -f %z` on this host for the byte figures;
+in-container `du` for the package figures):
+
+```
+RESOURCES ON THE VOLUME (never in a layer)
+  indra ontology cache, bio_ontology.pkl    492,535,810 B    ~470 MiB
+  gilda resource dir (the WHOLE of it)       38,060,066 B     ~36 MiB   one file
+                                            -------------
+  subtotal                                  530,595,876 B    ~531 MB  (506 MiB)
+  + gilda_models.json.gz, fetched lazily     10,530,040 B     ~10 MiB
+                                            -------------
+  subtotal if the models file is present    541,125,916 B    ~541 MB
+
+PACKAGES IN THE IMAGE (never on the volume)
+  indra installed, in-container                  190.4 MB    (143.5 MB is indra/resources)
+  gilda installed, in-container                    2.7 MB
+                                            -------------
+  subtotal                                       193.1 MB
+
+RE-WEIGHED TOTAL saving from omitting both      ~724 MB      (<= ~734 MB with the models
+                                                              file present)
+```
+
+So the saving is **~724 MB, not ~1.44 GB** — of which ~531 MB is resources-on-volume and
+~193 MB is packages-in-image. Neither half is the "roughly 700 MB" this section used to
+report: that was a rounding of packages+resources carrying a resources-only label.
+
+**Reconciled against the batch `Dockerfile`'s own decomposition** (read only, not edited —
+its header is the baseline being corrected). It claims packages 187 + 2.5 = 189.5 MB and
+resources 470 + 784 = 1,254 MB, total ~1,443.5 MB. [V] The package half reproduces within
+~2%: 190.4 MB and 2.7 MB in-container, 186.5 MB / 2.5 MB in this repo's `.venv`. [M] The
+resource half is wrong by ~2.4x (1,254 MB claimed against 531 MB measured), for the reason
+below — the "784 MB" is a stale gilda version's directory, not the installed one's.
+
+**Why the header drifted, which is the part worth keeping.** [M] The pystow root holds
+THREE gilda version directories — 1.4.1 at 46 MB, 1.5.0 at 702 MB, 1.6.1 at 36 MB — and
+the 687,099,904 B `grounding_terms.db` that supplies almost all of the "784 MB of resource
+files" lives in the **1.5.0** directory. gilda 1.5.0 is not what is installed. [V]
+`gilda.resources` computes `resource_dir = pystow.join('gilda', __version__)`, so the
+version is part of the path and stale versions simply accumulate beside the live one; a
+`du` over the parent counts all three. The lesson is narrower than "the number was wrong":
+a version-scoped cache directory cannot be measured by looking at its parent.
+
+[V] Two further facts about how those resources arrive, both read at the symbol:
+`gilda.resources._download_from_s3` builds its client with
+`botocore.client.Config(signature_version=botocore.UNSIGNED)` against the public `gilda`
+bucket — **no credential is involved**, which is what makes an unauthenticated warm-up
+possible — and `gilda.resources.get_gilda_models` fetches `gilda_models.json.gz` lazily,
+so it is absent until something disambiguates.
+
+### 7.2 What was built, and what its gate does and does not prove
+
+[M] `docker build -f Dockerfile.live -t indra-belief-live:test .` exits 0 on this host.
+Measured on the resulting image:
+
+```
+indra-belief-live:test    993,002,546 B   =  993 MB
+indra-belief:batch        534,805,452 B   =  535 MB
+```
+
+[M] The +458 MB is packages, not data: `find / -name 'grounding_terms*' -o -name
+bio_ontology.pkl` inside the image returns nothing. In `docker history` the site-packages
+COPY is a single 848 MB layer and no other layer the Dockerfile adds exceeds 2 MB; the
+remainder is the `python:3.13-slim` base itself. The corpus stays on `/app/data` and the
+grounding resources on `/app/resources`, both declared volumes.
+
+[M] The ownership/content measurement below uses `indra-belief-live:d2`. The
+`indra-belief-live:test` tag named by the historical build line above has `/app/data` as
+`root root`, whereas `:d2` has both roots owned by `belief`. [V] Because the current
+`Dockerfile.live` mkdir+chown covers `/app/data`, that observed `:test` layout identifies
+it as a pre-fix build, while `:d2`'s measured layout matches the current instructions; the
+file creates `belief` as uid 10001 and runs as that user. [M]
+On `:d2`, `/app/data` is empty with link count 2, while `/app/resources` has link count 4
+and contains exactly two empty subdirectories, `indra/` and `pystow/`. Their complete
+listings contain only `.` and `..`, so no resource DATA is seeded in the image's declared
+data/resource roots. The image-wide `find` also printed no matching resource-artifact
+path, although its recorded exit was 1 rather than a clean traversal. [V] `Dockerfile.live`
+creates this layout with `mkdir -p /app/data
+/app/resources/pystow /app/resources/indra`, points `INDRA_RESOURCES` at
+`/app/resources/indra` and `PYSTOW_HOME` at `/app/resources/pystow`, and those two children
+explain `/app/resources`'s link count 4. [M] The ownership was re-derived because until
+that mkdir+chown was extended to cover `/app/data`, only `/app/resources` was owned by
+`belief` and `/app/data` was `root root`:
+
+```
+docker run --rm --entrypoint sh indra-belief-live:d2 -c 'ls -ld /app/data /app/resources; ls -la /app/resources'
+drwxr-xr-x 2 belief belief 4096 /app/data
+drwxr-xr-x 4 belief belief 4096 /app/resources
+total 16
+drwxr-xr-x 4 belief belief 4096 .
+drwxr-xr-x 1 root   root   4096 ..
+drwxr-xr-x 2 belief belief 4096 indra
+drwxr-xr-x 2 belief belief 4096 pystow
+
+docker run --rm --entrypoint sh indra-belief-live:d2 -c 'ls -la /app/resources/indra /app/resources/pystow; ls -la /app/data'
+/app/resources/indra:
+total 8
+drwxr-xr-x 2 belief belief 4096 .
+drwxr-xr-x 4 belief belief 4096 ..
+/app/resources/pystow:
+total 8
+drwxr-xr-x 2 belief belief 4096 .
+drwxr-xr-x 4 belief belief 4096 ..
+/app/data:
+total 8
+drwxr-xr-x 2 belief belief 4096 .
+drwxr-xr-x 1 root   root   4096 ..
+
+docker run --rm --entrypoint sh indra-belief-live:d2 -c "find / -name 'grounding_terms*' -o -name bio_ontology.pkl"
+# no matching path printed; host-recorded exit 1
+
+docker run --rm --entrypoint sh indra-belief-live:test -c 'ls -ld /app/data /app/resources'
+drwxr-xr-x 2 root   root   4096 /app/data
+drwxr-xr-x 4 belief belief 4096 /app/resources
+```
+
+**What that fixes, and what it does not.** [M] It fixes the ownership the image SEEDS into
+a named or an anonymous volume: `docker run --rm -v /app/data --entrypoint sh <tag> -c
+'test -w /app/data'` exited 1 before and exits 0 after, which is the case that was actually
+broken — a bare `docker run` with no `-v` gets an anonymous volume. It does **not** reach a
+bind-mounted host directory: a bind keeps the host's ownership and the image's chown never
+applies to it. [M] On Docker Desktop here, a bind of a host directory appeared in-container
+as `belief belief` and was writable, because its virtiofs layer remaps ownership — so on
+this host the bind case does not fail either way. [R] On a Linux host, where bind ownership
+passes through unremapped, a host directory not owned by uid 10001 is expected to be
+unwritable and the operator must chown it; that expectation was reasoned, not run.
+
+[M] The build gate runs `tests/test_prepared_execution_parity.py` inside the image —
+**13 passed, 3 skipped**, the three being the `requires_substrate` cases, which gate on
+`data/comparison/grounding_replay/manifest.json` and are correctly absent because
+`.dockerignore` excludes `data/`. This is the exact complement of the batch gate, which
+excludes that file by name and says it belongs "on a grounding-capable environment."
+
+**What the gate does NOT prove, stated because it is the easy misreading.** [V] That
+suite's record fixture replaces `ScoringRecord.resolve_entities` with a no-op for the
+duration of the test. It therefore proves the live PRODUCER agrees with the batch producer
+call-for-call with indra installed; it proves **package presence**, not grounding. [V] The
+suite that exercises grounding is `tests/test_grounding_collision.py`, which
+`pytest.importorskip`s gilda and calls the real `GroundedEntity.resolve` — it needs the
+mounted resources and so belongs to a runtime verify path, not a build gate.
+
+### 7.3 Three findings that only a build surfaces
+
+**(a) The image cannot be built without a compiler, on arm64.** [M] On linux/arm64
+`python:3.13-slim`, `pip install gilda indra` fails with `error: command 'gcc' failed: No
+such file or directory` while building `adeft.score._score`. adeft is a hard gilda
+dependency; pip resolves to an sdist here and compiles a Cython extension. [M] Fixed by
+`build-essential` in the BUILDER stage only — the multi-stage copy keeps the toolchain out
+of the runtime image, and a runtime-stage import of gilda/adeft/indra then succeeds with
+no compiler present.
+
+**(b) nltk refuses to import from a working directory of `/`.** [M] The first build failed
+in the runtime stage with `ImportError: Blocked import of pydoc from current working
+directory for security reasons`, raised out of `import gilda`. [V] nltk — reached via
+adeft, reached via gilda — installs an import finder in `nltk/inisec.py` that resolves each
+candidate spec's origin and tests `Path(origin).resolve().relative_to(cwd)` to decide
+whether a module is being loaded out of the working directory. When the working directory
+is `/`, that test succeeds for every path on the system, so the **stdlib's own** `pydoc` is
+misread as a cwd import and refused. [M] cwd `/` fails, cwd `/build` succeeds, and the
+`PYTHONSAFEPATH=1` the error text recommends does **not** help, because the finder compares
+resolved paths and never consults `sys.path`. [R] Any container process that imports gilda
+must therefore have a real working directory; `Dockerfile.live` satisfies this by ordering
+its import check after `WORKDIR /app`, which is also what ENTRYPOINT and HEALTHCHECK
+inherit.
+
+**(c) Both resource roots relocate cleanly by environment variable.** [V]
+`gilda.resources` resolves its directory through `pystow.join`, and pystow honours
+`PYSTOW_HOME`; [V] `indra.ontology.bio.ontology.CACHE_DIR` is built from
+`get_config('INDRA_RESOURCES')`, and [V] `indra.config.get_config` reads `os.environ`
+before the config file. [M] Both verified by setting the variable and printing the
+resulting path. That is what allows the resources to live on a volume rather than in a
+layer.
+
+### 7.4 The warm-up is an operator step, and it must be
+
+[V] `BioOntology.initialize` has **no prebuilt-pickle download path**: it either loads
+`CACHE_FILE` or calls `self._build()` and pickles the result, logging "this may take a few
+minutes". The ~470 MB pickle is therefore CONSTRUCTED, not fetched. [R] Two consequences.
+Building it during `docker build` would bake it into a layer, which is the design this
+image exists to avoid; and building it in-container rather than copying the host's
+sidesteps the cross-platform and cross-Python-version unpickle question entirely. So the
+volume is populated by running the image once against a named volume with a warm-up that
+calls `gilda.ground` and a `bio_ontology` child lookup — the invocation is written out in
+`Dockerfile.live`'s operator notes. [R] A plain `docker run` with no `-v` receives an
+anonymous volume and silently re-downloads and re-builds on every run.
+
+[M] In `indra-belief-live:d2`, 24 serial runs of `python -c "import time;
+t=time.perf_counter(); import gilda, indra.statements; print(time.perf_counter()-t)"`
+measured three conditions, with `uptime` recording host load. Fresh-container runs used
+`docker run --rm --entrypoint python indra-belief-live:d2 -c "import time;
+t=time.perf_counter(); import gilda, indra.statements; print(time.perf_counter()-t)"`.
+With no induced loaders (load average 8.49 → 8.46), they gave n=8, min/median/max
+1.416/1.485/1.626 s. For the already-running-container condition, the host ran
+`docker run -d --entrypoint sleep indra-belief-live:d2 600` and launched the same timer in
+fresh Python processes by repeated `docker exec`; at load average 8.89 after, those gave
+n=8, 1.422/1.583/1.708 s. [V] This matches the HEALTHCHECK's already-running-container
+condition, although the timed command omits its directory test. [M] Fresh-container runs
+under induced load from three competing import-loop containers (load average 9.26 → 9.86) gave
+n=8, 1.641/1.834/4.911 s. Across all 24 samples the min/median/max were
+1.416/1.594/4.911 s. [M] The former 2.2 s median and 1.7–2.6 s range reproduce in none of
+those conditions: no-induced-load samples fall below its lower bound and loaded samples
+exceed its upper bound. Dividing the batch file's 10 s timeout by each condition's slowest
+sample gives 10/1.626 = 6.15× with no induced loaders, 10/1.708 = 5.86× in the
+already-running container and 10/4.911 = 2.04× under induced load. [R] The single-attempt
+margin is load-dependent and thin under induced load;
+the configured `--retries=3` is what carries resilience there. Because the former n=9
+measurement recorded no load condition, it cannot be reproduced or bounded by load — the
+condition must travel with the latency number. (The earlier single `3.30 s` wall-clock
+reading remains superseded; these 24 serial, condition-labelled samples now replace it.)
+[V] `Dockerfile.live`'s HEALTHCHECK comment still carries the superseded 2.2 s median,
+1.7–2.6 s range and roughly fourfold headroom text; this node may not edit that file, so
+correcting the comment is owed to that file's owner.
+Calling `gilda.ground()` there would not fit: §3.4 measures first-ground at 10.9-19.7 s and
+~2 GB RSS.
+
+### 7.5 What this does not settle
+
+Nothing here is a serving process, and §1's finding stands unchanged. The image is not
+wired into `docker-compose.yml` — that file is the batch image's operator surface and its
+contract is correct as written, so the compose entry is a separate, operator-owned change.
+No provider was called and no credential is in any layer: [M] the image's `Env` is PATH,
+the three `python:3.13-slim` build vars, the three `PYTHON*`/`PIP_*` settings, and
+`PYSTOW_HOME` / `INDRA_RESOURCES`. And grounding itself is still unproven in-image — see
+§7.2 — because proving it needs a warmed volume, which is a runtime check, not a build one.
+
+---
+
 ## What was not checked
 
 Stated because absence of a finding is not a pass.
 
-* The 535 MB image was confirmed present on this host, but **not rebuilt**; the ~1.44 GB
-  saving is the Dockerfile's own figure, not re-weighed here.
+* The 535 MB image was confirmed present on this host, and the ~1.44 GB saving has now
+  been **re-weighed** — see §7.1, which corrects it to ~724 MB (~531 MB resources on a
+  volume plus ~193 MB packages in the image) and explains the drift. What is still *not*
+  checked is whether the batch image rebuilds byte-identically;
+  it was not rebuilt, only inspected.
 * No self-hosted serving stack was measured (§3.5b) — no GPU, no vLLM/SGLang/llama.cpp in
   this workspace. Every self-hosted latency figure in this document is an extrapolation
   from one June artifact on different hardware with a different model and no prefix cache.

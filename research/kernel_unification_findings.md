@@ -162,11 +162,9 @@ quarantine-budget case was added later. Re-measured:
 allowlist's default direction was verified and accepted as the whole answer. It is not:
 `attempt_failed`/`InvalidModelOutput` was itself in the allowlist, and that class *is*
 systematic. Measured with the arc's own harness — 8 sources, a client off-grid for all
-of them: `quarantined=8, scored=0, PROVIDER_CALLS=40`. **[M]** At corpus scale that is
-33,361 × 5 = 166,805 paid calls bounded only by the action cap
-($39.96 `gemma_26b_primary` / $309.54 `glm_5_primary`), producing zero usable rows.
-Pre-fix, the same run stopped after roughly `workers` sources. **Removing head-of-line
-blocking removed the thing that had been bounding a systematic failure.**
+of them: `quarantined=8, scored=0, PROVIDER_CALLS=40`. **[M]** §6 prices what that becomes
+at corpus scale; pre-fix, the same run stopped after roughly `workers` sources. **Removing
+head-of-line blocking removed the thing that had been bounding a systematic failure.**
 *Default direction and membership correctness are different properties.*
 
 The diagnostic budget (§6) is the bound that replaced it. Two further layers the first
@@ -712,12 +710,9 @@ attempts log is an operator call.
    of retrying. The fix is to carry `error.type` into the disposition. **This is the next
    thing to take.**
 9. **The digest circularity is not closed by the one-module fix**, and the architecture
-   doc says so. `scripts/build_verdict_only_replay.py` computes `main_prompt_base_sha256`
-   through the same `prepare_from_replay_row` that `assert_replay_digests` later checks it
-   against, so the digest cannot catch a change in the assembly. What catches it is
-   external — the 15 prompt components the shipped
-   `data/comparison/grounding_replay/manifest.json` commits to, re-derived through the
-   live producer by `tests/test_prepared_execution_parity.py`. **[V]**
+   doc says so: the mechanism is in `research/serving_architecture.md` §4 item 1. What
+   catches an assembly change is external — the shipped manifest's components, re-derived
+   through the live producer by `tests/test_prepared_execution_parity.py`. **[V]**
 
 10. ~~**The `variant=` seam is still untested behaviourally.**~~
     **DISCHARGED — the last of the three unfalsifiable tests now has a behavioural gate.**

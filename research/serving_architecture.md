@@ -111,13 +111,15 @@ against a 1,875 MB index (289×).
 
 ### Cost and latency, gemma-4-26b, same 33,361-execution corpus **[M]**
 
+Latency is attempt-grain p50; see `research/serving_deployment.md` §3.1 for both grains.
+
 | | reasoning | verdict-only | Δ |
 |---|---|---|---|
 | provider-measured | $26.37 | $9.45 | −64% |
 | cap-accounted | $35.39 | $9.72 | — |
 | calls | 50,484 | 32,329 | −36% |
 | output tokens | 23.3 M | 0.46 M | −98% |
-| latency median | 6.56 s | 0.72 s | 9.1× |
+| latency median (attempt) | 6.56 s | 0.72 s | 9.1× |
 | serial compute | 82.8 h | 9.5 h | 8.7× |
 | per statement | $0.0156–0.0210 | $0.0056–0.0058 | — |
 
@@ -463,9 +465,7 @@ predicted anywhere in it. Its purpose is to turn §4 item 11 and §7 from
 unmeasured directives into something that can come back wrong.
 
 **Placement.** Appended at end of file rather than inserted at the `## References`
-anchor, so the change is a tail append with exactly one argued exception: the cost
-bullet in §7, corrected below in 9.6 and at its own site because it rested on a
-premise this section refutes. §1–§6, §8 and the References block were
+anchor, so the change is a tail append. §1–§6, §8 and the References block were
 byte-identical afterwards. A sibling section was slated for insertion at the
 References anchor in the same wave; a tail append cannot collide with it. §3's F2
 has since been corrected in place by a later node — four unreproducible absolutes
@@ -788,21 +788,10 @@ Specific enough that two people get the same numbers.
 * **Pin and record** the vLLM/SGLang version, model id, quantization, driver
   version, GPU model and count, block size, shuffle seed, and the confirmed default
   flag state from 9.3.
-* **The bench client must not go through the paid runner**, and the reason is not
-  the one usually given. `_ActionGuard.reserve_call` in
-  `src/indra_belief/comparison/runner.py` calls `price_for` from
-  `src/indra_belief/corpus/cost.py` and raises `SpendGuardError` from
-  `src/indra_belief/spend_guard.py` when the price is `None` — but a self-hosted id
-  already registered in `ESTIMATED_PRICE_REFS` **does** carry a price. Reproduced:
+* **The bench client must not go through the paid runner**, and the guard is not
+  to be adjusted to let it through: §7 carries the mechanism. Reproduced here [M]:
   `price_for("mlx-community/gemma-4-26b-a4b-it-8bit")`, `price_for("gemma-4-26b-ollama")`
-  and `price_for("gemma-4-26b")` each return `(0.13, 0.4, "estimate")`, a
-  Bedrock-twin estimate, not `None` [M]. So the paid runner would **not** refuse a
-  bench client on a registered local id; it would admit it and silently write
-  spend-ledger rows carrying estimated dollars for GPU calls that cost no dollars,
-  corrupting the accounting behind the published cost figures. A *new*, unregistered
-  vLLM model id hits the other failure mode instead — `price_for` returns `None` and
-  `reserve_call` raises. Both roads end at the same rule: the bench client stays off
-  the paid runner, and the guard is not to be adjusted to let it through.
+  and `price_for("gemma-4-26b")` each return `(0.13, 0.4, "estimate")`, not `None`.
 * **Output location.** A scratch directory. **Never** under `data/comparison/**` or
   `data/comparison_verdict_only/**` — those bytes back published numbers — and never
   to a spend ledger. The substrate is opened **read-only**, for prompt bytes only.
