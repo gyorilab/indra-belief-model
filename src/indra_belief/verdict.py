@@ -57,7 +57,8 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Protocol
+from types import MappingProxyType
+from typing import Any, Mapping, Protocol
 
 from indra_belief.scorers._shared import VERDICT_SCORE_GRID
 
@@ -164,6 +165,23 @@ def grid_score(verdict: str | None, confidence: str | None) -> float | None:
     if verdict not in VALID_VERDICTS:
         return None
     return VERDICT_SCORE_GRID.get((verdict, confidence or DEFAULT_CONFIDENCE))
+
+
+# Deliberate deviation from the node's original literal draft: `call_log` is
+# per-call state, so it must not live in a module-level mapping where a shallow
+# copy would share one list for the process lifetime. Each caller supplies a
+# fresh list. `grid_score("correct", "high") == 0.95`, making this byte-neutral
+# against the batch literal it replaces.
+NO_TEXT_RESULT: Mapping[str, Any] = MappingProxyType({
+    "score": grid_score("correct", "high"),
+    "verdict": "correct",
+    "confidence": "high",
+    "tier": "no_text",
+    "grounding_status": "skipped",
+    "provenance_triggered": False,
+    "raw_text": "No evidence sentence — accepted by default (database-sourced).",
+    "tokens": 0,
+})
 
 
 def _normalize_justification(value: Any) -> str | None:

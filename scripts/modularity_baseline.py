@@ -161,21 +161,24 @@ DUPLICATE_SITES = [
     # last of the four was not merely duplicated but CONTRADICTORY — live wrote
     # 0.5, batch wrote None — and it resolved to None: an absent measurement
     # stays absent.
+    #
+    # RETIRED by X1-twins, two rows — "relation-nature note" and "no-text
+    # default-accept". The retired relation anchors named the two
+    # `_relation_note` wrappers, which are not twins and remain: live dispatches
+    # a call while batch formats a stored reply. What collapsed is the label
+    # table, mismatch sentence, and relation user message, now owned by
+    # `prepared_execution.relation_mismatch_note` /
+    # `prepared_execution.relation_user_message`, plus the immutable
+    # default-accept core now owned by `verdict.NO_TEXT_RESULT`.
     {"concept": "provenance / grounding gate",
      "live": "src/indra_belief/data/scoring_record.py:369 recomputed from has_grounding_signal",
      "batch": "src/indra_belief/comparison/replay.py:383 trusts row['provenance']"},
     {"concept": "few-shot prefix selection",
      "live": "src/indra_belief/scorers/monolithic/scorer.py _select_examples at call time",
      "batch": "src/indra_belief/comparison/replay.py:394 frozen prefix by sha256"},
-    {"concept": "relation-nature note",
-     "live": "src/indra_belief/scorers/monolithic/scorer.py:90 _relation_note",
-     "batch": "src/indra_belief/comparison/replay.py:532 _relation_note"},
     {"concept": "deterministic auto-reject",
      "live": "src/indra_belief/data/scoring_record.py:392 tier1_auto_reject",
      "batch": "src/indra_belief/comparison/replay.py:447 deterministic_result"},
-    {"concept": "no-text default-accept",
-     "live": "src/indra_belief/scorers/monolithic/scorer.py:~500 tier 0 branch",
-     "batch": "src/indra_belief/comparison/replay.py:449 route == 'no_text'"},
 ]
 
 # ── E. concepts a reader must hold on the score path ─────────────────────────

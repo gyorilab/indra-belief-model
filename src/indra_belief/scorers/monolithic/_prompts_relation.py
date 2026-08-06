@@ -18,6 +18,11 @@ from __future__ import annotations
 import logging
 import re
 
+from indra_belief.prepared_execution import (
+    _RELATION_NATURE_LABELS,
+    relation_mismatch_note,
+    relation_user_message,
+)
 from indra_belief.scorers.probes._llm import _extract_json
 
 log = logging.getLogger(__name__)
@@ -48,15 +53,6 @@ _RELATION_SYSTEM = (
     'proteins do. Output JSON ONLY: {"nature": <one>, "span": <exact words that decide it>}.'
 )
 
-_NATURE_LABEL = {
-    "fusionconstruct": "a gene FUSION / chimeric construct (one molecule)",
-    "signalingcascade": "a signaling/regulatory cascade (functional, not physical binding)",
-    "cobindingthird": "co-binding to a shared THIRD entity (not each other)",
-    "topicoraim": "only a title/topic phrase or an aim/methods clause (not an asserted result)",
-    "other": "not a direct physical interaction",
-}
-
-
 def _gilda():
     """Optional Gilda accessor; returns None where Gilda is unavailable."""
     try:
@@ -70,13 +66,7 @@ def _gilda():
 def _user_message(subj: str, obj: str, text: str,
                   gs: dict | None = None, go: dict | None = None) -> str:
     """Question for the characterizer, with grounded aliases for each entity when available."""
-    def _ent(name, g):
-        if not g:
-            return name
-        al = [a for a in g["aliases"] if a.lower() != name.lower()][:6]
-        return f"{name} (also known as: {', '.join(al)})" if al else name
-    return (f'Entities: {_ent(subj, gs)}, {_ent(obj, go)}\nSentence: "{text}"\n'
-            f"What relationship does the sentence assert between {subj} and {obj}?")
+    return relation_user_message(subj, obj, text, gs, go)
 
 
 def _norm_nature(n) -> str | None:
@@ -117,13 +107,9 @@ def resolve_relation_nature(subj: str, obj: str, stmt_type: str, text: str, clie
     if not isinstance(o, dict):
         return ""
     nat = _norm_nature(o.get("nature"))
-    if nat is None or nat == "physicalbinding":
-        return ""
-    if nat not in _NATURE_LABEL:
+    if (
+        nat not in (None, "", "physicalbinding")
+        and nat not in _RELATION_NATURE_LABELS
+    ):
         log.warning("relation_nature: unrecognized nature %r; treating as non-binding", nat)
-    span = str(o.get("span", "") or "")[:160]
-    label = _NATURE_LABEL.get(nat, "not direct physical binding")
-    return ("Relation nature (resolved): the evidence asserts %s%s. A [Complex] claim requires a "
-            "stated DIRECT PHYSICAL BIND between %s and %s — that is a grounding MISMATCH here, so "
-            "the [Complex] extraction is unsupported." % (
-                label, (' — "%s"' % span if span else ""), subj, obj))
+    return relation_mismatch_note(nat, o.get("span", "") or "", subj, obj)

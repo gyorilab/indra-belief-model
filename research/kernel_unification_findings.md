@@ -627,15 +627,17 @@ attempts log is an operator call.
    `tests/test_modularity_baseline.py`) was rescoped out and **does not exist**; all
    three gaming attacks the audit reproduced are still live. Any future modularity claim
    rests on this file, so it needs its own piece of work.
-2. **Byte-level twins remain, and one is prompt-bearing.**
-   `scorers.monolithic._prompts_relation._NATURE_LABEL` and the `labels` dict inside
-   `comparison.replay._relation_note` are byte-identical and build the same
-   "Relation nature (resolved): …" sentence — **prompt text implemented twice**, exactly
-   the class fixed for the main user message, where a divergence changes the prompt on
-   one path only. **[V]** `ReplayIndex.relation_request` likewise builds the relation
-   sub-call user message with its own f-string. **[V]** Smallest: the no-text
-   default-accept (0.95 / correct / high / `no_text`) is written in both
-   `scorers.monolithic.scorer` and `comparison.replay.ReplayIndex.deterministic_result`.
+2. ~~**Byte-level twins remain, and one is prompt-bearing.**~~
+   **DISCHARGED — X1-twins collapsed the duplicated relation text and default-accept core.**
+   The label table and mismatch sentence now have one owner in
+   `prepared_execution.relation_mismatch_note`; both
+   `scorers.monolithic._prompts_relation.resolve_relation_nature` and
+   `comparison.replay._relation_note` retain their path-specific parsing and normalization
+   before delegating to it. The relation sub-call user message now has one owner in
+   `prepared_execution.relation_user_message`; both the live wrapper and
+   `ReplayIndex.relation_request` delegate to it, discharging the prompt-bearing twin too.
+   The eight immutable no-text values now live in `verdict.NO_TEXT_RESULT`, while each caller
+   still creates its own `call_log` and the live-only example-selection keys remain unchanged.
    **[V]** The earlier census mislabelled the first — the two `_relation_note`
    *functions* are not twins (live dispatches a call, batch formats a stored reply); the
    twin is one level down, in the label table.

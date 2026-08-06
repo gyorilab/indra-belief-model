@@ -38,8 +38,10 @@ from indra_belief.prepared_execution import (
     assert_replay_digests,
     prepare_from_replay_row,
     prompt_sha256,
+    relation_mismatch_note,
+    relation_user_message,
 )
-from indra_belief.verdict import grid_score, parse_response
+from indra_belief.verdict import NO_TEXT_RESULT, grid_score, parse_response
 
 from .contracts import (
     Action,
@@ -340,17 +342,9 @@ class ReplayIndex:
         except (KeyError, TypeError) as exc:
             raise ReplayError("relation prompt references an absent component") from exc
 
-        def named(name: str, grounding: Mapping[str, Any] | None) -> str:
-            aliases = [] if not grounding else [
-                alias for alias in grounding["aliases"] if alias.lower() != name.lower()
-            ][:6]
-            return f"{name} (also known as: {', '.join(aliases)})" if aliases else name
-
         subject_name, object_name = str(row["subject_name"]), str(row["object_name"])
-        user = (
-            f"Entities: {named(subject_name, subject)}, {named(object_name, object_)}\n"
-            f'Sentence: "{evidence}"\nWhat relationship does the sentence assert between '
-            f"{subject_name} and {object_name}?"
+        user = relation_user_message(
+            subject_name, object_name, evidence, subject, object_
         )
         messages = [{"role": "user", "content": user}]
         if prompt_sha256(system, messages) != row.get("relation_prompt_sha256"):
@@ -360,8 +354,7 @@ class ReplayIndex:
     def deterministic_result(self, row: Mapping[str, Any]) -> dict[str, Any]:
         route = str(row["route"])
         if route == "no_text":
-            return _result(0.95, "correct", "high", "no_text", "skipped", False,
-                           "No evidence sentence — accepted by default (database-sourced).", 0, [])
+            return {**NO_TEXT_RESULT, "call_log": []}
         evidence = str(row["evidence_metadata"]["text"])
         reason = status = None
         pseudogene = False
@@ -447,21 +440,8 @@ def _relation_note(text: str, subject: str, object_: str) -> str:
     if not isinstance(parsed, Mapping) or not isinstance(parsed.get("nature"), str):
         return ""
     nature = re.sub(r"[^a-z]", "", parsed["nature"].lower())
-    if not nature or nature == "physicalbinding":
-        return ""
-    labels = {
-        "fusionconstruct": "a gene FUSION / chimeric construct (one molecule)",
-        "signalingcascade": "a signaling/regulatory cascade (functional, not physical binding)",
-        "cobindingthird": "co-binding to a shared THIRD entity (not each other)",
-        "topicoraim": "only a title/topic phrase or an aim/methods clause (not an asserted result)",
-        "other": "not a direct physical interaction",
-    }
-    span = str(parsed.get("span", "") or "")[:160]
-    detail = f' — "{span}"' if span else ""
-    return (
-        f"Relation nature (resolved): the evidence asserts {labels.get(nature, 'not direct physical binding')}{detail}. "
-        f"A [Complex] claim requires a stated DIRECT PHYSICAL BIND between {subject} and {object_} — "
-        "that is a grounding MISMATCH here, so the [Complex] extraction is unsupported."
+    return relation_mismatch_note(
+        nature, parsed.get("span", "") or "", subject, object_
     )
 
 

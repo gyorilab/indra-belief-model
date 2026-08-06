@@ -64,7 +64,7 @@ from indra_belief.scorers.monolithic._prompts_disconfirm import (
     render_example_reasonfirst as _render_example_reasonfirst,
 )
 from indra_belief.scorers.monolithic._prompts_relation import resolve_relation_nature
-from indra_belief.verdict import grid_score, parse_response
+from indra_belief.verdict import NO_TEXT_RESULT, grid_score, parse_response
 
 # --- Scoring variants ---
 # A variant is the whole scoring profile — prompt, few-shot renderer, and the
@@ -563,15 +563,9 @@ def score(
         return {
             # ("correct", "high") is an on-grid pair, so this is always 0.95 —
             # a real cell, not the neutral value the parse-failure path used to
-            # fabricate. `grid_score` can only return None off-grid.
-            "score": grid_score("correct", "high"),
-            "verdict": "correct",
-            "confidence": "high",
-            "raw_text": "No evidence sentence — accepted by default (database-sourced).",
-            "tokens": 0,
-            "tier": "no_text",
-            "grounding_status": "skipped",
-            "provenance_triggered": False,
+            # fabricate. The shared core derives it through `grid_score`, which
+            # can only return None off-grid.
+            **NO_TEXT_RESULT,
             "selected_example_ids": [],
             "selected_examples": [],
             "call_log": _pop(),

@@ -29,10 +29,15 @@ two checks the frozen substrate commits to, defined once.
 Home. Top level of the package, next to `hashing.py` / `metrics.py` /
 `curation.py` / `sampling.py`, because both `scorers.monolithic` and
 `comparison.replay` consume it and neither may own it.
+
+Relation text. `relation_user_message` and `relation_mismatch_note` are the only
+copies of the relation sub-call question and mismatch-note rendering. A byte
+change in either function moves the prompt on the live and batch paths at once.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Protocol, Sequence
 
 from indra_belief.comparison.contracts import ContractError
@@ -46,6 +51,14 @@ MAIN_CALL_KINDS: Mapping[str, str] = {
 }
 RELATION_CALL_KIND = "relation_nature"
 
+_RELATION_NATURE_LABELS: Mapping[str, str] = MappingProxyType({
+    "fusionconstruct": "a gene FUSION / chimeric construct (one molecule)",
+    "signalingcascade": "a signaling/regulatory cascade (functional, not physical binding)",
+    "cobindingthird": "co-binding to a shared THIRD entity (not each other)",
+    "topicoraim": "only a title/topic phrase or an aim/methods clause (not an asserted result)",
+    "other": "not a direct physical interaction",
+})
+
 # Which reader turns the model's reply back into (verdict, confidence). It
 # travels with the request that produced the reply, and it is a CONSTANT: this
 # was the seam K2-one-parser hung its parser from, and K2's answer is that there
@@ -55,6 +68,55 @@ RELATION_CALL_KIND = "relation_nature"
 PARSER_ID = "indra_belief.verdict"
 
 _LOOKUP_BLOCK_HEADER = "Entity database lookups:"
+
+
+def relation_user_message(
+    subject: str,
+    object_: str,
+    text: str,
+    subject_grounding: Mapping[str, Any] | None = None,
+    object_grounding: Mapping[str, Any] | None = None,
+) -> str:
+    """Render the one relation sub-call user message used by both paths."""
+    def _entity(name: str, grounding: Mapping[str, Any] | None) -> str:
+        if not grounding:
+            return name
+        aliases = [
+            alias for alias in grounding["aliases"] if alias.lower() != name.lower()
+        ][:6]
+        return (
+            f"{name} (also known as: {', '.join(aliases)})"
+            if aliases else name
+        )
+
+    return (
+        f'Entities: {_entity(subject, subject_grounding)}, '
+        f'{_entity(object_, object_grounding)}\nSentence: "{text}"\n'
+        f"What relationship does the sentence assert between {subject} and {object_}?"
+    )
+
+
+def relation_mismatch_note(
+    nature: str | None,
+    span: Any,
+    subject: str,
+    object_: str,
+) -> str:
+    """Render a relation mismatch from an already-normalized nature key."""
+    if nature in (None, "", "physicalbinding"):
+        return ""
+    clipped_span = str(span)[:160]
+    label = _RELATION_NATURE_LABELS.get(nature, "not direct physical binding")
+    return (
+        "Relation nature (resolved): the evidence asserts %s%s. A [Complex] claim requires a "
+        "stated DIRECT PHYSICAL BIND between %s and %s — that is a grounding MISMATCH here, so "
+        "the [Complex] extraction is unsupported." % (
+            label,
+            (' — "%s"' % clipped_span if clipped_span else ""),
+            subject,
+            object_,
+        )
+    )
 
 
 class ReplayError(ContractError):

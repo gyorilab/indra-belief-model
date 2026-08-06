@@ -145,7 +145,8 @@ _BASELINE_EQUIVALENT = ("", "verdict_only", "typo_xyz")
 # scorer.py:78-79 imports resolve_relation_nature for these two only; scorer.py:90
 # returns "" for every other profile without touching the client.
 _RELNATURE_VARIANTS = ("disconfirm_relnature", "disconfirm_relnature_rf")
-# The [Complex] rows. 8:0 is Inhibition, so _prompts_relation.py:95-97 returns
+# The [Complex] rows. 8:0 is Inhibition, so
+# `_prompts_relation.resolve_relation_nature` returns
 # before the client call even under a relnature profile.
 _NOTE_ROWS = ("0:0", "2:0")
 
@@ -161,7 +162,8 @@ _MAIN_REPLY = (
 # nature=physical_binding -> resolve_relation_nature returns "" (no note), which
 # is the state the substrate's main_prompt_base_sha256 was generated under.
 _REL_BIND_REPLY = '{"nature": "physical_binding", "span": "binds to"}'
-# nature=signaling_cascade -> a real note, formatted by _prompts_relation.py:126-129.
+# nature=signaling_cascade -> a real note, formatted by
+# `prepared_execution.relation_mismatch_note`.
 _REL_CASCADE_REPLY = (
     '{"nature": "signaling_cascade", "span": "acts upstream in a shared pathway"}'
 )
@@ -607,8 +609,8 @@ def _capture(inputs: dict, table: dict | None, index: ReplayIndex | None,
             }
             cases: dict[str, dict] = {}
             # A physical_binding reply makes resolve_relation_nature return ""
-            # (_prompts_relation.py:120-121) — the no-note state the substrate's
-            # main_prompt_base_sha256 was generated under.
+            # (`prepared_execution.relation_mismatch_note`) — the no-note state
+            # the substrate's main_prompt_base_sha256 was generated under.
             for key, route in _LIVE_ROUTES.items():
                 record = _build_record(rows[key], entities)
                 cases[f"{route}@{key}"] = _live_request(mod, record, _REL_BIND_REPLY)
@@ -920,9 +922,11 @@ def test_relation_call_counts_and_kwargs(expected):
     """The relation-nature step is what distinguishes ``disconfirm`` from
     ``disconfirm_relnature``: on the no-note request they are byte-identical, so
     the call COUNT is the only discriminator. Row 8:0 is Inhibition and returns
-    at _prompts_relation.py:95-97 without a call, even under a relnature profile.
+    in ``_prompts_relation.resolve_relation_nature`` without a call, even under
+    a relnature profile.
     The kwargs pin ``reasoning_effort='none'`` and the json_object response
-    format at _prompts_relation.py:103-105, which nothing else constrains."""
+    format in ``_prompts_relation.resolve_relation_nature``, which nothing else
+    constrains."""
     for variant in _VARIANTS:
         relnature = variant in _RELNATURE_VARIANTS
         for name, entry in expected["live_requests"][variant].items():
@@ -948,7 +952,7 @@ def test_relation_call_counts_and_kwargs(expected):
 
 
 def test_relation_note_is_production_output(expected):
-    """The note is emitted by resolve_relation_nature (_prompts_relation.py:126-129)
+    """The note is emitted by ``prepared_execution.relation_mismatch_note``
     from a canned non-binding reply, and is a SUFFIX of what production actually
     put in the plain+note user message — so the fixture cannot drift from the
     formatter. On the tool route it lands BEFORE the lookup block."""
