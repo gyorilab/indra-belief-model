@@ -488,16 +488,15 @@ mismatches**, so the rename moved no byte of the assembly.
 
 **Numbering.** The integer was resolved by reading the merged document at land
 time: the highest section present was 8, so this is **section 9**, contiguous with
-what precedes it. Nothing binds the integer —
-`scripts/check_new_section_anchors.py` locates this section by its **title** and
-never by its number — so a later renumbering is safe and requires no other edit;
-this paragraph is the one place that must be re-read when it happens.
+what precedes it. Nothing binds the integer — `scripts/check_doc_anchors.py`
+reads this document end to end and locates nothing in it by section number — so a
+later renumbering is safe and requires no other edit; this paragraph and §10's are
+the two that must be re-read when it happens.
 
-**Markers** follow the document header. **[M]** = measured or reproduced on this
-machine; **[V]** = verified against the code; **[R]** = relayed and unverified,
-to be confirmed on the serving host before anyone acts on it. Every [M] figure
-below was re-derived read-only, by one of three methods — and which one matters,
-because only the first instantiates the shipped renderer:
+**Markers** follow the document header, with one section-local reading: **[R]**
+here is to be confirmed on the serving host before anyone acts on it. Every [M]
+figure below was re-derived read-only, by one of three methods — and which one
+matters, because only the first instantiates the shipped renderer:
 
 * **Through `ReplayIndex.prepare`** over
   `data/comparison_verdict_only/grounding_replay`: the per-component char split in
@@ -902,18 +901,17 @@ global form rejects two already-published plans, and the narrow form can never
 fire. §4 item 8 is marked WITHDRAWN and points here.
 
 **Placement and numbering.** Appended at end of file, after §9, which itself
-landed after the References block. Nothing binds the integer:
-`scripts/check_new_section_anchors.py` locates a section by its **title** and
-never by its number, and this section's title was added to that module's
-`SECTION_TITLES` in the same change — which is what makes its anchors checked at
-all rather than merely unread. §1–§9 and References are byte-identical afterwards
-except for the two lines named in 10.1.
+landed after the References block; §9 states the renumbering rule. **There is no
+registration step**: `scripts/check_doc_anchors.py` scans every `research/*.md`
+end to end at a grandfather allowance of zero, so this section's anchors were
+checked the moment it landed, and a future section's will be too without anyone
+declaring it anywhere. §1–§9 and References are byte-identical afterwards except
+for the two lines named in 10.1.
 
-**Markers** follow the document header. **[M]** = measured or reproduced on this
-machine, with the command beside it; **[V]** = read out of the code in this tree;
-**[R]** = relayed. Code is cited by **symbol**, never by line number: sibling nodes
-were editing three of these files while this was written, and a line anchor would
-already be stale.
+**Markers** follow the document header: **[M]** here carries the command beside
+it, **[V]** is read out of the code in this tree. Code is cited by **symbol**,
+never by line number: sibling nodes were editing three of these files while this
+was written, and a line anchor would already be stale.
 
 ### 10.1 Why the proposed check is wrong — both formulations
 
@@ -1164,9 +1162,15 @@ lines [M]: **three** `str.partition()` string splits (one in
 `src/indra_belief/results.py` about strict *bucket* partitioning in the stratified
 residual, one in `src/indra_belief/comparison/runner.py` about the
 completed/quarantined/pending partition — a different sense of the word. None is a
-corpus shard. The only "shard" strings in the repository are a comment in
-`scripts/modularity_baseline.py` and this section's own title, registered in
-`scripts/check_new_section_anchors.py`. F5's
+corpus shard. Nor is "shard" itself much of a presence in the code: re-derived
+with `grep -rni shard src viewer/src scripts tests` [M], `src/`, `viewer/src/` and
+`tests/` contain the string **zero** times and the only hit under `scripts/` is a
+comment in `scripts/modularity_baseline.py`. Two `viewer/scripts/` contract
+scripts do use the word, outside that grep's scope, for a hypergraph
+work-partition — which files an author owned — and never for a corpus shard. The
+claim is deliberately about code rather than about "the repository": this section
+is *about* sharding and says the word throughout, so a corpus-wide count would
+measure the prose, not the substrate. F5's
 failure mode cannot occur today, and 10.1 shows why: the lane check, plus
 `(model, workload)`-derived execution identity, plus `ReplayIndex.select`'s
 within-action repeat rejection, cover every shape the loader admits.

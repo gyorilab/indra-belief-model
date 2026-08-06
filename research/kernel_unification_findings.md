@@ -210,20 +210,35 @@ before it was banned outright; as a doc guard whose `DOCS` list did not contain 
 document being written; and as a parser diff that could not fail because error rows
 forbid `raw_text`, so the parsers agree on every stored response by construction.
 
-Three fail-open modes in `scripts/check_new_section_anchors.py` were closed in sequence,
-and the sequence is the point — each fix exposed the next. (1) **Coverage failed open**:
-`SECTION_TITLES` guarded 380 of 762 lines, so an unregistered section carrying a dead
-path exited 0 "OK". Closed with exit code 3 as a **dual** of exit 2 — opposite repairs,
-and a rename raises both, so collapsing them would destroy the diagnosis. (2) **That
-fix's own test was fragile**, hardcoding `SECTION_TITLES[0]`, so the first sibling to use
-the documented extension path made exit 2 mask the exit-3 contract under test.
-(3) **The guard validated paths, not symbols**: after the assemblers were deleted the
-architecture document cited `main_request` (6 mentions), `_record` (5) and
-`format_user_message` (3) — one calling the deleted `main_request` method on
+Three fail-open modes in the section-scoped anchor guard were closed in sequence, and the
+sequence is the point — each fix exposed the next. (1) **Coverage failed open**: its
+hand-registered table of section titles guarded 380 of 762 lines, so an unregistered
+section carrying a dead path exited 0 "OK". Closed with exit code 3 as a **dual** of
+exit 2 — opposite repairs, and a rename raises both, so collapsing them would destroy the
+diagnosis. (2) **That fix's own test was fragile**, hardcoding the table's first entry, so
+the first sibling to use the documented extension path made exit 2 mask the exit-3
+contract under test. (3) **The guard validated paths, not symbols**: after the assemblers
+were deleted the architecture document cited `main_request` (6 mentions), `_record` (5)
+and `format_user_message` (3) — one calling the deleted `main_request` method on
 `ReplayIndex` "the shipped renderer" — and the guard **exited 0**, because `replay.py`
-still existed. Closed with exit code 4 and `find_dead_symbols`, precedence `2→3→1→4` so
-coverage failures still outrank content failures. **[V]** The guard now states its own
-coverage in its success output and **classifies** what it declined to read. **[V]**
+still existed. Closed with exit code 4 and `find_dead_symbols`, coverage failures
+outranking content failures. **[V]**
+
+**Where those three closures live now** — because the module they were made in, a
+section-scoped shim that guarded only `research/serving_architecture.md`, **no longer
+exists on disk**, and a reader who goes looking for it under `scripts/` should know that
+finding nothing is the expected outcome rather than a bad checkout. Closure (3) **moved**:
+`find_dead_symbols`, exit code 4 and the checked/unchecked
+coverage classification are all live in `scripts/check_doc_anchors.py`, which runs them
+over every `research/*.md` instead of over the one document, and which states its own
+coverage in its success output. **[V]** Closures (1) and (2) were **retired** with the
+module. Both are title-scoping machinery, and title scoping existed only because §1–§8 of
+the serving document carried numeric debt that had to stay quarantined while siblings
+appended sections to it; that debt reached zero, the document joined the corpus-wide scan
+at a grandfather allowance of zero, and a guard whose premise is gone is deleted rather
+than left running beside the one that subsumes it. The exit precedence that survives is
+`1→3→4` on the corpus-wide guard, pinned in `tests/test_doc_anchors.py`, and so is the
+module's absence — the retirement is a test, not just a diff. **[V]**
 
 Three shipped tests were separately found unfalsifiable: the goldens mirrored the
 assembly instead of driving it (§4.1); the `variant=` seam's only test checked the

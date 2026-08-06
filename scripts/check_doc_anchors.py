@@ -26,7 +26,7 @@ Scope:
     keeps `research/archive/**` out — completed-phase records are history and are
     never scanned.
   * Extracts explicit `src/`, `scripts/`, and `viewer/src/` paths ending in .py,
-    .ts, or .svelte.
+    .ts, .svelte, or .sh.
   * A referenced file that does not exist is a DEAD ANCHOR.
   * A live `file.py:123` / `path/file.ts:123-140` citation is an UNSTABLE
     ANCHOR even when the citation uses only a basename or source-path suffix;
@@ -110,76 +110,44 @@ DOCS = tuple(sorted(DOC_ROOT.glob("*.md")))
 # THIS TABLE MAY ONLY SHRINK. An actual count above its entry reports the excess
 # as a normal invalid anchor (exit 1); an actual count BELOW it, or a key with no
 # occurrences left, exits 3 and prints the number to paste in. A document absent
-# from this table is allowed ZERO, which is the default that covers sixteen of
-# the seventeen live docs.
+# from this table is allowed ZERO, which is the default that covers every live
+# doc.
 #
 # `research/serving_architecture.md` carried twelve of these and is deliberately
 # NOT here: the doc-drift audit converted all twelve to symbol citations, so it
 # now joins the scan clean rather than grandfathered.
 #
-# `research/ben_gyori_deck_outline.md` carries the remaining 54 occurrences over
-# 33 distinct keys. It is a dated deck handoff ("CURRENT DECK CONTRACT —
-# 2026-07-13") for a deck that has shipped, and it is now the SOLE holder of
-# anchor debt in the corpus. Retiring it removes 54 anchors by removing a
-# quantity rather than by grandfathering one. That is an owner decision, not
-# this guard's; until it is taken, the debt is explicit here. (research/archive/
-# was itself removed, so archiving is no longer the cheap route — the choice is
-# repair the 54 anchors or retire the document.)
-GRANDFATHERED_ANCHORS: dict[str, dict[str, int]] = {
-    "research/ben_gyori_deck_outline.md": {
-        "analyze_external_gold.py:5": 1,
-        "calibration_constants.py:5-6": 1,
-        "calibration_constants.py:16-17": 1,
-        "calibration_constants.py:41-44": 3,
-        "calibration_constants.py:41-66": 7,
-        "calibration_constants.py:42": 1,
-        "calibration_constants.py:42-43": 1,
-        "calibration_constants.py:43": 1,
-        "calibration_constants.py:48": 1,
-        "calibration_constants.py:48-50": 2,
-        "calibration_constants.py:49": 1,
-        "calibration_constants.py:50-62": 1,
-        "calibration_constants.py:54": 1,
-        "calibration_constants.py:55": 1,
-        "calibration_constants.py:56": 1,
-        "calibration_constants.py:59": 1,
-        "calibration_ship_gate.py:26-32": 2,
-        "calibration_ship_gate.py:67-68": 2,
-        "calibration_ship_gate.py:302": 2,
-        "constants.py:5-6": 1,
-        "constants.py:16-17": 1,
-        "noise_model.py:3-9": 1,
-        "noise_model.py:5-6": 2,
-        "noise_model.py:24-25": 1,
-        "noise_model.py:285": 2,
-        "noise_model.py:321": 2,
-        "noise_model.py:354-357": 2,
-        "statement_belief.py:10-12": 2,
-        "statement_belief.py:51": 1,
-        "statement_belief.py:74": 2,
-        "statement_belief.py:75": 2,
-        "statement_belief.py:145": 2,
-        "statement_belief.py:221-222": 2,
-    },
-}
+# The table is now EMPTY, which is the ratchet's terminal state: the corpus
+# carries zero grandfathered anchors, so every document sits at the default of
+# zero and no debt is being tolerated anywhere. The last holder was a dated deck
+# handoff for a deck that had already shipped, and its debt was cleared by
+# retiring the document rather than by grandfathering it — removing a quantity,
+# not adding one. The mechanism stays because the table may only shrink and the
+# next document that arrives with pre-existing debt needs somewhere explicit to
+# declare it; anything added here still has to ratchet back down to nothing.
+GRANDFATHERED_ANCHORS: dict[str, dict[str, int]] = {}
 
 # An explicit repository-rooted code path plus an optional numeric line
 # coordinate. The left boundary prevents a path segment inside a URL from being
 # mistaken for a repository reference.
 _ANCHOR = re.compile(
     r"(?<![A-Za-z0-9_./:-])"
-    r"(?P<path>(?:(?:viewer/)?src|scripts)/[A-Za-z0-9_./+\[\]-]+\.(?:py|ts|svelte))"
+    r"(?P<path>(?:(?:viewer/)?src|scripts)/[A-Za-z0-9_./+\[\]-]+\.(?:py|ts|svelte|sh))"
+    r"(?![A-Za-z0-9])"
     r"(?P<line>:\d+(?:-\d+)?(?![\d.]))?"
 )
 
 # A numeric source citation may use just a basename (`noise_model.py:52-76`) or
 # a source-path suffix (`scorers/monolithic/scorer.py:59`). Requiring a real
 # source extension and a numeric suffix avoids matching version labels, schema
-# numbers, ratios, and other non-source prose. The boundary also excludes URL
-# path segments such as https://example.org/src/example.py:12.
+# numbers, ratios, and other non-source prose. The leading boundary excludes URL
+# path segments such as https://example.org/src/example.py:12; the trailing one
+# keeps the extension alternation from biting into a longer word, so
+# `hashlib.sha256` and `x.shuffle` are not read as `.sh` files.
 _NUMERIC_SOURCE_ANCHOR = re.compile(
     r"(?<![A-Za-z0-9_./:-])"
-    r"(?P<path>(?:[A-Za-z0-9_+\[\]-]+/)*[A-Za-z0-9_+\[\]-]+\.(?:py|ts|svelte))"
+    r"(?P<path>(?:[A-Za-z0-9_+\[\]-]+/)*[A-Za-z0-9_+\[\]-]+\.(?:py|ts|svelte|sh))"
+    r"(?![A-Za-z0-9])"
     r"(?P<line>:\d+(?:-\d+)?)(?![\d.])"
 )
 
@@ -623,9 +591,16 @@ def main(argv: list | None = None) -> int:
         return 3
     if dead_symbols:
         return 4
+    # At zero the parenthetical would claim occurrences are "all still present"
+    # when none exist. Say so plainly instead; the non-zero wording is unchanged
+    # so the ratchet's message survives.
+    grandfather_note = (
+        "no grandfathered occurrences remain"
+        if grandfathered == 0 else
+        f"{grandfathered} grandfathered occurrence(s) allowed and all still present"
+    )
     print(f"\nCLEAN — every live code anchor resolves and uses stable symbols "
-          f"({grandfathered} grandfathered occurrence(s) allowed and all still "
-          f"present); the symbol check read {coverage['checked']} of "
+          f"({grandfather_note}); the symbol check read {coverage['checked']} of "
           f"{coverage['checked'] + coverage['unchecked']} dotted citations and "
           f"all resolve ({coverage['unchecked']} unchecked — see the docstring's "
           f"Tier C).")

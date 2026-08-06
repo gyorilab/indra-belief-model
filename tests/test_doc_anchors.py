@@ -1,148 +1,60 @@
-"""Guard the doc-anchor guard (node R6).
+"""Guard the doc-anchor guard.
 
-scripts/check_doc_anchors.py fails CI when a live task-hypergraph doc cites a
-missing code path or a volatile numeric line coordinate, including basename-only
-coordinates — the anchor-drift class that let the removed `composed_scorer.py`
-linger in the calibration doc after the config-scoped hybrid ship. These tests
-make that class of regression fail:
+`scripts/check_doc_anchors.py` fails CI when a live research doc cites a missing
+code path, a volatile numeric line coordinate (basename-only coordinates
+included), or a dotted symbol the tree no longer defines — the anchor-drift class
+that let the removed `composed_scorer.py` linger in the calibration doc after the
+config-scoped hybrid ship. These tests make that class of regression fail.
 
-  * the current live docs contain ZERO dead anchors (post-R2/R3 repair), and
-  * a synthetic doc citing the removed composed_scorer.py IS flagged — proving
-    the guard would have caught finding #6 — while an anchor sitting on a line
-    explicitly marked "(superseded)" is correctly skipped.
+What is pinned here, and why each pin exists:
 
-The section-scoped guard over research/serving_architecture.md has now failed
-open three times, each time differently, and each closure is pinned below:
+  * THE CORPUS SCAN. Every `research/*.md` carries zero dead anchors and zero
+    dead symbols, at a grandfather allowance of zero. `DOCS` is a glob, so both
+    assertions are order-independent with respect to sibling nodes: a document
+    that lands mid-wave is scanned by whichever run happens after it, and there
+    is no list anybody has to remember to update.
+  * THE SHRINK-ONLY RATCHET. `GRANDFATHERED_ANCHORS` is the one place a document
+    may declare pre-existing numeric debt, and it may only count DOWN. Three
+    tests cover its three transitions: debt that shrank hands the maintainer the
+    new number, a key with nothing left tells them to delete it, and an
+    occurrence beyond the allowance comes back as an ordinary invalid anchor
+    rather than as a table complaint. That last one is what stops a repair in one
+    part of a file being silently traded for a new anchor in another part of it.
+    All three run against a `tmp_path` document and a `monkeypatch.setitem`, so
+    none of them asserts anything about the live table's contents.
+  * THE EXIT PRECEDENCE 1 -> 3 -> 4, pinned across three states of one seeded
+    document. The three codes name repairs of different kinds and collapsing them
+    would destroy the diagnosis.
+  * COVERAGE HONESTY. What these tests deliberately do NOT assert is that every
+    citation is checked: `symbol_coverage` reports a checked/unchecked split, and
+    the honesty test asserts that the forms this guard cannot resolve are counted
+    as UNCHECKED rather than silently passing.
+  * THE ANCHOR GRAMMAR'S RIGHT BOUNDARY, which is what keeps the extension
+    alternation from biting into a longer word and inventing a citation nobody
+    wrote.
+  * THE RETIREMENT of the section-scoped shim, so its deletion is durable rather
+    than a diff somebody re-adds.
 
-  * whole sections were never opened, because scoping by title covered only the
-    titles somebody remembered to register  -> `unregistered_sections`, exit 3;
-  * the fixture asserting that contract pinned SECTION_TITLES[0], so the first
-    sibling to register a second title turned exit 3 into exit 2 and masked it;
-  * the check validated PATHS, not SYMBOLS. Four assembler methods were deleted
-    from comparison/replay.py and fourteen citations of them stayed green,
-    because `replay.py` still existed  -> `find_dead_symbols`, exit 4.
-
-The last is the one the tests below are new for. What they deliberately do NOT
-assert is that every citation is checked: `symbol_coverage` reports a
-checked/unchecked split, and the honesty test asserts that the forms this guard
-cannot resolve are counted as UNCHECKED rather than silently passing.
+The symbol check is the youngest of these and the reason is recorded in
+`test_a_dead_symbol_exits_four_and_says_where_it_looked`: four assembler methods
+were deleted from `comparison/replay.py` and fourteen citations of them stayed
+green, because the guard asserted that `replay.py` exists — which it does — and
+never opened it.
 """
 from __future__ import annotations
 
 import sys
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import check_doc_anchors as cda  # noqa: E402
-import check_new_section_anchors as cnsa  # noqa: E402
 
 
-def test_appended_serving_sections_have_zero_dead_anchors():
-    """Sections appended to research/serving_architecture.md stay anchor-clean.
-
-    That document cannot join `check_doc_anchors.DOCS` while sections 1-8 carry
-    pre-existing unstable numeric anchors, so scripts/check_new_section_anchors.py
-    scopes the same `find_dead_anchors` to the appended sections by TITLE. Calling
-    it here keeps the guard from rotting into a script nothing runs.
-    """
-    misses, absent = cnsa.scoped_misses()
-    assert absent == [], (
-        "appended section heading(s) missing from "
-        f"{cnsa.DOC.name}: {', '.join(absent)}"
-    )
-    assert misses == [], (
-        "appended serving-architecture sections contain invalid code anchors:\n"
-        + "\n".join(
-            f"  {m['doc']}:{m['line']} -> {m['reason']}: {m['path']}"
-            for m in misses
-        )
-    )
-
-
-def test_serving_doc_has_no_unregistered_sections():
-    """Every `## ` section from the first guarded one down is actually checked.
-
-    Title scoping is what lets this document be guarded at all while §1-§8 keep
-    their pre-existing debt, but on its own it fails OPEN: an appended section
-    whose title nobody registered is not clean, it is unread. This asserts the
-    guard's coverage, so `test_appended_serving_sections_have_zero_dead_anchors`
-    above is a statement about the whole tail rather than about whichever spans
-    happened to be registered.
-    """
-    unregistered = cnsa.unregistered_sections()
-    assert unregistered == [], (
-        f"{cnsa.DOC.name} carries section(s) no SECTION_TITLES entry claims, so "
-        "their anchors are never checked — register the title(s) in "
-        "scripts/check_new_section_anchors.py:\n"
-        + "\n".join(f"  line {lineno}: {text}" for lineno, text in unregistered)
-    )
-
-
-def test_unregistered_section_after_a_guarded_one_fails_loudly(
-    tmp_path, monkeypatch, capsys
-):
-    """The seeded sibling that used to pass must now fail, and fail by name.
-
-    Reproduced before the fix: appending an unregistered sibling section citing a
-    nonexistent file AND a numeric line anchor left the guard printing OK at
-    exit 0 and this module at 3 passed, because scoping by title meant the
-    section was never opened. Sibling nodes append to this document in the same
-    wave, so fail-open here rots the guard on its first real use.
-
-    Also pinned: sections ABOVE the first guarded one keep their pre-existing
-    anchor debt out of scope, and registering the new title turns its formerly
-    invisible anchors into reported misses.
-    """
-    # One section per REGISTERED title, so this fixture stays correct as siblings
-    # append entries to SECTION_TITLES — the module's documented extension path.
-    # A registered title absent from the document exits 2 (MISSING SECTION),
-    # which outranks and would mask the exit-3 contract under test here.
-    lines = [
-        "# Serving architecture",
-        "## 8. Older section carrying pre-existing debt",
-        "Legacy numeric anchor, deliberately out of scope: `spend_guard.py:1068-1072`.",
-    ]
-    for offset, title in enumerate(cnsa.SECTION_TITLES):
-        lines.append(f"## {9 + offset}. {title}")
-        lines.append(
-            "Stable cite: `src/indra_belief/comparison/replay.py` (`main_request`)."
-        )
-    sibling_lineno = len(lines) + 1
-    sibling_heading = f"## {9 + len(cnsa.SECTION_TITLES)}. Sibling section"
-    lines += [
-        sibling_heading,
-        "Dead path `src/indra_belief/totally_bogus_sibling.py`, "
-        "numeric `spend_guard.py:1068`.",
-    ]
-    doc = tmp_path / "serving_architecture.md"
-    doc.write_text("\n".join(lines) + "\n")
-
-    assert cnsa.unregistered_sections(doc) == [(sibling_lineno, sibling_heading)], (
-        "the unregistered sibling section was not reported — the guard is still "
-        "fail-open"
-    )
-
-    monkeypatch.setattr(cnsa, "DOC", doc)
-    assert cnsa.main() == 3, "an unregistered section must exit non-zero (3)"
-    printed = capsys.readouterr().out
-    assert "UNREGISTERED SECTION" in printed
-    assert sibling_heading in printed
-
-    # Scoping still holds: §8's debt sits above the first guarded heading.
-    misses, absent = cnsa.scoped_misses(doc)
-    assert (misses, absent) == ([], [])
-
-    # And registering the title is what turns its anchors from unread to read.
-    registered = cnsa.SECTION_TITLES + ("Sibling section",)
-    assert cnsa.unregistered_sections(doc, registered) == []
-    now_seen = {m["path"] for m in cnsa.scoped_misses(doc, registered)[0]}
-    assert now_seen == {"src/indra_belief/totally_bogus_sibling.py", "spend_guard.py"}
-
-
-def test_serving_doc_cites_no_dead_symbols():
-    """Every dotted citation this guard can resolve still resolves.
+def test_live_docs_cite_no_dead_symbols():
+    """Every dotted citation this guard can resolve still resolves, corpus-wide.
 
     The regression: K1-prepared-execution deleted `ReplayIndex.main_request`,
     `ReplayIndex._record` and `ScoringRecord.format_user_message`, and the
@@ -150,18 +62,23 @@ def test_serving_doc_cites_no_dead_symbols():
     asserted that `comparison/replay.py` exists, which it does, and never opened
     it. §9's protocol section was left telling a benchmark operator to call a
     method that is not there.
+
+    Scoped to the whole corpus rather than to that one document, because the
+    first time this same check was run over every `research/*.md` it reported
+    four further dead symbols in two OTHER documents, one of them a live
+    operational runbook. A pass here is a statement about the corpus; a pass
+    scoped to one file was read as one and was not.
     """
-    dead = cnsa.find_dead_symbols()
+    dead = cda.find_all_dead_symbols()
     assert dead == [], (
-        f"{cnsa.DOC.name} cites symbol(s) the tree no longer defines — rewrite "
+        "live research docs cite symbol(s) the tree no longer defines — rewrite "
         "each to its CURRENT owner, by symbol, never by line:\n"
-        + "\n".join(f"  line {m['line']}: {m['symbol']} — {m['reason']}"
+        + "\n".join(f"  {m['doc']}:{m['line']} -> {m['symbol']} — {m['reason']}"
                     for m in dead)
     )
 
 
-def test_a_dead_symbol_exits_four_and_says_where_it_looked(tmp_path, monkeypatch,
-                                                           capsys):
+def test_a_dead_symbol_exits_four_and_says_where_it_looked(tmp_path, capsys):
     """The seeded proof: the exact citation that shipped green must now fail.
 
     Reproduced on the live document before this check existed —
@@ -172,22 +89,20 @@ def test_a_dead_symbol_exits_four_and_says_where_it_looked(tmp_path, monkeypatch
     reads only inline backtick spans.
     """
     doc = tmp_path / "serving_architecture.md"
-    lines = ["# Serving architecture", "```",
-             "  ReplayIndex._record()   <- renderer A", "```"]
-    for offset, title in enumerate(cnsa.SECTION_TITLES):
-        lines.append(f"## {9 + offset}. {title}")
-        lines.append("Prompts come from `ReplayIndex.main_request`.")
-    doc.write_text("\n".join(lines) + "\n")
+    doc.write_text("# Serving architecture\n"
+                   "```\n"
+                   "  ReplayIndex._record()   <- renderer A\n"
+                   "```\n"
+                   "Prompts come from `ReplayIndex.main_request`.\n")
 
-    dead = cnsa.find_dead_symbols(doc)
+    dead = cda.find_dead_symbols(doc)
     assert {m["symbol"] for m in dead} == {"ReplayIndex._record",
                                            "ReplayIndex.main_request"}
     # The message must name the file it resolved against, or the maintainer has
     # to guess which of several same-named modules the guard read.
     assert all("comparison/replay.py" in m["reason"] for m in dead)
 
-    monkeypatch.setattr(cnsa, "DOC", doc)
-    assert cnsa.main() == 4, "a dead symbol must exit non-zero (4)"
+    assert cda.main([str(doc)]) == 4, "a dead symbol must exit non-zero (4)"
     printed = capsys.readouterr().out
     assert "DEAD SYMBOLS" in printed
     assert "ReplayIndex.main_request" in printed
@@ -209,42 +124,21 @@ def test_symbol_check_reports_what_it_cannot_read_as_unchecked(tmp_path):
         "Ambiguous head: `scorer._select_examples`.\n"
         "Resolvable and real: `ReplayIndex.prepare`, `ExecutionBody.render`.\n"
     )
-    assert cnsa.find_dead_symbols(doc) == []
-    coverage = cnsa.symbol_coverage(doc)
+    assert cda.find_dead_symbols(doc) == []
+    coverage = cda.symbol_coverage(doc)
     assert coverage["missing"] == 0
     assert coverage["checked"] == 2, coverage
     assert coverage["unchecked"] >= 4, coverage
 
     for chain in ("self._reservations", "json.dumps", "spend_guard.py",
                   "scorer._select_examples"):
-        assert cnsa.resolve_symbol(chain)[0] == "unchecked", chain
+        assert cda.resolve_symbol(chain)[0] == "unchecked", chain
     for chain in ("ReplayIndex.prepare", "ExecutionBody.render",
                   "comparison.replay", "verdict.parse_response"):
-        assert cnsa.resolve_symbol(chain)[0] == "ok", chain
+        assert cda.resolve_symbol(chain)[0] == "ok", chain
     # A re-export counts: replay.py imports parse_response from verdict.py, so a
     # reader following `replay.parse_response` arrives somewhere real.
-    assert cnsa.resolve_symbol("replay.parse_response")[0] == "ok"
-
-
-def test_coverage_failures_still_outrank_the_symbol_check(tmp_path, monkeypatch):
-    """Exit codes 0-3 keep the exact meaning they had before 4 existed.
-
-    A document with BOTH an unregistered section and a dead symbol must still
-    report the unregistered section: an unread section is a statement about how
-    much of the document was checked at all, and it outranks anything found
-    inside the part that was read.
-    """
-    lines = ["# Serving architecture"]
-    for offset, title in enumerate(cnsa.SECTION_TITLES):
-        lines.append(f"## {9 + offset}. {title}")
-        lines.append("Dead: `ReplayIndex.main_request`.")
-    lines += [f"## {9 + len(cnsa.SECTION_TITLES)}. Sibling section", "Body."]
-    doc = tmp_path / "serving_architecture.md"
-    doc.write_text("\n".join(lines) + "\n")
-
-    assert cnsa.find_dead_symbols(doc), "fixture must carry a dead symbol"
-    monkeypatch.setattr(cnsa, "DOC", doc)
-    assert cnsa.main() == 3, "unregistered-section coverage must outrank exit 4"
+    assert cda.resolve_symbol("replay.parse_response")[0] == "ok"
 
 
 def test_live_docs_have_zero_dead_anchors():
@@ -303,3 +197,177 @@ def test_synthetic_dead_and_numeric_anchors_flagged_and_superseded_skipped(tmp_p
     assert "viewer/src/lib/data/queries.ts" not in flagged
     assert "src/url_only.py" not in flagged
     assert "runtime.py" not in flagged
+
+
+def test_stale_grandfather_entry_that_shrank_hands_over_the_new_number(
+    tmp_path, monkeypatch
+):
+    """Debt that shrank is reported WITH the number to paste in.
+
+    The table is shrink-only, which is only true if a repair is FORCED back into
+    it: an allowance nobody spends is a standing licence, and the next regression
+    in that file lands inside it silently. Asserting a non-zero exit alone would
+    not be enough to make that work — the value of this path is that the
+    maintainer is handed `set it to 1` instead of being left to re-count by hand,
+    which is exactly how a table drifts away from the document it describes.
+    """
+    doc = tmp_path / "grandfathered.md"
+    doc.write_text("# Doc\nVolatile basename cite: `noise_model.py:285`.\n")
+    monkeypatch.setitem(cda.GRANDFATHERED_ANCHORS, cda._rel(doc),
+                        {"noise_model.py:285": 2})
+
+    records = cda.find_dead_anchors([doc])
+    assert len(records) == 1, records
+    reason = records[0]["reason"]
+    assert reason.startswith("stale grandfather"), reason
+    assert "allowed 2, found 1" in reason, reason
+    assert "set it to 1" in reason, reason
+    assert cda.main([str(doc)]) == 3, "a stale table entry must exit 3"
+
+
+def test_grandfather_key_with_no_occurrences_left_says_delete_the_key(
+    tmp_path, monkeypatch
+):
+    """A fully repaired key must say so rather than sit on unspent slack.
+
+    Zero remaining occurrences is the one case where the obvious behaviour — stay
+    quiet, the document is clean — is the wrong one. The key survives as an
+    allowance for anchors nobody has written yet, so the guard fails and names the
+    repair as a DELETION, distinguishing it from the shrink case above.
+    """
+    doc = tmp_path / "repaid.md"
+    doc.write_text("# Doc\nCite by symbol: `src/indra_belief/verdict.py` "
+                   "(`parse_response`).\n")
+    monkeypatch.setitem(cda.GRANDFATHERED_ANCHORS, cda._rel(doc),
+                        {"noise_model.py:285": 3})
+
+    records = cda.find_dead_anchors([doc])
+    assert len(records) == 1, records
+    reason = records[0]["reason"]
+    assert "found 0" in reason, reason
+    assert "(delete the key)" in reason, reason
+    assert cda.main([str(doc)]) == 3, "an unspent key must exit 3"
+
+
+def test_occurrences_beyond_the_allowance_are_ordinary_invalid_anchors(tmp_path):
+    """Debt above the allowance is a document defect, not a table complaint.
+
+    At the default allowance — zero, where every live document sits — a numeric
+    anchor must be reported exactly as it would be with no table in the picture
+    at all: an ordinary record naming the cited path and the coordinate, exit 1,
+    with none of the stale-table wording. This is the half of the ratchet that
+    stops a repair being silently traded for a new anchor elsewhere in the same
+    file; without it the two would cancel and the count would still balance.
+    """
+    doc = tmp_path / "excess.md"
+    doc.write_text("# Doc\nVolatile basename cite: `noise_model.py:285`.\n")
+
+    records = cda.find_dead_anchors([doc])
+    assert len(records) == 1, records
+    assert records[0]["path"] == "noise_model.py", records
+    assert "unstable numeric anchor :285" in records[0]["reason"], records
+    assert not records[0]["reason"].startswith("stale grandfather"), records
+    assert cda.main([str(doc)]) == 1, "an over-allowance anchor must exit 1"
+
+
+def test_exit_precedence_is_invalid_anchor_then_stale_table_then_dead_symbol(
+    tmp_path, monkeypatch
+):
+    """1 -> 3 -> 4, pinned across three states of one seeded document.
+
+    The order is not arbitrary and the codes must not be collapsed, because each
+    names a repair of a different KIND. 1 is a broken DOCUMENT — a cited file is
+    missing, or a coordinate has to be deleted — and it comes first because it is
+    the only one where the prose itself is wrong. 3 is a correct document with an
+    out-of-date ALLOWANCE: nothing in the text needs touching, the repair is a
+    number in the guard's own table, and the guard prints it. 4 is a document
+    whose paths all resolve but whose SYMBOLS do not, repaired by finding out
+    where the logic went and renaming the citation to its current owner — the
+    slowest of the three, and the one worth surfacing alone once the other two
+    are clear.
+    """
+    doc = tmp_path / "precedence.md"
+    key = cda._rel(doc)
+    monkeypatch.setitem(cda.GRANDFATHERED_ANCHORS, key, {"noise_model.py:285": 1})
+
+    doc.write_text("# Doc\n"
+                   "Missing path: `src/indra_belief/totally_bogus.py`.\n"
+                   "Dead symbol: `ReplayIndex.main_request`.\n")
+    assert cda.main([str(doc)]) == 1, "an invalid anchor outranks the other two"
+
+    doc.write_text("# Doc\nDead symbol: `ReplayIndex.main_request`.\n")
+    assert cda.main([str(doc)]) == 3, "a stale table entry outranks a dead symbol"
+
+    monkeypatch.delitem(cda.GRANDFATHERED_ANCHORS, key)
+    assert cda.main([str(doc)]) == 4, "the dead symbol is what remains"
+
+
+def test_anchor_grammar_stops_at_the_extension_boundary():
+    """The right boundary on both anchor patterns, and the live defect it repairs.
+
+    Without a trailing `(?![A-Za-z0-9])` the extension alternation bites into a
+    longer word and invents a citation nobody wrote: `src/indra_belief/scorer.python`
+    matched as `src/indra_belief/scorer.py`, and the guard then reported a missing
+    file against a path that appears in no document. That false positive is a
+    `.py` one with no `sh` anywhere in it, which is why the boundary belongs on
+    the alternation rather than on whichever extension was added last.
+    `hashlib.sha256`, `plan.sha256`, `x.shuffle` and `scripts/foo.shuffle` are the
+    same defect read through the `.sh` arm.
+
+    The `.sh` arm is not dead grammar — the corpus really does cite shell scripts,
+    and the breakdown below is derived by running `cda._ANCHOR` over `cda.DOCS`
+    rather than by grepping for `.sh`. A hand grep gives a different and wrong
+    figure, because it also sees bare basenames and a crontab absolute path that
+    this pattern's left lookbehind rejects by design.
+    """
+    assert [m.group("path") for m in
+            cda._ANCHOR.finditer("scripts/supervise_comparison_all.sh")] == [
+        "scripts/supervise_comparison_all.sh"]
+
+    for text in ("hashlib.sha256", "plan.sha256", "x.shuffle",
+                 "scripts/foo.shuffle", "src/indra_belief/scorer.python"):
+        assert not cda._ANCHOR.findall(text), f"_ANCHOR matched {text!r}"
+        assert not cda._NUMERIC_SOURCE_ANCHOR.findall(text), (
+            f"_NUMERIC_SOURCE_ANCHOR matched {text!r}")
+
+    cited = Counter(
+        m.group("path")
+        for doc in cda.DOCS
+        for line in doc.read_text().splitlines()
+        for m in cda._ANCHOR.finditer(line)
+        if m.group("path").endswith(".sh")
+    )
+    assert cited == {
+        "scripts/supervise_comparison_arm.sh": 1,
+        "scripts/supervise_comparison_all.sh": 2,
+        "scripts/monitor_comparison_fleet.sh": 1,
+    }, (
+        "the corpus's matchable `.sh` citations moved. This pin exists to keep the "
+        "`.sh` arm from becoming grammar that matches nothing, so the repair is to "
+        "RE-DERIVE with cda._ANCHOR over cda.DOCS and paste the new breakdown in — "
+        f"never to hand-grep for '.sh'. Measured now: {dict(cited)}"
+    )
+
+
+def test_section_scoped_shim_stays_retired():
+    """The retired section-scoped guard must not come back.
+
+    It scoped the anchor scan to a hand-registered list of section titles in
+    `research/serving_architecture.md`, because §1-§8 of that document carried
+    numeric debt that had to stay quarantined while new sections were appended to
+    it. That debt reached zero, the document joined the corpus-wide scan at an
+    allowance of zero, and the shim became a second guard that could only ever
+    agree with the first — while still failing open on any section nobody
+    remembered to register. Its one durable part, the symbol check, moved into
+    `scripts/check_doc_anchors.py` and is pinned by the tests above.
+    """
+    shim = ROOT / "scripts" / "check_new_section_anchors.py"
+    assert not shim.exists(), (
+        f"{shim.relative_to(ROOT)} is back. The section-scoped guard was retired "
+        "once research/serving_architecture.md's numeric debt reached zero: the "
+        "whole corpus is scanned unscoped by scripts/check_doc_anchors.py, so a "
+        "title registry adds no coverage and restores a fail-open path — a "
+        "section nobody registers is UNREAD, not clean. A document that genuinely "
+        "needs an allowance declares it in GRANDFATHERED_ANCHORS, which may only "
+        "shrink."
+    )
