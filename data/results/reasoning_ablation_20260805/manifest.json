@@ -1,0 +1,11 @@
+{
+ "artifact_kind": "indra_reasoning_ablation",
+ "files": {
+  "reasoning_ablation.json": {
+   "bytes": 54509,
+   "path": "data/results/reasoning_ablation_20260805/reasoning_ablation.json",
+   "sha256": "da15003cf1d1db93d906f5efd26f7c4c278e0cf195a42498f228f48e441b9bce"
+  }
+ },
+ "frozen_at": "2026-08-05T03:52:37+00:00"
+}

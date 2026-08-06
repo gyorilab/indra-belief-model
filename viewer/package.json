@@ -19,6 +19,7 @@
 		"test:paper-audit": "node --experimental-strip-types scripts/test-paper-audit-trail-contract.mjs",
 		"test:paper-ladder": "node --experimental-strip-types scripts/test-belief-ladder-contract.mjs",
 		"test:per-evidence": "node --experimental-strip-types scripts/test-per-evidence-contract.mjs",
+		"test:reasoning-ablation": "node --experimental-strip-types scripts/test-reasoning-ablation-contract.mjs",
 		"test:deployed-baseline": "node --experimental-strip-types scripts/test-deployed-baseline-contract.mjs",
 		"validate:belief:publication": "node --experimental-strip-types scripts/validate-belief-comparison-publication.mjs",
 		"test:curation": "node --experimental-strip-types scripts/test-curation-sampling.mjs"

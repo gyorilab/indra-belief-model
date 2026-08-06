@@ -2431,7 +2431,33 @@ for (const literal of ['0.7683', '0.7881', '0.9010', '0.0494']) {
 //
 // The rule stands unchanged for the next raise: it needs a new BEAT, not new prose
 // in the beats that exist.
-const PROSE_BUDGET = 6400;
+//
+// 6400 -> 6500. ONE NEW BEAT, 5b — which is what the rule demands, and it is a
+// beat rather than a figure because it answers a question no other block on this
+// page asks. Beat 5a separates reading from aggregation. 5b goes one level
+// further in and separates the model's DELIBERATION from its reading: the same
+// 33,361 readings, run a second time on 2026-07-31 with the provider's
+// chain-of-thought and the prompt scaffolding both removed.
+//
+// It is also the only beat on the page whose two grains DISAGREE, which is why it
+// cannot be a line in an existing figure's <details>. Per single reading, every
+// model moves a large and one-sided amount — all four toward accepting. Per
+// assembled statement, three of the four barely move and their paired ranges cover
+// zero. A reader handed either number alone draws the opposite conclusion from the
+// one handed the other, so both are drawn, each on its own axis.
+//
+//   · `ReasoningAblation.svelte`, 0 -> 92 counted words, NEW counted file. Held
+//     to the treatment beat 5a's own figure gets: no lead paragraph, because the
+//     page's `.framing` lead-in does that job; no second definition of AUROC,
+//     because the figure directly above it defines it; every method note inside
+//     <desc> and <details>, where this counter does not reach.
+//   · routes/paper/+page.svelte 706 -> 725 (+19), the beat's own lead-in.
+//
+// Measured at 6,498 across 20 counted files, rounded up one step in the style
+// every earlier raise used. The lead-in count below moves 15 -> 16 for the same
+// beat. No estimate and no allowance is left in this number, and the rule stands
+// unchanged for the next raise.
+const PROSE_BUDGET = 6500;
 const LEAD_IN_BUDGET = 35;
 const LEDE_BUDGET = 60;
 const PAPER_PAGE = '../src/routes/paper/+page.svelte';
@@ -2451,6 +2477,7 @@ const PROSE_FILES = [
 	'../src/lib/components/ScoreDistribution.svelte',
 	'../src/lib/components/DeployedBaseline.svelte',
 	'../src/lib/components/PerEvidenceGrain.svelte',
+	'../src/lib/components/ReasoningAblation.svelte',
 	'../src/lib/components/PaperLiteralComparison.svelte',
 	'../src/lib/components/PaperTable6Extended.svelte',
 	'../src/lib/components/PaperOwnMetric.svelte',
@@ -2530,10 +2557,14 @@ ok(proseTotal <= PROSE_BUDGET, `/paper prose is ${proseTotal} words, budget ${PR
 const pageSource = readFileSync(new URL(PAPER_PAGE, import.meta.url), 'utf8');
 const pageLeadIns = leadIns(pageSource);
 /**
- * Fifteen `.framing` lead-ins across the page's seven beats — a beat groups the
+ * Sixteen `.framing` lead-ins across the page's seven beats — a beat groups the
  * figures that answer one claim, and each figure keeps the lead-in that
  * introduces it. The count is pinned, not the grouping: dropping a figure or
  * silently merging two into one lead-in is what this catches.
+ *
+ * 15 -> 16 with beat 5b, the reasoning ablation, whose justification is written
+ * against the prose budget above. A figure arriving WITHOUT its own lead-in is
+ * the other thing this pin catches, and it is the more likely of the two.
  *
  * The verdict and the verification section are NOT lead-ins and must not become
  * ones. Each carries its own heading and its own introduction, so a `.framing`
@@ -2542,7 +2573,7 @@ const pageLeadIns = leadIns(pageSource);
  * length is checked.
  */
 ok(
-	pageLeadIns.length === 15,
+	pageLeadIns.length === 16,
 	`/paper draws one lead-in per figure across its seven beats (found ${pageLeadIns.length})`
 );
 pageLeadIns.forEach((count, index) => {

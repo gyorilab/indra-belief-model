@@ -5,6 +5,7 @@ import { loadPaperLiteral } from '$lib/server/paper-literal';
 import { loadDeployedBaseline } from '$lib/server/paper-deployed-baseline';
 import { loadPaperOwnMetric } from '$lib/server/paper-own-metric';
 import { loadPaperPerEvidence } from '$lib/server/paper-per-evidence';
+import { loadReasoningAblation } from '$lib/server/paper-reasoning-ablation';
  import { loadPaperRobustness } from '$lib/server/paper-robustness';
 import { loadPaperTable6Extended } from '$lib/server/paper-table6-extended';
 import { loadPaperTieInflation } from '$lib/server/paper-tie-inflation';
@@ -27,6 +28,9 @@ export const load: PageServerLoad = () => {
 		paperOwnMetric: loadPaperOwnMetric(paperLiteral),
 		deployedBaseline: loadDeployedBaseline(),
 		paperPerEvidence: loadPaperPerEvidence(),
+		// Its own artifact, its own sha, its own gate: the reasoning ablation going
+		// dark leaves the per-evidence beat beside it standing.
+		reasoningAblation: loadReasoningAblation(),
 		tieInflation: loadPaperTieInflation(),
 		paperRobustness: loadPaperRobustness(),
 		framingCorrection: loadFramingCorrection(),

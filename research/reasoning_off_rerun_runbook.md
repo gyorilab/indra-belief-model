@@ -4,7 +4,9 @@
 > `data/comparison_verdict_only/supervisor/` and every `.state.json` reads
 > `phase: complete` (latest 2026-07-31T15:47:15Z). The procedures below are the
 > record of how it was run; the self-heal crontab from §Reboot self-heal is
-> still installed — remove it with `crontab -r`.
+> still installed — remove it with `crontab -r` (which clears the whole crontab,
+> safe today because that entry is the only one in it; edit instead if yours
+> holds others).
 
 Re-scores the SAME corpus as the 2026-07-20..23 Bedrock run with the scorer's
 reasoning removed **at both levels**: the provider's chain-of-thought, and the
@@ -191,16 +193,18 @@ Arms are staggered 0/180/360s by position in the derived list.
 
 ## Stopping
 
-Order matters once the self-heal is installed:
+Run these in order — though see §Reboot self-heal: the cron entry has never
+actually fired successfully, so only the monitor can really heal the fleet back:
 
 ```
-crontab -r                                     # FIRST, or cron restarts within 10 min
+crontab -r                                     # the entry never once executed, so order no longer matters — still remove it
 pkill -f monitor_comparison_fleet.sh           # else the monitor heals it back
 bash scripts/supervise_comparison_all.sh stop data/comparison_verdict_only/run_plan.json
 ```
 
 `supervise_comparison_all.sh stop` alone does **not** stop the run: it kills
-supervisors, and both cron and the monitor exist to bring them back. Stopping is
+supervisors, and the monitor exists to bring them back (cron was meant to as
+well, and would if it could execute the script at all). Stopping is
 safe at any point — ledgers are append-only and resume re-derives.
 
 ## Sleeping the machine
@@ -230,9 +234,37 @@ reviewed plan amendment, not a restart.
 
 `nohup`'d supervisors survive terminal exit and sleep, but **not** reboot. The
 LaunchAgent route is TCC-blocked on `~/Documents` (the failures are recorded in
-`data/comparison/supervisor/*.launchd.log`). cron was probed on 2026-07-31 and
-**is not blocked** — it resolved the repo working directory and read repo files
-as user `noot`. Install:
+`data/comparison/supervisor/*.launchd.log`). cron does not rescue it either. The
+entry below was installed 2026-07-31 and has **never executed once**: every fire
+dies immediately, appending one line to
+`data/comparison_verdict_only/supervisor/cron.log`. That path is local-only —
+the `data/comparison_verdict_only/*` rule in `.gitignore` keeps it out of the
+repo — so the evidence is quoted here rather than linked:
+
+```
+/bin/bash: /Users/noot/Documents/indra-belief-model/scripts/supervise_comparison_all.sh: Operation not permitted
+```
+
+That is the file's *only* distinct line: **399 fires, 399 failures, zero
+successes as of 2026-08-03 12:48** — and still climbing, because the entry is
+still installed and still fires every ten minutes. Reproduce with `wc -l` and
+`sort <file> | uniq -c` on that path; the count you get will be higher than the
+one written here and the distinct-line count will still be one.
+
+This is the same failure as the LaunchAgent's, not a second one. The launchd
+log's line differs only in naming `supervise_comparison_arm.sh` where cron's
+names `supervise_comparison_all.sh`; TCC denies `/bin/bash` exec of a script
+under `~/Documents` whichever scheduler asks, and that log is gitignored too
+(the `data/comparison/` rule in `.gitignore`). The 2026-07-31 probe misled
+because it established only that cron resolved the repo working directory and
+read repo files as user `noot` — strictly weaker than `/bin/bash` exec'ing a
+script under `~/Documents`, and that generalization is the step that failed.
+
+**So this repo currently has no working unattended reboot-recovery path.**
+Whether one exists at all is an open question: nothing beyond LaunchAgent and
+cron has been probed, so nothing else is claimed here.
+
+Installed 2026-07-31; this is the entry that does not work:
 
 ```
 ( crontab -l 2>/dev/null; echo '*/10 * * * * SUPERVISOR_CAFFEINATE=0 NETFAIL_KILL_TICKS=2 STAGGER_SECONDS=60 /bin/bash /Users/noot/Documents/indra-belief-model/scripts/supervise_comparison_all.sh start data/comparison_verdict_only/run_plan.json >> /Users/noot/Documents/indra-belief-model/data/comparison_verdict_only/supervisor/cron.log 2>&1' ) | crontab -
@@ -242,8 +274,10 @@ as user `noot`. Install:
 each supervisor additionally self-guards via `shlock` plus COMPLETE/ALERT
 markers and an adopt-wait for orphaned runners.
 
-**Remove it when the run finishes** (`crontab -r`), or it will keep trying to
-start a fleet forever.
+**Remove it when the run finishes** (`crontab -r`), or it will keep trying —
+and failing — to start a fleet forever. `-r` deletes the *entire* crontab, not
+just this entry; today the crontab holds exactly this one entry, so `-r` is
+safe. If yours holds anything else, edit it out with `crontab -e` instead.
 
 ## Resume semantics — why sleeping costs nothing
 
@@ -262,7 +296,89 @@ the plan on every invocation, reading and re-validating each output file whole.
 That is why this run has its own plan — pointing it at the thinking run's plan
 would re-read ~5.5 GB on every supervisor restart.
 
-## After the run — USE THESE PATHS, never the defaults
+## After the run — `model-bundle` REFUSES this run (2026-08-05)
+
+**The assembly recipe below was written before the run and never exercised. It
+does not work.** All four arms fail at their first `[Complex]` pair:
+
+```
+error: final provider-call topology differs for pair (0, 1)   # e2b, gemma-31b
+error: final provider-call topology differs for pair (0, 5)   # gemma-26b
+error: final provider-call topology differs for pair (0, 6)   # glm-5
+```
+
+`comparison/llm.py` (`_validate_raw`, at the `final provider-call topology`
+check) derives each pair's expected call topology from the **shared execution
+map** `data/benchmark/indra_paper_unique_pairs_20260717_execution_map.jsonl`,
+which declares `relation_prompt_sha256` — and therefore a `relation_nature`
+sub-call — for 17,235 of the 33,361 pairs. This run removed that call by design,
+so every `[Complex]` pair mismatches. Nothing is wrong with the run; the bundler
+and the substrate disagree about a topology the bundler reads from a file the
+substrate did not regenerate. Un-blocking it means relaxing a frozen contract,
+which needs its own review.
+
+So the four bundles, the spec, the metrics artifact and the report **do not
+exist**, and the `materialize` / `metrics` / `report` recipe below cannot run.
+
+### What was done instead
+
+`scripts/compute_reasoning_ablation.py` computes the comparison outside the
+bundler, through the same `statement_belief` entry point and the same
+`aggregation.json` priors, and gates before it writes:
+
+```
+PYTHONPATH=src python scripts/compute_reasoning_ablation.py \
+    --out-dir data/results/reasoning_ablation_20260805
+```
+
+It refuses to emit unless the **thinking side**, rebuilt from its own raw
+attempts, reproduces the shipped `all_source_predictions.jsonl` and
+`reader_predictions.jsonl` exactly (max |Δ| == 0) and the resulting
+AP / AUROC / Brier / ECE / confusion equal
+`data/results/indra_belief_comparison_metrics.json` exactly. All four arms pass.
+Both runs' `aggregation.json` are asserted byte-identical, so no aggregation
+confound is possible. The result renders as beat 5b of `/paper`
+(`viewer/src/lib/components/ReasoningAblation.svelte`), which carries the
+refusal above as data and types `verdictOnlyBundled: false` so no render site can
+imply a bundle stands behind the verdict-only side.
+
+### Headline — and read the metric before the number
+
+**Measure this on error-class F1, not on a ranking measure.** The panel is 73.2%
+correct and the paper's own RF already scores AP 0.9412, so AUROC and AP spend
+almost their whole range on statements nobody disputes. The first cut of this
+comparison was drawn on AUROC and it reported the OPPOSITE result — three of four
+models "unchanged", only E2B decided. On the error class the reverse holds, and
+gemma-26B's margin is ~7x larger than the AUROC reading of the same change.
+
+Statement grain, error-class F1 at each side's own best-error-F1 cut (the shipped
+rule; both sides land on the same cut for all four models, so the oracle buys
+nothing here):
+
+| arm | thinking | verdict-only | Δ | pointwise 95% | max-t 95% (4 models) |
+|---|---|---|---|---|---|
+| gemma-26B | 0.7746 | 0.7057 | **−0.0689** | [−0.1018, −0.0369] | **[−0.1095, −0.0283]** |
+| GLM-5 | 0.7855 | 0.7571 | −0.0284 | [−0.0569, −0.0007] | [−0.0638, +0.0069] |
+| gemma-31B | 0.7699 | 0.7456 | −0.0243 | [−0.0491, −0.0002] | [−0.0549, +0.0063] |
+| gemma-E2B | 0.6345 | 0.6188 | −0.0157 | [−0.0379, +0.0063] | [−0.0437, +0.0124] |
+
+Only **gemma-26B survives the multiplicity correction** for having run four
+models; 31B and GLM-5 clear zero pointwise by <0.001 and stop clearing it under
+max-t. For scale, `/paper` claims these models beat the 2023 RF by +0.126 to
++0.142 error-F1 — so gemma-26B's deliberation is worth about **half its entire
+published margin**.
+
+Evidence grain, every model shifts hard toward accepting: 87.1% / 93.2% / 87.2% /
+71.3% of model-read rows unchanged, and the flips are lopsided toward accepting
+on all four.
+
+Verdict-only spend was $91.89–$96.04 against $258.90–$335.70 thinking-first —
+about half the ~$176 forecast below.
+
+## The original recipe — USE THESE PATHS, never the defaults
+
+Kept because the clobber hazard it documents is real and still applies to any
+future assembly of this run; the commands themselves do not currently run.
 
 Every assembly command's default output path is the **shipped thinking run's**
 artifact, and one of the three writers has no overwrite guard: `materialize` and

@@ -66,6 +66,8 @@ data/results/*
 !data/results/per_evidence_comparison_20260727/
 !data/results/per_evidence_comparison_20260727/per_evidence_comparison.json
 !data/results/per_evidence_comparison_20260727/per_evidence_comparison.md
+!data/results/reasoning_ablation_20260805/
+!data/results/reasoning_ablation_20260805/*.json
 # Un-ignoring a directory un-ignores everything in it, and a later `!` rule only
 # ADDS — so the raw rows need an explicit re-exclude or they ride along.
 data/results/per_evidence_comparison_20260727/per_evidence_pairs.jsonl

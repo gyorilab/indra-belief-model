@@ -12,6 +12,7 @@
 	import PerEvidenceGrain from '$lib/components/PerEvidenceGrain.svelte';
 	import DeployedBaseline from '$lib/components/DeployedBaseline.svelte';
 	import PaperRobustness from '$lib/components/PaperRobustness.svelte';
+	import ReasoningAblation from '$lib/components/ReasoningAblation.svelte';
 	import StatementErrorF1 from '$lib/components/StatementErrorF1.svelte';
 	import TieInflation from '$lib/components/TieInflation.svelte';
 	import PaperReliabilityStrip from '$lib/components/PaperReliabilityStrip.svelte';
@@ -572,7 +573,26 @@
 	</p>
 	<PerEvidenceGrain data={data.paperPerEvidence} />
 
-	<!-- 5b · the formula every margin on this page is measured from, and what it
+	<!-- 5b · WHAT INSIDE THE READING IS DOING THE WORK. Beat 5a separated reading
+	     from aggregation. This one goes one level further in and separates the
+	     model's deliberation from its reading: the same 33,361 readings, run a
+	     second time with the provider's chain-of-thought and the prompt
+	     scaffolding both removed.
+
+	     It sits here rather than under the limits because it is not a limit — it
+	     is a result about the design, and it is the only beat on this page where
+	     the evidence-grain and statement-grain answers point different ways. The
+	     verdict block above does not rank it: its comparator is our own earlier
+	     run rather than anything published, so it belongs beside the per-evidence
+	     beat that shares that property, not among the claims measured against the
+	     2023 paper. -->
+	<p class="framing">
+		What the thinking was for. Every model here read the same evidence twice — once allowed to
+		deliberate, once made to answer with a verdict alone.
+	</p>
+	<ReasoningAblation data={data.reasoningAblation} />
+
+	<!-- 5c · the formula every margin on this page is measured from, and what it
 	     cannot see -->
 	<p class="framing">
 		Why there is anything to win. The noisy-OR is a lookup table on how many times each source said
