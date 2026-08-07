@@ -273,25 +273,40 @@ def test_prose_only_replies(text, label):
 
 @pytest.mark.parametrize("text", [
     "**Verdict** correct",
-    "verdict correct",
-    "Conclusion incorrect",
+    "the verdict correctly identifies the mechanism",
+    "a correct verdict would need more evidence",
 ])
 def test_the_unified_reading_is_narrower_on_exactly_one_axis(text):
     """The one place the unified parser reads LESS than a retired one.
 
     The retired batch phrase pattern made the colon OPTIONAL
-    (`verdict[^a-z]*:?[^a-z]*`), so it committed on `**Verdict** correct` with no
-    separator at all. The live pattern this module adopted requires either a
-    colon or a copula (`verdict IS correct`), and refuses these. That is a real
-    narrowing, not a superset.
+    (`verdict[^a-z]*:?[^a-z]*`) and was unanchored, so it committed on
+    `**Verdict** correct` and on the word "verdict" anywhere in a sentence. What
+    survives of that narrowing is the ANCHOR: a line must BEGIN with the keyword.
 
-    It is recorded rather than fixed because the measured cost is zero: across
-    the 228,812 stored responses in `data/comparison*` there is not one occurrence
-    of the colon-less form, so no published number moves. A separator-free
-    "verdict correct" is also the shape most likely to be a fragment of the
-    INSTRUCTION rather than an answer, which is the argument for keeping the
-    stricter reading. If a future backend produces it, this test is where the
-    decision to widen gets made.
+    THE DECISION THIS TEST NAMED HAS NOW BEEN TAKEN. The previous version of
+    this docstring said: "A separator-free 'verdict correct' is ... most likely
+    to be a fragment of the INSTRUCTION rather than an answer ... If a future
+    backend produces it, this test is where the decision to widen gets made."
+    That backend arrived — a local instruction model served over vLLM on
+    haohangyan's scale_up branch, which emits one field per line with no
+    punctuation — so `verdict correct` and `Conclusion incorrect` moved OUT of
+    this list and into `tests/test_verdict_bare_line_form.py`.
+
+    Both original cautions were checked before widening rather than waived:
+
+      * the instruction-fragment risk is ZERO against our prompts — all four
+        `scorers.monolithic.VARIANTS` system prompts specify JSON output and
+        contain no line beginning `verdict|decision|conclusion <label>`, so
+        there is nothing for a model to echo into a false parse.
+      * no published number moves — every stored response in `data/comparison*`
+        was re-read with the widened and the pre-widening pattern sets and the
+        two agree on every row.
+
+    `**Verdict** correct` stays here because the line begins with `**`, not with
+    the keyword, so the anchored pattern refuses it exactly as before. The other
+    two are the mid-sentence forms the anchor and the `\\b` after the label are
+    there to refuse.
     """
     assert parse_verdict(text) is None
 

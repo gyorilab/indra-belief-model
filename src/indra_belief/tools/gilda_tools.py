@@ -10,19 +10,19 @@ from __future__ import annotations
 
 import logging
 
-import gilda
-
 log = logging.getLogger(__name__)
 
 
 def execute_lookup_gene(args: dict) -> dict:
     """Execute gilda.ground() and return enriched results with functional descriptions."""
+    from indra_belief.data.entity import _cached_get_names, _cached_ground
+
     name = args.get("entity_name") or args.get("name") or ""
     name = name.strip().strip("'\"")
     if not name:
         return {"error": "No entity name provided"}
 
-    results = gilda.ground(name)
+    results = _cached_ground(name)
     if not results:
         return {"entity": name, "candidates": [], "note": "No matches found"}
 
@@ -38,7 +38,7 @@ def execute_lookup_gene(args: dict) -> dict:
         # Enrich with functional description + alias provenance
         if r.term.db == "HGNC":
             try:
-                all_names = gilda.get_names("HGNC", str(r.term.id))
+                all_names = _cached_get_names("HGNC", str(r.term.id))
                 # Functional description (longest descriptive name)
                 descs = sorted(
                     [n for n in all_names if len(n) > 12 and n != r.term.entry_name
@@ -118,8 +118,10 @@ def entity_grounding(name: str) -> dict | None:
     name = (name or "").strip().strip("'\"")
     if not name:
         return None
+    from indra_belief.data.entity import _cached_get_names, _cached_ground
+
     try:
-        results = gilda.ground(name)
+        results = _cached_ground(name)
     except Exception:
         log.warning(
             "gilda.ground failed for entity %r; treating as ungrounded",
@@ -132,7 +134,7 @@ def entity_grounding(name: str) -> dict | None:
     names = []
     if t.db == "HGNC":  # get_names is HGNC-specific; FPLX/CHEBI/MESH -> no alias list
         try:
-            names = gilda.get_names("HGNC", str(t.id)) or []
+            names = _cached_get_names("HGNC", str(t.id)) or []
         except Exception:
             log.debug(
                 "gilda HGNC get_names failed for %r (HGNC:%s); "

@@ -104,13 +104,43 @@ def _local_module_names() -> set[str]:
     }
 
 
+def _spec_loaded_stems(path: Path) -> set[str]:
+    """Script stems a file loads BY FILE PATH rather than by import.
+
+    Several tests here reach a script with
+    `importlib.util.spec_from_file_location("name", SCRIPT)` — because a
+    `scripts/` module is not importable by name without a `sys.path` insert.
+    An AST walk over import statements cannot see that, so the closure missed
+    every script loaded this way, and with it every dependency those scripts
+    need at collection. Found when a merged branch's tests loaded three scripts
+    that import `tqdm` and `httpx`, neither declared.
+
+    Matched on the spec call's first argument, which is the module NAME the
+    caller gives it, and by convention here that is the script's stem.
+    """
+    stems = set()
+    for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "spec_from_file_location"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            stems.add(node.args[0].value)
+    return stems
+
+
 def collection_closure() -> dict[Path, set[str]]:
     """Files pytest imports at collection, mapped to their module-level imports.
 
-    Every `tests/*.py`, plus each `scripts/*.py` a test imports, followed
-    transitively — a script that imports another script is reached too.
+    Every `tests/*.py`, plus each `scripts/*.py` a test reaches — whether by a
+    plain import, by `from scripts.X import ...`, or by
+    `spec_from_file_location` — followed transitively.
     """
     scripts = {path.stem: path for path in (ROOT / "scripts").glob("*.py")}
+    scripts.update({p.stem: p for p in ROOT.glob("*.py") if p.name != "setup.py"})
     pending = list((ROOT / "tests").glob("*.py"))
     reached: dict[Path, set[str]] = {}
     while pending:
@@ -119,7 +149,7 @@ def collection_closure() -> dict[Path, set[str]]:
             continue
         names = _module_level_imports(path)
         reached[path] = names
-        for name in names:
+        for name in names | _spec_loaded_stems(path):
             if name in scripts and scripts[name] not in reached:
                 pending.append(scripts[name])
     return reached

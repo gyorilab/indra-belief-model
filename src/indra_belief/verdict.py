@@ -109,6 +109,30 @@ _VERDICT_PHRASES = (
         r'[:"\'\*]*\s*(correct|incorrect)',
         re.IGNORECASE,
     ),
+    # THE BARE LINE-ORIENTED FORM: `verdict correct`, no colon, no JSON.
+    #
+    # From haohangyan's scale_up branch, where it was written against
+    # `_prompts.py`'s parser before this module became that parser's single
+    # owner. Carried here rather than there, because there is nothing left in
+    # `_prompts.py` to carry it — that is the whole point of the K2 unification.
+    #
+    # It is not redundant with the pattern above it. That one requires a COLON
+    # (`verdict: correct`) or a linking verb (`verdict is correct`); a local
+    # instruction model served over vLLM emits neither, writing one field per
+    # line with a space. Measured on this parser before the pattern landed:
+    # "verdict correct\nconfidence high" -> (None, None), and an unparsed reply
+    # is not benign here — it becomes InvalidModelOutput, then a retry, then an
+    # ERROR row. At the 60M-statement scale that branch runs, that is holes and
+    # spend rather than a cosmetic miss.
+    #
+    # MULTILINE + a `^` anchor keep it narrow: it reads a line that BEGINS with
+    # the keyword, so prose like "the verdict correctly identifies..." cannot
+    # match it — `\b` after the alternation is what stops `correctly`.
+    re.compile(
+        r'^\s*(?:final\s+)?(?:verdict|decision|conclusion)\s*[=:]?\s*'
+        r'["\'\*]*(correct|incorrect)\b',
+        re.IGNORECASE | re.MULTILINE,
+    ),
 )
 _CONFIDENCE_PHRASES = (
     re.compile(r'"confidence"\s*:\s*"(high|medium|low)"', re.IGNORECASE),
@@ -117,6 +141,12 @@ _CONFIDENCE_PHRASES = (
     ),
     re.compile(r'confidence\s+(?:is|level)?[^a-z]*?(high|medium|low)', re.IGNORECASE),
     re.compile(r'with\s+(high|medium|low)\s+confidence', re.IGNORECASE),
+    # The confidence half of the bare line-oriented form above. Same origin,
+    # same anchor, same reason. `confidence high` on its own line.
+    re.compile(
+        r'^\s*confidence\s*[=:]?\s*["\'\*]*(high|medium|low)\b',
+        re.IGNORECASE | re.MULTILINE,
+    ),
 )
 
 
