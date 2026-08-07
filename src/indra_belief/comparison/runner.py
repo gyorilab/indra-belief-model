@@ -744,8 +744,19 @@ class _SourceOutcome:
     failure: Mapping[str, Any] | None
 
 
-def _quarantine_failure(key: tuple[int, int], reason: str) -> dict[str, Any]:
-    return {"kind": reason, "stmt_i": key[0], "evidence_i": key[1]}
+def _quarantine_failure(key: tuple[int, int], reason: str,
+                        error_type: str | None = None) -> dict[str, Any]:
+    # `kind` stays exactly the allowlisted reason — `_QUARANTINE_KINDS` is
+    # exact-match and its default is halt, so it must never learn to match a
+    # prefix. `type` rides beside it, the same shape the live `attempt_failed`
+    # failure already uses, so an operator reading a quarantine record can tell
+    # an auth failure from a config error from a parser-profile mismatch. Before
+    # this, all three arrived as the single string
+    # `nonretryable_failure_on_resume` and were indistinguishable.
+    failure = {"kind": reason, "stmt_i": key[0], "evidence_i": key[1]}
+    if error_type is not None:
+        failure["type"] = error_type
+    return failure
 
 
 def _run_source(
@@ -763,7 +774,8 @@ def _run_source(
     # re-paid — must not depend on one caller building its list correctly.
     reason = prepared.resume.settled.get(key)
     if reason is not None:
-        return _SourceOutcome((), False, _quarantine_failure(key, reason))
+        return _SourceOutcome((), False, _quarantine_failure(
+            key, reason, prepared.resume.settled_error_types.get(key)))
     attempts = prepared.resume.attempts.get(key, 0)
     prior = prepared.resume.latest.get(key)
     prior_retry_class = row_retry_class(prior) if prior is not None else None
@@ -838,7 +850,10 @@ def _run_prepared(
         if key in prepared.resume.done:
             continue
         if key in settled:
-            failures.append((position, _quarantine_failure(key, settled[key])))
+            failures.append((position, _quarantine_failure(
+                key, settled[key],
+                prepared.resume.settled_error_types.get(key),
+            )))
         else:
             pending.append((position, source))
     # An action that ALREADY holds a hole is finished, whatever is still

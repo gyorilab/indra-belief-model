@@ -701,14 +701,34 @@ attempts log is an operator call.
    branch, which raises *after* the bytes are on disk. It fails **closed**, the safe
    direction for a paid lane — but the green suite is not evidence that the invariant
    holds. Pre-existing and byte-unchanged from the base commit.
-8. **`nonretryable_failure_on_resume` collapses distinct classes.**
-   `comparison.replay._settled_reason_from_class` fires whenever the retry class is
-   `None`, lumping auth 401, config and parser errors together. **[V]** First occurrence
-   still halts globally, so the invariant is intact; but on restart such a source becomes
-   a hole, and any hole is terminal, so it stops the arm — the safer direction, at the
-   cost that a transient credential blip near the end of a run terminates the arm instead
-   of retrying. The fix is to carry `error.type` into the disposition. **This is the next
-   thing to take.**
+8. ~~**`nonretryable_failure_on_resume` collapses distinct classes.**~~
+   **DISCHARGED — the type is carried, and a credential failure is no longer permanent.**
+   Three changes, and a fourth defect the work exposed.
+   *The type rides along.* `replay.RowDisposition` carries the row's own `error.type`
+   beside the retry class, `ResumeState.settled_error_types` carries it to the scheduler,
+   and `runner._quarantine_failure` reports it as `type` beside the kind. The kind stays
+   exactly the allowlisted reason — `_QUARANTINE_KINDS` is exact-match and its default is
+   halt, so it must not learn to match a prefix. **[V]**
+   *Credential failures are retryable across a restart.* `error_row` now records
+   `provider_http_status`, which `error.type` alone could never supply — an auth 401 and a
+   malformed-request 400 both surface as `BedrockChatTransportError`, and `message_sha256`
+   destroys the text the live classifier reads the status out of. A recorded 401/403 gets
+   the new `credential` class, which is NOT settled but is still bounded by
+   `max_attempts`. Being wrong costs one free, fast call and then halts the action exactly
+   as before; being wrong the other way cost the arm. **[V]**
+   *A fourth defect, found while measuring.* The resume classifier is name-based while the
+   live one is `isinstance`-based, and the hand-written name set never contained
+   `BedrockChatConnectionError` — which IS a `ConnectionError`, and which the live path has
+   always retried. `_RETRYABLE_ERROR_TYPES` is now DERIVED from the class hierarchy, so a
+   new transport exception joins both classifiers in the commit that defines it. **[V]**
+   *Measured, and it is why the change is safe.* Re-classifying all 238,039 rows / 1,653
+   error rows in the 15 shipped attempt logs gives output byte-identical to the old
+   classifier: **no row on disk changes class.** 1,612 classify off recorded call evidence
+   (`call_log[-1].provider_failure_class`), 41 off the name set, and **zero** off the
+   unrecognised branch — which is exactly why the `BedrockChatConnectionError` gap never
+   fired. Zero rows carry `provider_http_status`, so the two-key error shape stays valid
+   forever and no shipped artifact can be re-opened by the new class. **[M]**
+   `tests/test_resume_disposition.py` gates all four claims.
 9. **The digest circularity is not closed by the one-module fix**, and the architecture
    doc says so: the mechanism is in `research/serving_architecture.md` §4 item 1. What
    catches an assembly change is external — the shipped manifest's components, re-derived

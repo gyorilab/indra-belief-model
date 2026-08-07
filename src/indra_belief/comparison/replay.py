@@ -26,7 +26,7 @@ import os
 import re
 import stat
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Protocol, Sequence
 
@@ -41,6 +41,7 @@ from indra_belief.prepared_execution import (
     relation_mismatch_note,
     relation_user_message,
 )
+from indra_belief.spend_guard import classify_provider_failure
 from indra_belief.verdict import NO_TEXT_RESULT, grid_score, parse_response
 
 from .contracts import (
@@ -536,12 +537,31 @@ def error_row(source: Mapping[str, Any], *, action: Action,
               latency_s: float, error: BaseException | str) -> dict[str, Any]:
     error_type = type(error).__name__ if isinstance(error, BaseException) else str(error)
     message = str(error) if isinstance(error, BaseException) else str(error)
+    # `provider_http_status` is recorded because `error.type` alone cannot
+    # separate the failures the settled boundary must treat differently: both an
+    # auth 401 and a malformed-request 400 surface as `BedrockChatTransportError`,
+    # and `message_sha256` destroys the text the live classifier reads the status
+    # out of. Without it the resume path has no way to know that a restart with a
+    # fresh token would have scored the source. Live decides, the row records; the
+    # resume path reads rather than re-derives.
+    status = classify_provider_failure(error)[1] if isinstance(error, BaseException) else None
     return {**_identity_fields(source, action=action), **dict(attempt), "row_status": "error",
             "verdict": None, "score": None, "confidence": None, "tier": None,
             "grounding_status": None, "provenance_triggered": None,
             "latency_s": round(latency_s, 3), "tokens": None,
             "call_log": [dict(row) for row in calls],
-            "error": {"type": error_type, "message_sha256": _sha_text(message)}, "raw_text": ""}
+            "error": {"type": error_type, "message_sha256": _sha_text(message),
+                      "provider_http_status": status}, "raw_text": ""}
+
+
+# Rows written before `provider_http_status` existed carry two keys and stay
+# valid forever — they are append-only durable evidence and may not be rewritten.
+# Measured at the commit that added the third key: all 1,653 error rows across the
+# 15 shipped attempt logs carry the two-key shape.
+_ERROR_COMMITMENT_SHAPES = (
+    {"type", "message_sha256"},
+    {"type", "message_sha256", "provider_http_status"},
+)
 
 
 _ROW_FIELDS = frozenset({
@@ -620,8 +640,13 @@ def validate_row(row: Mapping[str, Any], *, source: Mapping[str, Any], action: A
             raise ReplayError("scored row tier/provenance/tokens differ from its route")
     elif row.get("row_status") == "error":
         error = row.get("error")
-        if row.get("attempt_status") not in {"error", "scheduling_stopped", "reconciled_after_interruption"} or not isinstance(error, Mapping) or set(error) != {"type", "message_sha256"} or not isinstance(error["type"], str) or HEX64.fullmatch(str(error["message_sha256"])) is None:
+        if row.get("attempt_status") not in {"error", "scheduling_stopped", "reconciled_after_interruption"} or not isinstance(error, Mapping) or set(error) not in _ERROR_COMMITMENT_SHAPES or not isinstance(error["type"], str) or HEX64.fullmatch(str(error["message_sha256"])) is None:
             raise ReplayError("error row failure commitment is malformed")
+        if "provider_http_status" in error and not (
+            error["provider_http_status"] is None
+            or isinstance(error["provider_http_status"], int)
+        ):
+            raise ReplayError("error row provider_http_status is not an integer or null")
         if any(row.get(field) is not None for field in (
             "verdict", "score", "confidence", "tier", "grounding_status",
             "provenance_triggered", "tokens",
@@ -698,6 +723,11 @@ class ResumeState:
     invalid_outputs: Mapping[tuple[int, int], int]
     settled: Mapping[tuple[int, int], str]
     verdicts: Mapping[str, int]
+    # The `error.type` of the row that settled each key, for the keys that have
+    # one. Additive and parallel to `settled` rather than folded into its value,
+    # so every existing reader of `settled` — the scheduler's last gate, the
+    # summary, the tests — keeps reading a plain reason string.
+    settled_error_types: Mapping[tuple[int, int], str] = field(default_factory=dict)
 
 
 def _terminal_row(row: Mapping[str, Any]) -> bool:
@@ -728,20 +758,69 @@ def row_retry_class(row: Mapping[str, Any]) -> str | None:
         return None
     if error.get("type") == "InvalidModelOutput":
         return "invalid_model_output"
+    if error.get("provider_http_status") in _CREDENTIAL_STATUSES:
+        return "credential"
     # Resume classification is name-based while live classification is
     # isinstance-based: ActionDeadlineExceeded (a TimeoutError), WAL
     # interruption closures, and reservation-accounting breaches record
     # operational events, not provider verdicts, and must stay retryable
     # across restarts.
-    if error.get("type") in {
-        "TimeoutError",
-        "ConnectionError",
-        "ActionDeadlineExceeded",
-        "InterruptedAfterDurableProviderEvidence",
-        "SpendReservationBreach",
-    }:
+    if error.get("type") in _RETRYABLE_ERROR_TYPES:
         return "transport_or_server"
     return None
+
+
+# 401 and 403. The live classifier calls both "other" and does not retry them
+# WITHIN an attempt loop, which is right — the same token will be rejected again
+# in the same process. Across a RESTART it is wrong: `_run_prepared` re-reads the
+# token, so the durable row does not answer "another attempt is not permitted",
+# only "the token at that moment was rejected". Settling on it is what turns a
+# credential blip near the end of a run into a permanent hole, and any hole is
+# terminal. Being wrong here costs one free, fast call and then halts the action
+# exactly as it does today; being wrong the other way costs the arm.
+_CREDENTIAL_STATUSES = frozenset({401, 403})
+
+
+def _provider_error_names() -> frozenset[str]:
+    """Transport exception NAMES the live classifier retries by `isinstance`.
+
+    `classify_provider_failure` decides on the live path with
+    `isinstance(error, (TimeoutError, ConnectionError))`; this path holds only
+    `error.type`, a string, so it has to decide by name. Typing the names out is
+    what let the two drift — `BedrockChatConnectionError` IS a `ConnectionError`
+    and the live path has always retried it, while the hand-written set below
+    never named it. Deriving the names from the classes closes that: a new
+    transport exception subclassing `ConnectionError` joins both classifiers in
+    the same commit that defines it.
+
+    Both transport modules are stdlib-only (~40 ms to import) so this costs
+    nothing the runner does not already pay.
+    """
+    from indra_belief import bedrock_chat_transport, bedrock_responses_transport
+
+    names = set()
+    for module in (bedrock_chat_transport, bedrock_responses_transport):
+        for value in vars(module).values():
+            if (
+                isinstance(value, type)
+                and issubclass(value, BaseException)
+                and issubclass(value, (TimeoutError, ConnectionError))
+            ):
+                names.add(value.__name__)
+    return frozenset(names)
+
+
+# The three that are NOT provider transports and must stay hand-named: the first
+# two are defined in `comparison.runner`, which imports THIS module, and the
+# third in `spend_guard` as a `RuntimeError`. All three record operational
+# events rather than provider verdicts.
+_RETRYABLE_ERROR_TYPES = _provider_error_names() | {
+    "TimeoutError",
+    "ConnectionError",
+    "ActionDeadlineExceeded",
+    "InterruptedAfterDurableProviderEvidence",
+    "SpendReservationBreach",
+}
 
 
 def _scan_resume(path: Path, *, index: ReplayIndex, action: Action, model: str,
@@ -815,20 +894,55 @@ def _settled_reason(latest: Mapping[str, Any], *, attempts: int, invalid_outputs
     itself is the disjunction.
     """
     return _settled_reason_from_class(
-        row_retry_class(latest), attempts=attempts,
+        row_disposition(latest), attempts=attempts,
         invalid_outputs=invalid_outputs, max_attempts=max_attempts,
     )
 
 
-def _settled_reason_from_class(retry_class: str | None, *, attempts: int,
+@dataclass(frozen=True)
+class RowDisposition:
+    """What one durable row says about its own failure, for the settled boundary.
+
+    `retry_class` is `row_retry_class`'s answer, unchanged. `error_type` rides
+    beside it because the boundary used to throw it away: an auth failure, a
+    config error, a parser-profile mismatch and an unclassified exception all
+    collapsed into the single reason `nonretryable_failure_on_resume`, so the
+    quarantine record could not say WHICH of them retired a source. The kind
+    stays in `runner._QUARANTINE_KINDS` — that allowlist is exact-match and its
+    default is halt, so it must not learn to match a prefix — and the type is
+    reported alongside it instead.
+    """
+
+    retry_class: str | None
+    error_type: str | None
+
+
+def row_disposition(row: Mapping[str, Any]) -> RowDisposition:
+    error = row.get("error")
+    error_type = error.get("type") if isinstance(error, Mapping) else None
+    return RowDisposition(
+        row_retry_class(row),
+        str(error_type) if isinstance(error_type, str) else None,
+    )
+
+
+def _settled_reason_from_class(disposition: RowDisposition, *, attempts: int,
                                invalid_outputs: int, max_attempts: int) -> str | None:
     """The settled boundary itself, over the fold rather than over the row.
 
     `load_resume` holds the latest row and `resume_status` deliberately does not,
     so the shared decision is expressed on the only thing both can produce: the
-    retry class of that row plus the three counts.  One boundary, two callers.
+    disposition of that row plus the three counts.  One boundary, two callers.
     """
-    if retry_class is None:
+    if disposition.retry_class == "credential":
+        # NOT settled, and this is the one class where that is a change. See
+        # `_CREDENTIAL_STATUSES`: the token is re-read at restart, so the row
+        # does not say another attempt is impossible. It is still bounded by
+        # `max_attempts` below, like everything else.
+        return (
+            "attempts_exhausted" if attempts >= max_attempts else None
+        )
+    if disposition.retry_class is None:
         return "nonretryable_failure_on_resume"
     if invalid_outputs >= INVALID_MODEL_OUTPUT_LIMIT:
         return "invalid_model_output_limit"
@@ -864,6 +978,7 @@ def load_resume(path: Path, *, index: ReplayIndex, action: Action, model: str,
     verdicts = Counter(str(row["verdict"]) for row in latest.values()
                        if _terminal_row(row))
     settled: dict[tuple[int, int], str] = {}
+    settled_error_types: dict[tuple[int, int], str] = {}
     for key, row in latest.items():
         if key in done:
             continue
@@ -872,10 +987,13 @@ def load_resume(path: Path, *, index: ReplayIndex, action: Action, model: str,
                                  max_attempts=action.max_attempts)
         if reason is not None:
             settled[key] = reason
+            error_type = row_disposition(row).error_type
+            if error_type is not None:
+                settled_error_types[key] = error_type
     status = resolved_status(done=len(done), settled=len(settled), total=total,
                              any_rows=bool(rows))
     return ResumeState(status, tuple(rows), latest, done, dict(attempts),
-                       dict(invalid), settled, dict(verdicts))
+                       dict(invalid), settled, dict(verdicts), settled_error_types)
 
 
 @dataclass(frozen=True)
@@ -904,16 +1022,16 @@ def resume_status(path: Path, *, index: ReplayIndex, action: Action, model: str,
         return ResumeStatus("pending", 0, 0, 0)
     rows_seen = 0
     terminal: dict[tuple[int, int], bool] = {}
-    retry_class: dict[tuple[int, int], str | None] = {}
+    disposition: dict[tuple[int, int], RowDisposition] = {}
     attempts: Counter[tuple[int, int]] = Counter()
     invalid: Counter[tuple[int, int]] = Counter()
     for key, value in _scan_resume(path, index=index, action=action, model=model,
                                    provider_model_id=provider_model_id):
         rows_seen += 1
         terminal[key] = _terminal_row(value)
-        retry_class[key] = row_retry_class(value)
+        disposition[key] = row_disposition(value)
         attempts[key] += 1
-        if retry_class[key] == "invalid_model_output":
+        if disposition[key].retry_class == "invalid_model_output":
             invalid[key] += 1
     total = len({source_key(row) for row in index.executions})
     completed = sum(terminal.values())
@@ -922,7 +1040,7 @@ def resume_status(path: Path, *, index: ReplayIndex, action: Action, model: str,
         for key, is_terminal in terminal.items()
         if not is_terminal
         and _settled_reason_from_class(
-            retry_class[key], attempts=attempts[key],
+            disposition[key], attempts=attempts[key],
             invalid_outputs=invalid[key], max_attempts=action.max_attempts,
         ) is not None
     )
