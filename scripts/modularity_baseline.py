@@ -20,11 +20,44 @@ Answers "is this an intuitive codebase?" with numbers instead of opinion:
 Run:  PYTHONPATH=src .venv/bin/python scripts/modularity_baseline.py
 Emits canonical JSON on stdout. Diff a BEFORE capture against an AFTER capture;
 `--check BEFORE.json` exits non-zero on a regression (see __main__).
+Exit 2 when the duplicate-site table names code that is gone.
+
+WHAT THIS INSTRUMENT CANNOT DO, stated here because a modularity number that
+does not name its own attacks is an invitation to move the number instead of the
+code. Three of the five measures are GAMEABLE, and by construction rather than by
+oversight:
+
+  * C `api_surface` counts names without a leading underscore. Renaming `score`
+    to `_score` and adding `score = _score` reduces the count by zero and
+    reduces the reader's vocabulary by nothing, but prefixing a genuinely public
+    name shrinks it. It is a PROXY for vocabulary, not a measure of it. The
+    `--check` direction is one-way (a RISE fails) precisely because a fall is
+    not evidence of anything.
+  * A/B `path_modules` and `shared_fraction` are a function of MODULE COUNT.
+    Concatenating two modules raises `shared_fraction` without moving a line of
+    logic; splitting one lowers it. The ratio is meaningful only across a change
+    that does not renumber the modules, which is exactly the change it is used
+    to grade.
+  * D/E `duplicate_sites` and `concepts` are hand-maintained lists. Deleting a
+    row is indistinguishable from removing a duplication, and both make the
+    number fall.
+
+D is the one of the three that CAN be defended, and now is: every anchor must
+resolve to a live symbol (`unresolved_anchors`), so a row cannot survive the
+code it points at, and deleting a row leaves the anchors of the others still
+checked. That closes "the table rotted"; it does not close "somebody deleted a
+true row", which no instrument reading only itself can close. E remains
+undefended and is labelled as a census rather than a measurement.
+
+Nothing here is a substitute for reading the diff. Its value is that it moves
+in the same direction as the work when the work is real, and that it now says
+loudly when its own citations have stopped being true.
 """
 from __future__ import annotations
 
 import argparse
 import ast
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -38,13 +71,21 @@ SRC = ROOT / "src" / "indra_belief"
 class _Trace:
     def __init__(self) -> None:
         self.modules: set[str] = set()
+        self._outer = None
 
     def __enter__(self):
+        # Save and RESTORE, never clobber. `sys.settrace(None)` on exit deletes
+        # whatever tracer was already installed — coverage.py, a debugger, a
+        # profiler — so running this instrument under coverage silently zeroed
+        # the coverage of everything that ran after it. Nothing reported that,
+        # because a tracer that has been removed produces no error, only no data.
+        self._outer = sys.gettrace()
         sys.settrace(self._hook)
         return self
 
     def __exit__(self, *exc):
-        sys.settrace(None)
+        sys.settrace(self._outer)
+        self._outer = None
         return False
 
     def _hook(self, frame, event, arg):
@@ -170,16 +211,69 @@ DUPLICATE_SITES = [
     # `prepared_execution.relation_mismatch_note` /
     # `prepared_execution.relation_user_message`, plus the immutable
     # default-accept core now owned by `verdict.NO_TEXT_RESULT`.
+#
+# ANCHORS ARE SYMBOLS AND THEY ARE RESOLVED, which is the change that makes this
+# table an instrument rather than a note. It used to hold `file.py:LINE` strings
+# that nothing checked, and they rotted exactly as prose anchors do: re-measured
+# at this commit, FOUR of the five line anchors in the three surviving rows
+# pointed at unrelated code — `scoring_record.py:369` at a comment about
+# `ExecutionBody.render`, `replay.py:383` at `_entity_in_text`, `replay.py:394`
+# at a bare `return False`. Only `scoring_record.py:392` still named what it
+# claimed. A table whose citations are wrong cannot report that a duplication
+# was removed, because it can no longer say where the duplication was.
+#
+# `resolve_anchor` below imports each side and walks the attribute chain. An
+# anchor that does not resolve exits 2 and names the row. This is the same rule
+# `scripts/check_doc_anchors.py` enforces on the research corpus, applied to the
+# one table that claims to measure the code.
     {"concept": "provenance / grounding gate",
-     "live": "src/indra_belief/data/scoring_record.py:369 recomputed from has_grounding_signal",
-     "batch": "src/indra_belief/comparison/replay.py:383 trusts row['provenance']"},
+     "live": "indra_belief.data.scoring_record::ScoringRecord.format_provenance",
+     "batch": "indra_belief.comparison.replay::score_execution",
+     "note": "live recomputes the gate from has_grounding_signal; batch reads "
+             "row['provenance'] straight through"},
     {"concept": "few-shot prefix selection",
-     "live": "src/indra_belief/scorers/monolithic/scorer.py _select_examples at call time",
-     "batch": "src/indra_belief/comparison/replay.py:394 frozen prefix by sha256"},
+     "live": "indra_belief.scorers.monolithic.scorer::_select_examples",
+     "batch": "indra_belief.prepared_execution::prepare_from_replay_row",
+     "note": "live selects examples at call time; batch resolves a frozen "
+             "prefix by sha256 ref"},
     {"concept": "deterministic auto-reject",
-     "live": "src/indra_belief/data/scoring_record.py:392 tier1_auto_reject",
-     "batch": "src/indra_belief/comparison/replay.py:447 deterministic_result"},
+     "live": "indra_belief.data.scoring_record::ScoringRecord.tier1_auto_reject",
+     "batch": "indra_belief.comparison.replay::ReplayIndex.deterministic_result",
+     "note": "two independent implementations of the Tier-1 refusal"},
 ]
+
+
+class AnchorError(RuntimeError):
+    """A duplicate-site row names something the tree no longer defines."""
+
+
+def resolve_anchor(anchor: str) -> object:
+    """Import `module::Symbol.attr` and return the object, or raise AnchorError."""
+    module_name, _, path = anchor.partition("::")
+    if not module_name or not path:
+        raise AnchorError(f"{anchor!r} is not module::Symbol[.attr]")
+    try:
+        obj: object = importlib.import_module(module_name)
+    except ImportError as exc:
+        raise AnchorError(f"{anchor!r}: no module {module_name}") from exc
+    for part in path.split("."):
+        try:
+            obj = getattr(obj, part)
+        except AttributeError as exc:
+            raise AnchorError(f"{anchor!r}: {module_name} has no {path}") from exc
+    return obj
+
+
+def unresolved_anchors() -> list[str]:
+    """Every duplicate-site anchor that no longer names anything. Empty is the goal."""
+    dead = []
+    for row in DUPLICATE_SITES:
+        for side in ("live", "batch"):
+            try:
+                resolve_anchor(row[side])
+            except AnchorError as exc:
+                dead.append(f"{row['concept']} [{side}]: {exc}")
+    return dead
 
 # ── E. concepts a reader must hold on the score path ─────────────────────────
 CONCEPTS = [
@@ -207,6 +301,17 @@ def main() -> int:
                         help="BEFORE json; exit 1 if AFTER regresses")
     args = parser.parse_args()
 
+    dead = unresolved_anchors()
+    if dead:
+        print("DEAD ANCHORS — the duplicate-site table names code that is gone:",
+              file=sys.stderr)
+        for entry in dead:
+            print(f"  {entry}", file=sys.stderr)
+        print("Repair each row to its CURRENT owner, by symbol. A table that "
+              "cannot say where a duplication is cannot report that it was "
+              "removed.", file=sys.stderr)
+        return 2
+
     live, batch = trace_live(), trace_batch()
     surface = api_surface()
     report = {
@@ -226,6 +331,7 @@ def main() -> int:
             "per_module": surface,
         },
         "duplicate_sites": DUPLICATE_SITES,
+        "duplicate_site_anchors_resolved": True,
         "duplicate_site_count": len(DUPLICATE_SITES),
         "concepts": CONCEPTS,
         "concept_count": len(CONCEPTS),
