@@ -21,10 +21,19 @@ list. `calls()` is the ONLY splice — it appends the note and then the entity
 lookup block, in that order, and no caller may re-splice.
 
 Provenance. `PreparedCall.prompt_sha256()` recomputes the canonical request
-digest from the call itself, and `PreparedExecution.profile_id` names the prompt
-profile the request was built under, so a score stays attributable to an exact
-prompt. `assert_replay_digests` is the batch side of that contract: it holds the
-two checks the frozen substrate commits to, defined once.
+digest from the call itself, and that digest — not a label — is what makes a
+score attributable to an exact prompt: `assert_replay_digests` is the batch side
+of the contract and holds the two checks the frozen substrate commits to,
+defined once. `PreparedExecution.profile_name` carries the human-readable name
+of the profile beside it, and the parity test reads it for the one property a
+name can carry that a digest cannot: that the two producers agree on WHICH
+profile they built, not merely that their bytes matched.
+
+There is no `parser_id` field, and there was one. It was assigned `PARSER_ID` at
+both producers and read nowhere, which is what a structurally constant field
+looks like — it invited the reader to believe the parser varies per execution
+when K2's whole answer is that exactly one parser reads every reply. The
+constant below states that; a per-instance copy of it only obscured it.
 
 Home. Top level of the package, next to `hashing.py` / `metrics.py` /
 `curation.py` / `sampling.py`, because both `scorers.monolithic` and
@@ -253,8 +262,15 @@ class PreparedExecution:
     lookups: tuple[str, ...] = ()
     max_tokens: int | None = None
     temperature: float = 0.1
-    profile_id: str = ""
-    parser_id: str = PARSER_ID
+    # The prompt profile this request was built under: `disconfirm_relnature_rf`
+    # and friends. NOT `calibration_constants._PROFILE_META`'s `profile_id`,
+    # which is a fitted-calibration identity of the form
+    # `model@prompt-sha@gold` — a different thing that happened to share a name
+    # while nothing read either. `tests/test_prepared_execution_parity.py`
+    # reads this one, and reads it for the property it exists to carry: the two
+    # producers must name the SAME profile for the same configuration, so a
+    # request cannot be attributed to a prompt it was not built from.
+    profile_name: str = ""
     relation: PreparedCall | None = None
 
     def calls(self, relation_note: str = "") -> tuple[PreparedCall, ...]:
@@ -321,8 +337,7 @@ def prepare_from_record(
         lookups=tuple(lookups),
         max_tokens=max_tokens,
         temperature=temperature,
-        profile_id=profile.name,
-        parser_id=PARSER_ID,
+        profile_name=profile.name,
     )
 
 
@@ -334,7 +349,7 @@ def prepare_from_replay_row(
     lookups: Mapping[str, str],
     max_tokens: int | None = None,
     temperature: float = 0.1,
-    profile_id: str = "",
+    profile_name: str = "",
     relation: PreparedCall | None = None,
 ) -> PreparedExecution:
     """Build the request for a frozen replay row.
@@ -365,8 +380,7 @@ def prepare_from_replay_row(
         lookups=blocks,
         max_tokens=max_tokens,
         temperature=temperature,
-        profile_id=profile_id,
-        parser_id=PARSER_ID,
+        profile_name=profile_name,
         relation=relation,
     )
 

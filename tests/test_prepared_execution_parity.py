@@ -130,6 +130,12 @@ def _pair(route: str, lookups: tuple[str, ...] = ()):
         prefixes={row["main_message_prefix_ref"]: prefix},
         lookups={f"ref{index}": text for index, text in enumerate(lookups)},
         max_tokens=4096,
+        # Production passes the substrate contract's `mono_variant` here
+        # (`ReplayIndex.main_request`). The fixture never did, so the batch side
+        # carried "" against the live side's profile name and no assertion in
+        # this file looked — which is the whole reason the field could sit
+        # write-only for as long as it did.
+        profile_name=_Profile().name,
     )
     return record, row, live, batch
 
@@ -160,6 +166,13 @@ def test_live_and_batch_producers_agree_call_for_call(route, lookups, note):
         assert mine.reasoning_effort == theirs.reasoning_effort
         assert mine.prompt_sha256() == theirs.prompt_sha256()
         assert mine.client_kwargs() == theirs.client_kwargs()
+    # The one thing the digests above cannot say. Matching bytes prove the two
+    # producers built the same REQUEST; they do not prove the two agree on which
+    # profile they built it from, and a live/batch pair that disagreed there
+    # would attribute a score to the wrong prompt while every digest matched.
+    # This is the only reader `profile_name` has, and it is why the field is not
+    # ceremony: delete the assertion and the field is write-only again.
+    assert live.profile_name == batch.profile_name != ""
 
 
 def test_the_body_is_the_same_five_parts_on_both_sides():

@@ -680,12 +680,25 @@ attempts log is an operator call.
    refuted premise, as §3.4 bullet 1 of this same document records. `runner.inspect_plan`
    and `runner.prepare_run` still fold over the whole `loaded.actions` set on purpose,
    so §4 item 6 now says so explicitly rather than claiming a landing. **[V]**
-5. **`PreparedExecution.parser_id` and `.profile_id` are write-only.** Zero readers
-   across `src/`, `tests/` and `scripts/` **[V]**, while the module docstring sells
-   `profile_id` as the provenance that keeps a score attributable to an exact prompt.
-   That is ceremony standing where an invariant is claimed. `profile_id` also
-   name-collides with the established, unrelated `profile_id` in
-   `calibration_constants._PROFILE_META`. **[V]**
+5. ~~**`PreparedExecution`'s two name fields are write-only.**~~
+   **DISCHARGED — one deleted, one given the reader it was claiming to have.**
+   The `parser_id` field is gone (cited bare, because it no longer exists to cite: the
+   guard resolves dotted citations, and this one would now be dead). It was assigned
+   `prepared_execution.PARSER_ID` at both producers and read nowhere,
+   which is what a structurally constant field looks like: it invited a reader to believe
+   the parser varies per execution when K2's whole answer is that exactly one parser reads
+   every reply. The module constant states that; a per-instance copy only obscured it.
+   `profile_id` is renamed `profile_name`, which ends the collision with
+   `calibration_constants._PROFILE_META`'s `profile_id` — a fitted-calibration identity of
+   the form `model@prompt-sha@gold`, a different thing that shared a name while nothing
+   read either. **[V]** Its reader is
+   `tests/test_prepared_execution_parity.py::test_live_and_batch_producers_agree_call_for_call`,
+   and it reads it for the one property the digests there cannot carry: matching bytes
+   prove the two producers built the same REQUEST, not that they agree on WHICH profile
+   they built it from. The fixture had never passed the profile through on the batch side
+   — it carried `""` against the live side's name — which is the second reason the field
+   could sit unread for as long as it did. **[M]** The docstring's provenance claim is
+   corrected to name the digest, which is what actually makes a score attributable.
 6. **`tests/test_published_statement_belief_reproduction.py` has no skip guard, and CI
    cannot run it.** It hard-requires tens of GB of gitignored attempts logs **[V]**, and
    this arc made two previously-independent freeze tests depend on it. Both concerns are

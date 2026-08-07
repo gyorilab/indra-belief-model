@@ -321,7 +321,7 @@ class ReplayIndex:
         execution = prepare_from_replay_row(
             row, systems=self.systems, prefixes=self.prefixes, lookups=self.lookups,
             max_tokens=max_tokens,
-            profile_id=str(contract.get("mono_variant", ""))
+            profile_name=str(contract.get("mono_variant", ""))
             if isinstance(contract, Mapping) else "",
         )
         if not row.get("relation_prompt_sha256"):

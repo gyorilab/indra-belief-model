@@ -688,13 +688,16 @@ the thing §2.5 warns would be deleted by dropping gilda.
   ceiling of roughly 3,500 executions/s, i.e. 0.04% of a 0.73 s request. The hypothesis
   that fsync would be the bottleneck is **refuted by measurement.**
 * **Prompt and model attribution.** [V] `PreparedCall.prompt_sha256`,
-  `PreparedExecution.profile_id` (the variant name), a constant parser id, and
-  `provider_request_sha256` / `provider_wire_request_sha256` binding the ledger row to the
-  exact wire bytes. One caveat that belongs beside the mechanism: `profile_id` and
-  `parser_id` are today **write-only** — zero readers across `src/`, `tests/` and
-  `scripts/` — so they are a field that would carry the attribution, not attribution
-  something currently checks. See `research/kernel_unification_findings.md` §7.2 item 5.
-  `prompt_sha256` by contrast is genuinely read, by `assert_replay_digests`.
+  `PreparedExecution.profile_name` (the variant name), the constant
+  `prepared_execution.PARSER_ID`, and `provider_request_sha256` /
+  `provider_wire_request_sha256` binding the ledger row to the exact wire bytes. The
+  caveat this bullet used to carry — that the two name fields were write-only, so they
+  were a field that WOULD carry the attribution rather than attribution anything checked
+  — is discharged: `research/kernel_unification_findings.md` §7.2 item 5 records that the
+  parser field was deleted for being structurally constant, and that the profile name is
+  now read by `tests/test_prepared_execution_parity.py`, which is what makes the two
+  producers agree on which profile they built. `prompt_sha256` is read by
+  `assert_replay_digests` and remains the mechanism attribution actually rests on.
 * **No double spend under retry — already exists.** [V] `SpendGuard.attempt` derives an
   execution id by hashing model, workload mode and the caller's identity mapping, and
   `SpendGuard._start_attempt` raises `AttemptLimitReached` on a replayed completed
