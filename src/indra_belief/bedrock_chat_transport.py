@@ -159,6 +159,13 @@ class BedrockChatResult:
     reasoning_tokens: int
     finish_reason: str
     transport_trace: dict[str, Any]
+    # Which message field supplied `reasoning`, or "" when none did. The caller
+    # records it as `provider_source`, so a stored call says where its reasoning
+    # came from rather than naming a field the code merely tried.
+    reasoning_field: str = ""
+    # The assistant message's key NAMES when no channel yielded text. Empty
+    # otherwise. This is what makes "no reasoning" checkable instead of assumed.
+    observed_message_keys: tuple[str, ...] = ()
     provider_response_id: str = ""
     provider_model: str = ""
     response_body_preimage_b64: str = ""
@@ -693,6 +700,45 @@ def _text_channel(value: Any, *, field: str) -> str:
     return "".join(parts)
 
 
+# Reasoning channels, in the order they are read. `reasoning_content` is the
+# OpenAI-compatible name every local backend uses and stays first, so nothing
+# that works today changes.
+#
+# WHY THERE IS A SECOND ONE. Reading only `reasoning_content` was measured
+# against the shipped GLM-5 arm and it captured nothing: 2,663 of 2,663 calls
+# sampled from `glm_5_primary` and 71 of 71 from `glm_5_sensitivity` recorded an
+# EMPTY reasoning channel, while the median call billed 433 output tokens for a
+# median 272-character answer — roughly seventy tokens of answer. The tokens were
+# generated and paid for; only the storage was missing. `status: "none"` in the
+# trace therefore read as "this model did not reason", which is the opposite of
+# what happened.
+_REASONING_FIELDS = ("reasoning_content", "reasoning")
+
+# What gets recorded when NO channel yields text. Absence is not a verdict: an
+# empty reasoning channel beside a large `out_tokens` means either the model did
+# not reason or this list is missing the name the provider used, and those are
+# different facts. Recording the message's own key NAMES — never their values,
+# which carry the reply — lets the next run answer that from its durable record
+# instead of requiring someone to re-derive it from a token count.
+_OBSERVED_KEY_LIMIT = 24
+
+
+def _reasoning_channel(message: Mapping[str, Any]) -> tuple[str, str]:
+    """The reasoning text and the field it came from, or ("", "") for none."""
+    for name in _REASONING_FIELDS:
+        if name not in message:
+            continue
+        text = _text_channel(message.get(name), field=f"message.{name}")
+        if text:
+            return text, f"message.{name}"
+    return "", ""
+
+
+def _observed_message_keys(message: Mapping[str, Any]) -> tuple[str, ...]:
+    """The assistant message's key names, bounded and sorted. Names only."""
+    return tuple(sorted(str(key) for key in message)[:_OBSERVED_KEY_LIMIT])
+
+
 def _token_count(
     usage: Mapping[str, Any], *names: str, required: bool = False
 ) -> int:
@@ -782,9 +828,7 @@ def parse_bedrock_chat_payload(
         raise ValueError("provider first choice has no assistant message")
 
     content = _text_channel(message.get("content"), field="message.content")
-    reasoning = _text_channel(
-        message.get("reasoning_content"), field="message.reasoning_content"
-    )
+    reasoning, reasoning_field = _reasoning_channel(message)
     finish = choice.get("finish_reason")
     if finish is None:
         # Preserve the legacy adapter's null-to-stop normalization.
@@ -820,6 +864,10 @@ def parse_bedrock_chat_payload(
     return BedrockChatResult(
         content=content,
         reasoning=reasoning,
+        reasoning_field=reasoning_field,
+        observed_message_keys=(
+            () if reasoning else _observed_message_keys(message)
+        ),
         prompt_tokens=prompt_tokens,
         output_tokens=output_tokens,
         reasoning_tokens=reasoning_tokens,

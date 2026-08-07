@@ -908,14 +908,24 @@ def _classify_reasoning(reasoning: str, reasoning_tokens: int, *, inline: bool) 
 
 def _build_trace(*, reasoning: str, reasoning_tokens: int, status: str,
                  provider_source: str, backend: str, model_id: str | None,
-                 finish_reason: str) -> dict:
+                 finish_reason: str,
+                 observed_message_keys: tuple[str, ...] = ()) -> dict:
     """The uniform reasoning-trace dict persisted per call. committed_justification
-    is stamped later by the structured scorer (it owns the answer format)."""
+    is stamped later by the structured scorer (it owns the answer format).
+
+    `provider_source` names the field the reasoning ACTUALLY came from, and is
+    "" when none supplied any — it used to name the single field the code tried,
+    whether or not that field existed in the reply. `observed_message_keys` is
+    what the reply actually carried in that case, so `status: "none"` beside a
+    large `out_tokens` can be diagnosed from the durable record instead of being
+    read as "this model did not reason".
+    """
     return {
         "free_cot": reasoning,
         "status": status,
         "reasoning_tokens": reasoning_tokens,
         "provider_source": provider_source,
+        "observed_message_keys": list(observed_message_keys),
         "backend": backend,
         "model_id": model_id,
         "finish_reason": finish_reason,
@@ -1862,7 +1872,11 @@ class ModelClient:
                     result.reasoning_tokens,
                     inline=bool(self.config.get("reasoning_in_content")),
                 ),
-                provider_source="bedrock_chat_completions.message.reasoning_content",
+                provider_source=(
+                    f"bedrock_chat_completions.{result.reasoning_field}"
+                    if result.reasoning_field else ""
+                ),
+                observed_message_keys=result.observed_message_keys,
                 backend=self.backend,
                 model_id=self.config.get("model_id"),
                 finish_reason=result.finish_reason,

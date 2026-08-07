@@ -54,9 +54,17 @@ def _completion(
     *,
     content='{"verdict":"correct","confidence":"high"}',
     reasoning_content="private reasoning",
+    reasoning_field="reasoning_content",
     usage=None,
     finish_reason="stop",
 ) -> bytes:
+    """One completion body. `reasoning_field` names the channel it arrives on.
+
+    It is a parameter because the field name is a PROVIDER fact, not ours: the
+    OpenAI-compatible name is `reasoning_content`, and a reply that used any
+    other name was silently dropped for as long as this fixture could only
+    produce one of them.
+    """
     if usage is None:
         usage = {
             "prompt_tokens": 17,
@@ -75,7 +83,8 @@ def _completion(
                     "message": {
                         "role": "assistant",
                         "content": content,
-                        "reasoning_content": reasoning_content,
+                        **({} if reasoning_content is None
+                           else {reasoning_field: reasoning_content}),
                     },
                     "finish_reason": finish_reason,
                 }
@@ -545,6 +554,44 @@ def test_content_reasoning_usage_and_finish_variants(local_server) -> None:
     assert result.output_tokens == 7
     assert result.reasoning_tokens == -1
     assert result.finish_reason == "stop"
+
+
+def test_reasoning_is_captured_from_either_channel_and_says_which(local_server) -> None:
+    """The GLM-5 loss, driven. `reasoning_content` is not the only spelling.
+
+    Measured on the shipped arm before this: every one of 2,663 sampled
+    `glm_5_primary` calls and 71 of 71 `glm_5_sensitivity` calls stored an EMPTY
+    reasoning channel while the median call billed 433 output tokens against a
+    272-character answer. The tokens were generated and paid for; the reply put
+    them somewhere this transport did not read.
+
+    `reasoning_field` is asserted, not just the text: a stored call has to name
+    the channel its reasoning CAME from, or the next provider spelling is the
+    same silent loss again.
+    """
+    state, endpoint = local_server
+    for field in ("reasoning_content", "reasoning"):
+        state.push(200, _completion(reasoning_content="cot-here", reasoning_field=field))
+        result = _transport(endpoint).call(_body(), timeout=2)
+        assert result.reasoning == "cot-here", field
+        assert result.reasoning_field == f"message.{field}", field
+        assert result.observed_message_keys == (), field
+
+
+def test_a_reply_with_no_reasoning_records_the_keys_it_did_carry(local_server) -> None:
+    """Absence is not a verdict — say what arrived instead of nothing.
+
+    An empty reasoning channel has two causes, and `status: "none"` was written
+    for both: the model did not reason, or the reply named the channel something
+    unread. The key names separate them from the durable record, and they are
+    NAMES only — the values carry the reply.
+    """
+    state, endpoint = local_server
+    state.push(200, _completion(reasoning_content=None))
+    result = _transport(endpoint).call(_body(), timeout=2)
+    assert result.reasoning == ""
+    assert result.reasoning_field == ""
+    assert result.observed_message_keys == ("content", "role")
 
 
 @pytest.mark.parametrize(

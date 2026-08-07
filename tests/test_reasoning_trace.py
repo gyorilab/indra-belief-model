@@ -73,8 +73,30 @@ def test_build_trace_shape():
     t = _build_trace(reasoning="cot", reasoning_tokens=5, status=ReasoningStatus.PLAINTEXT,
                      provider_source="x", backend="b", model_id="m", finish_reason="stop")
     assert set(t) == {"free_cot", "status", "reasoning_tokens", "provider_source",
-                      "backend", "model_id", "finish_reason", "committed_justification"}
+                      "observed_message_keys", "backend", "model_id", "finish_reason",
+                      "committed_justification"}
     assert t["free_cot"] == "cot" and t["status"] == "plaintext"
+    # Reasoning was captured, so there is nothing to diagnose and the key names
+    # are not recorded. They are only carried on the absence path.
+    assert t["observed_message_keys"] == []
+
+
+def test_build_trace_records_what_the_reply_carried_when_nothing_reasoned():
+    """`status: "none"` has two causes and used to be written for both.
+
+    Either the model did not reason, or the reply put its reasoning under a field
+    this code did not read. Measured on the shipped GLM-5 arm, the second was the
+    true one on every sampled call — 2,663/2,663 in `glm_5_primary` recorded an
+    empty channel while the median call billed 433 output tokens against a
+    272-character answer. Recording the reply's own key names makes the two
+    distinguishable from the durable record.
+    """
+    t = _build_trace(reasoning="", reasoning_tokens=-1, status=ReasoningStatus.NONE,
+                     provider_source="", backend="b", model_id="m", finish_reason="stop",
+                     observed_message_keys=("content", "reasoning", "role"))
+    assert t["provider_source"] == ""
+    assert t["observed_message_keys"] == ["content", "reasoning", "role"]
+    json.dumps(t)  # it lands in the call log, so it must serialize
 
 
 # --- bedrock_responses adapter: encrypted vs plaintext (mock HTTP) -----------
