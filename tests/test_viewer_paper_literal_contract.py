@@ -60,6 +60,14 @@ from scripts.reproduce_published_statement_beliefs import (  # noqa: E402
     published_reproduction,
 )
 
+
+# Reads the gitignored local artifact trees; skipped only when they are WHOLLY
+# absent (CI, a fresh checkout). A PARTIAL tree is a failure in
+# tests/test_local_artifacts.py, never a skip here.
+import _local_artifacts as _artifacts
+
+pytestmark = _artifacts.requires()
+
 # The statement_belief.py bytes that produced the published arms. The live file
 # may differ; what it COMPUTES may not, and `published_reproduction` is what
 # holds that line. Named so drift in the artifact stays visible.

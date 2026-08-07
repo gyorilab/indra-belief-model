@@ -64,6 +64,78 @@ class ReproductionError(RuntimeError):
     """A frozen input is missing, altered, or shaped unlike its manifest."""
 
 
+class PartialPublishedData(ReproductionError):
+    """Some published bundles resolve and some do not — never a clean skip.
+
+    This is the loud half of `published_data_state`. A checkout either has the
+    gitignored comparison tree or it does not; a tree where three arms resolve
+    and the fourth does not is a deletion, a half-finished rsync, or a rename,
+    and every one of those is a finding. Skipping on it would report green while
+    the freeze covered less than it claims.
+    """
+
+
+# What a checkout can be, for the freeze tests that need the gitignored corpus.
+#
+# The debt this replaces (kernel_unification_findings.md §7.2 item 6) had two
+# real and opposed concerns, and the resolution has to answer BOTH: a skip guard
+# lets a freeze silently stop running, and no guard makes CI fail on a fresh
+# checkout. Neither "always skip" nor "always crash" is acceptable, so the
+# predicate is three-valued and each value gets a different treatment:
+#
+#   ALL_PRESENT  run the freeze; a difference is a FAILURE, never a skip.
+#   WHOLLY_ABSENT  skip, with a reason naming what is needed. This is the
+#                  fresh-checkout and CI case, and it is the same rule
+#                  tests/test_replay_parser_diff.py already applies to the
+#                  attempt logs, so the corpus-dependent tests behave alike.
+#   PARTIAL      raise. See `PartialPublishedData`.
+#
+# The remaining exposure — a machine that HAS the data and stops running the
+# freeze because someone deleted it — is covered by
+# `tests/test_published_statement_belief_reproduction.py::
+# test_the_freeze_declares_what_it_covers`, which runs with no data at all and
+# asserts the declaration the freeze is measured against is still intact.
+ALL_PRESENT = "all_present"
+WHOLLY_ABSENT = "wholly_absent"
+PARTIAL = "partial"
+
+
+def published_data_state(arms: tuple[str, ...] = PUBLISHED_ARMS) -> str:
+    """Which of the three states this checkout is in. Never reads a payload.
+
+    Presence is judged on each arm's manifest and on every input path that
+    manifest names, because a manifest without its attempts log reproduces
+    nothing. Bytes are NOT read here: `_read_verified` already refuses payloads
+    the manifest does not declare, and duplicating that check would make a
+    corrupt file look like an absent one.
+    """
+    resolved, missing = [], []
+    for arm in arms:
+        manifest_path = MODELS_DIR / arm / "manifest.json"
+        if not manifest_path.exists():
+            missing.append(str(manifest_path))
+            continue
+        try:
+            inputs = json.loads(manifest_path.read_bytes())["implementation"]["notes"]["inputs"]
+        except (KeyError, ValueError) as exc:
+            raise ReproductionError(f"{manifest_path} is not a published bundle manifest") from exc
+        for label, descriptor in sorted(inputs.items()):
+            if not isinstance(descriptor, dict) or "path" not in descriptor:
+                continue
+            path = _resolve(manifest_path, descriptor)
+            (resolved if path.exists() else missing).append(f"{arm}/{label}: {path}")
+    if not missing:
+        return ALL_PRESENT
+    if not resolved:
+        return WHOLLY_ABSENT
+    raise PartialPublishedData(
+        f"{len(resolved)} published input(s) resolve and {len(missing)} do not, so this "
+        f"checkout is neither a fresh one nor a complete one. Absent:\n  "
+        + "\n  ".join(missing[:10])
+        + (f"\n  ... and {len(missing) - 10} more" if len(missing) > 10 else "")
+    )
+
+
 @dataclass(frozen=True)
 class Mismatch:
     arm: str

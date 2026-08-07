@@ -46,6 +46,9 @@ import numpy as np
 import pytest
 from sklearn.metrics import average_precision_score, roc_auc_score
 
+
+import _local_artifacts as _artifacts
+
 ROOT = Path(__file__).resolve().parents[1]
 TS_RUNNER = ROOT / "viewer" / "scripts" / "test-per-evidence-contract.mjs"
 
@@ -74,10 +77,13 @@ EXPECTED_STATEMENTS = 1689
 # same vectors, so this is float noise, not a fudge factor.
 METRIC_TOL = 1e-9
 
-pytestmark = pytest.mark.skipif(
+# TWO marks, as a list — see the note in
+# tests/test_viewer_deployed_baseline_contract.py. A bare assignment replaces
+# the `_artifacts.requires()` above instead of adding to it.
+pytestmark = [_artifacts.requires(), pytest.mark.skipif(
     not ARTIFACT_PATH.is_file(),
     reason="per-evidence comparison artifact not present; run scripts/compute_per_evidence_comparison.py",
-)
+)]
 
 
 def _load_jsonl(path: Path) -> list[dict]:

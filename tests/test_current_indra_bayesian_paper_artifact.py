@@ -21,6 +21,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import score_current_indra_bayesian_paper as adapter  # noqa: E402
 
 
+
+# Reads the gitignored local artifact trees; skipped only when they are WHOLLY
+# absent (CI, a fresh checkout). A PARTIAL tree is a failure in
+# tests/test_local_artifacts.py, never a skip here.
+import _local_artifacts as _artifacts
+
+pytestmark = _artifacts.requires()
+
 def _rows(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines()]
 

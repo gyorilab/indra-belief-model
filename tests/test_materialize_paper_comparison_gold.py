@@ -14,6 +14,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import materialize_paper_comparison_gold as comparison_gold  # noqa: E402
 
 
+
+# Reads the gitignored local artifact trees; skipped only when they are WHOLLY
+# absent (CI, a fresh checkout). A PARTIAL tree is a failure in
+# tests/test_local_artifacts.py, never a skip here.
+import _local_artifacts as _artifacts
+
+pytestmark = _artifacts.requires()
+
 GOLD_DIR = ROOT / "data/results/indra_paper_statement_gold_20260717"
 PROTOCOL_DIR = ROOT / "data/results/indra_paper_protocol_20260717"
 

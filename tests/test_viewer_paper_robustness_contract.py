@@ -38,6 +38,14 @@ import numpy as np
 import pytest
 from sklearn.metrics import average_precision_score
 
+
+# Reads the gitignored local artifact trees; skipped only when they are WHOLLY
+# absent (CI, a fresh checkout). A PARTIAL tree is a failure in
+# tests/test_local_artifacts.py, never a skip here.
+import _local_artifacts as _artifacts
+
+pytestmark = _artifacts.requires()
+
 ROOT = Path(__file__).resolve().parents[1]
 TS_RUNNER = ROOT / "viewer" / "scripts" / "test-paper-robustness-contract.mjs"
 

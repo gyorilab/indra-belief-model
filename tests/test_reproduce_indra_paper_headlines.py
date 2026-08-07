@@ -15,6 +15,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import reproduce_indra_paper_headlines as reproduction  # noqa: E402
 
 
+
+# Reads the gitignored local artifact trees; skipped only when they are WHOLLY
+# absent (CI, a fresh checkout). A PARTIAL tree is a failure in
+# tests/test_local_artifacts.py, never a skip here.
+import _local_artifacts as _artifacts
+
+pytestmark = _artifacts.requires()
+
 ARTIFACT_DIR = ROOT / "data/results/indra_paper_reproduction_20260717"
 
 

@@ -53,6 +53,9 @@ import numpy as np
 import pytest
 from sklearn.metrics import roc_auc_score
 
+
+import _local_artifacts as _artifacts
+
 ROOT = Path(__file__).resolve().parents[1]
 TS_RUNNER = ROOT / "viewer" / "scripts" / "test-deployed-baseline-contract.mjs"
 
@@ -84,13 +87,19 @@ _FAMILY_SERVED = "indra_production_served"
 # so this module skips rather than failing — a missing artifact is "not
 # applicable here", not "the claim is false". An artifact that IS present and has
 # drifted still fails loudly, which is the case this file exists for.
-pytestmark = pytest.mark.skipif(
+# TWO marks, as a list. An assignment would REPLACE the `_artifacts.requires()`
+# above rather than add to it — which it silently did when that guard was first
+# added here, leaving eight tests running on a tree with no comparison corpus.
+# The two conditions are different: this one is about the module's own artifact
+# having been generated, that one about the gitignored corpus being present at
+# all, and the tests below read both.
+pytestmark = [_artifacts.requires(), pytest.mark.skipif(
     not _ARTIFACT_PATH.exists(),
     reason=(
         "data/results/deployed_baseline_replication_20260727/ has not been "
         "generated — run scripts/compute_deployed_baseline_replication.py"
     ),
-)
+)]
 
 # The artifact is float64 throughout; these are float-noise tolerances, not a
 # licence for disagreement.

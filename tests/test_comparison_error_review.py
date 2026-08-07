@@ -12,6 +12,14 @@ import pytest
 from indra_belief.comparison import cli, error_review
 
 
+
+# Reads the gitignored local artifact trees; skipped only when they are WHOLLY
+# absent (CI, a fresh checkout). A PARTIAL tree is a failure in
+# tests/test_local_artifacts.py, never a skip here.
+import _local_artifacts as _artifacts
+
+pytestmark = _artifacts.requires()
+
 SECRET = b"fixture-only-human-review-key-32-bytes"
 STAMP = "2026-07-21T01:00:00+00:00"
 

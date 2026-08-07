@@ -21,6 +21,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import score_current_indra_counts_hybrid_paper as adapter  # noqa: E402
 
 
+
+# Reads the gitignored local artifact trees; skipped only when they are WHOLLY
+# absent (CI, a fresh checkout). A PARTIAL tree is a failure in
+# tests/test_local_artifacts.py, never a skip here.
+import _local_artifacts as _artifacts
+
+pytestmark = _artifacts.requires()
+
 EXPECTED_OUTPUT_SHA256 = {
     "current_counts_full_features_oof_predictions.jsonl": (
         "fd4bb65bdd69e7981778bf88caa3acfa59db62c36ae007deadb1c9c37ad52bc2"

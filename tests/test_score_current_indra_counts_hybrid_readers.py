@@ -21,6 +21,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import score_current_indra_counts_hybrid_readers as adapter  # noqa: E402
 
 
+
+# Reads the gitignored local artifact trees; skipped only when they are WHOLLY
+# absent (CI, a fresh checkout). A PARTIAL tree is a failure in
+# tests/test_local_artifacts.py, never a skip here.
+import _local_artifacts as _artifacts
+
+pytestmark = _artifacts.requires()
+
 def _panel() -> tuple[list[Activation], list[list[Evidence]], list[dict], list[dict]]:
     statements: list[Activation] = []
     extras: list[list[Evidence]] = []

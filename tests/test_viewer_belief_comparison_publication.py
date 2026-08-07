@@ -10,6 +10,14 @@ from pathlib import Path
 import pytest
 
 
+
+# Reads the gitignored local artifact trees; skipped only when they are WHOLLY
+# absent (CI, a fresh checkout). A PARTIAL tree is a failure in
+# tests/test_local_artifacts.py, never a skip here.
+import _local_artifacts as _artifacts
+
+pytestmark = _artifacts.requires()
+
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = ROOT / "viewer/scripts/validate-belief-comparison-publication.mjs"
 CURRENT = ROOT / "data/results/indra_belief_comparison_metrics.json"

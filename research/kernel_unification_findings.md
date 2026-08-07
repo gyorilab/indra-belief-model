@@ -628,7 +628,31 @@ attempts log is an operator call.
 
 ### 7.2 Named technical debt
 
-1. **The modularity instrument is self-reporting and its anchors have rotted.**
+1. **PARTLY DISCHARGED — the instrument no longer rots or clobbers; it is still
+   self-reporting, and now says so.** What was fixed: every `DUPLICATE_SITES` anchor is a
+   `module::Symbol` that `unresolved_anchors` RESOLVES, and the script exits 2 naming any
+   row whose code is gone — re-measured at that commit, **4 of the 5 line anchors in the
+   three surviving rows pointed at unrelated code**: two landed inside
+   `comparison.replay._entity_in_text` and on a bare `return False` near it, one on a
+   comment about `prepared_execution.ExecutionBody.render`, and only the one naming
+   `data.scoring_record.ScoringRecord.tier1_auto_reject` still found what it claimed.
+   (The rotted coordinates are described rather than quoted, because quoting them here
+   would plant the same numeric anchors in the corpus that
+   `scripts/check_doc_anchors.py` exists to reject — it caught this paragraph's first
+   draft doing exactly that.) **[M]** `_Trace` now saves and restores `sys.gettrace()`
+   instead of calling `sys.settrace(None)`, which had been deleting any outer
+   coverage/debugger/profiler hook — a failure that produces no error, only no data.
+   `tests/test_modularity_baseline.py` exists and gates both, including the
+   failure direction. **[V]**
+   What is NOT fixed, and is now written into the script rather than left implicit: three
+   of the five measures are gameable BY CONSTRUCTION. `api_surface` counts names without
+   a leading underscore, so it is a proxy for vocabulary and its `--check` is one-way;
+   `shared_fraction` is a function of module COUNT, so concatenating two modules raises
+   it without moving a line; and the two hand-maintained lists fall identically whether a
+   duplication was removed or a true row was deleted. Anchor resolution defends the
+   duplicate-site table against rotting, not against being edited down. The original
+   entry follows.
+   **The modularity instrument is self-reporting and its anchors have rotted.**
    `scripts/modularity_baseline.py` compares hard-coded `DUPLICATE_SITES` and `CONCEPTS`
    literals against themselves, and its `sys.settrace(None)` clobbers any outer tracer.
    **[V]** **8 of the 10 line anchors in the surviving 5 duplicate-site rows are now
@@ -699,21 +723,54 @@ attempts log is an operator call.
    — it carried `""` against the live side's name — which is the second reason the field
    could sit unread for as long as it did. **[M]** The docstring's provenance claim is
    corrected to name the digest, which is what actually makes a score attributable.
-6. **`tests/test_published_statement_belief_reproduction.py` has no skip guard, and CI
-   cannot run it.** It hard-requires tens of GB of gitignored attempts logs **[V]**, and
-   this arc made two previously-independent freeze tests depend on it. Both concerns are
-   real — a skip guard lets a freeze silently stop running; no guard makes CI fail on a
-   fresh checkout. The resolution is a guard that **fails loudly** on absent data rather
-   than skipping silently or hard-crashing. An earlier one-sided endorsement of "no skip
-   guard" was withdrawn.
-7. **Crash-safe resume is a stated project invariant this codebase does not satisfy** —
-   before or after this arc. A torn trailing JSONL line raises with no
-   truncate-and-recover path, so the arm is unresumable until a human truncates the file.
-   `AppendLog.append` is one unbuffered write + fsync, so `SIGKILL` cannot tear it, but
-   power loss between page-cache landing and fsync can, and so can the short-append
-   branch, which raises *after* the bytes are on disk. It fails **closed**, the safe
-   direction for a paid lane — but the green suite is not evidence that the invariant
-   holds. Pre-existing and byte-unchanged from the base commit.
+6. ~~**`tests/test_published_statement_belief_reproduction.py` has no skip guard, and CI
+   cannot run it.**~~
+   **DISCHARGED — and the entry understated the problem by about ninety tests.**
+   Measured on a fresh checkout (a `git worktree` carries only tracked files, so it IS
+   one): **86 failed, 6 errors, 1,422 passed across EIGHTEEN test files**, not one.
+   `.github/workflows/ci.yml` runs `python -m pytest -q` as its second step, so CI had
+   been RED on every push for at least eight consecutive commits — confirmed against the
+   run history — and every step after it (the contamination guard, the doc-anchor guard,
+   the viewer checks, the deck build) was `skipped` and had not run either. **[M]** Not
+   one failure was a defect in the code under test; each was a test opening a path that
+   exists only on a machine holding the ~20 GB gitignored comparison tree.
+   The resolution is the three-valued predicate the entry asked for, in
+   `tests/_local_artifacts.py`: **all present** runs (a difference is a FAILURE, never a
+   skip); **wholly absent** skips, naming what is needed, which is CI and any fresh
+   checkout; **partly absent** does NOT skip — `tests/test_local_artifacts.py` fails once
+   with the list, because a tree holding some artifacts and not others is a deletion or a
+   half-finished copy and is exactly the "a freeze quietly stopped running" case.
+   Two defects found while applying it, both recorded because both were silent. A
+   module-level `pytestmark` assignment **replaces** a previous one rather than adding to
+   it, so the guard was assigned and immediately overwritten in the two modules that
+   already had their own skipif — eight tests kept running against no corpus, and the
+   first verification pass missed it by inspecting each module's FIRST `pytestmark` only.
+   `tests/test_local_artifacts.py::test_no_module_shadows_the_guard_with_a_second_pytestmark`
+   is what keeps them lists. **[M]** Result: **9 failed -> 0 on a fresh tree, 169 skipped;
+   1,544 passed / 1 skipped locally.**
+7. ~~**Crash-safe resume is a stated project invariant this codebase does not satisfy.**~~
+   **DISCHARGED — `AppendLog.open(recover=True)` truncates a torn trailing record.**
+   The recoverable shape is narrow and the narrowness is the argument: the log is
+   append-only and every record is one unbuffered write plus `fsync`, so a torn record can
+   only ever be the LAST one. Recovery therefore reads only the tail, truncates back to
+   the final record boundary, and returns a `TornTail` carrying the discarded byte count
+   and its sha256 — a truncation that left no trace would be indistinguishable from a run
+   that never had one, and those are different histories. **[V]**
+   *Opt-in, and only for the writer.* `load_resume` and `resume_status` still raise on a
+   torn tail, unchanged. Truncating a ledger-backed log mutates paid evidence, so it may
+   be done only by the process about to append, holding `LOCK_EX` on a verified inode —
+   all three true in `runner.prepare_run` and nowhere else. The fifteen published logs are
+   read by tools that hold no lock. **[V]**
+   *Three refusals*, because "the tail has no newline" is consistent with faults
+   truncation would destroy the evidence of: a fragment that parses as a complete
+   canonical row is a LOST TERMINATOR, not a lost record, and discarding it would drop a
+   paid attempt; a file with no boundary anywhere has no verified prefix to keep; and a
+   fragment past a 4 MB bound is not one torn append. **[V]**
+   One bug in the implementation was found by its own test and is recorded because the
+   symptom was a WRONG DIAGNOSIS rather than a crash: reading a tail window of
+   `limit + 1` pushed the preceding newline outside the window for an over-long fragment,
+   so a file that HAD a boundary was refused for having none. The window is `limit + 2`.
+   `tests/test_append_log_recovery.py` covers both over-bound shapes.
 8. ~~**`nonretryable_failure_on_resume` collapses distinct classes.**~~
    **DISCHARGED — the type is carried, and a credential failure is no longer permanent.**
    Three changes, and a fourth defect the work exposed.
