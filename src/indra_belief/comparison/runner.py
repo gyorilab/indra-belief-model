@@ -582,7 +582,15 @@ def prepare_run(plan: RunPlan | str | Path, *, action_id: str | None = None,
                 f"{[action.id for action in ready]!r}"
             )
     stage, index = loaded.stage_by_id[selected.stage_id], scopes[selected.id]
-    output = AppendLog.open(selected.output)
+    # The ONE writer, holding LOCK_EX, is the only thing allowed to repair a torn
+    # trailing record — see `AppendLog._recover_torn_tail`. Without this the arm
+    # was unresumable after a power loss until a human truncated the file by
+    # hand, which is the crash-safe-resume invariant the project states and did
+    # not satisfy. `load_resume` below still refuses a torn tail; by the time it
+    # runs there is not one.
+    output = AppendLog.open(selected.output, recover=True)
+    if output.recovered is not None:
+        print(f"recovered {selected.output}: {output.recovered.describe()}")
     guard: SpendGuard | None = None
     try:
         resume = load_resume(selected.output, index=index, action=selected, model=stage.model,

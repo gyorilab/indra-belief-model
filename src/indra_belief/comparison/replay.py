@@ -1049,14 +1049,46 @@ def resume_status(path: Path, *, index: ReplayIndex, action: Action, model: str,
     return ResumeStatus(status, completed, rows_seen, settled)
 
 
+# One attempt row is a bounded JSON object; the largest in the shipped corpus is
+# well under this. The bound's job is to separate "a torn append" from "something
+# else wrote here", and it errs generously so a legitimately large row is never
+# mistaken for the second.
+_TORN_TAIL_LIMIT = 4 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class TornTail:
+    """What a recovery discarded. The audit record, not a log line.
+
+    A truncation that leaves no trace is indistinguishable from a run that never
+    had a torn tail, and those are different histories: the first lost a paid
+    attempt to a crash. The digest is of the discarded fragment, so the bytes
+    can be recognised again if they turn up in an operator's copy.
+    """
+
+    bytes_discarded: int
+    sha256: str
+    size_before: int
+    size_after: int
+
+    def describe(self) -> str:
+        return (
+            f"discarded a {self.bytes_discarded}-byte unterminated trailing record "
+            f"(sha256 {self.sha256}); {self.size_before} -> {self.size_after} bytes"
+        )
+
+
 @dataclass
 class AppendLog:
     path: Path
     stream: Any
     identity: tuple[int, int]
+    # What `open(recover=True)` discarded, or None. Never a silent repair: a
+    # caller that truncates a durable log has to be able to say what it removed.
+    recovered: "TornTail | None" = None
 
     @classmethod
-    def open(cls, path: Path) -> "AppendLog":
+    def open(cls, path: Path, *, recover: bool = False) -> "AppendLog":
         path.parent.mkdir(parents=True, exist_ok=True)
         flags = os.O_RDWR | os.O_APPEND | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(path, flags, 0o600)
@@ -1070,7 +1102,95 @@ class AppendLog:
         except OSError as exc:
             stream.close()
             raise ReplayError("raw output is already in use") from exc
-        return cls(path, stream, (status.st_dev, status.st_ino))
+        log = cls(path, stream, (status.st_dev, status.st_ino))
+        if recover:
+            try:
+                log.recovered = log._recover_torn_tail()
+            except BaseException:
+                stream.close()
+                raise
+        return log
+
+    def _recover_torn_tail(self) -> "TornTail | None":
+        """Discard a partial trailing record, or return None if there is none.
+
+        WHY THIS IS THE ONLY PLACE IT MAY HAPPEN. Truncating a durable
+        ledger-backed log is a real mutation of paid evidence, so it may be done
+        only by the process that is about to append to it, holding `LOCK_EX`,
+        on a descriptor pinned to a verified inode — all three of which are true
+        here and nowhere else. `load_resume` and `resume_status` keep raising
+        `ReplayError` on a torn tail, unchanged: a READER must never repair, and
+        the fifteen published logs are read by tools that hold no lock.
+
+        WHY A TRAILING PARTIAL IS RECOVERABLE AT ALL. The log is append-only and
+        every record is one unbuffered write followed by `fsync`, so a torn
+        record can only ever be the last one. `SIGKILL` cannot tear it — the
+        write is a single syscall — but power loss between the page cache
+        landing and the fsync can, and so can the short-append branch of
+        `append`, which raises AFTER its bytes are on disk. Both leave the same
+        shape: complete records, then a fragment with no newline.
+
+        THREE REFUSALS, because "the tail has no newline" is consistent with
+        faults that are NOT a torn append and that truncation would destroy
+        evidence of:
+
+          * a fragment larger than `_TORN_TAIL_LIMIT` is not a torn append. One
+            record is a bounded JSON row; megabytes of tail means something
+            else wrote here.
+          * a fragment that parses as complete canonical JSON is a LOST
+            NEWLINE, not a lost record — the row is intact and discarding it
+            would throw away a paid attempt.
+          * a file with no newline anywhere is not a partial tail with complete
+            records before it; it is a file whose entire content is unframed.
+        """
+        self.assert_current()
+        size = os.fstat(self.stream.fileno()).st_size
+        if size == 0:
+            return None
+        # Two past the bound, so a fragment of exactly `_TORN_TAIL_LIMIT + 1` is
+        # visible TOGETHER WITH the newline that precedes it. Read a smaller
+        # window and an over-long fragment pushes that newline outside it, which
+        # is indistinguishable from a file with no boundary at all — a wrong
+        # diagnosis, and the one this window size exists to prevent.
+        read_from = max(0, size - (_TORN_TAIL_LIMIT + 2))
+        tail = os.pread(self.stream.fileno(), size - read_from, read_from)
+        if tail.endswith(b"\n"):
+            return None
+        boundary = tail.rfind(b"\n")
+        if boundary < 0:
+            if read_from == 0:
+                raise ReplayError(
+                    "raw output has no record boundary before its unterminated tail"
+                )
+            raise ReplayError(
+                f"raw output's unterminated tail exceeds the {_TORN_TAIL_LIMIT}-byte "
+                "bound for one torn record"
+            )
+        fragment = tail[boundary + 1:]
+        if len(fragment) > _TORN_TAIL_LIMIT:
+            raise ReplayError(
+                f"raw output's unterminated tail is {len(fragment)} bytes, over the "
+                f"{_TORN_TAIL_LIMIT}-byte bound for one torn record"
+            )
+        try:
+            value = json.loads(fragment)
+        except ValueError:
+            value = None
+        if isinstance(value, Mapping) and canonical_json_line(value) == fragment + b"\n":
+            raise ReplayError(
+                "raw output's tail is a complete canonical row missing only its "
+                "newline; that is a lost terminator, not a lost record, and "
+                "discarding it would drop a paid attempt"
+            )
+        keep = read_from + boundary + 1
+        os.ftruncate(self.stream.fileno(), keep)
+        os.fsync(self.stream.fileno())
+        return TornTail(
+            bytes_discarded=len(fragment),
+            sha256=hashlib.sha256(fragment).hexdigest(),
+            size_before=size,
+            size_after=keep,
+        )
 
     def assert_current(self) -> None:
         held = os.fstat(self.stream.fileno())
