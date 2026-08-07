@@ -628,6 +628,15 @@ attempts log is an operator call.
 
 ### 7.2 Named technical debt
 
+**Standing, re-audited 2026-08-07 against the tree.** Eight of the ten entries are
+discharged (2, 3, 4, 5, 6, 7, 8, 10); item 1 is discharged in the two halves an
+instrument can defend and carries its own undefendable halves stated in the script;
+item 9 was never debt and is relabelled as a recorded property whose external check is
+tested. Each discharge names what was measured, and three of them measured something the
+entry did not know: the parser-diff population had never been run, the write-only
+profile field's own parity fixture never passed it through, and item 6's "one test" was
+ninety-two across eighteen files with CI red on every push.
+
 1. **PARTLY DISCHARGED — the instrument no longer rots or clobbers; it is still
    self-reporting, and now says so.** What was fixed: every `DUPLICATE_SITES` anchor is a
    `module::Symbol` that `unresolved_anchors` RESOLVES, and the script exits 2 naming any
@@ -799,10 +808,21 @@ attempts log is an operator call.
    fired. Zero rows carry `provider_http_status`, so the two-key error shape stays valid
    forever and no shipped artifact can be re-opened by the new class. **[M]**
    `tests/test_resume_disposition.py` gates all four claims.
-9. **The digest circularity is not closed by the one-module fix**, and the architecture
-   doc says so: the mechanism is in `research/serving_architecture.md` §4 item 1. What
-   catches an assembly change is external — the shipped manifest's components, re-derived
-   through the live producer by `tests/test_prepared_execution_parity.py`. **[V]**
+9. **NOT DEBT — a recorded property with a working external check.** This entry sat in a
+   list of things owed while describing something nobody intends to change, which made
+   the list read longer than it was. The circularity is real and permanent:
+   `scripts/build_verdict_only_replay.py` computes `main_prompt_base_sha256` through the
+   same `prepare_from_replay_row` that `assert_replay_digests` later checks it against, so
+   a self-referential digest cannot catch a change in the assembly — see
+   `research/serving_architecture.md` §4 item 1 for the mechanism.
+   What catches one is EXTERNAL, and it is tested rather than asserted. **[V]**
+   `tests/test_prepared_execution_parity.py` re-derives all fifteen prompt components the
+   shipped `data/comparison/grounding_replay/manifest.json` commits to — 2 main systems,
+   12 per-statement-type message prefixes, 1 relation system — through the LIVE producer
+   and compares each to the frozen digest. A byte moved anywhere in the assembly stops one
+   of the fifteen reproducing. Re-verified at this commit by reading the three tests, not
+   by trusting the citation. Nothing is owed here; it stays recorded so the next reader
+   does not re-derive the circularity and mistake it for an unnoticed defect.
 
 10. ~~**The `variant=` seam is still untested behaviourally.**~~
     **DISCHARGED — the last of the three unfalsifiable tests now has a behavioural gate.**
