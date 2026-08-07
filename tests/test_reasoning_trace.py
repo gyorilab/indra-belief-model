@@ -115,6 +115,15 @@ def _install_fake_bedrock_open(c, payload):
     c._bedrock_url_opener = _Opener()
 
 def _responses_client(monkeypatch):
+    # The formal Bedrock lane pins a macOS CA bundle by absolute path, and
+    # `ModelClient.__init__` reads it. These two tests are about reasoning-trace
+    # PARSING and reach that file only as a side effect of building a real
+    # client, which is why the platform coupling went unnoticed here while eight
+    # sites in the two transport test files already carry this exact guard.
+    # Unguarded, they are the last two failures in CI's Python step on Linux.
+    ca = Path("/private/etc/ssl/cert.pem")
+    if not ca.is_file():
+        pytest.skip("formal macOS CA bundle is not present on this platform")
     monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "test-token")
     return ModelClient("bedrock-gpt-5.5")  # backend == bedrock_responses
 
