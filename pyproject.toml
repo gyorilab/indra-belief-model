@@ -24,8 +24,34 @@ llm = [
     "openai>=1.0.0",
     "anthropic>=0.18.0",
 ]
+# Everything the SCRIPTS and the test suite need, as opposed to what the
+# installed library needs at runtime — `dependencies` above stays the serving
+# floor and must not grow to cover analysis tooling.
+#
+# These four were undeclared and CI found the first of them the hard way:
+# `tests/test_frontier_plot.py` imports `scripts/frontier_plot.py`, which imports
+# plotly at module level, so pytest failed at COLLECTION on ubuntu-latest with
+# ModuleNotFoundError. That is invisible to a `git worktree` reproduction of a
+# fresh checkout, because a worktree reproduces the file tree and reuses the
+# existing virtualenv. A dependency gap only shows in a clean environment.
+#
+# scipy arrives transitively via scikit-learn and is pinned anyway, for the same
+# reason `Dockerfile` pins it: an inherited floor is not a stated one.
 dev = [
     "pytest>=7.0.0",
+    "ijson>=3.0",
+    "networkx>=2.8",
+    "pandas>=1.5",
+    "plotly>=5.0",
+    "scipy>=1.10",
+    # The `llm` extra, re-listed because the SUITE needs it and CI installs only
+    # `.[dev]`. `tests/test_comparison_runner.py` constructs a real ModelClient,
+    # whose `_setup_openai_client` does `from openai import OpenAI` inside the
+    # function body — so this one fails at RUN time rather than at collection,
+    # which is why the static guard in tests/test_declared_dependencies.py
+    # cannot see it and a clean-environment run is the only thing that can.
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
 ]
 
 [tool.setuptools]
