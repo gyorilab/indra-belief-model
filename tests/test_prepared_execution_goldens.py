@@ -296,13 +296,25 @@ class _Grounder:
 
 @contextmanager
 def _gilda_seams(grounder: _Grounder):
-    """Swap the three Gilda entry points, clearing both lru_caches either side."""
+    """Swap the TWO Gilda entry points, clearing both lru_caches either side.
+
+    It was three. `tools.gilda_tools` held its own module-level `import gilda`
+    and called `gilda.ground` / `gilda.get_names` directly, so it needed its own
+    patch. haohangyan's scale_up branch routed both call sites through
+    `entity._cached_ground` / `entity._cached_get_names` instead — for
+    performance, since `gilda.get_names` is an unmemoized scan of the whole index
+    and `execute_lookup_gene` calls it up to four times per lookup — and the
+    side effect is that this seam gets SMALLER: there is now one set of cached
+    entry points, and patching it reaches both modules.
+
+    Verified rather than assumed: no unrouted `gilda.ground` / `gilda.get_names`
+    call remains in `tools/gilda_tools.py`; the two textual hits there are a
+    docstring and a log message.
+    """
     orig_ground = _entity_mod._cached_ground
     orig_names = _entity_mod._cached_get_names
-    orig_module = _gilda_tools.gilda
     _entity_mod._cached_ground = grounder.ground
     _entity_mod._cached_get_names = grounder.get_names
-    _gilda_tools.gilda = grounder  # exposes .ground / .get_names
     orig_ground.cache_clear()
     orig_names.cache_clear()
     try:
@@ -310,7 +322,6 @@ def _gilda_seams(grounder: _Grounder):
     finally:
         _entity_mod._cached_ground = orig_ground
         _entity_mod._cached_get_names = orig_names
-        _gilda_tools.gilda = orig_module
         orig_ground.cache_clear()
         orig_names.cache_clear()
 
@@ -1158,9 +1169,42 @@ def test_gilda_seam_saw_no_unknown_key(capture, expected):
 
 
 def test_gilda_seams_are_restored(capture):
+    """Both seams are `lru_cache` wrappers again after the capture.
+
+    The third assertion — `_gilda_tools.gilda.__name__ == "gilda"` — is gone
+    with the module-level import it checked; `tools.gilda_tools` now reaches
+    Gilda through the two cached entry points below, so restoring them restores
+    it. `test_gilda_tools_has_no_unrouted_gilda_call` is what keeps that true.
+    """
     assert hasattr(_entity_mod._cached_ground, "cache_clear")
     assert hasattr(_entity_mod._cached_get_names, "cache_clear")
-    assert _gilda_tools.gilda.__name__ == "gilda"
+
+
+def test_gilda_tools_has_no_unrouted_gilda_call():
+    """The seam is only two-part while every call goes through the cache.
+
+    If `tools/gilda_tools.py` regains a direct `gilda.ground` / `gilda.get_names`
+    call, the goldens would silently ground against the REAL index instead of the
+    fixture grounder — passing or failing for reasons that have nothing to do
+    with the code under test. That is the failure this pins, and it is why the
+    seam could be simplified rather than merely patched around.
+    """
+    import ast
+    import inspect
+
+    source = inspect.getsource(_gilda_tools)
+    unrouted = [
+        node.func.attr
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "gilda"
+    ]
+    assert unrouted == [], (
+        f"tools/gilda_tools.py calls gilda.{unrouted} directly again; either route "
+        "it through entity._cached_* or restore the third patch point in _gilda_seams"
+    )
 
 
 def test_mono_variant_is_restored(capture, expected):

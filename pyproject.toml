@@ -52,6 +52,14 @@ dev = [
     # cannot see it and a clean-environment run is the only thing that can.
     "openai>=1.0.0",
     "anthropic>=0.18.0",
+    # Needed by the vLLM corpus-scale scripts merged from haohangyan/scale_up.
+    # Both are imported inside FUNCTION BODIES, so the static guard is blind to
+    # them by the same mechanism that hid `openai` above until a clean-
+    # environment run found it. httpx does arrive transitively (openai requires
+    # httpx<1,>=0.23.0) and is pinned anyway, for the reason `Dockerfile` pins
+    # scipy: an inherited floor is not a stated one.
+    "httpx>=0.23",
+    "tqdm>=4.60",
 ]
 
 [tool.setuptools]

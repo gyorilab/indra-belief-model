@@ -143,23 +143,42 @@ class ScoringRecord:
     # --- Entity resolution ---
 
     def resolve_entities(self) -> None:
-        """Resolve both entities via gilda. Called once at construction."""
+        """Resolve missing entities via gilda.
+
+        Callers that prepared grounding in an earlier streaming stage may pass
+        ``subject_entity`` and/or ``object_entity`` into the constructor. Those
+        snapshots are preserved instead of repeating Gilda work.
+        """
         clean_rt = [r for r in self.raw_text if r is not None]
         subj_rt = clean_rt[0] if len(clean_rt) > 0 else None
         obj_rt = clean_rt[1] if len(clean_rt) > 1 else None
 
-        # Only resolve an entity for a real (grounded) agent. The "?" sentinel —
-        # an absent object on a unary statement, or an absent subject on a
-        # None-first-agent statement (e.g. an enzyme-less modification) — must NOT
-        # be grounded, or it injects a spurious entity into the prompt context.
-        self.subject_entity = (
-            None if self.subject == "?"
-            else GroundedEntity.resolve(self.subject, subj_rt)
-        )
-        self.object_entity = (
-            None if self.object == "?"
-            else GroundedEntity.resolve(self.object, obj_rt)
-        )
+        # Two rules, and they are separate because the "?" one is an INVARIANT
+        # while the injection one is an optimisation.
+        #
+        # (1) The "?" sentinel — an absent object on a unary statement, or an
+        #     absent subject on a None-first-agent statement (e.g. an enzyme-less
+        #     modification) — carries NO entity, whatever a caller passed. It is
+        #     forced to None rather than merely left unresolved: a caller-supplied
+        #     entity on a "?" agent would flow into `format_provenance`, the
+        #     `has_flagged_grounding` gate and `tier1_auto_reject`, which is the
+        #     spurious-entity injection this rule exists to prevent. The earlier
+        #     unconditional assignment enforced this as a side effect; making
+        #     resolution conditional dropped the enforcement while leaving this
+        #     comment in place, so it is now stated as its own step.
+        # (2) A real agent is resolved ONLY if the caller has not already done it.
+        #     Streaming producers that grounded in an earlier stage pass the
+        #     snapshot in, and repeating the Gilda work would be the dominant
+        #     cost of a corpus-scale run.
+        if self.subject == "?":
+            self.subject_entity = None
+        elif self.subject_entity is None:
+            self.subject_entity = GroundedEntity.resolve(self.subject, subj_rt)
+
+        if self.object == "?":
+            self.object_entity = None
+        elif self.object_entity is None:
+            self.object_entity = GroundedEntity.resolve(self.object, obj_rt)
 
     # --- Formatting for LLM prompt ---
 
