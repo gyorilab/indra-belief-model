@@ -341,6 +341,7 @@ def test_anchor_grammar_stops_at_the_extension_boundary():
         "scripts/supervise_comparison_arm.sh": 1,
         "scripts/supervise_comparison_all.sh": 2,
         "scripts/monitor_comparison_fleet.sh": 1,
+        "scripts/serve_mlx.sh": 1,
     }, (
         "the corpus's matchable `.sh` citations moved. This pin exists to keep the "
         "`.sh` arm from becoming grammar that matches nothing, so the repair is to "

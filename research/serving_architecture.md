@@ -128,6 +128,34 @@ Latency is attempt-grain p50; see `research/serving_deployment.md` §3.1 for bot
 - No batch API on the mantle endpoint (`/v1/batches` and `/openai/v1/batches` 404).
 - Token logprobs: **GLM-5 chat route returns them** (14 tokens + top-k);
   **gemma responses route accepts `top_logprobs` and returns an empty array**.
+  Re-probed live 2026-08-08 with our own key, and the picture is a ROUTE split,
+  not a provider limitation **[M]**:
+  - `POST /v1/chat/completions` returns real top-k for **16 of 22 models probed**,
+    including `google.gemma-3-27b-it` / `-12b-it` / `-4b-it`, `zai.glm-5`,
+    `zai.glm-4.7`, `qwen.qwen3-32b`, `qwen.qwen3-235b-a22b-2507`,
+    `openai.gpt-oss-120b` / `-20b`, `deepseek.v3.2`, `moonshotai.kimi-k2.5`,
+    `mistral.mistral-large-3-675b-instruct`, `nvidia.nemotron-*`. Response path
+    is standard OpenAI `choices[0].logprobs.content[].top_logprobs[]`.
+    `logprobs:true` is required alongside `top_logprobs`; cap is 20.
+    Reasoning does NOT suppress them here — glm-5 at `reasoning_effort:"high"`
+    returned 1185 entries spanning the CoT.
+  - **`google.gemma-4-26b-a4b` is REJECTED on that route** — HTTP 400
+    `model 'google.gemma-4-26b-a4b' isn't supported on this route` — and exists
+    only behind `/openai/v1/responses`, which has no logprobs implementation.
+    So gemma-class logprobs on Bedrock means **Gemma 3, not Gemma 4**, and our
+    shipped `gemma_bedrock_rf` reader cannot supply them by any route.
+  - Converse reaches the same data via `additionalModelRequestFields`
+    `{"logprobs":true,"top_logprobs":N}` PLUS an explicit
+    `additionalModelResponseFieldPaths=["/choices/0/logprobs"]` — without the
+    pointer the field is silently dropped.
+  - `prompt_logprobs` is accepted and silently discarded on every route. Output
+    tokens only.
+- Local MLX is the other way to reach gemma-4 logprobs; see `scripts/serve_mlx.sh`.
+  `mlx_lm.server` returns OpenAI-shaped logprobs capped at **11** (12 drops the
+  TCP connection rather than 400ing), and its logprobs are the raw log-softmax
+  taken BEFORE the sampler (`logprobs = logits - mx.logsumexp(logits)` in
+  `mlx_lm/generate.py`), so unlike the Bedrock verdict posterior below they are
+  temperature-independent and reproducible.
 - Zero 429s at 32 concurrent (4 arms × 8 workers).
 - Verdict posterior is **not reproducible**: same prompt at temperature 0,
   repeated calls span 0.755–0.905 (sd 0.045).

@@ -70,13 +70,28 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 32000,
         "timeout": 600,
     },
+    # Served by mlx_lm.server on Apple Silicon; see scripts/serve_mlx.sh.
+    # This is the ONLY reader we can currently obtain token logprobs from:
+    # Bedrock's responses route accepts `top_logprobs` for gemma and returns an
+    # empty array, and the noot-1 gateway is down. See `supports_logprobs`.
     "local-gemma-4-26b": {
         "base_url": "http://localhost:8085/v1",
         "model_id": "mlx-community/gemma-4-26b-a4b-it-8bit",
-        "reasoning_in_content": False,  # separate reasoning_content field
+        "reasoning_in_content": False,  # separate reasoning field (mlx spelling)
         "typical_tokens": 400,
-        "max_tokens": 1000,
-        "timeout": 60,
+        # Measured on an M5 Max at ~32 tok/s for the 8-bit MoE: the reasoning-
+        # first prompt spends 700-1500 tokens deliberating before the JSON, so
+        # the old 1000/60s pair truncated mid-thought and then timed out. A
+        # truncated reply is not a cheap failure here — it costs the full wall
+        # clock and yields no verdict.
+        "max_tokens": 4096,
+        "timeout": 900,
+        "supports_logprobs": True,
+        # mlx_lm.server validates top_logprobs with max_val=11 and rejects
+        # anything larger with a 400 (server.py:1245 `self._validate(
+        # "top_logprobs", int, min_val=0, max_val=11, whitelist=[-1])`).
+        # This is NOT the usual OpenAI/vLLM cap of 20 — do not raise it.
+        "max_top_logprobs": 11,
     },
     "local-gemma-4-31b": {
         "base_url": "http://localhost:8084/v1",
@@ -947,6 +962,72 @@ def _build_trace(*, reasoning: str, reasoning_tokens: int, status: str,
     }
 
 
+# Cap on how many token positions of the output distribution are inlined into
+# the thread-local call log. Chosen to comfortably hold a verdict-only reply
+# (measured at 14 completion tokens) while refusing to inline a reasoning-first
+# one (median ~437).
+_LOGPROBS_CALL_LOG_MAX_POSITIONS = 64
+
+
+def _normalize_openai_logprobs(choice) -> list[dict] | None:
+    """Normalize an OpenAI-shaped `choice.logprobs` into our flat form.
+
+    Returns None when the response carried no logprobs object at all, and a
+    (possibly empty) list otherwise — the caller turns that into the
+    three-valued status.
+
+    Two provider behaviours are handled here rather than at every call site:
+
+    1. The entry scalar reports the ARGMAX, not the SAMPLED token. mlx_lm.server
+       builds each content entry as `dict(top[0], top_logprobs=top)`
+       (server.py:1318-1321), so the entry is by construction the highest-scoring
+       alternative — which is NOT what was emitted once sampling is stochastic.
+       Measured at temperature 2.0: 12/12 positions where the returned text said
+       one token and `logprobs.content[].token` said another. At temperature 0
+       argmax == sample and the divergence is invisible, which is exactly why
+       `call()` refuses the combination rather than trusting the caller.
+       We therefore recompute `logprob` as the max over `top` and require
+       consumers that want a specific label to sum over `top` themselves — that
+       path is correct under either reading.
+    2. Entries may be bare `{}` (mlx emits that for a position with no
+       alternatives) or carry ids without token strings. Missing fields become
+       "" / -inf rather than raising, so one odd position cannot fail a run.
+    """
+    lp = getattr(choice, "logprobs", None)
+    if lp is None:
+        return None
+    content = getattr(lp, "content", None)
+    if content is None:
+        return []
+    out: list[dict] = []
+    for entry in content:
+        if isinstance(entry, dict):
+            tok = entry.get("token", "") or ""
+            raw_lp = entry.get("logprob")
+            alts_src = entry.get("top_logprobs") or []
+        else:
+            tok = getattr(entry, "token", "") or ""
+            raw_lp = getattr(entry, "logprob", None)
+            alts_src = getattr(entry, "top_logprobs", None) or []
+        alts: list[dict] = []
+        for a in alts_src:
+            if isinstance(a, dict):
+                a_tok, a_lp = a.get("token", "") or "", a.get("logprob")
+            else:
+                a_tok = getattr(a, "token", "") or ""
+                a_lp = getattr(a, "logprob", None)
+            if a_lp is not None:
+                alts.append({"token": a_tok, "logprob": float(a_lp)})
+        # Quirk 1: prefer the max over alternatives to the entry scalar.
+        if alts:
+            best = max(alts, key=lambda d: d["logprob"])
+            tok, lp_val = best["token"], best["logprob"]
+        else:
+            lp_val = float(raw_lp) if raw_lp is not None else float("-inf")
+        out.append({"token": tok, "logprob": lp_val, "top": alts})
+    return out
+
+
 @dataclass
 class ModelResponse:
     """Response from a model call with unified fields."""
@@ -965,6 +1046,26 @@ class ModelResponse:
     # response bytes may be retained as base64 replay evidence, but bearer
     # material is always redacted and never appears here.
     transport_trace: dict = field(default_factory=dict)
+    # Per-token output distribution, normalized across backends to
+    #   [{"token": str, "logprob": float,
+    #     "top": [{"token": str, "logprob": float}, ...]}, ...]
+    # in generated-token order. `top` is the provider's top-k alternatives AT
+    # that position (may be empty if only the sampled token was returned).
+    #
+    # THREE-VALUED, and the distinction is load-bearing. A provider that
+    # accepts `top_logprobs` and returns nothing must never be mistaken for a
+    # provider that was never asked — we have already measured exactly that
+    # failure on the Bedrock responses route for gemma, where the parameter is
+    # accepted and an EMPTY array comes back. Read `logprobs_status`, never
+    # `if response.logprobs:`:
+    #   "not_requested" — logprobs is None; nobody asked.
+    #   "unsupported"   — the registry says this route cannot supply them, so
+    #                     the request was not sent. logprobs is None.
+    #   "empty"         — asked, provider answered, returned no positions.
+    #                     logprobs is []. THIS IS A SILENT PROVIDER REFUSAL.
+    #   "ok"            — logprobs is a non-empty list.
+    logprobs: list[dict] | None = None
+    logprobs_status: str = "not_requested"
 
 
 class ModelClient:
@@ -1614,6 +1715,7 @@ class ModelClient:
         response_format: dict | None = None,
         reasoning_effort: str | None = None,
         kind: str = "unknown",
+        top_logprobs: int | None = None,
     ) -> ModelResponse:
         """Call the model with a system prompt and messages.
 
@@ -1644,6 +1746,22 @@ class ModelClient:
         `kind` is a free-form telemetry label. Sub-callers pass
         "parse_evidence" / "verify_grounding" / "monolithic" so post-hoc
         analysis can stratify latency and truncation rates per call type.
+
+        `top_logprobs` (when set) asks the backend for the top-k output
+        distribution at every generated token position, so callers can compute
+        a renormalised label probability at the verdict token instead of
+        relying on the model's verbalized `confidence` field. Read the outcome
+        from `ModelResponse.logprobs_status`, NOT from truthiness of
+        `.logprobs` — "asked and silently refused" is a real and measured
+        provider behavior here and it must not read as "never asked".
+
+        The request is only sent on routes whose registry entry declares
+        `supports_logprobs`; anywhere else the call proceeds normally and the
+        response is stamped status="unsupported". This is deliberate: Google's
+        strict OpenAI-compat endpoint 400s on unknown fields, and a 400 on
+        every scoring call would be masked by the substrate-only fallback.
+        `max_top_logprobs` in the registry clamps k to what the route accepts
+        (mlx_lm.server rejects k > 11).
         """
         import time as _time
 
@@ -1666,6 +1784,34 @@ class ModelClient:
         )
         t_start = _time.time()
 
+        # Resolve the logprobs ask against what this route can actually do.
+        # `eff_top_logprobs is None` means "do not put the field on the wire".
+        eff_top_logprobs = None
+        logprobs_unsupported = False
+        if top_logprobs is not None:
+            if top_logprobs < 1:
+                raise ValueError("top_logprobs must be >= 1 when requested")
+            if temperature > 0:
+                # Not a style preference — a correctness precondition. The
+                # returned per-position entry is the ARGMAX (mlx builds it as
+                # `dict(top[0], ...)`), while `content` holds what was SAMPLED.
+                # Above temperature 0 those diverge (measured 12/12 at temp 2.0),
+                # so the token stream we scan to locate the verdict is not the
+                # token stream that produced the text we parse the verdict from.
+                # The two would disagree silently and only on the hard cases.
+                raise ValueError(
+                    "top_logprobs requires temperature=0: above it the reported "
+                    "argmax token stream diverges from the sampled text, so the "
+                    f"verdict position cannot be trusted (got temperature={temperature})"
+                )
+            if self.config.get("supports_logprobs"):
+                cap = self.config.get("max_top_logprobs")
+                eff_top_logprobs = min(top_logprobs, cap) if cap else top_logprobs
+            else:
+                # Declared incapable: proceed without the field rather than
+                # risk a 400 that the substrate-only fallback would hide.
+                logprobs_unsupported = True
+
         try:
             while True:
                 try:
@@ -1675,6 +1821,7 @@ class ModelClient:
                             system, messages, mt, temperature, timeout,
                             response_format=response_format,
                             reasoning_effort=reasoning_effort,
+                            top_logprobs=eff_top_logprobs,
                         )
                     elif self.backend == "anthropic":
                         response = self._invoke_with_wall_timeout(
@@ -1722,6 +1869,11 @@ class ModelClient:
                         )
                     else:
                         raise ValueError(f"Unknown backend: {self.backend}")
+                    if logprobs_unsupported:
+                        # The caller asked; this route cannot answer. Say so
+                        # explicitly so downstream cannot read the absence as
+                        # a measurement.
+                        response.logprobs_status = "unsupported"
                     call_row = {
                         "kind": kind,
                         "duration_s": round(_time.time() - t_start, 3),
@@ -1747,6 +1899,25 @@ class ModelClient:
                     }
                     if response.transport_trace:
                         call_row["transport_trace"] = response.transport_trace
+                    if response.logprobs_status != "not_requested":
+                        # Always record the STATUS — it is one short string and
+                        # it is what distinguishes a real measurement from a
+                        # silent provider refusal after the fact.
+                        call_row["logprobs_status"] = response.logprobs_status
+                        call_row["n_logprob_positions"] = (
+                            len(response.logprobs)
+                            if response.logprobs is not None else 0
+                        )
+                        # The array itself is only persisted when it is small.
+                        # A reasoning-first reply runs a median ~437 positions;
+                        # at k=11 that is ~5k entries per call, which would add
+                        # hundreds of MB to a 1.6k-row gold run. Callers that
+                        # need the distribution at one position must extract it
+                        # from the live ModelResponse (see logprobs.py) and
+                        # persist that, rather than relying on this field.
+                        if (response.logprobs is not None
+                                and len(response.logprobs) <= _LOGPROBS_CALL_LOG_MAX_POSITIONS):
+                            call_row["logprobs"] = response.logprobs
                     self._get_call_log().append(call_row)
                     return response
                 except Exception as e:
@@ -1902,6 +2073,7 @@ class ModelClient:
         self, system: str, messages: list[dict], mt: int, temp: float, timeout: int,
         response_format: dict | None = None,
         reasoning_effort: str | None = None,
+        top_logprobs: int | None = None,
     ) -> ModelResponse:
         full_messages = [{"role": "system", "content": system}] + messages
         kwargs = dict(
@@ -1911,6 +2083,14 @@ class ModelClient:
             temperature=temp,
             timeout=timeout,
         )
+        if top_logprobs is not None:
+            # Both fields go on the wire together: OpenAI, vLLM and llama.cpp
+            # all reject `top_logprobs` unless `logprobs` is true, and
+            # mlx_lm.server only populates token_logprobs when `logprobs` is
+            # set. Callers reach this only for routes declaring
+            # `supports_logprobs`, and k is already clamped to the route cap.
+            kwargs["logprobs"] = True
+            kwargs["top_logprobs"] = top_logprobs
         if response_format is not None:
             # OpenAI / Google AI Studio honor `response_format` directly.
             # Ollama-backed endpoints expose JSON mode under their native
@@ -1959,7 +2139,14 @@ class ModelClient:
         response = self._client.chat.completions.create(**kwargs)
         msg = response.choices[0].message
         content = msg.content or ""
-        reasoning = getattr(msg, "reasoning_content", None) or ""
+        # Field name for the CoT is not standardised across OpenAI-compatible
+        # servers. LiteLLM/Ollama/vLLM use `reasoning_content`; mlx_lm.server
+        # emits `reasoning`. Reading only the former against mlx yields an
+        # EMPTY content AND an empty raw_text on any reply that spends its whole
+        # budget deliberating — the reply looks blank rather than truncated, and
+        # the verdict parser then reports absence instead of length-truncation.
+        reasoning = (getattr(msg, "reasoning_content", None)
+                     or getattr(msg, "reasoning", None) or "")
 
         # For models where reasoning is IN content, raw_text = content
         # For models with separate reasoning, raw_text = reasoning + content
@@ -1970,6 +2157,15 @@ class ModelClient:
 
         finish = response.choices[0].finish_reason or "stop"
         rtok = _reasoning_tokens(response.usage)
+        if top_logprobs is None:
+            norm_lp, lp_status = None, "not_requested"
+        else:
+            norm_lp = _normalize_openai_logprobs(response.choices[0])
+            if norm_lp is None:
+                # Asked; the response carried no logprobs object whatsoever.
+                norm_lp, lp_status = [], "empty"
+            else:
+                lp_status = "ok" if norm_lp else "empty"
         return ModelResponse(
             content=content,
             reasoning=reasoning,
@@ -1977,6 +2173,8 @@ class ModelClient:
             raw_text=raw_text,
             finish_reason=finish,
             prompt_tokens=getattr(response.usage, "prompt_tokens", -1),
+            logprobs=norm_lp,
+            logprobs_status=lp_status,
             reasoning_trace=_build_trace(
                 reasoning=reasoning, reasoning_tokens=rtok,
                 status=_classify_reasoning(

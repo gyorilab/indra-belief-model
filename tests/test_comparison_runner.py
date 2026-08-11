@@ -1511,7 +1511,11 @@ def test_two_clients_for_one_model_do_not_share_mutable_config() -> None:
     from indra_belief.model_client import LOCAL_MODELS, ModelClient
 
     original = LOCAL_MODELS["local-gemma-4-26b"]["timeout"]
-    assert original == 60
+    # Read the registry rather than pinning a literal: what this test guards is
+    # that the ratchet does not leak between clients, not the entry's timeout.
+    # (The literal was 60 until the MLX serving work raised it — a 60s cap
+    # cannot fit a thinking model generating ~500 tokens at ~32 tok/s locally.)
+    assert original > 5, "the ratchet needs room to shrink for this test to mean anything"
     try:
         a = ModelClient("local-gemma-4-26b")
         b = ModelClient("local-gemma-4-26b")
@@ -1524,8 +1528,8 @@ def test_two_clients_for_one_model_do_not_share_mutable_config() -> None:
         assert bounded.call("prompt") is sentinel
 
         assert a.config["timeout"] <= 5  # the ratchet fired on this client
-        assert b.config["timeout"] == 60
-        assert LOCAL_MODELS["local-gemma-4-26b"]["timeout"] == 60
+        assert b.config["timeout"] == original
+        assert LOCAL_MODELS["local-gemma-4-26b"]["timeout"] == original
     finally:
         LOCAL_MODELS["local-gemma-4-26b"]["timeout"] = original
 
