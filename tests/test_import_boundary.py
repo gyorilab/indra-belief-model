@@ -485,3 +485,35 @@ def test_the_report_states_a_true_sentence_about_the_unreached_bucket(capsys):
         line = next(line for line in lines if module in line)
         for name in names:
             assert f"{cib.TESTS_ENTRY_DIR.name}/{name}" in line, line
+
+
+def test_group_by_package_prefix_keeps_a_package_and_its_children_on_one_line():
+    """The report branch that no live run exercises, tested directly.
+
+    On the current tree every unreached module is a singleton, so this grouping
+    cannot fire in a real run and a reader has no way to tell it is correct.
+    The pair it exists for — a package and its child, where the package name is
+    a literal PREFIX of the child — is what breaks the substring-based line
+    selection in this file's other tests.
+    """
+    fn = cib.group_by_package_prefix
+
+    # the case it was written for
+    assert fn(("indra_belief.probes", "indra_belief.probes.battery")) == [
+        ("indra_belief.probes", "indra_belief.probes.battery")
+    ]
+    # ORDER-INDEPENDENCE. Enumerating the child first must still report each
+    # module exactly once. Before the `candidate not in grouped` guard this
+    # returned [(battery,), (battery, probes)] — battery on TWO lines, the very
+    # duplicate the grouping exists to prevent. It was masked only because
+    # `unreached_modules()` returns `tuple(sorted(...))`.
+    child_first = fn(("indra_belief.probes.battery", "indra_belief.probes"))
+    assert [m for g in child_first for m in g].count("indra_belief.probes.battery") == 1
+    assert sorted(m for g in child_first for m in g) == [
+        "indra_belief.probes", "indra_belief.probes.battery"
+    ]
+    # unrelated modules stay separate, and a shared prefix that is NOT a
+    # package boundary must not group ("probes" vs "probes_extra")
+    assert fn(("a.probes", "a.probes_extra")) == [("a.probes",), ("a.probes_extra",)]
+    # today's real shape: all singletons
+    assert fn(("a", "b", "c")) == [("a",), ("b",), ("c",)]
