@@ -137,3 +137,11 @@ presentations/**/node_modules/
 presentations/**/dist/
 presentations/**/*.pdf
 presentations/second-reader/
+
+# Probe-battery raw sweeps: 5.4MB of per-probe MLX reads, regenerable in ~2h via
+# scripts/run_probe_battery.py from a seeded sample. The DECISION artifacts
+# (decision*.json, killgate.json) and the smoke fixture are small and ARE tracked,
+# because they are what a reader needs to audit the verdict without a GPU.
+data/probe_battery/probes_fit.jsonl
+data/probe_battery/probes_test.jsonl
+data/probe_battery/holdout_scores*.jsonl

@@ -1,0 +1,187 @@
+{
+  "base_rate_correct": 0.466,
+  "candidate": {
+    "auprc": 0.6833455362168646,
+    "auroc": 0.7395315940910772,
+    "base_rate": 0.466,
+    "brier": 0.21471717765984294,
+    "distinct_scores": 41,
+    "ece": 0.08018977025707279,
+    "in_unit_interval": true,
+    "n": 500,
+    "name": "candidate",
+    "reliability": 0.01039597670509099,
+    "reliability_bins": [
+      {
+        "empirical": 0.0,
+        "hi": 0.05,
+        "lo": 0.0,
+        "mean_pred": 0.0,
+        "n": 2
+      },
+      {
+        "empirical": 0.18,
+        "hi": 0.2,
+        "lo": 0.05,
+        "mean_pred": 0.12098465539676997,
+        "n": 50
+      },
+      {
+        "empirical": 0.25,
+        "hi": 0.35,
+        "lo": 0.2,
+        "mean_pred": 0.22567983913589953,
+        "n": 108
+      },
+      {
+        "empirical": 0.3826086956521739,
+        "hi": 0.5,
+        "lo": 0.35,
+        "mean_pred": 0.44319110256895494,
+        "n": 115
+      },
+      {
+        "empirical": 0.5915492957746479,
+        "hi": 0.65,
+        "lo": 0.5,
+        "mean_pred": 0.5649066448357639,
+        "n": 71
+      },
+      {
+        "empirical": 0.8,
+        "hi": 0.8,
+        "lo": 0.65,
+        "mean_pred": 0.7109920744483766,
+        "n": 20
+      },
+      {
+        "empirical": 0.7099236641221374,
+        "hi": 0.95,
+        "lo": 0.8,
+        "mean_pred": 0.8845708168086183,
+        "n": 131
+      },
+      {
+        "empirical": 0.6666666666666666,
+        "hi": 1.001,
+        "lo": 0.95,
+        "mean_pred": 1.0,
+        "n": 3
+      }
+    ],
+    "resolution": 0.04325617425584594,
+    "seconds_per_record": 7.169757397527632
+  },
+  "cost": {
+    "arm_semantics_note": "An arm whose candidate score CONSUMES the incumbent score as a feature is ADDITIVE: read cost_ratio_vs_incumbent_if_additive, not speedup_x_if_replacement. An arm built only from probe features is a REPLACEMENT: read speedup_x_if_replacement.",
+    "candidate_records_timed": 500,
+    "candidate_s_per_record": 7.169757397527632,
+    "combined_s_per_record": 36.47036539752763,
+    "cost_ratio_vs_incumbent_if_additive": 1.2446965400010686,
+    "incumbent_records_timed": 500,
+    "incumbent_s_per_record": 29.300608,
+    "incumbent_untimed_calls": 0,
+    "n": 500,
+    "speedup_x_if_replacement": 4.0866944828710405
+  },
+  "gate": {
+    "passed": false,
+    "rule": "held-out paired ci95_low(delta AUROC) > 0"
+  },
+  "generated_utc": "2026-08-11T04:17:37.097699+00:00",
+  "incumbent": {
+    "auprc": 0.6428498566745323,
+    "auroc": 0.7414283647586439,
+    "base_rate": 0.466,
+    "brier": 0.23957499999999998,
+    "distinct_scores": 3,
+    "ece": 0.21369999999999995,
+    "in_unit_interval": true,
+    "n": 500,
+    "name": "incumbent",
+    "reliability": 0.049457436719104006,
+    "reliability_bins": [
+      {
+        "empirical": null,
+        "hi": 0.05,
+        "lo": 0.0,
+        "mean_pred": null,
+        "n": 0
+      },
+      {
+        "empirical": 0.20175438596491227,
+        "hi": 0.2,
+        "lo": 0.05,
+        "mean_pred": 0.05,
+        "n": 228
+      },
+      {
+        "empirical": 1.0,
+        "hi": 0.35,
+        "lo": 0.2,
+        "mean_pred": 0.2,
+        "n": 1
+      },
+      {
+        "empirical": null,
+        "hi": 0.5,
+        "lo": 0.35,
+        "mean_pred": null,
+        "n": 0
+      },
+      {
+        "empirical": null,
+        "hi": 0.65,
+        "lo": 0.5,
+        "mean_pred": null,
+        "n": 0
+      },
+      {
+        "empirical": null,
+        "hi": 0.8,
+        "lo": 0.65,
+        "mean_pred": null,
+        "n": 0
+      },
+      {
+        "empirical": null,
+        "hi": 0.95,
+        "lo": 0.8,
+        "mean_pred": null,
+        "n": 0
+      },
+      {
+        "empirical": 0.6863468634686347,
+        "hi": 1.001,
+        "lo": 0.95,
+        "mean_pred": 0.95,
+        "n": 271
+      }
+    ],
+    "resolution": 0.05872643671910403,
+    "seconds_per_record": 29.300608
+  },
+  "inputs": {
+    "scores": {
+      "path": "data/probe_battery/holdout_scores_B_battery_alone.jsonl",
+      "sha256": "58a623c3f8d148c36ab40bc810c6559362dd62cc779af2d63b633a84cdfd28c4"
+    }
+  },
+  "kind": "probe_battery_decision",
+  "n": 500,
+  "paired_bootstrap": {
+    "ci95_high": 0.044405574108855456,
+    "ci95_low": -0.048973162601383916,
+    "cluster_field": "source_hash",
+    "delta_auroc": -0.0018967706675667717,
+    "max_cluster_multiplicity": 8,
+    "n_bootstrap": 2000,
+    "n_clusters": 453,
+    "n_valid_resamples": 2000,
+    "p_delta_gt_0": 0.4765,
+    "resampling_unit": "cluster",
+    "seed": 0
+  },
+  "schema_version": 1,
+  "verdict": "NO-GO"
+}
