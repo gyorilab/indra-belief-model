@@ -236,6 +236,17 @@ UNREACHED_DISPOSITIONS: Mapping[str, str] = {
         "EXPECTED shape for a plug-in socket rather than a sign of disuse. An "
         "internal importer would mean we had started calling our own socket, "
         "which is not what implementing someone else's interface is for.",
+    f"{PACKAGE}.probe_combiner":
+        "OFFLINE RESEARCH SCAFFOLDING, UNWIRED: the fit/apply-separated probe "
+        "combiner, `fit_combiner` / `FrozenCombiner` in "
+        "`src/indra_belief/probe_combiner.py`, is an sklearn "
+        "`LogisticRegression` over the probe logit vector plus "
+        "`IsotonicRegression` calibration. It is wired into no serving path "
+        "and into nothing in the belief math. Node D1's decision driver is its "
+        "intended consumer, and it stays unreached until a file under "
+        "`scripts/` calls `fit_combiner`. D1 HANDOFF: this entry must be "
+        "deleted in the same change that lands that importer, or exit 3 reports "
+        "it stale.",
     f"{PACKAGE}.scorers.kg_signal":
         "RESEARCH LINEAGE, UNWIRED: the U-phase KG-as-confidence-modifier, whose "
         "Q-phase verdict-override predecessor regressed -2.65pp and whose "
@@ -1061,6 +1072,43 @@ def coverage() -> dict:
     }
 
 
+def group_by_package_prefix(modules: Sequence[str]) -> list[tuple[str, ...]]:
+    """Group a package with its child modules so each group prints on one line.
+
+    `tests/test_import_boundary.py` selects report lines by SUBSTRING, so a
+    package name that is a literal prefix of a child ("indra_belief.probes" vs
+    "indra_belief.probes.battery") matches two lines and trips an
+    `assert len(named) == 1`. Grouping keeps the pair on one physical line.
+
+    Extracted and directly tested because on the current tree NO unreached
+    parent/child pair exists, so this branch never fires in a live run — 32
+    lines of report logic that a reader cannot tell are correct. Coverage comes
+    from the unit test rather than from the corpus happening to contain a pair.
+    """
+    grouped: set[str] = set()
+    groups: list[tuple[str, ...]] = []
+    for module in modules:
+        if module in grouped:
+            continue
+        group = tuple(
+            candidate
+            for candidate in modules
+            if (candidate == module or candidate.startswith(f"{module}."))
+            # Exclude already-grouped members. Without this the function is
+            # ORDER-DEPENDENT: enumerate a child before its package and the
+            # child lands in two groups, so it prints on two lines — the exact
+            # duplicate-line failure this grouping exists to prevent. Today's
+            # input happens to be safe because `unreached_modules()` returns
+            # `tuple(sorted(...))` and a package sorts before its children, but
+            # that invariant lives in another function and was stated nowhere
+            # here. Correctness should not depend on a distant caller's sort.
+            and candidate not in grouped
+        )
+        grouped.update(group)
+        groups.append(group)
+    return groups
+
+
 def main(argv: list | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
 
@@ -1136,17 +1184,28 @@ def main(argv: list | None = None) -> int:
     for module, scripts in sorted(split["tool_only"].items()):
         via = ", ".join(f"{TOOL_ENTRY_DIR.name}/{s}" for s in scripts)
         print(f"    script-reached only: {module} (via {via})")
-    for module in split["unreached"]:
-        via = ", ".join(f"{TESTS_ENTRY_DIR.name}/{t}" for t in reachers.get(module, ()))
-        covered = f" imported by {via};" if via else ""
-        why = UNREACHED_DISPOSITIONS.get(module)
-        reason = (
-            _first_sentence(why) if why else
-            "UNDISPOSED — no entry in UNREACHED_DISPOSITIONS "
-            f"({Path(__file__).name}) says what this module is or why it stays. "
-            "Write one; a missing answer is not a delete instruction."
-        )
-        print(f"    no closure here reaches: {module} —{covered} {reason}")
+    # A package name is a literal prefix of its child modules. Keep each such
+    # group on one physical line so a report consumer looking up either exact
+    # module cannot mistake the child's line for a second report of the package.
+    unreached = tuple(split["unreached"])
+    report_groups = group_by_package_prefix(unreached)
+
+    for group in report_groups:
+        reports: list[str] = []
+        for module in group:
+            via = ", ".join(
+                f"{TESTS_ENTRY_DIR.name}/{t}" for t in reachers.get(module, ())
+            )
+            covered = f" imported by {via};" if via else ""
+            why = UNREACHED_DISPOSITIONS.get(module)
+            reason = (
+                _first_sentence(why) if why else
+                "UNDISPOSED — no entry in UNREACHED_DISPOSITIONS "
+                f"({Path(__file__).name}) says what this module is or why it stays. "
+                "Write one; a missing answer is not a delete instruction."
+            )
+            reports.append(f"{module} —{covered} {reason}")
+        print(f"    no closure here reaches: {' | '.join(reports)}")
     print(
         f"  Cannot see: {counts['dynamic_import_sites']} dynamic import site(s). "
         f"Of {counts['data_path_literals']} `data/...` string literal(s) in "
