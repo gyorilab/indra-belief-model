@@ -38,22 +38,39 @@ LOCAL_MODELS: dict[str, dict] = {
         "base_url": "http://127.0.0.1:8000/v1",
         "model_id": "google/gemma-4-26B-A4B-it",
         "reasoning_in_content": False,
-        "max_tokens": 1000,
-        "timeout": 120,
+        # 1000/120 raised to 8192/900 on 2026-08-12. MEASURED on 60 monolithic
+        # calls with the production reasoning-first prompt: output tokens p50
+        # 574, p90 1507, max 4353 — so a 1000 cap truncates 16.7% of calls
+        # (Wilson [0.093, 0.280]) while 8192 truncates 0/60 ([0.000, 0.060]).
+        # A truncated read costs the full wall clock and yields no verdict, and
+        # on this path it is NOT withheld, so it can contribute a mid-thought
+        # verdict. The served id must match `--served-model-name` byte-for-byte
+        # or reader_configuration_for_run nulls the prompt and calibration can
+        # never resolve.
+        "max_tokens": 8192,
+        "timeout": 900,
     },
     "ollama-local": {
         "base_url": "http://localhost:11434/v1",
         "model_id": "gemma3:27b",
         "reasoning_in_content": False,
-        "max_tokens": 1000,
-        "timeout": 120,
+        # 1000/120 raised to 8192/900 on 2026-08-12, same measurement as
+        # vllm-local. gemma3:27b is not a reasoning model, so its own output is
+        # shorter — but the cap is a CEILING, not a reservation, and the old
+        # value silently truncated any reasoning-first prompt sent here.
+        "max_tokens": 8192,
+        "timeout": 900,
     },
     "local-qwen3.5-vl-122b-a10b": {
         "base_url": "http://localhost:8082/v1",
         "model_id": "dealignai/Qwen3.5-VL-122B-A10B-4bit-MLX-CRACK",
         "reasoning_in_content": True,  # CoT is emitted in content
         "typical_tokens": 2500,
-        "max_tokens": 8000,
+        # 8000 -> 8192 on 2026-08-12. 8000 sat just under the measured floor —
+        # the near-miss a round number invites. This reader emits its CoT in
+        # `content` and has the largest `typical_tokens` in the registry, so it
+        # is the entry least able to afford a tight ceiling.
+        "max_tokens": 8192,
         "timeout": 180,
     },
     # Minimax-M2.7 (JANGTQ-CRACK quant) served via vmlx-engine on a local
@@ -79,12 +96,22 @@ LOCAL_MODELS: dict[str, dict] = {
         "model_id": "mlx-community/gemma-4-26b-a4b-it-8bit",
         "reasoning_in_content": False,  # separate reasoning field (mlx spelling)
         "typical_tokens": 400,
-        # Measured on an M5 Max at ~32 tok/s for the 8-bit MoE: the reasoning-
+        # Measured on an M5 Max at 20.9-29.3 tok/s, mean 25.2, over the 16
+        # --workers 1 monolithic calls for the 8-bit MoE: the reasoning-
         # first prompt spends 700-1500 tokens deliberating before the JSON, so
         # the old 1000/60s pair truncated mid-thought and then timed out. A
         # truncated reply is not a cheap failure here — it costs the full wall
         # clock and yields no verdict.
-        "max_tokens": 4096,
+        #
+        # Raised 4096 -> 8192 on 2026-08-12 by operator decision, to cut the
+        # measured cap-hit rate before the calibration fit run. At 4096 the rate
+        # was 2/88 sampled rows (pooled, Wilson [0.0063, 0.0791]) while the
+        # largest UNTRUNCATED call observed was 3695 tokens — 90.2% of that cap,
+        # i.e. the tail was pressed right against it. 8192 leaves 2.2x headroom
+        # over the observed maximum. The rate at this cap is re-measured rather
+        # than assumed: a cap hit still costs full wall clock, so the surcharge
+        # per hit roughly doubles even as hits become rarer.
+        "max_tokens": 8192,
         "timeout": 900,
         "supports_logprobs": True,
         # mlx_lm.server validates top_logprobs with max_val=11 and rejects
@@ -98,8 +125,11 @@ LOCAL_MODELS: dict[str, dict] = {
         "model_id": "mlx-community/gemma-4-31b-it-8bit",
         "reasoning_in_content": False,
         "typical_tokens": 400,
-        "max_tokens": 1000,
-        "timeout": 60,
+        # This entry carried the literal "1000/60s pair" that the 26b comment
+        # above records as catastrophic — truncating mid-thought and then timing
+        # out. Raised to 8192/900 on 2026-08-12 to match its 26b sibling.
+        "max_tokens": 8192,
+        "timeout": 900,
     },
     "remote-gemma-4-26b": {
         "base_url": "http://100.97.101.59:11434/v1",
@@ -176,7 +206,11 @@ LOCAL_MODELS: dict[str, dict] = {
         "torch_dtype": "bfloat16",
         "device": "mps",
         "typical_tokens": 800,
-        "max_tokens": 4096,
+        # 4096 -> 8192 on 2026-08-12. `enable_thinking` is True here, so this
+        # reader deliberates before answering and its output distribution is
+        # unmeasured; a ceiling costs nothing when it is not reached, while a
+        # truncated read costs the full wall clock and yields no verdict.
+        "max_tokens": 8192,
         "timeout": 300,
         "persona": (
             "You are a biomedical text-mining adjudicator. You judge whether "

@@ -519,16 +519,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the model name accepted by the vLLM server.",
     )
     parser.add_argument("--workers", type=int, default=64)
-    parser.add_argument("--max-tokens", type=int, default=1000)
+    # max-tokens and timeout DEFAULT TO THE REGISTRY, matching
+    # scripts/run_rasmachine_monolithic.py. They used to be hardcoded here at
+    # 1000/180, which silently overrode the registry entry for every run: a
+    # 1000-token cap truncates 16.7% of calls under the production
+    # reasoning-first prompt (measured, n=60: p50 574, p90 1507, max 4353), and
+    # a truncated read costs the full wall clock while yielding no verdict.
+    # A ceiling belongs with the model, not with one of its callers.
+    parser.add_argument("--max-tokens", type=int, default=None)
     parser.add_argument("--temperature", type=float, default=0.1)
-    parser.add_argument("--timeout", type=float, default=180)
+    parser.add_argument("--timeout", type=float, default=None)
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.workers < 1 or args.max_tokens < 1:
-        raise SystemExit("workers and max-tokens must be positive")
+    if args.workers < 1:
+        raise SystemExit("workers must be positive")
+    if args.max_tokens is not None and args.max_tokens < 1:
+        raise SystemExit("max-tokens must be positive")
+    if args.timeout is not None and args.timeout <= 0:
+        raise SystemExit("timeout must be positive")
     if args.limit is not None and (args.limit < 1 or args.shard_index is None):
         raise SystemExit("--limit must be positive and used with --shard-index")
 
@@ -544,6 +555,22 @@ def main() -> int:
     model_config = LOCAL_MODELS[args.model]
     args.base_url = (args.base_url or model_config["base_url"]).rstrip("/")
     args.model_id = args.served_model_id or model_config["model_id"]
+    # Registry is the source of truth for the ceiling; an explicit flag still wins.
+    if args.max_tokens is None:
+        args.max_tokens = model_config.get("max_tokens")
+        if args.max_tokens is None:
+            raise SystemExit(
+                f"registry entry {args.model!r} declares no max_tokens; "
+                "pass --max-tokens explicitly"
+            )
+    if args.timeout is None:
+        args.timeout = float(model_config.get("timeout") or 900)
+    print(
+        f"[config] model={args.model} served_id={args.model_id} "
+        f"max_tokens={args.max_tokens} timeout={args.timeout:g}s "
+        f"workers={args.workers} temperature={args.temperature}",
+        flush=True,
+    )
 
     shards = select_shards(Path(args.input_dir), args.shard_index)
     prompt = MonolithicPrompt()

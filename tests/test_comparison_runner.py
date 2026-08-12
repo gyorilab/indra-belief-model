@@ -1514,7 +1514,8 @@ def test_two_clients_for_one_model_do_not_share_mutable_config() -> None:
     # Read the registry rather than pinning a literal: what this test guards is
     # that the ratchet does not leak between clients, not the entry's timeout.
     # (The literal was 60 until the MLX serving work raised it — a 60s cap
-    # cannot fit a thinking model generating ~500 tokens at ~32 tok/s locally.)
+    # cannot fit a thinking model generating ~500 tokens at the measured local
+    # rate of 20.9-29.3 tok/s, mean 25.2.)
     assert original > 5, "the ratchet needs room to shrink for this test to mean anything"
     try:
         a = ModelClient("local-gemma-4-26b")
