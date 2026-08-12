@@ -22,6 +22,7 @@
 		"test:reasoning-ablation": "node --experimental-strip-types scripts/test-reasoning-ablation-contract.mjs",
 		"test:deployed-baseline": "node --experimental-strip-types scripts/test-deployed-baseline-contract.mjs",
 		"validate:belief:publication": "node --experimental-strip-types scripts/validate-belief-comparison-publication.mjs",
+		"test:belief-vs-indra": "node --experimental-strip-types scripts/test-belief-vs-indra-contract.mjs",
 		"test:curation": "node --experimental-strip-types scripts/test-curation-sampling.mjs"
 	},
 	"devDependencies": {
