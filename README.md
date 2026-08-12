@@ -62,9 +62,14 @@ scorer remains available for ablations with `--arch decomposed`.
   claims, a focused relation-nature step (Gilda-grounded entity aliases) that
   rejects a non-binding relationship mistaken for a Complex.
 
-The default variant is `disconfirm_relnature` (set `MONO_VARIANT=""` for the
-plain six-rule baseline; `MONO_VARIANT=disconfirm` for disconfirm without the
-relation-nature step).
+The default variant is `disconfirm_relnature_rf` (set `MONO_VARIANT=""` for
+the plain six-rule baseline; `MONO_VARIANT=disconfirm` for disconfirm without
+the relation-nature step; `MONO_VARIANT=disconfirm_relnature` for the
+reasoning-SECOND variant, which is no longer the default). That
+reasoning-first prompt is what the shipped `gemma_bedrock_rf` calibration
+profile is keyed on, so changing the variant changes the `(model, prompt_sha)`
+calibration key and the fitted profile stops applying — see `_FITTED_CONFIGS`
+in `src/indra_belief/calibration_constants.py`.
 
 ### Adaptive few-shot selection
 
@@ -146,6 +151,112 @@ Same as above but point `base_url` at the remote host. The `gemma-remote`
 entry in the registry shows this pattern — it targets an Ollama instance
 over Tailscale.
 
+**Local MLX (Apple Silicon):**
+
+`scripts/serve_mlx.sh` serves a reader through `mlx_lm.server`, which speaks
+the same OpenAI-compatible protocol as Ollama. Setup, once:
+
+```bash
+uv venv ~/.venvs/mlx-serve --python 3.12
+VIRTUAL_ENV=~/.venvs/mlx-serve uv pip install mlx-lm
+```
+
+```bash
+scripts/serve_mlx.sh                    # gemma-4-26b-a4b 8-bit on :8085
+MODEL=mlx-community/gemma-4-31b-it-8bit PORT=8084 scripts/serve_mlx.sh
+```
+
+The MLX stack lives in its own virtualenv at `~/.venvs/mlx-serve` **by choice,
+not by necessity** — there is no dependency conflict, and an earlier revision of
+this paragraph claiming one was wrong. Re-runnable evidence:
+`VIRTUAL_ENV=$PWD/.venv uv pip install --dry-run mlx-lm` resolves 34 packages and
+would install exactly three — `mlx==0.32.0`, `mlx-lm==0.31.3`,
+`mlx-metal==0.32.0` — upgrading nothing and removing nothing. `mlx-lm` 0.31.3
+declares no torch and no sympy at all; its core requirements are `mlx>=0.31.2`
+(marker `platform_system == "Darwin"`), numpy, `transformers>=5.0.0`,
+sentencepiece, protobuf, pyyaml and jinja2 — print them with
+`~/.venvs/mlx-serve/bin/python -c "from importlib.metadata import distribution;
+print(distribution('mlx-lm').requires)"`, whose remaining entries
+(`datasets`, `lm-eval`, `tqdm`, the CUDA/CPU `mlx` variants) all sit behind
+`extra ==` markers and so are never pulled by a bare install. Torch, sympy, pysb
+and transformers already coexist in the project interpreter:
+`.venv/bin/python -c "import torch,sympy,pysb,transformers as tf; print(torch.__version__, sympy.__version__, pysb.__version__, tf.__version__)"`
+exits 0 and prints `2.11.0 1.11.1 1.17.0 5.9.0`. What is true is only a violated
+*declaration* — `.venv/bin/python -m pip check` reports, among other metadata
+complaints, `torch 2.11.0 has requirement sympy>=1.13.3, but you have sympy
+1.11.1` — a complaint about declared bounds, not a failed import, and not what
+forces the split.
+
+What the split buys is a judgement, not a necessity. The cost it avoids is
+measurable and modest: installing `mlx-lm` into `.venv` would add three
+distributions totalling ~192 MB, ~188 MB of it the Apple-Silicon-only
+`mlx-metal` binary.
+
+```bash
+~/.venvs/mlx-serve/bin/python -c 'from importlib.metadata import distribution as D; print([(n, D(n).version, round(sum(D(n).locate_file(f).stat().st_size for f in D(n).files)/1e6, 1)) for n in ("mlx", "mlx-lm", "mlx-metal")])'
+# [('mlx', '0.32.0', 1.8), ('mlx-lm', '0.31.3', 1.6), ('mlx-metal', '0.32.0', 188.4)]
+```
+
+Do not quote `du -sm ~/.venvs/mlx-serve` (316 MiB) as the avoided cost: that is
+the whole serving venv, and most of its non-MLX bulk — numpy, transformers —
+`.venv` already carries. `mlx-metal`'s files also unpack *into* the `mlx/` import
+directory (there is no `mlx_metal/` beside it), which is why `du -sm` on
+`~/.venvs/mlx-serve/lib/python3.12/site-packages/mlx` reports 189 MiB of
+allocated blocks rather than the ~2 MB `mlx`'s own files come to.
+
+That weight stays out of the `uv.lock`-resolved environment, which has no `mlx`
+entry at all (`grep -c '^name = "mlx' uv.lock` → 0) and is exercised on
+`ubuntu-latest` CI (`.github/workflows/ci.yml:9`). The marker doing the work
+there is `mlx-lm`'s own: it requires `mlx>=0.31.2; platform_system == "Darwin"`,
+so off Darwin a resolver never *requests* `mlx` — it is not that `mlx` would
+refuse to install. (`mlx` 0.32.0 carries no Darwin marker itself; its
+Darwin-only piece is `mlx-metal==0.32.0; platform_system == "Darwin"`.)
+
+The scorer never imports mlx: it reaches the server over HTTP as a plain
+`openai_compat` backend. The one in-process MLX path,
+`scripts/run_probe_battery.py`, imports `mlx_lm` lazily inside its read functions
+— `grep -cE '^(import|from) mlx' scripts/run_probe_battery.py` → 0 at module
+scope, while `grep -nE '^[[:space:]]+(import|from) mlx'` on the same file returns
+three indented hits inside function bodies. Gold loading, prompt rendering,
+record construction and artifact verification therefore stay importable in
+`.venv`, and that script is run under `~/.venvs/mlx-serve/bin/python` when it
+actually needs the model.
+
+The script's `MODEL` and `PORT` defaults must stay equal to the
+`local-gemma-4-26b` entry in `src/indra_belief/model_client.py` —
+`mlx-community/gemma-4-26b-a4b-it-8bit` on port `8085`. Change one without the
+other and every call 404s. `tests/test_readme_code_claims.py` compares the
+script's defaults against the registry entry and fails if they diverge — and
+fails too if this section stops naming them.
+
+Why serve locally at all: this is currently the **only** reader we can read
+token logprobs from. Bedrock's gemma-4 routes accept `top_logprobs` and return
+an empty array, so `p_raw` cannot be measured there at all. Two consequences
+for callers:
+
+- `top_logprobs` is capped at **11**, so a caller that assumes a larger ceiling
+  gets a 400 rather than a truncated list:
+  `grep -n 'top_logprobs' ~/.venvs/mlx-serve/lib/python3.12/site-packages/mlx_lm/server.py`
+  → `self._validate("top_logprobs", int, min_val=0, max_val=11, whitelist=[-1])`.
+  The registry mirrors the cap as `max_top_logprobs` so callers clamp before the
+  request (`grep -n max_top_logprobs src/indra_belief/model_client.py`).
+- Serve at `temperature 0.0` — the script's default, and a correctness
+  precondition for scoring, because the sampled verdict must be reproducible.
+  The logprobs themselves are indifferent to it: `mlx_lm` computes
+  `logprobs = logits - logsumexp(logits)` *before* the sampler runs
+  (`generate.py:420-421` in mlx_lm 0.31.3), so temperature, top-p and top-k
+  change which token is sampled but never the distribution we read.
+
+Smoke-check a running server before trusting a scoring run:
+
+```bash
+.venv/bin/python scripts/probe_logprobs.py --model local-gemma-4-26b
+```
+
+It exits 0 only when logprobs came back and were non-degenerate. A route that
+accepts `top_logprobs` and then returns nothing exits non-zero with status
+`empty` rather than looking like a clean pass.
+
 **Anthropic API:**
 
 ```bash
@@ -168,6 +279,8 @@ Any `claude-*` model name routes to the Anthropic backend automatically.
 | `max_tokens` | Completion token budget — reasoning models need more (8000+) |
 | `num_ctx` | Ollama-specific: context window size (passed via `extra_body`) |
 | `timeout` | Seconds before retry — increase for large models or slow hardware |
+| `supports_logprobs` | `True` if the route actually returns `choices[].logprobs.content[]`. Absent/`False` means the field is accepted and ignored — the Bedrock gemma-4 failure mode |
+| `max_top_logprobs` | Server-enforced ceiling on `top_logprobs`. `mlx_lm.server` validates with `max_val=11` and 400s above it — **NOT** the usual OpenAI/vLLM 20 |
 
 ## Usage
 
@@ -445,7 +558,7 @@ src/indra_belief/
     parse_claim.py         # Statement → typed claim parse
     relation_patterns.py   # Regex relation cues
     monolithic/            # Default scorer
-      scorer.py            # MONO_VARIANT dispatch (default disconfirm_relnature)
+      scorer.py            # MONO_VARIANT dispatch (default disconfirm_relnature_rf)
       _prompts.py          # Baseline six-rule system prompt
       _prompts_disconfirm.py  # Commit-first disconfirm prompt + backstop
       _prompts_relation.py    # [Complex] relation-nature step (Gilda aliases)
@@ -506,6 +619,7 @@ scripts/
   run_rasmachine_monolithic.py  # Production scoring runner
   check_contamination.py        # Pre-eval gate: examples must not overlap holdout
   check_doc_anchors.py          # Live-doc guard: referenced implementation files exist
+  serve_mlx.sh                  # Local MLX reader on Apple Silicon (the one logprob-capable route)
   export_representative_curations.py  # Export first-write unique-pair representative snapshot
 
 .github/workflows/

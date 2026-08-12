@@ -1,17 +1,45 @@
 #!/usr/bin/env bash
 # Serve a reader locally on Apple Silicon via MLX, with token logprobs.
 #
-# WHY THIS EXISTS. Every hosted arm we have is logprob-blind for gemma: the
+# WHY THIS EXISTS. Every hosted arm we have is logprob-blind for gemma-4: the
 # Bedrock responses route accepts `top_logprobs` and returns an EMPTY ARRAY
-# (research/serving_architecture.md:129-130), and the noot-1 gateway is down.
+# (research/serving_architecture.md, "Provider" — "SETTLED 2026-08-11 [M]:
+# gemma-4 cannot return logprobs on Bedrock by ANY route"; gemma-3-27b-it, by
+# contrast, DOES return real top_logprobs there, which is why this is scoped to
+# gemma-4 and not to gemma), and the noot-1 gateway is down.
 # mlx_lm.server does return them, in the OpenAI `choices[0].logprobs.content[]`
 # shape, so this is currently the only substrate on which the renormalised
 # label probability of research/scoring_methods.md §2.2 can be measured at all.
 #
-# The MLX stack lives in its OWN virtualenv on purpose. It pulls torch, which
-# requires sympy>=1.13.3, while the project's own pysb/INDRA dependency pins
-# sympy<1.12 — the two cannot coexist. Nothing in the project imports mlx; the
-# scorer reaches this server over HTTP as a plain openai_compat backend.
+# The MLX stack lives in its OWN virtualenv BY CHOICE, not by necessity. There
+# is no dependency conflict, and an earlier revision of this comment claiming one
+# was wrong: `VIRTUAL_ENV=$PWD/.venv uv pip install --dry-run mlx-lm` resolves
+# clean and would install only mlx 0.32.0, mlx-lm 0.31.3 and mlx-metal 0.32.0 —
+# nothing upgraded, nothing removed — and mlx-lm declares neither torch nor sympy.
+# torch, sympy and pysb do coexist in .venv today (`.venv/bin/python -c "import
+# torch,sympy,pysb"` exits 0); `pip check` flags torch's sympy>=1.13.3 floor,
+# which is a violated declaration, not a failed import.
+#
+# What the split buys is a judgement, not a necessity. The cost it avoids is
+# ~192 MB across those three distributions, ~188 MB of it the Apple-Silicon-only
+# mlx-metal binary. Reproduce with:
+#   ~/.venvs/mlx-serve/bin/python -c 'from importlib.metadata import distribution as D; print([(n, D(n).version, round(sum(D(n).locate_file(f).stat().st_size for f in D(n).files)/1e6, 1)) for n in ("mlx", "mlx-lm", "mlx-metal")])'
+#   -> [('mlx', '0.32.0', 1.8), ('mlx-lm', '0.31.3', 1.6), ('mlx-metal', '0.32.0', 188.4)]
+# Do NOT quote `du -sm ~/.venvs/mlx-serve` (316 MiB) as that cost: that is the
+# whole serving venv, most of whose non-MLX bulk (numpy, transformers) .venv
+# already carries. mlx-metal also unpacks INTO the mlx/ import dir, which is why
+# `du -sm` on site-packages/mlx reports 189 MiB of blocks and there is no
+# mlx_metal/ beside it.
+#
+# uv.lock has no mlx entry (`grep -c '^name = "mlx' uv.lock` -> 0) and CI runs on
+# ubuntu-latest (.github/workflows/ci.yml:9). The marker at work there is mlx-lm's
+# OWN — it requires `mlx>=0.31.2; platform_system == "Darwin"`, so off Darwin a
+# resolver never REQUESTS mlx; it is not that mlx would refuse to install (mlx
+# 0.32.0 carries no Darwin marker; its Darwin-only piece is mlx-metal==0.32.0).
+# The scorer never imports mlx — it reaches this server over HTTP as a plain
+# openai_compat backend. The one in-process MLX path,
+# scripts/run_probe_battery.py, imports mlx_lm lazily inside its read functions
+# (zero module-scope mlx imports) and is run under ~/.venvs/mlx-serve/bin/python.
 #
 # Setup (once):
 #   uv venv ~/.venvs/mlx-serve --python 3.12
