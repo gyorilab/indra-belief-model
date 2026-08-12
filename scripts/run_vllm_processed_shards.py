@@ -51,6 +51,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 DEFAULT_INPUT_DIR = Path("/scratch/h.yan/data/processed_grounding_shards")
 DEFAULT_OUTPUT_DIR = Path("/scratch/h.yan/data/processed_model_results")
+DEFAULT_GENE_OUTPUT_DIR = Path("/scratch/h.yan/data/processed_model_results_gene")
 DEFAULT_MODEL = "vllm-local"
 VALID_VERDICTS = {"correct", "incorrect"}
 VALID_CONFIDENCE = {"high", "medium", "low"}
@@ -104,7 +105,11 @@ def build_gene_stmt_hash_set() -> set[int]:
     return gene_stmt_hashes
 
 
-def iter_jobs(path: Path, limit: int | None = None) -> Iterable[dict[str, Any]]:
+def iter_jobs(
+    path: Path,
+    limit: int | None = None,
+    stmt_hashes: set[int] | None = None,
+) -> Iterable[dict[str, Any]]:
     """Stream jobs from one gzip JSONL shard."""
     with gzip.open(path, "rt", encoding="utf-8") as fh:
         count = 0
@@ -112,9 +117,12 @@ def iter_jobs(path: Path, limit: int | None = None) -> Iterable[dict[str, Any]]:
             if not line.strip():
                 continue
             try:
-                yield json.loads(line)
+                job = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{line_number}: invalid JSON: {exc}") from exc
+            if stmt_hashes is not None and int(job["stmt_hash"]) not in stmt_hashes:
+                continue
+            yield job
             count += 1
             if limit is not None and count >= limit:
                 return
@@ -542,10 +550,11 @@ def finalize(
     input_path: Path,
     latest: dict[str, dict[str, Any]],
     limit: int | None,
+    stmt_hashes: set[int] | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """Build the hash dictionary, retaining exhausted failures as errors."""
     payload: dict[str, dict[str, dict[str, Any]]] = {}
-    for job in iter_jobs(input_path, limit):
+    for job in iter_jobs(input_path, limit, stmt_hashes):
         result = latest.get(job_id(job))
         if result is None:
             raise RuntimeError(f"job produced no result: {job_id(job)}")
@@ -570,7 +579,13 @@ def finalize(
     return payload
 
 
-def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
+def run_shard(
+    input_path: Path,
+    args,
+    client,
+    prompt: MonolithicPrompt,
+    stmt_hashes: set[int] | None = None,
+) -> int:
     from tqdm import tqdm
 
     match = SHARD_RE.search(input_path.name)
@@ -583,11 +598,11 @@ def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
         print(f"skip completed shard {shard_index}: {final_path}")
         return 0
 
-    total = sum(1 for _ in iter_jobs(input_path, args.limit))
+    total = sum(1 for _ in iter_jobs(input_path, args.limit, stmt_hashes))
     latest: dict[str, dict[str, Any]] = {}
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    pending = iter_jobs(input_path, args.limit)
+    pending = iter_jobs(input_path, args.limit, stmt_hashes)
     started = time.perf_counter()
     errors = 0
     llm = 0
@@ -642,7 +657,7 @@ def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
 
     progress.close()
     elapsed = time.perf_counter() - started
-    payload = finalize(input_path, latest, args.limit)
+    payload = finalize(input_path, latest, args.limit, stmt_hashes)
     write_final_atomic(final_path, payload)
     evidence_results = sum(len(by_source) for by_source in payload.values())
     print(
@@ -670,7 +685,15 @@ def select_shards(input_dir: Path, shard_index: int | None) -> list[Path]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-dir", default=str(DEFAULT_INPUT_DIR))
-    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument(
+        "--output-dir",
+        help="Defaults to processed_model_results, or processed_model_results_gene "
+        "when --gene-stmt-hashes is used.",
+    )
+    parser.add_argument(
+        "--gene-stmt-hashes",
+        help="Pickle file containing the set of statement hashes to process.",
+    )
     parser.add_argument("--shard-index", type=int)
     parser.add_argument("--limit", type=int)
     parser.add_argument(
@@ -721,6 +744,21 @@ def main() -> int:
     args.base_url = (args.base_url or model_config["base_url"]).rstrip("/")
     args.model_id = args.served_model_id or model_config["model_id"]
 
+    stmt_hashes: set[int] | None = None
+    if args.gene_stmt_hashes:
+        gene_hash_path = Path(args.gene_stmt_hashes)
+        with gene_hash_path.open("rb") as fh:
+            loaded_hashes = pickle.load(fh)
+        if not isinstance(loaded_hashes, set):
+            raise SystemExit(f"gene hash pickle must contain a set: {gene_hash_path}")
+        stmt_hashes = {int(value) for value in loaded_hashes}
+        print(f"gene_stmt_hashes={gene_hash_path} hashes={len(stmt_hashes):,}")
+
+    if args.output_dir is None:
+        args.output_dir = str(
+            DEFAULT_GENE_OUTPUT_DIR if stmt_hashes is not None else DEFAULT_OUTPUT_DIR
+        )
+
     shards = select_shards(Path(args.input_dir), args.shard_index)
     prompt = MonolithicPrompt()
     if args.backend == "offline":
@@ -744,7 +782,7 @@ def main() -> int:
 
     with client_context as client:
         for shard in shards:
-            code = run_shard(shard, args, client, prompt)
+            code = run_shard(shard, args, client, prompt, stmt_hashes)
             if code:
                 return code
     return 0

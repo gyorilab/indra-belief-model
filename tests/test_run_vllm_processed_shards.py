@@ -28,6 +28,22 @@ def test_limited_output_has_separate_name(tmp_path):
     assert final.name == "verdicts-000012.limit-200.json.gz"
 
 
+def test_iter_jobs_filters_hashes_before_applying_limit(tmp_path):
+    shard = tmp_path / "grounded-000000.jsonl.gz"
+    write_jobs(
+        shard,
+        [
+            {"job_id": "1:0", "stmt_hash": 101, "source_hash": 11},
+            {"job_id": "2:0", "stmt_hash": 202, "source_hash": 22},
+            {"job_id": "3:0", "stmt_hash": 303, "source_hash": 33},
+        ],
+    )
+
+    jobs = list(runner.iter_jobs(shard, limit=1, stmt_hashes={202, 303}))
+
+    assert [job["stmt_hash"] for job in jobs] == [202]
+
+
 def test_failed_job_is_retried_three_times_after_initial_attempt(monkeypatch):
     attempts = []
 
