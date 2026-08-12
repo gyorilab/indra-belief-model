@@ -1,4 +1,4 @@
-"""Run prepared grounding shards through a running vLLM server.
+"""Run prepared grounding shards through vLLM server or offline inference.
 
 The script keeps only two pieces of recovery machinery:
 
@@ -21,6 +21,11 @@ Run one complete shard::
 Run all shards; completed output shards are skipped::
 
     PYTHONPATH=src python scripts/run_vllm_processed_shards.py --workers 64
+
+Load vLLM directly instead of using an HTTP server::
+
+    PYTHONPATH=src python scripts/run_vllm_processed_shards.py \
+      --backend offline --shard-index 800 --workers 96
 """
 from __future__ import annotations
 
@@ -29,8 +34,10 @@ import concurrent.futures as cf
 import gzip
 import json
 import os
+import queue
 import re
 import sys
+import threading
 import time
 from functools import lru_cache
 from pathlib import Path
@@ -124,6 +131,123 @@ def write_final_atomic(path: Path, payload: dict[str, Any]) -> None:
         json.dump(payload, fh, ensure_ascii=False, separators=(",", ":"))
         fh.write("\n")
     temporary.replace(path)
+
+
+class _OfflineResponse:
+    """Small response adapter matching the httpx methods used below."""
+
+    def __init__(self, payload: dict[str, Any]):
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, Any]:
+        return self.payload
+
+
+class OfflineVllmClient:
+    """Batch concurrent ``post`` calls through one long-lived ``vllm.LLM``."""
+
+    def __init__(
+        self,
+        model_id: str,
+        *,
+        batch_size: int,
+        gpu_memory_utilization: float,
+    ):
+        try:
+            from vllm import LLM, SamplingParams
+        except ImportError as exc:
+            raise SystemExit(
+                "offline backend requires vLLM: python -m pip install vllm"
+            ) from exc
+
+        self.sampling_params_cls = SamplingParams
+        self.batch_size = batch_size
+        self.requests: queue.Queue = queue.Queue()
+        self.llm = LLM(
+            model=model_id,
+            enable_prefix_caching=True,
+            gpu_memory_utilization=gpu_memory_utilization,
+        )
+        self.worker = threading.Thread(target=self._run, daemon=True)
+        self.worker.start()
+
+    def post(self, _endpoint: str, *, json: dict[str, Any]) -> _OfflineResponse:
+        future: cf.Future = cf.Future()
+        self.requests.put((json, future))
+        return future.result()
+
+    def _run(self) -> None:
+        while True:
+            first = self.requests.get()
+            if first is None:
+                return
+            batch = [first]
+            deadline = time.monotonic() + 0.002
+            while len(batch) < self.batch_size:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    item = self.requests.get(timeout=remaining)
+                except queue.Empty:
+                    break
+                if item is None:
+                    self.requests.put(None)
+                    break
+                batch.append(item)
+
+            payloads = [item[0] for item in batch]
+            futures = [item[1] for item in batch]
+            conversations = [payload["messages"] for payload in payloads]
+            params = [
+                self.sampling_params_cls(
+                    temperature=float(payload.get("temperature", 0.1)),
+                    max_tokens=int(payload.get("max_tokens", 1000)),
+                )
+                for payload in payloads
+            ]
+            try:
+                outputs = self.llm.chat(
+                    conversations,
+                    sampling_params=params,
+                    use_tqdm=False,
+                )
+                for output, future in zip(outputs, futures):
+                    completion = output.outputs[0]
+                    future.set_result(
+                        _OfflineResponse(
+                            {
+                                "choices": [
+                                    {
+                                        "message": {"content": completion.text},
+                                        "finish_reason": completion.finish_reason,
+                                    }
+                                ],
+                                "usage": {
+                                    "prompt_tokens": len(
+                                        output.prompt_token_ids or []
+                                    ),
+                                    "completion_tokens": len(completion.token_ids),
+                                },
+                            }
+                        )
+                    )
+            except BaseException as exc:
+                for future in futures:
+                    future.set_exception(exc)
+
+    def close(self) -> None:
+        self.requests.put(None)
+        self.worker.join()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        self.close()
 
 
 class MonolithicPrompt:
@@ -512,16 +636,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--shard-index", type=int)
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--backend",
+        choices=("server", "offline"),
+        default="server",
+        help="Use the existing HTTP server or load vLLM in this process.",
+    )
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--base-url", help="Override the model registry URL.")
     parser.add_argument(
         "--served-model-id",
-        help="Override the model name accepted by the vLLM server.",
+        help="Override the registry model ID (server name or offline model path).",
     )
     parser.add_argument("--workers", type=int, default=64)
     parser.add_argument("--max-tokens", type=int, default=1000)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--timeout", type=float, default=180)
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.9,
+        help="vLLM offline backend GPU-memory fraction (default: 0.9).",
+    )
     return parser
 
 
@@ -529,13 +665,10 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.workers < 1 or args.max_tokens < 1:
         raise SystemExit("workers and max-tokens must be positive")
+    if not 0 < args.gpu_memory_utilization <= 1:
+        raise SystemExit("--gpu-memory-utilization must be in (0, 1]")
     if args.limit is not None and (args.limit < 1 or args.shard_index is None):
         raise SystemExit("--limit must be positive and used with --shard-index")
-
-    try:
-        import httpx
-    except ImportError as exc:
-        raise SystemExit("httpx is required: python -m pip install httpx") from exc
 
     from indra_belief.model_client import LOCAL_MODELS
 
@@ -547,11 +680,26 @@ def main() -> int:
 
     shards = select_shards(Path(args.input_dir), args.shard_index)
     prompt = MonolithicPrompt()
-    limits = httpx.Limits(
-        max_connections=args.workers,
-        max_keepalive_connections=args.workers,
-    )
-    with httpx.Client(limits=limits, timeout=args.timeout) as client:
+    if args.backend == "offline":
+        client_context = OfflineVllmClient(
+            args.model_id,
+            batch_size=args.workers,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+        )
+    else:
+        try:
+            import httpx
+        except ImportError as exc:
+            raise SystemExit(
+                "server backend requires httpx: python -m pip install httpx"
+            ) from exc
+        limits = httpx.Limits(
+            max_connections=args.workers,
+            max_keepalive_connections=args.workers,
+        )
+        client_context = httpx.Client(limits=limits, timeout=args.timeout)
+
+    with client_context as client:
         for shard in shards:
             code = run_shard(shard, args, client, prompt)
             if code:

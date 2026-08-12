@@ -4,6 +4,9 @@ from __future__ import annotations
 import gzip
 import importlib.util
 import json
+import sys
+import types
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -294,3 +297,62 @@ def test_complex_job_runs_relation_nature_before_verdict():
     assert client.calls[0]["response_format"] == {"type": "json_object"}
     assert "X alias" in client.calls[0]["messages"][-1]["content"]
     assert "Relation nature (resolved)" in client.calls[1]["messages"][-1]["content"]
+
+
+def test_offline_client_batches_llm_chat_calls(monkeypatch):
+    instances = []
+
+    class SamplingParams:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class Completion:
+        text = "verdict correct\nconfidence high"
+        token_ids = [1, 2, 3]
+        finish_reason = "stop"
+
+    class Output:
+        outputs = [Completion()]
+        prompt_token_ids = [10, 11]
+
+    class LLM:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.batch_lengths = []
+            instances.append(self)
+
+        def chat(self, conversations, sampling_params, use_tqdm):
+            self.batch_lengths.append(len(conversations))
+            assert len(sampling_params) == len(conversations)
+            assert use_tqdm is False
+            return [Output() for _ in conversations]
+
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm",
+        types.SimpleNamespace(LLM=LLM, SamplingParams=SamplingParams),
+    )
+    request = {
+        "messages": [{"role": "user", "content": "question"}],
+        "max_tokens": 100,
+        "temperature": 0.1,
+    }
+
+    with runner.OfflineVllmClient(
+        "model/path", batch_size=2, gpu_memory_utilization=0.8
+    ) as client:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(
+                pool.map(lambda _i: client.post("", json=request), range(2))
+            )
+
+    assert instances[0].kwargs == {
+        "model": "model/path",
+        "enable_prefix_caching": True,
+        "gpu_memory_utilization": 0.8,
+    }
+    assert instances[0].batch_lengths == [2]
+    assert responses[0].json()["usage"] == {
+        "prompt_tokens": 2,
+        "completion_tokens": 3,
+    }
