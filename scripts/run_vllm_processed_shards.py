@@ -2,9 +2,10 @@
 
 The script keeps only two pieces of recovery machinery:
 
-* completed jobs are appended to ``.partial.jsonl`` and skipped after restart;
+* each failed job is retried before being finalized with ``verdict="error"``;
 * the final gzip JSON dictionary is written to a temporary file and atomically
-  renamed, so interruption cannot publish a half-written result.
+  renamed, so interruption restarts only the unfinished shard and cannot
+  publish a half-written result.
 
 Examples
 --------
@@ -31,9 +32,10 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures as cf
+import csv
 import gzip
 import json
-import os
+import pickle
 import queue
 import re
 import sys
@@ -53,6 +55,53 @@ DEFAULT_MODEL = "vllm-local"
 VALID_VERDICTS = {"correct", "incorrect"}
 VALID_CONFIDENCE = {"high", "medium", "low"}
 SHARD_RE = re.compile(r"grounded-(\d+)\.jsonl\.gz$")
+
+
+def build_gene_stmt_hash_set() -> set[int]:
+    """Save the hashes of all processed gene-only statements."""
+    from indra.statements import stmt_from_json
+    from indra.tools import assemble_corpus as ac
+    from indra_db.readonly_dumping.locations import processed_stmts_fpath
+    from indra_db.readonly_dumping.util import clean_json_loads
+    from tqdm import tqdm
+
+    batch_size = 100_000
+    output_path = Path(processed_stmts_fpath).with_name("gene_stmt_hashes.pkl")
+    gene_stmt_hashes: set[int] = set()
+    batch_stmts: list[Any] = []
+    batch_hashes: list[int] = []
+
+    def filter_batch() -> None:
+        filtered = ac.filter_genes_only(batch_stmts, specific_only=True)
+        filtered_ids = {id(stmt) for stmt in filtered}
+        gene_stmt_hashes.update(
+            stmt_hash
+            for stmt_hash, stmt in zip(batch_hashes, batch_stmts)
+            if id(stmt) in filtered_ids
+        )
+        batch_stmts.clear()
+        batch_hashes.clear()
+
+    csv.field_size_limit(sys.maxsize)
+    with gzip.open(processed_stmts_fpath, "rt") as fh:
+        reader = csv.reader(fh, delimiter="\t")
+        for stmt_hash, stmt_json in tqdm(
+            reader, total=48_769_436, unit="stmt", unit_scale=True
+        ):
+            stmt = stmt_from_json(clean_json_loads(stmt_json))
+            batch_hashes.append(int(stmt_hash))
+            batch_stmts.append(stmt)
+            if len(batch_stmts) >= batch_size:
+                filter_batch()
+
+    if batch_stmts:
+        filter_batch()
+    with output_path.open("wb") as fh:
+        pickle.dump(gene_stmt_hashes, fh, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print(f"gene statement hashes: {len(gene_stmt_hashes):,}")
+    print(f"output: {output_path}")
+    return gene_stmt_hashes
 
 
 def iter_jobs(path: Path, limit: int | None = None) -> Iterable[dict[str, Any]]:
@@ -83,44 +132,15 @@ def valid_result(row: dict[str, Any] | None) -> bool:
     )
 
 
-def output_paths(
+def output_path(
     output_dir: Path,
     shard_index: int,
     limit: int | None,
-) -> tuple[Path, Path]:
+) -> Path:
     tag = f"{shard_index:06d}"
     if limit is not None:
         tag += f".limit-{limit}"
-    final_path = output_dir / f"verdicts-{tag}.json.gz"
-    partial_path = output_dir / f".verdicts-{tag}.partial.jsonl"
-    return final_path, partial_path
-
-
-def load_partial(path: Path) -> dict[str, dict[str, Any]]:
-    """Load the latest attempt for each job, ignoring a truncated last line."""
-    latest: dict[str, dict[str, Any]] = {}
-    if not path.exists():
-        return latest
-    with path.open() as fh:
-        for line in fh:
-            try:
-                row = json.loads(line)
-                latest[str(row["job_id"])] = row
-            except (json.JSONDecodeError, KeyError, TypeError):
-                continue
-    return latest
-
-
-def ensure_append_boundary(path: Path) -> None:
-    """Separate a crash-truncated JSON fragment from newly appended rows."""
-    if not path.exists() or path.stat().st_size == 0:
-        return
-    with path.open("rb") as fh:
-        fh.seek(-1, os.SEEK_END)
-        ends_with_newline = fh.read(1) == b"\n"
-    if not ends_with_newline:
-        with path.open("ab") as fh:
-            fh.write(b"\n")
+    return output_dir / f"verdicts-{tag}.json.gz"
 
 
 def write_final_atomic(path: Path, payload: dict[str, Any]) -> None:
@@ -500,26 +520,54 @@ def score_job(
     return {**base, "verdict": None, "confidence": None, "error": error}
 
 
+def score_job_with_retries(
+    job: dict[str, Any],
+    *,
+    retries: int,
+    **score_kwargs: Any,
+) -> dict[str, Any]:
+    """Score one job, retrying failures up to the requested additional times."""
+    attempts = retries + 1 if job.get("needs_llm", True) else 1
+    row: dict[str, Any] | None = None
+    for _attempt in range(1, attempts + 1):
+        row = score_job(job, **score_kwargs)
+        if valid_result(row):
+            return row
+    assert row is not None
+    row["attempts"] = attempts
+    return row
+
+
 def finalize(
     input_path: Path,
     latest: dict[str, dict[str, Any]],
     limit: int | None,
-) -> tuple[dict[str, dict[str, dict[str, str]]], list[str]]:
-    """Build ``{stmt_hash: {source_hash: {verdict, confidence}}}``."""
-    payload: dict[str, dict[str, dict[str, str]]] = {}
-    missing: list[str] = []
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Build the hash dictionary, retaining exhausted failures as errors."""
+    payload: dict[str, dict[str, dict[str, Any]]] = {}
     for job in iter_jobs(input_path, limit):
         result = latest.get(job_id(job))
-        if not valid_result(result):
-            missing.append(job_id(job))
-            continue
+        if result is None:
+            raise RuntimeError(f"job produced no result: {job_id(job)}")
         stmt_hash = str(job["stmt_hash"])
         source_hash = str(job["source_hash"])
-        payload.setdefault(stmt_hash, {})[source_hash] = {
-            "verdict": str(result["verdict"]),
-            "confidence": str(result["confidence"]),
-        }
-    return payload, missing
+        if valid_result(result):
+            output = {
+                "verdict": str(result["verdict"]),
+                "confidence": str(result["confidence"]),
+            }
+        else:
+            output = {
+                "verdict": "error",
+                "confidence": None,
+                "error": str(result.get("error") or "unknown error"),
+                "attempts": int(result.get("attempts") or 1),
+            }
+            for key in ("finish_reason", "completion_tokens", "response_preview"):
+                if key in result:
+                    output[key] = result[key]
+        payload.setdefault(stmt_hash, {})[source_hash] = output
+    return payload
 
 
 def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
@@ -529,19 +577,17 @@ def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
     assert match
     shard_index = int(match.group(1))
     output_dir = Path(args.output_dir)
-    final_path, partial_path = output_paths(output_dir, shard_index, args.limit)
+    final_path = output_path(output_dir, shard_index, args.limit)
 
     if final_path.exists():
         print(f"skip completed shard {shard_index}: {final_path}")
         return 0
 
     total = sum(1 for _ in iter_jobs(input_path, args.limit))
-    latest = load_partial(partial_path)
-    done = {key for key, row in latest.items() if valid_result(row)}
+    latest: dict[str, dict[str, Any]] = {}
     output_dir.mkdir(parents=True, exist_ok=True)
-    ensure_append_boundary(partial_path)
 
-    pending = (job for job in iter_jobs(input_path, args.limit) if job_id(job) not in done)
+    pending = iter_jobs(input_path, args.limit)
     started = time.perf_counter()
     errors = 0
     llm = 0
@@ -549,70 +595,61 @@ def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
     endpoint = args.base_url.rstrip("/") + "/chat/completions"
 
     print(
-        f"shard={shard_index} jobs={total:,} resumed={len(done):,} "
-        f"workers={args.workers}"
+        f"shard={shard_index} jobs={total:,} workers={args.workers} "
+        f"retries={args.retries}"
     )
-    progress = tqdm(total=total, initial=len(done), desc="Scoring", unit="job")
+    progress = tqdm(total=total, desc="Scoring", unit="job")
 
-    with partial_path.open("a", buffering=1) as partial_fh:
-        with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
-            inflight: set[cf.Future] = set()
+    with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
+        inflight: set[cf.Future] = set()
 
-            def submit_one() -> bool:
-                try:
-                    job = next(pending)
-                except StopIteration:
-                    return False
-                inflight.add(
-                    pool.submit(
-                        score_job,
-                        job,
-                        client=client,
-                        prompt=prompt,
-                        endpoint=endpoint,
-                        model_id=args.model_id,
-                        max_tokens=args.max_tokens,
-                        temperature=args.temperature,
-                    )
+        def submit_one() -> bool:
+            try:
+                job = next(pending)
+            except StopIteration:
+                return False
+            inflight.add(
+                pool.submit(
+                    score_job_with_retries,
+                    job,
+                    retries=args.retries,
+                    client=client,
+                    prompt=prompt,
+                    endpoint=endpoint,
+                    model_id=args.model_id,
+                    max_tokens=args.max_tokens,
+                    temperature=args.temperature,
                 )
-                return True
+            )
+            return True
 
-            for _ in range(args.workers * 2):
-                if not submit_one():
-                    break
+        for _ in range(args.workers * 2):
+            if not submit_one():
+                break
 
-            while inflight:
-                finished, _ = cf.wait(inflight, return_when=cf.FIRST_COMPLETED)
-                for future in finished:
-                    inflight.remove(future)
-                    row = future.result()
-                    partial_fh.write(json.dumps(row) + "\n")
-                    partial_fh.flush()
-                    latest[str(row["job_id"])] = row
-                    errors += int(not valid_result(row))
-                    llm += int(row.get("source") == "llm")
-                    tier1 += int(row.get("source") == "tier1")
-                    progress.update(1)
-                    progress.set_postfix(llm=llm, tier1=tier1, errors=errors)
-                    submit_one()
+        while inflight:
+            finished, _ = cf.wait(inflight, return_when=cf.FIRST_COMPLETED)
+            for future in finished:
+                inflight.remove(future)
+                row = future.result()
+                latest[str(row["job_id"])] = row
+                errors += int(not valid_result(row))
+                llm += int(row.get("source") == "llm")
+                tier1 += int(row.get("source") == "tier1")
+                progress.update(1)
+                progress.set_postfix(llm=llm, tier1=tier1, errors=errors)
+                submit_one()
 
     progress.close()
     elapsed = time.perf_counter() - started
-    payload, missing = finalize(input_path, latest, args.limit)
-    if missing:
-        print(
-            f"shard {shard_index} has {len(missing):,} failed jobs; "
-            "rerun the same command to retry them"
-        )
-        return 2
-
+    payload = finalize(input_path, latest, args.limit)
     write_final_atomic(final_path, payload)
-    partial_path.unlink(missing_ok=True)
     evidence_results = sum(len(by_source) for by_source in payload.values())
     print(
         f"completed shard {shard_index}: {evidence_results:,} evidence results "
         f"for {len(payload):,} statements in {elapsed / 60:.2f} minutes "
-        f"({evidence_results / max(elapsed, 1e-9):.2f} jobs/s)"
+        f"({evidence_results / max(elapsed, 1e-9):.2f} jobs/s), "
+        f"errors={errors:,}"
     )
     print(f"output={final_path}")
     return 0
@@ -649,6 +686,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the registry model ID (server name or offline model path).",
     )
     parser.add_argument("--workers", type=int, default=64)
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=3,
+        help="Additional attempts after a failed LLM result (default: 3).",
+    )
     parser.add_argument("--max-tokens", type=int, default=1000)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--timeout", type=float, default=180)
@@ -663,8 +706,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.workers < 1 or args.max_tokens < 1:
-        raise SystemExit("workers and max-tokens must be positive")
+    if args.workers < 1 or args.max_tokens < 1 or args.retries < 0:
+        raise SystemExit("workers/max-tokens must be positive and retries nonnegative")
     if not 0 < args.gpu_memory_utilization <= 1:
         raise SystemExit("--gpu-memory-utilization must be in (0, 1]")
     if args.limit is not None and (args.limit < 1 or args.shard_index is None):

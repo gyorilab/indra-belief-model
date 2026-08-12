@@ -24,20 +24,33 @@ def write_jobs(path: Path, jobs: list[dict]) -> None:
 
 
 def test_limited_output_has_separate_name(tmp_path):
-    final, partial = runner.output_paths(tmp_path, 12, 200)
+    final = runner.output_path(tmp_path, 12, 200)
     assert final.name == "verdicts-000012.limit-200.json.gz"
-    assert partial.name == ".verdicts-000012.limit-200.partial.jsonl"
 
 
-def test_partial_resume_uses_latest_valid_attempt_and_ignores_truncation(tmp_path):
-    path = tmp_path / "partial.jsonl"
-    path.write_text(
-        '{"job_id":"1:0","verdict":null}\n'
-        '{"job_id":"1:0","verdict":"correct","confidence":"high"}\n'
-        '{"job_id":'
-    )
-    latest = runner.load_partial(path)
-    assert latest["1:0"]["verdict"] == "correct"
+def test_failed_job_is_retried_three_times_after_initial_attempt(monkeypatch):
+    attempts = []
+
+    def fake_score(job, **_kwargs):
+        attempts.append(job["job_id"])
+        if len(attempts) < 4:
+            return {
+                "job_id": job["job_id"],
+                "verdict": None,
+                "confidence": None,
+                "error": "temporary",
+            }
+        return {
+            "job_id": job["job_id"],
+            "verdict": "correct",
+            "confidence": "high",
+        }
+
+    monkeypatch.setattr(runner, "score_job", fake_score)
+    row = runner.score_job_with_retries({"job_id": "1:0"}, retries=3)
+
+    assert len(attempts) == 4
+    assert row["verdict"] == "correct"
 
 
 def test_atomic_final_is_requested_dictionary(tmp_path):
@@ -64,14 +77,13 @@ def test_finalize_builds_hash_dictionary(tmp_path):
         "1:0": {"verdict": "correct", "confidence": "high"},
         "2:0": {"verdict": "incorrect", "confidence": "medium"},
     }
-    payload, missing = runner.finalize(shard, latest, None)
+    payload = runner.finalize(shard, latest, None)
     assert payload == {
         "101": {"11": {"verdict": "correct", "confidence": "high"}},
         "-202": {
             "22": {"verdict": "incorrect", "confidence": "medium"}
         },
     }
-    assert missing == []
 
 
 def test_finalize_keeps_multiple_evidences_for_one_statement(tmp_path):
@@ -88,7 +100,7 @@ def test_finalize_keeps_multiple_evidences_for_one_statement(tmp_path):
         "2:0": {"verdict": "correct", "confidence": "high"},
     }
 
-    payload, missing = runner.finalize(shard, latest, None)
+    payload = runner.finalize(shard, latest, None)
 
     assert payload == {
         "101": {
@@ -96,7 +108,37 @@ def test_finalize_keeps_multiple_evidences_for_one_statement(tmp_path):
             "22": {"verdict": "correct", "confidence": "high"},
         }
     }
-    assert missing == []
+
+
+def test_finalize_keeps_exhausted_error(tmp_path):
+    shard = tmp_path / "grounded-000000.jsonl.gz"
+    write_jobs(
+        shard,
+        [{"job_id": "1:0", "stmt_hash": 101, "source_hash": 11}],
+    )
+    latest = {
+        "1:0": {
+            "verdict": None,
+            "confidence": None,
+            "error": "unparseable model response",
+            "attempts": 4,
+            "response_preview": "bad reply",
+        }
+    }
+
+    payload = runner.finalize(shard, latest, None)
+
+    assert payload == {
+        "101": {
+            "11": {
+                "verdict": "error",
+                "confidence": None,
+                "error": "unparseable model response",
+                "attempts": 4,
+                "response_preview": "bad reply",
+            }
+        }
+    }
 
 
 def test_tier1_does_not_call_model():
