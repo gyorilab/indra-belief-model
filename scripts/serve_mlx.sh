@@ -53,6 +53,34 @@
 # changing one without the other will produce a 404 on every call.
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# LOCAL PATCH REQUIRED: the top_logprobs cap
+#
+# Stock mlx_lm.server hard-codes, in `server.py`:
+#     self._validate("top_logprobs", int, min_val=0, max_val=11, whitelist=[-1])
+#
+# 11 is not enough to read a verdict probability. At a forced verdict position
+# the distribution is dominated by JSON formatting tokens ({", ", ```), and the
+# LOSING label was measured at rank 42 / 83 / 168 across four cases on
+# 2026-08-13. At k=11, three of those four returned no usable p_raw; at k=2000
+# all four did. `_format_top_logprobs` already handles any n via argpartition,
+# so only the validator constant blocks it.
+#
+# The patch, applied in this venv (original kept at server.py.orig-cap11):
+#     max_val=11  ->  max_val=262144
+#
+# WHY THIS MATTERS IF THE VENV IS REBUILT: `pip install --upgrade mlx-lm` or a
+# fresh venv silently restores 11. The failure is QUIET — p_raw comes back nan
+# on most rows and any probe signal degrades toward noise instead of erroring.
+# `src/indra_belief/model_client.py` declares max_top_logprobs: 1024 on the
+# assumption this patch is in place. Re-apply it, or drop that back to 11 and
+# accept that the probe path cannot run over HTTP.
+#
+#   S=$MLX_VENV/lib/python3.12/site-packages/mlx_lm/server.py
+#   cp "$S" "$S.orig-cap11"
+#   sed -i "" 's/max_val=11, whitelist=\[-1\]/max_val=262144, whitelist=[-1]/' "$S"
+# ---------------------------------------------------------------------------
+
 MLX_VENV="${MLX_VENV:-$HOME/.venvs/mlx-serve}"
 MODEL="${MODEL:-mlx-community/gemma-4-26b-a4b-it-8bit}"
 PORT="${PORT:-8085}"

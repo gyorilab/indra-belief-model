@@ -114,11 +114,17 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 8192,
         "timeout": 900,
         "supports_logprobs": True,
-        # mlx_lm.server validates top_logprobs with max_val=11 and rejects
-        # anything larger with a 400 (server.py:1245 `self._validate(
-        # "top_logprobs", int, min_val=0, max_val=11, whitelist=[-1])`).
-        # This is NOT the usual OpenAI/vLLM cap of 20 — do not raise it.
-        "max_top_logprobs": 11,
+        # RAISED 11 -> 1024 on 2026-08-13, and this DEPENDS ON A LOCAL PATCH to
+        # the serving venv. Stock mlx_lm.server hard-codes
+        # `_validate("top_logprobs", int, min_val=0, max_val=11, whitelist=[-1])`
+        # at server.py:1245, and 11 is nowhere near enough at a forced verdict
+        # position: measured, the LOSING label sits at rank 42 / 83 / 168 across
+        # four cases, because JSON formatting tokens ({", ", ```) crowd it out.
+        # At k=11 three of four cases yielded no usable p_raw; at k=1024, 0 of
+        # 1,075 records dropped. `scripts/serve_mlx.sh` documents the patch.
+        # If the venv is rebuilt or mlx-lm upgraded, the cap silently returns to
+        # 11 and p_raw degrades to nan on most rows rather than erroring.
+        "max_top_logprobs": 1024,
     },
     "local-gemma-4-31b": {
         "base_url": "http://localhost:8084/v1",

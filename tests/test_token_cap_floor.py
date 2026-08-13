@@ -52,6 +52,26 @@ def test_registry_declares_caps_for_the_entries_that_need_them():
     assert len(_CAPPED) >= 20, f"only {len(_CAPPED)} entries declare max_tokens"
 
 
+def test_no_registry_entry_disappears_silently():
+    """A vanished entry makes the parametrized floor test QUIETER, not redder.
+
+    Earned 2026-08-13: a string edit to model_client.py matched the wrong
+    `"max_tokens": 8192,` occurrence, deleted the whole `local-gemma-4-31b`
+    header, and fused two entries. Python parsed the result, the registry
+    imported fine, and the full suite reported 1780 passed — one case fewer than
+    before, which is invisible in a pass count. Pinning the population makes a
+    deletion fail loudly; adding a model is then a deliberate one-line update
+    here, which is the right amount of friction for changing what we can serve.
+    """
+    assert len(LOCAL_MODELS) == 31, (
+        f"registry has {len(LOCAL_MODELS)} entries, expected 31. If you ADDED a "
+        "model, update this number. If you did not, an entry was deleted — check "
+        "for an edit that matched the wrong anchor."
+    )
+    for required in ("local-gemma-4-26b", "local-gemma-4-31b", "vllm-local"):
+        assert required in LOCAL_MODELS, f"{required} vanished from the registry"
+
+
 @pytest.mark.parametrize("name,cap", _CAPPED, ids=[n for n, _ in _CAPPED])
 def test_no_registry_entry_truncates_the_production_prompt(name: str, cap: int):
     assert cap >= CAP_FLOOR, (
