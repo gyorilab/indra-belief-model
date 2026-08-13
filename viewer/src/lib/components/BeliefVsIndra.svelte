@@ -1,14 +1,20 @@
 <!--
   BeliefVsIndra — INDRA's belief and ours on one calibration picture.
 
-  THE PERCEPTUAL POINT, and the reason for the shaded band: INDRA's SimpleScorer
-  cannot produce a low belief. On this corpus its range is [0.65, 1.00] and not
-  one of 1,689 statements scores below 0.60. That is not a tuning accident — it
-  falls out of the noisy-OR. A single piece of evidence from a reader whose
-  shipped prior is (rand 0.30, syst 0.05) gives 1 − (0.05 + 0.30) = 0.65, and
-  adding evidence only pushes upward. So the bottom two-thirds of the axis is
-  unreachable, and the band makes that VISIBLE rather than something the reader
-  has to infer from where the marks happen to sit.
+  THE PERCEPTUAL POINT, and the reason for the shaded band: SimpleScorer AT THE
+  PRIORS THE LIBRARY SHIPS cannot produce a belief below 0.65. Its worst default
+  source is reach at (rand 0.30, syst 0.05), so one piece of evidence gives
+  1 − (0.05 + 0.30) = 0.65, and the noisy-OR is monotone increasing in evidence —
+  more readings only push upward. The band makes that reachability limit VISIBLE
+  rather than something to infer from where the marks happen to sit.
+
+  SCOPE, corrected 2026-08-13 after this shipped wrong: the band is NOT a claim
+  that "INDRA cannot assign a lower belief". Stored INDRA beliefs in our own
+  data/benchmark/belief_benchmark.jsonl run down to 0.3195, with 941 of 9,342
+  statements (10.1%) below 0.65 — those come from source priors weaker than any
+  entry in the shipped table. The floor belongs to THIS scorer at THESE priors.
+  The page must say that, because the paper corpus alone cannot distinguish a
+  model limit from a corpus that was selected at 0.65.
 
   Everything is read from the server payload. No rate, count or belief value is
   written in this file; only SVG layout constants are.
@@ -79,7 +85,7 @@
 				<!-- the region INDRA's noisy-OR cannot reach -->
 				<rect x={px(0)} y={py(1)} width={px(floor) - px(0)} height={S} class="unreachable" />
 				<text x={px(0) + 2} y={py(1) + 6} class="band-label">
-					no belief INDRA can assign
+					below SimpleScorer's floor at the shipped priors
 				</text>
 
 				<!-- perfect calibration -->
@@ -148,9 +154,17 @@
 				INDRA's belief comes from the noisy-OR over per-source priors,
 				<code>1 − Π<sub>s</sub> (syst<sub>s</sub> + rand<sub>s</sub><sup>n<sub>s</sub></sup>)</code>.
 				Every input to it is a <em>count</em>: which sources reported the statement, and how many
-				times each. The sentence is never consulted, so the floor of the scale belongs to
-				a statement with one piece of evidence — and there is nothing below it to say
-				<em>this reading looks wrong</em>.
+				times each. The sentence is never consulted. At the priors the library ships, the worst
+				source is <code>reach</code> at <code>(0.30, 0.05)</code>, so a single piece of evidence
+				gives 0.65 and more evidence only raises it — on this corpus there is nothing below that
+				to say <em>this reading looks wrong</em>.
+			</p>
+			<p class="scope">
+				That floor is this scorer's, at these priors — not INDRA's in general. Stored INDRA
+				beliefs elsewhere in our benchmark data reach 0.3195, with about a tenth of statements
+				below 0.65, from sources weaker than any in the shipped table. This corpus on its own
+				cannot separate a reachability limit from a corpus selected at 0.65; the arithmetic can,
+				and it is the arithmetic being shown.
 			</p>
 
 			<dl class="ece">
@@ -374,6 +388,7 @@
 	dt { font-family: var(--mono, monospace); font-size: .64rem; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-muted); }
 	dd { margin: 0; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
 	.foot { font-size: .76rem; color: var(--ink-faint); }
+	.scope { font-size: .82rem; color: var(--ink-muted); border-left: 2px solid var(--blocked, #6f5a16); padding-left: .7rem; }
 
 	.panel { border-top: 1px solid var(--rule); padding-top: 1.1rem; display: flex; flex-direction: column; gap: .6rem; }
 	.panel h3 { font-size: 1.02rem; margin: 0; font-weight: 600; }
