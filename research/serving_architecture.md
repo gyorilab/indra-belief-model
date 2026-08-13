@@ -140,8 +140,52 @@ Latency is attempt-grain p50; see `research/serving_deployment.md` §3.1 for bot
     Reasoning does NOT suppress them here — glm-5 at `reasoning_effort:"high"`
     returned 1185 entries spanning the CoT.
   - **`google.gemma-4-26b-a4b` is REJECTED on that route** — HTTP 400
-    `model 'google.gemma-4-26b-a4b' isn't supported on this route` — and exists
-    only behind `/openai/v1/responses`, which has no logprobs implementation.
+    `model 'google.gemma-4-26b-a4b' isn't supported on this route`.
+  - **SETTLED 2026-08-11 [M]: gemma-4 cannot return logprobs on Bedrock by ANY
+    route.** The two surfaces are DISJOINT BY MODEL, and gemma-4 sits alone on
+    the one that cannot populate the field:
+      * `/v1/chat/completions` — all three gemma-4 ids 400 `isn't supported on
+        this route`; the cross-region form `us.google.gemma-4-26b-a4b` and the
+        bare name both 404 `does not exist`.
+      * **Converse / bedrock-runtime** — `google.gemma-4-26b-a4b` raises
+        `ValidationException: The provided model identifier is invalid`, i.e. it
+        is not addressable there at all. This was the last untested escape hatch
+        and it is closed. The SAME call on `google.gemma-3-27b-it` succeeds AND
+        returns real `top_logprobs` via `additionalModelRequestFields` plus
+        `additionalModelResponseFieldPaths=["/choices/0/logprobs"]`, so the
+        mechanism works — just not for gemma-4.
+      * **`/openai/v1/chat/completions`** (the `/openai`-prefixed twin, distinct
+        from the bare `/v1/chat/completions` above) — this one DOES accept
+        gemma-4, and returns `"logprobs": null`. The field is genuinely
+        validated on the way in (`top_logprobs: 21` → 400 `Invalid
+        'top_logprobs': value '21' larger than maximum '20'`), so the request is
+        accepted and the backend emits nothing. Streaming carries no `logprobs`
+        key in any delta. The route is gemma-4-EXCLUSIVE: `gemma-3-27b-it` is
+        rejected from it with `isn't supported on this route`.
+      * **us-west-2 says it outright.** The same call against
+        `bedrock-mantle.us-west-2.api.aws` returns 400
+        `unsupported_parameter: "Unsupported parameter: 'top_logprobs' is not
+        supported with this model."` — us-east-1 fails silently with null/[],
+        us-west-2 refuses in words. That is AWS stating the capability gap.
+      * **The structural reason:** gemma-4 is not in the bedrock-runtime
+        catalog at all. `list_foundation_models()` in us-east-1 returns 119
+        models of which the only `google.*` entries are `gemma-3-12b-it`,
+        `gemma-3-4b-it` and `gemma-3-27b-it`; the substring `gemma-4` appears
+        nowhere, and none of the 63 inference profiles is a gemma. So the
+        Converse `ValidationException` is a catalog miss, not a parameter
+        problem, and no id spelling or ARN can reach it.
+      * `/openai/v1/responses` — also accepts gemma-4, and
+        `gemma-3-27b-it`, `zai.glm-5` and `openai.gpt-oss-120b` are all rejected
+        from it with `does not support the '/openai/v1/responses' route`.
+        `include: ["message.output_text.logprobs"]` IS a supported value (the
+        API enumerates it in its own `invalid_value` error alongside
+        `file_search_call.results`, `reasoning.encrypted_content` and five
+        others), and gemma-4 honours the parameter and returns
+        `"logprobs": []` beside `"text": "OK"`. A bare `logprobs` parameter is
+        rejected as `unknown_parameter`.
+    So the empty array is not a missing flag or a wrong spelling: the include is
+    honoured and the backend emits nothing. Logprobs for gemma-4 require a
+    self-hosted substrate (local MLX, or vLLM on rented GPU).
     So gemma-class logprobs on Bedrock means **Gemma 3, not Gemma 4**, and our
     shipped `gemma_bedrock_rf` reader cannot supply them by any route.
   - Converse reaches the same data via `additionalModelRequestFields`
@@ -1210,3 +1254,268 @@ machine, not throughput. It asserts nothing about whether a predicate would be
 *fast enough* at 90M rows — that is a measurement no one can make until the
 substrate at that scale exists, and §8 item 1 notes the generator that would build
 it is not in this repository.
+
+---
+
+### Local MLX throughput, gemma-4-26b **[M]**
+
+Measured 2026-08-11 on **Apple M5 Max, 128 GB** (`sysctl hw.memsize` =
+137,438,953,472 B), against the already-warm `mlx_lm.server` process serving
+`mlx-community/gemma-4-26b-a4b-it-8bit` on `127.0.0.1` port 8085 — the registry
+entry `local-gemma-4-26b` in `src/indra_belief/model_client.py`, driven through
+`scripts/run_rasmachine_monolithic.py` at the production variant named by
+`scorer.DEFAULT_VARIANT_NAME` (reasoning-first; its system prompt hashes to
+`calibration_constants.REASONING_FIRST_PROMPT_SHA256`). This is the first
+seconds-per-row figure recorded for this reader at the production prompt. The
+`[M]` throughput numbers elsewhere in this file are Bedrock-grain, and the
+`candidate_s_per_record` in `research/probe_battery_findings.md` is the
+one-forced-token no-reasoning battery, not a deliberated read.
+
+**Steady state: 23.1 s/row**, pooled over **14** `--workers 1` evidence rows from
+three runs — 14 measurements over 7 distinct records, not 14 independent draws:
+keyed on `evidence_json_sha256` the cluster sizes are 3/3/3/2/1/1/1, three records
+read three times, one twice, three once. Each run's **row 0 is excluded**: at
+`--workers 1` the runner skips
+`run_rasmachine_monolithic._prewarm_grounding`, so the one-time lazy Gilda /
+bio-ontology load lands inside the first row — 8.0–14.3 s of non-call overhead on
+row 0 (14.315 / 8.040 / 12.806 s, one per run) against **0.005–0.413 s** on the
+later rows, median 0.27 s, 11 of the 14 inside 0.25–0.35 s. That is a fixed cost,
+not a rate. Non-call overhead is `latency_s` minus the summed `call_log`
+durations, per row.
+
+The pooled figure is quoted instead of any single run's because three runs over
+overlapping records disagree by 21 %:
+
+| run | rows pooled | s/row |
+|---|---|---|
+| `a1_confirm`, 5 rows, `eval_curation_v1_statements.json` | 4 | 21.1 |
+| `a1_w1`, 8 rows | 7 | 23.2 |
+| `a1_smoke`, 4 rows | 3 | 25.7 |
+| **pooled** | **14** | **23.1** |
+
+Per-row latency spans 14.0–34.6 s. Decode over the 16 `--workers 1` monolithic
+calls is **20.9–29.3 tok/s** (mean 25.2) on **305–954 output tokens** per call
+against **3,712–3,772** (~3.7–3.8 k) prompt tokens. The only `--workers 1` call
+above 4 k prompt tokens is a single `monolithic_tool_context` call at **4,224** —
+a different prompt, so it is excluded from that range; across all runs that kind
+spans 4,081–4,224. All **59** calls logged across every run here
+report `finish_reason: "stop"`; nothing approached the registry's `max_tokens` of
+4096, so no figure below is a truncation artifact. A `Complex` statement makes one
+extra `relation_nature` call on top of the monolithic one, costing 1.18–3.34 s
+(mean 1.71 s over 17 calls). The pooled sample is **100 % `Complex`** — all 14
+rows — so 23.1 s/row is the `Complex` rate, and the non-`Complex` rate is **not
+measured at all**: it is DERIVED as 23.1 − 1.71 = **21.4 s/row**, the same row
+without its `relation_nature` call. Zero non-`Complex` rows were sampled, so the
+blend below inherits that subtraction as an assumption, not an observation.
+
+**Two ETA derivations, and they disagree.** The %`Complex` blend weights those two
+rates by each corpus's measured `Complex` share (936 of 1606 = 58.3 %; 102 of
+587 = 17.4 %):
+
+| run | rows | %`Complex` | s/row | ETA at `--workers 1` |
+|---|---|---|---|---|
+| fit, `eval_curation_v1` | 1606 | 58.3 % | 22.4 | **10.0 h** |
+| validation, `external_curator_gold_v1` | 587 | 17.4 % | 21.7 | **3.5 h** |
+| both, serialized | 2193 | — | — | **13.5 h** |
+
+That blend turns on a ~1.7 s per-row difference. Output-token volume swamps it:
+validation rows average **818.8** output tokens (10 rows) against fit rows'
+**601.0** (8 rows), a **1.36×** decode difference. That 1.36× is a comparison of
+the two corpus samples and nothing more — it is **not** the scaling denominator.
+The pooled **23.1322 s/row** rate was measured on the 14 later rows, whose own mean
+row-level `tokens` is **542.29**; 601.0 is a1_w1's 8-row mean and includes the row 0
+that the rate excludes. Different populations. Scaling the pooled rate by token
+volume is therefore 23.1322 × (818.8 / 542.29):
+
+| derivation | validation s/row | ETA, 587 rows |
+|---|---|---|
+| proportional scaling of the pooled rate, 23.1322 × (818.8 / 542.29) | 34.9 | **5.7 h** |
+| OLS over the 14 pooled rows (intercept 5.5 s, slope 30.8 tok/s, R² 0.88) | 32.1 | **5.2 h** |
+
+That R² 0.88 is fitted as if the 14 rows were independent. They are not: they are
+14 measurements over 7 distinct records (3/3/3/2/1/1/1), so 0.88 is not a 14-point
+R². The fit does not collapse when that is taken out — refitting on the 7 record
+means gives intercept 5.9 s, slope 32.4 tok/s, R² 0.96 — but the printed 0.88
+should be read as a within-cluster-inflated number, and the same non-independence
+sits under the pooled 23.1322 s/row.
+
+**Read the validation run as 5.2–5.7 h rather than 3.5 h, and the serialized total
+as ~15.7–16.4 h rather than 13.5 h.** The two ends of that band, each internally
+consistent: blend fit 10.0 h + proportionally-scaled validation 5.7 h = **15.7 h**;
+OLS fit 11.2 h + OLS validation 5.2 h = **16.4 h**. Note the ordering, because it
+is the reverse of what a token-weighted correction is usually worth: proportional
+scaling is the **higher** of the two validation derivations, not the softer one,
+so neither derivation can be offered as the conservative end — the token-weighted
+read is the pessimistic bound and OLS is the floor. The caveats on the token
+evidence stand either way: the 818.8-token sample is 10 rows and was taken at
+`--workers 4`, and the OLS intercept embeds a `relation_nature` call that only
+17.4 % of validation rows make. The same OLS evaluated at the fit corpus's 601.0
+tokens gives 25.0 s/row → 11.2 h for 1606 rows, an hour above the blend's 10.0 h
+and an independent check pointing the same way. Against the ~18 h infeasibility
+trigger the remaining margin is **~1.6 h at the OLS read** (18 − 16.4) and ~2.3 h
+at the blended read — narrow at both ends, and narrower than the 13.5 h figure
+implied.
+
+**`--workers` — evidence, not a decision.** Same four fit records, only
+`--workers` differing: 120.785 s at 1 worker against 66.735 s at 4. Dividing those
+two wall clocks straight overstates the gain, because they do not cover the same
+work: at `--workers 1` the runner skips
+`run_rasmachine_monolithic._prewarm_grounding`, so the 14.315 s lazy Gilda /
+bio-ontology load lands inside row 0 and therefore inside that 120.785 s, while at
+`--workers 4` prewarm runs before `started_at` and is excluded from the wall clock
+entirely. Net of it, (120.785 − 14.315) / 66.735 = **1.60× aggregate, not 4×**.
+Two independent cross-checks agree. Call-time-only, which never contains prewarm
+at all: the `--workers 1` `call_log` durations sum to 105.438 s, and
+105.438 / 66.735 = **1.58×**. Token-normalized, correcting for the two runs having
+emitted slightly different volumes (2,225 output tokens at `--workers 1` against
+2,286 at `--workers 4`): **1.64×**. Read the aggregate speedup as **~1.6×**.
+Aggregate rises ~1.6× while per-stream decode roughly halves, 22.9 → 11.3 tok/s.
+Two costs ride along. The worst single call observed rose from
+32.8 s (34 calls at `--workers 1`) to 118.0 s (25 calls at `--workers 4`), cutting
+the margin against the registry's `timeout` of 900 s from 27× to 7.6×;
+extrapolated instead to the 4096-token cap at the per-stream rate, the margin
+falls from 5.0× to 2.5×. And **every one of the four rows returned a different
+token count at temperature 0** while all 4 of 4 verdicts matched. Concurrency is
+not the established cause of that, and no batching mechanism is claimed here.
+What is measured is broader: across the three `--workers 1` runs, five distinct
+monolithic prompts were issued more than once with sha-identical `system` +
+`messages`, and **3 of those 5 came back with a different `out_tokens` on a
+repeat** (636/636/306, 336/336/431, 708/708/550) while the verdict held every
+time. So the licensed statement is narrower and stronger than a batching story:
+**the server's output length is not reproducible run-to-run at temperature 0, at
+any worker count.** Four rows of verdict agreement license no claim of
+concurrency invariance. This section reports the trade; it does not pick a worker
+count.
+
+**The contract round-trips.** A locally served run resolves to a reader
+configuration with no runner change: `calibration_constants.reader_configuration_for_run`
+on the fresh 5-row run returns `status: "identified"`, id
+`local-gemma-4-26b@prompt-sha256:07377e33…`, `prompt_fingerprint_source:
+"call_log"`, `declared_prompt_sha256: null`, and one served-id fingerprint,
+`mlx-community/gemma-4-26b-a4b-it-8bit` over 10 calls, inside the singleton
+`calibration_constants._accepted_served_model_ids` returns. Prompt-digest coverage
+is a **sample, not a census**: 5 of 5 rows carried a digest here but 7 of 8 in the
+8-row run, because a row taking the `monolithic_tool_context` path has a system
+prompt that is deliberately not fingerprinted — only `monolithic` calls are
+counted. Resolution succeeded either way.
+
+**What this section does not claim.** No throughput figure here is predicted for
+any other host; §9.8's prohibition stands and every number above came off this
+machine. The steady-state rate rests on 14 rows drawn from `Complex`-heavy fit
+statements — it is a `Complex` rate extrapolated onto mixed corpora, not either
+corpus measured end to end. The validation-corpus token sample is 10 rows taken at
+`--workers 4`. Nothing here is a calibration claim:
+`calibration_constants.calibration_for_run` still returns `None` for these runs,
+which is the gap this measurement exists to let somebody else close, and no
+profile was registered.
+
+### Truncation rate at the token cap, gemma-4-26b **[M]**
+
+**2 of 88 sampled rows hit the registry's 4096-token cap**, measured 2026-08-11
+against the same warm `mlx_lm.server` process, the same `local-gemma-4-26b`
+registry entry and the same production reasoning-first variant as the throughput
+section above. Wilson 95 % intervals at `z = 1.96`:
+
+| corpus | capped / sampled | point | Wilson 95 % |
+|---|---|---|---|
+| fit, `eval_curation_v1` | 0 / 44 | 0.00 % | [0.0000, 0.0803] |
+| validation, `external_curator_gold_v1` | 2 / 44 | 4.55 % | [0.0126, 0.1514] |
+| **pooled** | **2 / 88** | **2.27 %** | **[0.0063, 0.0791]** |
+
+At 44 rows per corpus the two intervals overlap across most of their length, so
+this sample does **not** establish that validation truncates more often than fit.
+What it establishes is narrower: the pooled rate sits somewhere in 0.6–7.9 %, and
+zero observed truncations in the fit sample is still compatible with a true fit
+rate as high as 8 %. Treat the per-corpus split as a stratification of one small
+sample, not as two measurements that differ.
+
+**A cap hit is deterministic, so retrying it is a tax rather than a fix.** At
+`temperature 0.0` the same row re-generates the same chain of thought at
+`--workers 1`. Both validation rows that truncated re-truncated on retry, at the
+same 4096 out-tokens on the same call kind, and recovered the identical verdict
+from the cut-off text. A resume therefore re-pays roughly 134 s per stuck row per
+invocation and resolves nothing — which is why `--no-retry-parser-nulls` exists as
+the resume posture for a long run rather than as a hypothetical. (The caveat in
+the concurrency paragraph above cuts the other way: output token counts diverge
+between runs at the same temperature — sha-identical prompts came back at
+different lengths in 3 of 5 repeats there, at `--workers 1` — so this determinism
+finding is scoped to the `--workers 1` rows measured here and is not extended to
+concurrent runs.)
+
+**What the runner does with a capped read — the withholding trace, end to end.**
+A read cut off at the cap never reached its concluding line, so any verdict
+recovered from it comes from mid-chain-of-thought text rather than from the
+model's stated answer. That is not a reader measurement, and it is dropped rather
+than scored:
+
+1. the server returns `finish_reason == "length"` on one or more calls in the
+   row's `call_log`;
+2. `_truncated_calls` in `scripts/run_rasmachine_monolithic.py` collects them —
+   ANY call at the cap truncates the row, because a `Complex` statement makes
+   several and a cap hit in an early one corrupts everything downstream of it;
+3. `_scored_row` then writes `verdict`, `score` and `confidence` as `None`, keeping
+   `row_status: "scored"` and preserving the recovered value under
+   `truncated_verdict` alongside `truncated_call_kind` and `truncated_out_tokens`
+   as an audit trail;
+4. `calibration_stage1.fit_reader_profile` tallies only rows whose verdict is
+   `correct` or `incorrect`, so a `None` verdict increments none of `cc, ci, ic, ii`;
+5. the row therefore enters **no confusion cell**, and
+   `calibration_constants.profile_from_confusion` never sees it — the withheld read
+   cannot move a likelihood ratio in either direction.
+
+Export is safe for these rows without a further guard: `results.write_run_export`
+buckets a `None` verdict into its `nother` tally and appends a score only when it
+`isinstance`-checks as a number, so a withheld row costs a statement one scored
+evidence rather than crashing the export.
+
+**Two meta counters, and they answer different questions.** Both are written by
+`scripts/run_rasmachine_monolithic.py` and must not be compared to each other:
+
+* `truncated_rows_before_start` — the **file-level total**: every latest-per-key
+  row in the existing output that hit the cap, whether or not this invocation will
+  retry it. This is what a resumed multi-hour run should state about the whole
+  output, not merely about the slice since the last invocation.
+* `truncated_rows` — the **final count for the file as written**: seeded from the
+  terminal carry-over only (rows this invocation will not rewrite) and incremented
+  once per row written. Seeding it from the file-level total instead double-counts
+  every retried truncation, since such a row is carried over AND written again;
+  the run then reports a bigger number than a fresh read of the file it just wrote.
+
+One counter cannot serve both denominators, and the two are the same type, so they
+are named rather than positional in the resume state the loader returns.
+
+**Revised ETA bands.** The basis here is this section's own 88-row sample at the
+serialized `--workers 1` setting: a capped row costs ~163.98 s against a ~33.92 s
+steady row, i.e. **~130 s of surcharge per capped row**, paid once if the row is not
+retried. That 33.92 s is a different and larger draw than the throughput section's
+pooled 23.1 s and is not offered as a correction to it; concurrency is that
+section's `--workers` paragraph and is not re-derived here. Bands, not points:
+
+| run | rows | base at 33.92 s/row | at point estimate | at Wilson upper |
+|---|---|---|---|---|
+| B3, validation | 587 | 5.53 h | ~6.5 h (4.55 %) | ~8.7 h (15.14 %) |
+| B2, fit | ~1620 | 15.26 h | ~16.6 h (2.27 %) | ~19.9 h (7.91 %) |
+
+**B2's Wilson upper of ~19.9 h crosses the 18 h infeasibility trigger.** That is
+stated rather than rounded away, and it has a named mitigation: run B2 with
+`--no-retry-parser-nulls` and watch `truncated_rows` live in the progress ndjson —
+which is exactly the counter the fix above makes trustworthy — or raise the reader
+cap for B2 so the rows that cannot finish under 4096 get room to. The upper bound
+is what a 2-of-88 sample licenses, not a forecast.
+
+The population effect is small at the fit corpus's scale: at the pooled point
+estimate ~2.3 % of fit rows are withheld, roughly **37 of 1606**. That is nowhere
+near the cell-zero condition under which `calibration_constants.profile_from_confusion`
+raises, so withholding costs precision in the profile rather than making it
+underivable.
+
+**Provenance, stated rather than implied — these numbers are not artifact-backed.**
+The counts were derived by reading the raw run JSONL directly, without importing
+the runner, which is why a bug in `_truncated_calls` could not have hidden inside
+them. Per the node's invariant the sample runs were written to a temp directory
+outside the repository, and **that directory is no longer on disk**: nothing under
+`data/` backs the table above. What survives is the recorded counts, from which the
+intervals are reproducible via `indra_belief.sampling.wilson_halfwidth` — all three
+were re-derived to 4 decimal places when this section was written — and the raw
+counts themselves, which no reader should take on stronger authority than this
+paragraph gives them.

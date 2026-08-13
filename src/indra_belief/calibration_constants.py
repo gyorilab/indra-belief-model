@@ -55,6 +55,13 @@ _CONFUSION: dict[str, dict[str, int]] = {
     "gemma_remote": {"cc": 704, "ci": 157, "ic": 97, "ii": 646},
     "gemma_bedrock_rf": {"cc": 662, "ci": 81, "ic": 139, "ii": 722},
     "medpsy_remote": {"cc": 718, "ci": 230, "ic": 83, "ii": 573},
+    # Self-hosted MLX, fitted 2026-08-13 on the same eval_curation_v1 protocol.
+    # Same weights as gemma_bedrock_rf, different serving stack: the counts land
+    # close (651/91/148/710 against 662/81/139/722), and a paired evidence-grain
+    # comparison on the external gold put the two readers within noise of each
+    # other (delta err-F1 -0.0082, 95% CI [-0.0259, +0.0092], 95.4% verdict
+    # agreement over 560 shared pairs).
+    "local_gemma_mlx": {"cc": 651, "ci": 91, "ic": 148, "ii": 710},
 }
 
 _PROFILE_META = {
@@ -102,12 +109,32 @@ _PROFILE_META = {
                      "cannot validate this b44638216740 profile"),
         },
     },
+    "local_gemma_mlx": {
+        "profile_id": "local-gemma-4-26b@prompt-07377e338ff2@eval_curation_v1",
+        "reader_model": "local-gemma-4-26b",
+        "prompt_sha256": REASONING_FIRST_PROMPT_SHA256,
+        "fit_run": "data/results/eval_curation_v1_local-gemma-4-26b.jsonl",
+        "deployment_status": "enabled",
+        "validation": {
+            "result": "pass",
+            "gold": "data/benchmark/external_curator_gold_v1.jsonl",
+            "gold_sha256": EXTERNAL_GOLD_SHA256,
+            "run": "data/results/external_curator_v1_local-gemma-4-26b.jsonl",
+            "gate": "4/4",
+            "note": ("ECE 0.231 -> 0.052, AUROC 0.793 -> 0.808, err-F1 0.796 -> "
+                     "0.800 (delta +0.004, CI [-0.009, +0.019], non-inferior). "
+                     "Both runs served by mlx_lm at max_tokens 8192; 4 capped "
+                     "reads in the fit run were withheld rather than scored, so "
+                     "no mid-thought verdict reached these counts."),
+        },
+    },
 }
 
 _FITTED_CONFIGS = {
     ("remote-gemma-4-26b", BASELINE_PROMPT_SHA256): "gemma_remote",
     ("bedrock-gemma-4-26b", REASONING_FIRST_PROMPT_SHA256): "gemma_bedrock_rf",
     ("remote-medpsy-4b", BASELINE_PROMPT_SHA256): "medpsy_remote",
+    ("local-gemma-4-26b", REASONING_FIRST_PROMPT_SHA256): "local_gemma_mlx",
 }
 
 
