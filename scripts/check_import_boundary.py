@@ -236,17 +236,6 @@ UNREACHED_DISPOSITIONS: Mapping[str, str] = {
         "EXPECTED shape for a plug-in socket rather than a sign of disuse. An "
         "internal importer would mean we had started calling our own socket, "
         "which is not what implementing someone else's interface is for.",
-    f"{PACKAGE}.probe_combiner":
-        "OFFLINE RESEARCH SCAFFOLDING, UNWIRED: the fit/apply-separated probe "
-        "combiner, `fit_combiner` / `FrozenCombiner` in "
-        "`src/indra_belief/probe_combiner.py`, is an sklearn "
-        "`LogisticRegression` over the probe logit vector plus "
-        "`IsotonicRegression` calibration. It is wired into no serving path "
-        "and into nothing in the belief math. Node D1's decision driver is its "
-        "intended consumer, and it stays unreached until a file under "
-        "`scripts/` calls `fit_combiner`. D1 HANDOFF: this entry must be "
-        "deleted in the same change that lands that importer, or exit 3 reports "
-        "it stale.",
     f"{PACKAGE}.scorers.kg_signal":
         "RESEARCH LINEAGE, UNWIRED: the U-phase KG-as-confidence-modifier, whose "
         "Q-phase verdict-override predecessor regressed -2.65pp and whose "

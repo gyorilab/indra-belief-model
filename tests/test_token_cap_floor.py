@@ -71,6 +71,10 @@ def test_the_three_fitted_readers_keep_the_caps_their_profiles_were_measured_und
         "bedrock-gemma-4-26b": 32000,
         "remote-gemma-4-26b": 32000,
         "remote-medpsy-4b": 32000,
+        # Fitted 2026-08-13 on the self-hosted MLX stack. Its whole fit and
+        # validation ran at 8192, and 4 capped reads were withheld on that basis;
+        # changing this cap changes the reader the profile describes.
+        "local-gemma-4-26b": 8192,
     }
     profiled = {model for model, _sha in _FITTED_CONFIGS}
     assert profiled == set(expected), (
