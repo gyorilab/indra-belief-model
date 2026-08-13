@@ -1,0 +1,6468 @@
+{
+ "kind": "probe_http_transport_check",
+ "probe_id": "pol.verdict_direct",
+ "n": 475,
+ "auroc_inprocess": 0.712142,
+ "auroc_http": 0.703751,
+ "delta_auroc": -0.008391,
+ "delta_auroc_ci95": [
+  -0.022933,
+  0.006467
+ ],
+ "pearson_r": 0.93512,
+ "sign_agreement": 0.793684,
+ "test_rows": [
+  {
+   "source_hash": "-5732425640008009125",
+   "gold_correct": true,
+   "http_delta_logit": -2.0625,
+   "inprocess_delta_logit": 6.5
+  },
+  {
+   "source_hash": "5403233080100820160",
+   "gold_correct": true,
+   "http_delta_logit": -5.1875,
+   "inprocess_delta_logit": 0.75
+  },
+  {
+   "source_hash": "-4836364323343406157",
+   "gold_correct": true,
+   "http_delta_logit": -3.25,
+   "inprocess_delta_logit": -3.5
+  },
+  {
+   "source_hash": "5169461269379771154",
+   "gold_correct": true,
+   "http_delta_logit": 6.375,
+   "inprocess_delta_logit": 19.375
+  },
+  {
+   "source_hash": "564172519757240521",
+   "gold_correct": true,
+   "http_delta_logit": 2.3125,
+   "inprocess_delta_logit": 12.25
+  },
+  {
+   "source_hash": "-6502042974507983115",
+   "gold_correct": true,
+   "http_delta_logit": 0.4375,
+   "inprocess_delta_logit": 9.6875
+  },
+  {
+   "source_hash": "7596784125319818121",
+   "gold_correct": true,
+   "http_delta_logit": 7.625,
+   "inprocess_delta_logit": 21.5
+  },
+  {
+   "source_hash": "-8233559579152028632",
+   "gold_correct": true,
+   "http_delta_logit": -6.75,
+   "inprocess_delta_logit": -11.375
+  },
+  {
+   "source_hash": "-5555900507433640640",
+   "gold_correct": true,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 12.4375
+  },
+  {
+   "source_hash": "-7114349236233559443",
+   "gold_correct": true,
+   "http_delta_logit": -0.4375,
+   "inprocess_delta_logit": 8.75
+  },
+  {
+   "source_hash": "-2938563467877749913",
+   "gold_correct": true,
+   "http_delta_logit": -0.625,
+   "inprocess_delta_logit": 9.4375
+  },
+  {
+   "source_hash": "-8690271903261019771",
+   "gold_correct": true,
+   "http_delta_logit": 5.5,
+   "inprocess_delta_logit": 17.375
+  },
+  {
+   "source_hash": "-3701281683449818097",
+   "gold_correct": true,
+   "http_delta_logit": -6.125,
+   "inprocess_delta_logit": -11.125
+  },
+  {
+   "source_hash": "-3932627259856717439",
+   "gold_correct": true,
+   "http_delta_logit": 5.375,
+   "inprocess_delta_logit": 16.375
+  },
+  {
+   "source_hash": "-805220555877052347",
+   "gold_correct": true,
+   "http_delta_logit": 7.8125,
+   "inprocess_delta_logit": 21.75
+  },
+  {
+   "source_hash": "6801633493905493360",
+   "gold_correct": true,
+   "http_delta_logit": -8.4375,
+   "inprocess_delta_logit": -18.0
+  },
+  {
+   "source_hash": "4609440309865890581",
+   "gold_correct": true,
+   "http_delta_logit": 6.0,
+   "inprocess_delta_logit": 16.75
+  },
+  {
+   "source_hash": "-2574567521808146027",
+   "gold_correct": true,
+   "http_delta_logit": 4.75,
+   "inprocess_delta_logit": 16.75
+  },
+  {
+   "source_hash": "-8533070514536607075",
+   "gold_correct": true,
+   "http_delta_logit": 5.625,
+   "inprocess_delta_logit": 18.25
+  },
+  {
+   "source_hash": "-7516508107127754246",
+   "gold_correct": true,
+   "http_delta_logit": 3.9375,
+   "inprocess_delta_logit": 12.25
+  },
+  {
+   "source_hash": "-4890730718116591778",
+   "gold_correct": true,
+   "http_delta_logit": 8.5,
+   "inprocess_delta_logit": 21.5
+  },
+  {
+   "source_hash": "4878073513908544262",
+   "gold_correct": true,
+   "http_delta_logit": 3.8125,
+   "inprocess_delta_logit": 15.4375
+  },
+  {
+   "source_hash": "-396088067911065846",
+   "gold_correct": true,
+   "http_delta_logit": 4.75,
+   "inprocess_delta_logit": 10.8125
+  },
+  {
+   "source_hash": "-1224467656156425570",
+   "gold_correct": true,
+   "http_delta_logit": 4.1875,
+   "inprocess_delta_logit": 14.75
+  },
+  {
+   "source_hash": "-7356715564445371364",
+   "gold_correct": true,
+   "http_delta_logit": 6.1875,
+   "inprocess_delta_logit": 20.5
+  },
+  {
+   "source_hash": "-2182674017464844326",
+   "gold_correct": true,
+   "http_delta_logit": 3.4375,
+   "inprocess_delta_logit": 16.625
+  },
+  {
+   "source_hash": "-724914668765455605",
+   "gold_correct": true,
+   "http_delta_logit": 5.4375,
+   "inprocess_delta_logit": 20.75
+  },
+  {
+   "source_hash": "3932272188144389874",
+   "gold_correct": true,
+   "http_delta_logit": 1.1875,
+   "inprocess_delta_logit": 5.75
+  },
+  {
+   "source_hash": "-1601516642465708047",
+   "gold_correct": true,
+   "http_delta_logit": 7.1875,
+   "inprocess_delta_logit": 21.25
+  },
+  {
+   "source_hash": "-963165611436973141",
+   "gold_correct": true,
+   "http_delta_logit": 7.0625,
+   "inprocess_delta_logit": 19.25
+  },
+  {
+   "source_hash": "8076376595230190959",
+   "gold_correct": true,
+   "http_delta_logit": 2.625,
+   "inprocess_delta_logit": 11.5625
+  },
+  {
+   "source_hash": "-2897864039788314406",
+   "gold_correct": true,
+   "http_delta_logit": -6.6875,
+   "inprocess_delta_logit": -4.5
+  },
+  {
+   "source_hash": "-6010325218229867033",
+   "gold_correct": true,
+   "http_delta_logit": -4.5625,
+   "inprocess_delta_logit": -4.125
+  },
+  {
+   "source_hash": "-8570708331746386037",
+   "gold_correct": true,
+   "http_delta_logit": 0.6875,
+   "inprocess_delta_logit": 12.0
+  },
+  {
+   "source_hash": "3847197865669707663",
+   "gold_correct": true,
+   "http_delta_logit": 6.5,
+   "inprocess_delta_logit": 17.375
+  },
+  {
+   "source_hash": "5804232091372863320",
+   "gold_correct": true,
+   "http_delta_logit": 7.4375,
+   "inprocess_delta_logit": 21.0
+  },
+  {
+   "source_hash": "7346423729737885441",
+   "gold_correct": true,
+   "http_delta_logit": 2.125,
+   "inprocess_delta_logit": 13.375
+  },
+  {
+   "source_hash": "-6727869525754967485",
+   "gold_correct": true,
+   "http_delta_logit": 8.8125,
+   "inprocess_delta_logit": 21.375
+  },
+  {
+   "source_hash": "-3894557221058326789",
+   "gold_correct": true,
+   "http_delta_logit": 3.0,
+   "inprocess_delta_logit": 10.75
+  },
+  {
+   "source_hash": "79963226082055762",
+   "gold_correct": true,
+   "http_delta_logit": 2.5625,
+   "inprocess_delta_logit": 13.3125
+  },
+  {
+   "source_hash": "-650455589452623571",
+   "gold_correct": true,
+   "http_delta_logit": -6.375,
+   "inprocess_delta_logit": -14.625
+  },
+  {
+   "source_hash": "9008230275625654032",
+   "gold_correct": true,
+   "http_delta_logit": -2.5625,
+   "inprocess_delta_logit": 3.125
+  },
+  {
+   "source_hash": "-315797282624052827",
+   "gold_correct": true,
+   "http_delta_logit": 5.0625,
+   "inprocess_delta_logit": 16.125
+  },
+  {
+   "source_hash": "-2578197997899481626",
+   "gold_correct": true,
+   "http_delta_logit": -6.375,
+   "inprocess_delta_logit": -7.4375
+  },
+  {
+   "source_hash": "7478206403925291648",
+   "gold_correct": true,
+   "http_delta_logit": 2.6875,
+   "inprocess_delta_logit": 10.8125
+  },
+  {
+   "source_hash": "-2718633361984353280",
+   "gold_correct": true,
+   "http_delta_logit": -3.8125,
+   "inprocess_delta_logit": 6.25
+  },
+  {
+   "source_hash": "7326474742188649541",
+   "gold_correct": true,
+   "http_delta_logit": -1.375,
+   "inprocess_delta_logit": 11.25
+  },
+  {
+   "source_hash": "1369104196750001509",
+   "gold_correct": true,
+   "http_delta_logit": -0.8125,
+   "inprocess_delta_logit": 8.125
+  },
+  {
+   "source_hash": "-3627791006708803444",
+   "gold_correct": true,
+   "http_delta_logit": 6.25,
+   "inprocess_delta_logit": 17.5
+  },
+  {
+   "source_hash": "8528805132857872400",
+   "gold_correct": true,
+   "http_delta_logit": 4.9375,
+   "inprocess_delta_logit": 17.375
+  },
+  {
+   "source_hash": "-3670961177475244689",
+   "gold_correct": true,
+   "http_delta_logit": 0.5625,
+   "inprocess_delta_logit": 6.8125
+  },
+  {
+   "source_hash": "-1969422277688450763",
+   "gold_correct": true,
+   "http_delta_logit": -6.375,
+   "inprocess_delta_logit": -9.0625
+  },
+  {
+   "source_hash": "248048860641754281",
+   "gold_correct": true,
+   "http_delta_logit": 3.1875,
+   "inprocess_delta_logit": 13.25
+  },
+  {
+   "source_hash": "-1917340880992183075",
+   "gold_correct": true,
+   "http_delta_logit": 6.5,
+   "inprocess_delta_logit": 18.5
+  },
+  {
+   "source_hash": "-3036664714380489569",
+   "gold_correct": true,
+   "http_delta_logit": -5.5625,
+   "inprocess_delta_logit": -14.5
+  },
+  {
+   "source_hash": "3696291652619699711",
+   "gold_correct": true,
+   "http_delta_logit": 4.0,
+   "inprocess_delta_logit": 16.0
+  },
+  {
+   "source_hash": "-6148969801333334895",
+   "gold_correct": true,
+   "http_delta_logit": 7.1875,
+   "inprocess_delta_logit": 20.25
+  },
+  {
+   "source_hash": "8781021120889331226",
+   "gold_correct": true,
+   "http_delta_logit": 7.4375,
+   "inprocess_delta_logit": 20.75
+  },
+  {
+   "source_hash": "-3728843273094935721",
+   "gold_correct": true,
+   "http_delta_logit": 1.6875,
+   "inprocess_delta_logit": 9.5
+  },
+  {
+   "source_hash": "-5216979649385916954",
+   "gold_correct": true,
+   "http_delta_logit": 6.6875,
+   "inprocess_delta_logit": 18.25
+  },
+  {
+   "source_hash": "4153982219532631146",
+   "gold_correct": true,
+   "http_delta_logit": -6.875,
+   "inprocess_delta_logit": -14.875
+  },
+  {
+   "source_hash": "460922684995097034",
+   "gold_correct": true,
+   "http_delta_logit": 5.0625,
+   "inprocess_delta_logit": 15.9375
+  },
+  {
+   "source_hash": "-7603267299619520470",
+   "gold_correct": true,
+   "http_delta_logit": -0.4375,
+   "inprocess_delta_logit": 8.5625
+  },
+  {
+   "source_hash": "-8368016613269985217",
+   "gold_correct": true,
+   "http_delta_logit": -8.625,
+   "inprocess_delta_logit": -19.75
+  },
+  {
+   "source_hash": "-1224467656156425570",
+   "gold_correct": true,
+   "http_delta_logit": 4.1875,
+   "inprocess_delta_logit": 14.75
+  },
+  {
+   "source_hash": "-4037507094786476408",
+   "gold_correct": true,
+   "http_delta_logit": 5.8125,
+   "inprocess_delta_logit": 15.125
+  },
+  {
+   "source_hash": "-7259966264213906609",
+   "gold_correct": true,
+   "http_delta_logit": 1.5625,
+   "inprocess_delta_logit": 18.0
+  },
+  {
+   "source_hash": "-1085553404767400199",
+   "gold_correct": true,
+   "http_delta_logit": -4.5,
+   "inprocess_delta_logit": -5.375
+  },
+  {
+   "source_hash": "8359432524362575925",
+   "gold_correct": true,
+   "http_delta_logit": -8.625,
+   "inprocess_delta_logit": -11.5625
+  },
+  {
+   "source_hash": "1014757522200705665",
+   "gold_correct": true,
+   "http_delta_logit": -8.6875,
+   "inprocess_delta_logit": -16.5
+  },
+  {
+   "source_hash": "-2785125534149262664",
+   "gold_correct": true,
+   "http_delta_logit": 5.625,
+   "inprocess_delta_logit": 18.625
+  },
+  {
+   "source_hash": "-8833360466292626403",
+   "gold_correct": true,
+   "http_delta_logit": -8.0,
+   "inprocess_delta_logit": -9.0
+  },
+  {
+   "source_hash": "-5404659361777191863",
+   "gold_correct": true,
+   "http_delta_logit": 6.0625,
+   "inprocess_delta_logit": 19.125
+  },
+  {
+   "source_hash": "-3833643725392458080",
+   "gold_correct": true,
+   "http_delta_logit": 6.0,
+   "inprocess_delta_logit": 18.375
+  },
+  {
+   "source_hash": "-1615905702541089625",
+   "gold_correct": true,
+   "http_delta_logit": 4.625,
+   "inprocess_delta_logit": 14.625
+  },
+  {
+   "source_hash": "7263248055571949826",
+   "gold_correct": true,
+   "http_delta_logit": 7.1875,
+   "inprocess_delta_logit": 20.5
+  },
+  {
+   "source_hash": "-3933402204778882315",
+   "gold_correct": true,
+   "http_delta_logit": -4.625,
+   "inprocess_delta_logit": 3.75
+  },
+  {
+   "source_hash": "-5451367316813666767",
+   "gold_correct": true,
+   "http_delta_logit": 4.125,
+   "inprocess_delta_logit": 16.75
+  },
+  {
+   "source_hash": "6810787133210807449",
+   "gold_correct": true,
+   "http_delta_logit": -6.125,
+   "inprocess_delta_logit": 0.0
+  },
+  {
+   "source_hash": "-952618464200527650",
+   "gold_correct": true,
+   "http_delta_logit": 1.8125,
+   "inprocess_delta_logit": 14.5
+  },
+  {
+   "source_hash": "-2249638272409059571",
+   "gold_correct": true,
+   "http_delta_logit": 5.4375,
+   "inprocess_delta_logit": 14.375
+  },
+  {
+   "source_hash": "-1845123972788457468",
+   "gold_correct": true,
+   "http_delta_logit": 2.0,
+   "inprocess_delta_logit": 7.5625
+  },
+  {
+   "source_hash": "-7592032013772097204",
+   "gold_correct": true,
+   "http_delta_logit": 7.9375,
+   "inprocess_delta_logit": 21.25
+  },
+  {
+   "source_hash": "3583140799980195728",
+   "gold_correct": true,
+   "http_delta_logit": -4.3125,
+   "inprocess_delta_logit": 1.5
+  },
+  {
+   "source_hash": "-2675990789343018304",
+   "gold_correct": true,
+   "http_delta_logit": 6.4375,
+   "inprocess_delta_logit": 21.75
+  },
+  {
+   "source_hash": "3257286219188813410",
+   "gold_correct": true,
+   "http_delta_logit": -3.0625,
+   "inprocess_delta_logit": 2.25
+  },
+  {
+   "source_hash": "7139944583087320634",
+   "gold_correct": true,
+   "http_delta_logit": 6.125,
+   "inprocess_delta_logit": 19.5
+  },
+  {
+   "source_hash": "7756685253967644135",
+   "gold_correct": true,
+   "http_delta_logit": 7.125,
+   "inprocess_delta_logit": 20.0
+  },
+  {
+   "source_hash": "2684544981912508173",
+   "gold_correct": true,
+   "http_delta_logit": 0.6875,
+   "inprocess_delta_logit": 9.375
+  },
+  {
+   "source_hash": "337757760112217611",
+   "gold_correct": true,
+   "http_delta_logit": 5.625,
+   "inprocess_delta_logit": 18.375
+  },
+  {
+   "source_hash": "491842158560077867",
+   "gold_correct": true,
+   "http_delta_logit": 6.125,
+   "inprocess_delta_logit": 19.5
+  },
+  {
+   "source_hash": "6755331870376644664",
+   "gold_correct": true,
+   "http_delta_logit": 6.8125,
+   "inprocess_delta_logit": 20.875
+  },
+  {
+   "source_hash": "-6968891816494439686",
+   "gold_correct": true,
+   "http_delta_logit": 3.625,
+   "inprocess_delta_logit": 12.875
+  },
+  {
+   "source_hash": "3890980154246046732",
+   "gold_correct": true,
+   "http_delta_logit": 8.4375,
+   "inprocess_delta_logit": 22.5
+  },
+  {
+   "source_hash": "-2216665235394133722",
+   "gold_correct": true,
+   "http_delta_logit": -6.125,
+   "inprocess_delta_logit": 2.375
+  },
+  {
+   "source_hash": "1824343005509966375",
+   "gold_correct": true,
+   "http_delta_logit": -6.125,
+   "inprocess_delta_logit": -4.875
+  },
+  {
+   "source_hash": "-3352722335776774293",
+   "gold_correct": true,
+   "http_delta_logit": -2.625,
+   "inprocess_delta_logit": 2.5
+  },
+  {
+   "source_hash": "9015192886621748446",
+   "gold_correct": true,
+   "http_delta_logit": 2.8125,
+   "inprocess_delta_logit": 15.0
+  },
+  {
+   "source_hash": "7076796699583799622",
+   "gold_correct": true,
+   "http_delta_logit": 5.1875,
+   "inprocess_delta_logit": 17.0
+  },
+  {
+   "source_hash": "8829457259345132605",
+   "gold_correct": true,
+   "http_delta_logit": -4.875,
+   "inprocess_delta_logit": 4.5
+  },
+  {
+   "source_hash": "1395224097915963010",
+   "gold_correct": true,
+   "http_delta_logit": -4.4375,
+   "inprocess_delta_logit": 6.1875
+  },
+  {
+   "source_hash": "-1442750321218188583",
+   "gold_correct": true,
+   "http_delta_logit": -5.9375,
+   "inprocess_delta_logit": -5.625
+  },
+  {
+   "source_hash": "-5661383276307056300",
+   "gold_correct": true,
+   "http_delta_logit": 4.625,
+   "inprocess_delta_logit": 20.25
+  },
+  {
+   "source_hash": "-8093381017138279046",
+   "gold_correct": true,
+   "http_delta_logit": 6.5,
+   "inprocess_delta_logit": 19.375
+  },
+  {
+   "source_hash": "-8555750332296386626",
+   "gold_correct": true,
+   "http_delta_logit": 5.25,
+   "inprocess_delta_logit": 15.125
+  },
+  {
+   "source_hash": "-901059467996020460",
+   "gold_correct": true,
+   "http_delta_logit": -4.5,
+   "inprocess_delta_logit": 1.125
+  },
+  {
+   "source_hash": "8577524253349129868",
+   "gold_correct": true,
+   "http_delta_logit": 0.9375,
+   "inprocess_delta_logit": 6.25
+  },
+  {
+   "source_hash": "-5934876255508102166",
+   "gold_correct": true,
+   "http_delta_logit": 6.5,
+   "inprocess_delta_logit": 20.0
+  },
+  {
+   "source_hash": "7076796699583799622",
+   "gold_correct": true,
+   "http_delta_logit": 5.1875,
+   "inprocess_delta_logit": 19.5
+  },
+  {
+   "source_hash": "3382224531142653030",
+   "gold_correct": true,
+   "http_delta_logit": 2.125,
+   "inprocess_delta_logit": 10.9375
+  },
+  {
+   "source_hash": "3292829929926926748",
+   "gold_correct": true,
+   "http_delta_logit": -7.75,
+   "inprocess_delta_logit": -11.1875
+  },
+  {
+   "source_hash": "-8241391623713686117",
+   "gold_correct": true,
+   "http_delta_logit": 4.0625,
+   "inprocess_delta_logit": 17.75
+  },
+  {
+   "source_hash": "928792364368338886",
+   "gold_correct": true,
+   "http_delta_logit": 2.4375,
+   "inprocess_delta_logit": 15.9375
+  },
+  {
+   "source_hash": "3659676025706919314",
+   "gold_correct": true,
+   "http_delta_logit": 6.875,
+   "inprocess_delta_logit": 19.125
+  },
+  {
+   "source_hash": "1121443669294357809",
+   "gold_correct": true,
+   "http_delta_logit": -5.5,
+   "inprocess_delta_logit": -0.875
+  },
+  {
+   "source_hash": "-7592032013772097204",
+   "gold_correct": true,
+   "http_delta_logit": 7.9375,
+   "inprocess_delta_logit": 21.25
+  },
+  {
+   "source_hash": "-6988174879029101394",
+   "gold_correct": true,
+   "http_delta_logit": 6.0,
+   "inprocess_delta_logit": 19.5
+  },
+  {
+   "source_hash": "8183894210882189859",
+   "gold_correct": true,
+   "http_delta_logit": -6.0625,
+   "inprocess_delta_logit": -6.5625
+  },
+  {
+   "source_hash": "7438680914177741582",
+   "gold_correct": true,
+   "http_delta_logit": -3.375,
+   "inprocess_delta_logit": 0.625
+  },
+  {
+   "source_hash": "2505111178310578136",
+   "gold_correct": true,
+   "http_delta_logit": 4.8125,
+   "inprocess_delta_logit": 19.0
+  },
+  {
+   "source_hash": "-1444117079451486106",
+   "gold_correct": true,
+   "http_delta_logit": 7.3125,
+   "inprocess_delta_logit": 20.5
+  },
+  {
+   "source_hash": "-469033093448000461",
+   "gold_correct": true,
+   "http_delta_logit": -8.375,
+   "inprocess_delta_logit": -18.375
+  },
+  {
+   "source_hash": "-2278126244655430630",
+   "gold_correct": true,
+   "http_delta_logit": 5.75,
+   "inprocess_delta_logit": 20.375
+  },
+  {
+   "source_hash": "-4264501461960406236",
+   "gold_correct": true,
+   "http_delta_logit": -5.6875,
+   "inprocess_delta_logit": -6.125
+  },
+  {
+   "source_hash": "2926517998446890704",
+   "gold_correct": true,
+   "http_delta_logit": 6.25,
+   "inprocess_delta_logit": 21.25
+  },
+  {
+   "source_hash": "3747464167005671129",
+   "gold_correct": true,
+   "http_delta_logit": 3.875,
+   "inprocess_delta_logit": 14.6875
+  },
+  {
+   "source_hash": "-3630889073038177407",
+   "gold_correct": true,
+   "http_delta_logit": -7.75,
+   "inprocess_delta_logit": -11.8125
+  },
+  {
+   "source_hash": "-5915496649214793061",
+   "gold_correct": true,
+   "http_delta_logit": 8.0,
+   "inprocess_delta_logit": 21.5
+  },
+  {
+   "source_hash": "9118543664106210416",
+   "gold_correct": true,
+   "http_delta_logit": 2.9375,
+   "inprocess_delta_logit": 15.25
+  },
+  {
+   "source_hash": "6701395928647467689",
+   "gold_correct": true,
+   "http_delta_logit": -7.875,
+   "inprocess_delta_logit": -19.75
+  },
+  {
+   "source_hash": "-347010977095259584",
+   "gold_correct": true,
+   "http_delta_logit": 1.5,
+   "inprocess_delta_logit": 6.125
+  },
+  {
+   "source_hash": "-6955933535524263090",
+   "gold_correct": true,
+   "http_delta_logit": 6.875,
+   "inprocess_delta_logit": 21.5
+  },
+  {
+   "source_hash": "8392781038691735363",
+   "gold_correct": true,
+   "http_delta_logit": 3.9375,
+   "inprocess_delta_logit": 10.625
+  },
+  {
+   "source_hash": "3284765924355500301",
+   "gold_correct": true,
+   "http_delta_logit": 4.0625,
+   "inprocess_delta_logit": 12.1875
+  },
+  {
+   "source_hash": "4426059405531242388",
+   "gold_correct": true,
+   "http_delta_logit": -6.1875,
+   "inprocess_delta_logit": -6.5625
+  },
+  {
+   "source_hash": "1353308587230773908",
+   "gold_correct": true,
+   "http_delta_logit": -1.0625,
+   "inprocess_delta_logit": 10.3125
+  },
+  {
+   "source_hash": "-8668833758812651548",
+   "gold_correct": true,
+   "http_delta_logit": -8.125,
+   "inprocess_delta_logit": -10.875
+  },
+  {
+   "source_hash": "-4955379367960366358",
+   "gold_correct": true,
+   "http_delta_logit": 7.1875,
+   "inprocess_delta_logit": 20.125
+  },
+  {
+   "source_hash": "8792782324396444137",
+   "gold_correct": true,
+   "http_delta_logit": 5.8125,
+   "inprocess_delta_logit": 18.5
+  },
+  {
+   "source_hash": "-651121669865349795",
+   "gold_correct": true,
+   "http_delta_logit": -4.3125,
+   "inprocess_delta_logit": 4.75
+  },
+  {
+   "source_hash": "3990055198183588826",
+   "gold_correct": true,
+   "http_delta_logit": -8.125,
+   "inprocess_delta_logit": -15.375
+  },
+  {
+   "source_hash": "-9033390179140470317",
+   "gold_correct": true,
+   "http_delta_logit": 6.625,
+   "inprocess_delta_logit": 20.5
+  },
+  {
+   "source_hash": "835993734187005453",
+   "gold_correct": true,
+   "http_delta_logit": 2.6875,
+   "inprocess_delta_logit": 14.0625
+  },
+  {
+   "source_hash": "-1093153005635320826",
+   "gold_correct": true,
+   "http_delta_logit": 8.3125,
+   "inprocess_delta_logit": 22.125
+  },
+  {
+   "source_hash": "-8743198610673511737",
+   "gold_correct": true,
+   "http_delta_logit": -2.6875,
+   "inprocess_delta_logit": 0.375
+  },
+  {
+   "source_hash": "6412634165551957718",
+   "gold_correct": true,
+   "http_delta_logit": 0.75,
+   "inprocess_delta_logit": 6.875
+  },
+  {
+   "source_hash": "-1438373351586215611",
+   "gold_correct": true,
+   "http_delta_logit": -6.875,
+   "inprocess_delta_logit": -10.6875
+  },
+  {
+   "source_hash": "2518226513699416575",
+   "gold_correct": true,
+   "http_delta_logit": 3.6875,
+   "inprocess_delta_logit": 16.0
+  },
+  {
+   "source_hash": "6238666791861898832",
+   "gold_correct": true,
+   "http_delta_logit": -6.6875,
+   "inprocess_delta_logit": -6.75
+  },
+  {
+   "source_hash": "6840245031025619038",
+   "gold_correct": true,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -3.875
+  },
+  {
+   "source_hash": "4124348603415998191",
+   "gold_correct": true,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 21.0
+  },
+  {
+   "source_hash": "8152866977415061259",
+   "gold_correct": true,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 21.125
+  },
+  {
+   "source_hash": "-4084956313184641813",
+   "gold_correct": true,
+   "http_delta_logit": 5.0625,
+   "inprocess_delta_logit": 16.125
+  },
+  {
+   "source_hash": "7623867394025202679",
+   "gold_correct": true,
+   "http_delta_logit": 9.5625,
+   "inprocess_delta_logit": 22.125
+  },
+  {
+   "source_hash": "7832400188934324241",
+   "gold_correct": true,
+   "http_delta_logit": 2.8125,
+   "inprocess_delta_logit": 14.875
+  },
+  {
+   "source_hash": "4524843791041892129",
+   "gold_correct": true,
+   "http_delta_logit": 5.6875,
+   "inprocess_delta_logit": 18.375
+  },
+  {
+   "source_hash": "-2081408620179305042",
+   "gold_correct": true,
+   "http_delta_logit": -2.8125,
+   "inprocess_delta_logit": 5.375
+  },
+  {
+   "source_hash": "7201689290711056856",
+   "gold_correct": true,
+   "http_delta_logit": -1.0625,
+   "inprocess_delta_logit": 9.625
+  },
+  {
+   "source_hash": "-5911371687694516564",
+   "gold_correct": true,
+   "http_delta_logit": 7.6875,
+   "inprocess_delta_logit": 22.625
+  },
+  {
+   "source_hash": "-5903856386844525491",
+   "gold_correct": true,
+   "http_delta_logit": -0.3125,
+   "inprocess_delta_logit": 5.125
+  },
+  {
+   "source_hash": "-1942504843564531766",
+   "gold_correct": true,
+   "http_delta_logit": -4.4375,
+   "inprocess_delta_logit": 3.375
+  },
+  {
+   "source_hash": "-3299778111738465074",
+   "gold_correct": true,
+   "http_delta_logit": 3.5,
+   "inprocess_delta_logit": 12.625
+  },
+  {
+   "source_hash": "249190543102755452",
+   "gold_correct": true,
+   "http_delta_logit": -3.9375,
+   "inprocess_delta_logit": 4.625
+  },
+  {
+   "source_hash": "1378465678313221556",
+   "gold_correct": true,
+   "http_delta_logit": -6.0625,
+   "inprocess_delta_logit": -7.875
+  },
+  {
+   "source_hash": "3583140799980195728",
+   "gold_correct": true,
+   "http_delta_logit": -4.3125,
+   "inprocess_delta_logit": 12.625
+  },
+  {
+   "source_hash": "68805875663791494",
+   "gold_correct": true,
+   "http_delta_logit": -8.9375,
+   "inprocess_delta_logit": -19.5
+  },
+  {
+   "source_hash": "2033668938947191078",
+   "gold_correct": true,
+   "http_delta_logit": -7.125,
+   "inprocess_delta_logit": -12.6875
+  },
+  {
+   "source_hash": "4541437776927581344",
+   "gold_correct": true,
+   "http_delta_logit": -1.625,
+   "inprocess_delta_logit": 4.75
+  },
+  {
+   "source_hash": "-5451367316813666767",
+   "gold_correct": true,
+   "http_delta_logit": 4.125,
+   "inprocess_delta_logit": 16.75
+  },
+  {
+   "source_hash": "6273374793185268886",
+   "gold_correct": true,
+   "http_delta_logit": -3.5625,
+   "inprocess_delta_logit": 4.25
+  },
+  {
+   "source_hash": "-7810165641481388012",
+   "gold_correct": true,
+   "http_delta_logit": 6.25,
+   "inprocess_delta_logit": 20.25
+  },
+  {
+   "source_hash": "4706542750332369595",
+   "gold_correct": true,
+   "http_delta_logit": 4.5625,
+   "inprocess_delta_logit": 19.5
+  },
+  {
+   "source_hash": "5390084195342853833",
+   "gold_correct": true,
+   "http_delta_logit": 2.5,
+   "inprocess_delta_logit": 13.375
+  },
+  {
+   "source_hash": "2411624995189796859",
+   "gold_correct": true,
+   "http_delta_logit": 8.8125,
+   "inprocess_delta_logit": 21.125
+  },
+  {
+   "source_hash": "-5268275852479048315",
+   "gold_correct": true,
+   "http_delta_logit": 2.5625,
+   "inprocess_delta_logit": 8.9375
+  },
+  {
+   "source_hash": "2173262632146489038",
+   "gold_correct": true,
+   "http_delta_logit": 1.0,
+   "inprocess_delta_logit": 8.4375
+  },
+  {
+   "source_hash": "648575258879413078",
+   "gold_correct": true,
+   "http_delta_logit": 3.9375,
+   "inprocess_delta_logit": 13.6875
+  },
+  {
+   "source_hash": "-4644585059045919393",
+   "gold_correct": true,
+   "http_delta_logit": 7.75,
+   "inprocess_delta_logit": 22.0
+  },
+  {
+   "source_hash": "-7973330184349886543",
+   "gold_correct": true,
+   "http_delta_logit": 6.0,
+   "inprocess_delta_logit": 21.5
+  },
+  {
+   "source_hash": "-560366177464615572",
+   "gold_correct": true,
+   "http_delta_logit": -4.25,
+   "inprocess_delta_logit": 6.75
+  },
+  {
+   "source_hash": "-592441089273144242",
+   "gold_correct": true,
+   "http_delta_logit": 3.9375,
+   "inprocess_delta_logit": 18.125
+  },
+  {
+   "source_hash": "6062193936948189571",
+   "gold_correct": true,
+   "http_delta_logit": 4.5,
+   "inprocess_delta_logit": 10.875
+  },
+  {
+   "source_hash": "-421557257198400921",
+   "gold_correct": true,
+   "http_delta_logit": 7.125,
+   "inprocess_delta_logit": 21.125
+  },
+  {
+   "source_hash": "-4366748235178062147",
+   "gold_correct": true,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 15.375
+  },
+  {
+   "source_hash": "3637595117930894635",
+   "gold_correct": true,
+   "http_delta_logit": 6.1875,
+   "inprocess_delta_logit": 21.75
+  },
+  {
+   "source_hash": "-4309051493749942620",
+   "gold_correct": true,
+   "http_delta_logit": 6.6875,
+   "inprocess_delta_logit": 17.5
+  },
+  {
+   "source_hash": "4665112034689724091",
+   "gold_correct": true,
+   "http_delta_logit": -7.125,
+   "inprocess_delta_logit": -11.125
+  },
+  {
+   "source_hash": "648575258879413078",
+   "gold_correct": true,
+   "http_delta_logit": 3.9375,
+   "inprocess_delta_logit": 13.6875
+  },
+  {
+   "source_hash": "-4432134349021418113",
+   "gold_correct": true,
+   "http_delta_logit": 2.8125,
+   "inprocess_delta_logit": 15.0
+  },
+  {
+   "source_hash": "8542680795611052986",
+   "gold_correct": true,
+   "http_delta_logit": 2.125,
+   "inprocess_delta_logit": 8.625
+  },
+  {
+   "source_hash": "-9215811898696459222",
+   "gold_correct": true,
+   "http_delta_logit": 0.5,
+   "inprocess_delta_logit": 12.5
+  },
+  {
+   "source_hash": "-6668411588636921774",
+   "gold_correct": true,
+   "http_delta_logit": -6.1875,
+   "inprocess_delta_logit": -8.1875
+  },
+  {
+   "source_hash": "4289898998653089259",
+   "gold_correct": false,
+   "http_delta_logit": -6.625,
+   "inprocess_delta_logit": -17.625
+  },
+  {
+   "source_hash": "-5264245856347500793",
+   "gold_correct": false,
+   "http_delta_logit": 4.4375,
+   "inprocess_delta_logit": 14.5
+  },
+  {
+   "source_hash": "-5143369852940537196",
+   "gold_correct": false,
+   "http_delta_logit": 1.875,
+   "inprocess_delta_logit": 14.125
+  },
+  {
+   "source_hash": "1562314669035819134",
+   "gold_correct": false,
+   "http_delta_logit": -7.125,
+   "inprocess_delta_logit": -15.9375
+  },
+  {
+   "source_hash": "2977555924003401228",
+   "gold_correct": false,
+   "http_delta_logit": -4.875,
+   "inprocess_delta_logit": 0.5
+  },
+  {
+   "source_hash": "-3728038078825888358",
+   "gold_correct": false,
+   "http_delta_logit": -6.0625,
+   "inprocess_delta_logit": -1.5
+  },
+  {
+   "source_hash": "1920093159822621249",
+   "gold_correct": false,
+   "http_delta_logit": -0.8125,
+   "inprocess_delta_logit": 6.75
+  },
+  {
+   "source_hash": "5317614601376507999",
+   "gold_correct": false,
+   "http_delta_logit": -5.0,
+   "inprocess_delta_logit": -9.25
+  },
+  {
+   "source_hash": "-8998349920321494981",
+   "gold_correct": false,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -15.5
+  },
+  {
+   "source_hash": "4056230334786061055",
+   "gold_correct": false,
+   "http_delta_logit": 0.0625,
+   "inprocess_delta_logit": 6.875
+  },
+  {
+   "source_hash": "5192332176162817676",
+   "gold_correct": false,
+   "http_delta_logit": -8.875,
+   "inprocess_delta_logit": -15.5625
+  },
+  {
+   "source_hash": "3422297559683921119",
+   "gold_correct": false,
+   "http_delta_logit": -5.75,
+   "inprocess_delta_logit": -5.125
+  },
+  {
+   "source_hash": "-7136018650091556183",
+   "gold_correct": false,
+   "http_delta_logit": -6.75,
+   "inprocess_delta_logit": -15.4375
+  },
+  {
+   "source_hash": "-2014528398761747688",
+   "gold_correct": false,
+   "http_delta_logit": 0.0,
+   "inprocess_delta_logit": 9.875
+  },
+  {
+   "source_hash": "-1078187655443328480",
+   "gold_correct": false,
+   "http_delta_logit": -7.75,
+   "inprocess_delta_logit": -19.5
+  },
+  {
+   "source_hash": "8093833109141532987",
+   "gold_correct": false,
+   "http_delta_logit": -6.75,
+   "inprocess_delta_logit": -14.625
+  },
+  {
+   "source_hash": "-3909940452763324555",
+   "gold_correct": false,
+   "http_delta_logit": -8.5625,
+   "inprocess_delta_logit": -15.25
+  },
+  {
+   "source_hash": "2977555924003401228",
+   "gold_correct": false,
+   "http_delta_logit": -4.9375,
+   "inprocess_delta_logit": 0.5
+  },
+  {
+   "source_hash": "3431622268585818234",
+   "gold_correct": false,
+   "http_delta_logit": -7.0625,
+   "inprocess_delta_logit": -18.0
+  },
+  {
+   "source_hash": "-3376143155477824168",
+   "gold_correct": false,
+   "http_delta_logit": -6.8125,
+   "inprocess_delta_logit": -16.625
+  },
+  {
+   "source_hash": "459228818001159374",
+   "gold_correct": false,
+   "http_delta_logit": -8.375,
+   "inprocess_delta_logit": -14.9375
+  },
+  {
+   "source_hash": "8093833109141532987",
+   "gold_correct": false,
+   "http_delta_logit": -6.75,
+   "inprocess_delta_logit": -14.625
+  },
+  {
+   "source_hash": "-1214608501924542550",
+   "gold_correct": false,
+   "http_delta_logit": 1.9375,
+   "inprocess_delta_logit": 13.75
+  },
+  {
+   "source_hash": "6300325216164344613",
+   "gold_correct": false,
+   "http_delta_logit": -7.4375,
+   "inprocess_delta_logit": -14.25
+  },
+  {
+   "source_hash": "7169813982270139706",
+   "gold_correct": false,
+   "http_delta_logit": -7.5625,
+   "inprocess_delta_logit": -16.375
+  },
+  {
+   "source_hash": "-8998349920321494981",
+   "gold_correct": false,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -15.5
+  },
+  {
+   "source_hash": "5917361818516225641",
+   "gold_correct": false,
+   "http_delta_logit": -3.5,
+   "inprocess_delta_logit": -1.625
+  },
+  {
+   "source_hash": "-3009788989770538934",
+   "gold_correct": false,
+   "http_delta_logit": -4.625,
+   "inprocess_delta_logit": -3.0
+  },
+  {
+   "source_hash": "-4699039786758708381",
+   "gold_correct": false,
+   "http_delta_logit": -6.625,
+   "inprocess_delta_logit": -7.375
+  },
+  {
+   "source_hash": "-4858751798030024738",
+   "gold_correct": false,
+   "http_delta_logit": -6.4375,
+   "inprocess_delta_logit": -12.4375
+  },
+  {
+   "source_hash": "8094291333472197819",
+   "gold_correct": false,
+   "http_delta_logit": -7.125,
+   "inprocess_delta_logit": -15.875
+  },
+  {
+   "source_hash": "-3783033882779338045",
+   "gold_correct": false,
+   "http_delta_logit": -6.125,
+   "inprocess_delta_logit": -15.125
+  },
+  {
+   "source_hash": "-5707283735840674461",
+   "gold_correct": false,
+   "http_delta_logit": -7.3125,
+   "inprocess_delta_logit": -16.25
+  },
+  {
+   "source_hash": "8482372419066555828",
+   "gold_correct": false,
+   "http_delta_logit": -6.625,
+   "inprocess_delta_logit": -14.3125
+  },
+  {
+   "source_hash": "-9220616641139829768",
+   "gold_correct": false,
+   "http_delta_logit": 4.3125,
+   "inprocess_delta_logit": 15.25
+  },
+  {
+   "source_hash": "-1591664706728494565",
+   "gold_correct": false,
+   "http_delta_logit": -6.1875,
+   "inprocess_delta_logit": -7.6875
+  },
+  {
+   "source_hash": "-2840472592539662222",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -10.0625
+  },
+  {
+   "source_hash": "5786341366301809586",
+   "gold_correct": false,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 19.5
+  },
+  {
+   "source_hash": "2499345294852930574",
+   "gold_correct": false,
+   "http_delta_logit": -2.4375,
+   "inprocess_delta_logit": 5.125
+  },
+  {
+   "source_hash": "418814117008049872",
+   "gold_correct": false,
+   "http_delta_logit": -6.125,
+   "inprocess_delta_logit": -15.0
+  },
+  {
+   "source_hash": "-7130508612480420143",
+   "gold_correct": false,
+   "http_delta_logit": -7.5625,
+   "inprocess_delta_logit": -10.1875
+  },
+  {
+   "source_hash": "6469463772361766897",
+   "gold_correct": false,
+   "http_delta_logit": -5.1875,
+   "inprocess_delta_logit": -6.125
+  },
+  {
+   "source_hash": "6469679282161564096",
+   "gold_correct": false,
+   "http_delta_logit": -6.3125,
+   "inprocess_delta_logit": -4.75
+  },
+  {
+   "source_hash": "-377642617398685061",
+   "gold_correct": false,
+   "http_delta_logit": -6.3125,
+   "inprocess_delta_logit": 1.0
+  },
+  {
+   "source_hash": "-6479555964312730039",
+   "gold_correct": false,
+   "http_delta_logit": -3.5,
+   "inprocess_delta_logit": 4.5
+  },
+  {
+   "source_hash": "7900303895796124133",
+   "gold_correct": false,
+   "http_delta_logit": 1.875,
+   "inprocess_delta_logit": 10.9375
+  },
+  {
+   "source_hash": "5064441541460524089",
+   "gold_correct": false,
+   "http_delta_logit": -6.875,
+   "inprocess_delta_logit": -13.5
+  },
+  {
+   "source_hash": "2399312476490492924",
+   "gold_correct": false,
+   "http_delta_logit": 0.9375,
+   "inprocess_delta_logit": 10.1875
+  },
+  {
+   "source_hash": "7327062369004942694",
+   "gold_correct": false,
+   "http_delta_logit": -6.375,
+   "inprocess_delta_logit": -6.625
+  },
+  {
+   "source_hash": "5096442524962729088",
+   "gold_correct": false,
+   "http_delta_logit": 6.0,
+   "inprocess_delta_logit": 13.625
+  },
+  {
+   "source_hash": "-600245752343393048",
+   "gold_correct": false,
+   "http_delta_logit": -3.0,
+   "inprocess_delta_logit": 2.875
+  },
+  {
+   "source_hash": "6065120235664225871",
+   "gold_correct": false,
+   "http_delta_logit": 7.5,
+   "inprocess_delta_logit": 14.5
+  },
+  {
+   "source_hash": "-4077944533051465647",
+   "gold_correct": false,
+   "http_delta_logit": -6.0,
+   "inprocess_delta_logit": 0.0
+  },
+  {
+   "source_hash": "6162042970817697121",
+   "gold_correct": false,
+   "http_delta_logit": -5.3125,
+   "inprocess_delta_logit": -1.625
+  },
+  {
+   "source_hash": "-4591826762072267059",
+   "gold_correct": false,
+   "http_delta_logit": -7.125,
+   "inprocess_delta_logit": -16.125
+  },
+  {
+   "source_hash": "1280712369480173598",
+   "gold_correct": false,
+   "http_delta_logit": -6.5625,
+   "inprocess_delta_logit": -11.4375
+  },
+  {
+   "source_hash": "5707986705293426036",
+   "gold_correct": false,
+   "http_delta_logit": -8.125,
+   "inprocess_delta_logit": -14.5625
+  },
+  {
+   "source_hash": "1280712369480173598",
+   "gold_correct": false,
+   "http_delta_logit": -6.5625,
+   "inprocess_delta_logit": -11.4375
+  },
+  {
+   "source_hash": "5607115764004371159",
+   "gold_correct": false,
+   "http_delta_logit": -2.8125,
+   "inprocess_delta_logit": 6.625
+  },
+  {
+   "source_hash": "1622472258652005960",
+   "gold_correct": false,
+   "http_delta_logit": -0.375,
+   "inprocess_delta_logit": 6.0
+  },
+  {
+   "source_hash": "6876387295575498679",
+   "gold_correct": false,
+   "http_delta_logit": -6.25,
+   "inprocess_delta_logit": -7.0
+  },
+  {
+   "source_hash": "-2620852269830615865",
+   "gold_correct": false,
+   "http_delta_logit": -7.875,
+   "inprocess_delta_logit": -16.125
+  },
+  {
+   "source_hash": "-1223279097604600550",
+   "gold_correct": false,
+   "http_delta_logit": -2.4375,
+   "inprocess_delta_logit": 3.0
+  },
+  {
+   "source_hash": "-6897374935575940300",
+   "gold_correct": false,
+   "http_delta_logit": -5.125,
+   "inprocess_delta_logit": 6.5625
+  },
+  {
+   "source_hash": "9006906279655281226",
+   "gold_correct": false,
+   "http_delta_logit": -3.4375,
+   "inprocess_delta_logit": 3.375
+  },
+  {
+   "source_hash": "-8327648608963838054",
+   "gold_correct": false,
+   "http_delta_logit": -5.25,
+   "inprocess_delta_logit": -3.25
+  },
+  {
+   "source_hash": "2399312476490492924",
+   "gold_correct": false,
+   "http_delta_logit": 0.9375,
+   "inprocess_delta_logit": -2.375
+  },
+  {
+   "source_hash": "-4009360976215746179",
+   "gold_correct": false,
+   "http_delta_logit": -0.25,
+   "inprocess_delta_logit": 5.5
+  },
+  {
+   "source_hash": "-2429326573496510585",
+   "gold_correct": false,
+   "http_delta_logit": -3.8125,
+   "inprocess_delta_logit": 9.0
+  },
+  {
+   "source_hash": "913650090037415183",
+   "gold_correct": false,
+   "http_delta_logit": 2.1875,
+   "inprocess_delta_logit": 16.375
+  },
+  {
+   "source_hash": "3479388801197233360",
+   "gold_correct": false,
+   "http_delta_logit": -6.0,
+   "inprocess_delta_logit": -14.25
+  },
+  {
+   "source_hash": "-6229993507024239555",
+   "gold_correct": false,
+   "http_delta_logit": -4.75,
+   "inprocess_delta_logit": 1.75
+  },
+  {
+   "source_hash": "-3024662734081104871",
+   "gold_correct": false,
+   "http_delta_logit": 0.625,
+   "inprocess_delta_logit": 10.0625
+  },
+  {
+   "source_hash": "8629469564922416443",
+   "gold_correct": false,
+   "http_delta_logit": 4.125,
+   "inprocess_delta_logit": 14.5
+  },
+  {
+   "source_hash": "2399312476490492924",
+   "gold_correct": false,
+   "http_delta_logit": 0.9375,
+   "inprocess_delta_logit": 5.125
+  },
+  {
+   "source_hash": "5658567192819689369",
+   "gold_correct": false,
+   "http_delta_logit": -7.125,
+   "inprocess_delta_logit": -18.875
+  },
+  {
+   "source_hash": "-7585625825975829948",
+   "gold_correct": false,
+   "http_delta_logit": -5.6875,
+   "inprocess_delta_logit": -0.125
+  },
+  {
+   "source_hash": "-2009688889393057549",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -10.0
+  },
+  {
+   "source_hash": "8113480689266829136",
+   "gold_correct": false,
+   "http_delta_logit": -7.5625,
+   "inprocess_delta_logit": -17.25
+  },
+  {
+   "source_hash": "5753822583476438813",
+   "gold_correct": false,
+   "http_delta_logit": -4.8125,
+   "inprocess_delta_logit": -4.625
+  },
+  {
+   "source_hash": "8961999093723306098",
+   "gold_correct": false,
+   "http_delta_logit": 2.125,
+   "inprocess_delta_logit": 9.6875
+  },
+  {
+   "source_hash": "-4187315748266568054",
+   "gold_correct": false,
+   "http_delta_logit": -7.0625,
+   "inprocess_delta_logit": -12.25
+  },
+  {
+   "source_hash": "-1094530570230804283",
+   "gold_correct": false,
+   "http_delta_logit": -4.25,
+   "inprocess_delta_logit": 0.75
+  },
+  {
+   "source_hash": "2574933636777089572",
+   "gold_correct": false,
+   "http_delta_logit": -6.8125,
+   "inprocess_delta_logit": -10.0625
+  },
+  {
+   "source_hash": "7212600198669652052",
+   "gold_correct": false,
+   "http_delta_logit": -6.5625,
+   "inprocess_delta_logit": -4.5
+  },
+  {
+   "source_hash": "-3341851019731432352",
+   "gold_correct": false,
+   "http_delta_logit": -3.875,
+   "inprocess_delta_logit": 5.25
+  },
+  {
+   "source_hash": "-5887269473284951682",
+   "gold_correct": false,
+   "http_delta_logit": 8.0,
+   "inprocess_delta_logit": 21.25
+  },
+  {
+   "source_hash": "3964485999911109163",
+   "gold_correct": false,
+   "http_delta_logit": 4.5625,
+   "inprocess_delta_logit": 13.0
+  },
+  {
+   "source_hash": "-1942798096377431811",
+   "gold_correct": false,
+   "http_delta_logit": 2.6875,
+   "inprocess_delta_logit": 12.25
+  },
+  {
+   "source_hash": "3687191575092709204",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -9.75
+  },
+  {
+   "source_hash": "-6856672436094607770",
+   "gold_correct": false,
+   "http_delta_logit": 2.875,
+   "inprocess_delta_logit": 12.8125
+  },
+  {
+   "source_hash": "6387054381147043526",
+   "gold_correct": false,
+   "http_delta_logit": -4.3125,
+   "inprocess_delta_logit": 1.5
+  },
+  {
+   "source_hash": "-7328233664540336852",
+   "gold_correct": false,
+   "http_delta_logit": -8.375,
+   "inprocess_delta_logit": -12.375
+  },
+  {
+   "source_hash": "-8480782340765628315",
+   "gold_correct": false,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -11.125
+  },
+  {
+   "source_hash": "6898147929419049143",
+   "gold_correct": false,
+   "http_delta_logit": 2.75,
+   "inprocess_delta_logit": 12.875
+  },
+  {
+   "source_hash": "8345408606217474751",
+   "gold_correct": false,
+   "http_delta_logit": -6.375,
+   "inprocess_delta_logit": -13.75
+  },
+  {
+   "source_hash": "8840398243527522481",
+   "gold_correct": false,
+   "http_delta_logit": -7.0625,
+   "inprocess_delta_logit": -8.625
+  },
+  {
+   "source_hash": "-5494378453005190950",
+   "gold_correct": false,
+   "http_delta_logit": 2.75,
+   "inprocess_delta_logit": 10.5
+  },
+  {
+   "source_hash": "4982223280215723472",
+   "gold_correct": false,
+   "http_delta_logit": 0.1875,
+   "inprocess_delta_logit": 9.9375
+  },
+  {
+   "source_hash": "-2741243899872236349",
+   "gold_correct": false,
+   "http_delta_logit": -4.5625,
+   "inprocess_delta_logit": 4.375
+  },
+  {
+   "source_hash": "-1356418167900441250",
+   "gold_correct": false,
+   "http_delta_logit": -5.9375,
+   "inprocess_delta_logit": -8.5
+  },
+  {
+   "source_hash": "7498225058412305951",
+   "gold_correct": false,
+   "http_delta_logit": -7.1875,
+   "inprocess_delta_logit": -8.75
+  },
+  {
+   "source_hash": "4808996178716873488",
+   "gold_correct": false,
+   "http_delta_logit": -5.75,
+   "inprocess_delta_logit": -4.0
+  },
+  {
+   "source_hash": "46072675932421057",
+   "gold_correct": false,
+   "http_delta_logit": -1.0,
+   "inprocess_delta_logit": 7.625
+  },
+  {
+   "source_hash": "3773583789529472912",
+   "gold_correct": false,
+   "http_delta_logit": -6.8125,
+   "inprocess_delta_logit": -14.875
+  },
+  {
+   "source_hash": "-2798719258523123288",
+   "gold_correct": false,
+   "http_delta_logit": 0.625,
+   "inprocess_delta_logit": 5.375
+  },
+  {
+   "source_hash": "-3837746537201907592",
+   "gold_correct": false,
+   "http_delta_logit": 0.3125,
+   "inprocess_delta_logit": 9.1875
+  },
+  {
+   "source_hash": "2240806119797194910",
+   "gold_correct": false,
+   "http_delta_logit": 4.9375,
+   "inprocess_delta_logit": 17.0
+  },
+  {
+   "source_hash": "-7171552209794958892",
+   "gold_correct": false,
+   "http_delta_logit": 2.5,
+   "inprocess_delta_logit": 6.25
+  },
+  {
+   "source_hash": "-580474582805442955",
+   "gold_correct": false,
+   "http_delta_logit": -1.6875,
+   "inprocess_delta_logit": 6.625
+  },
+  {
+   "source_hash": "4092510355324016603",
+   "gold_correct": false,
+   "http_delta_logit": 2.3125,
+   "inprocess_delta_logit": 14.3125
+  },
+  {
+   "source_hash": "4092510355324016603",
+   "gold_correct": false,
+   "http_delta_logit": 2.3125,
+   "inprocess_delta_logit": 14.3125
+  },
+  {
+   "source_hash": "-4900481599694115644",
+   "gold_correct": false,
+   "http_delta_logit": 8.6875,
+   "inprocess_delta_logit": 20.125
+  },
+  {
+   "source_hash": "-1119345389719451276",
+   "gold_correct": false,
+   "http_delta_logit": -7.6875,
+   "inprocess_delta_logit": -7.9375
+  },
+  {
+   "source_hash": "-7438057693589626737",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -9.9375
+  },
+  {
+   "source_hash": "1251288928947647289",
+   "gold_correct": false,
+   "http_delta_logit": -2.25,
+   "inprocess_delta_logit": 8.25
+  },
+  {
+   "source_hash": "-6365841831949730695",
+   "gold_correct": false,
+   "http_delta_logit": 2.875,
+   "inprocess_delta_logit": 12.875
+  },
+  {
+   "source_hash": "-2569687769945832",
+   "gold_correct": false,
+   "http_delta_logit": 2.9375,
+   "inprocess_delta_logit": 10.25
+  },
+  {
+   "source_hash": "2128320866800438050",
+   "gold_correct": false,
+   "http_delta_logit": 2.3125,
+   "inprocess_delta_logit": 14.3125
+  },
+  {
+   "source_hash": "-370508643664637013",
+   "gold_correct": false,
+   "http_delta_logit": -0.625,
+   "inprocess_delta_logit": 7.25
+  },
+  {
+   "source_hash": "-8594021372412744370",
+   "gold_correct": false,
+   "http_delta_logit": 5.375,
+   "inprocess_delta_logit": 18.75
+  },
+  {
+   "source_hash": "6599769698505575646",
+   "gold_correct": false,
+   "http_delta_logit": -6.9375,
+   "inprocess_delta_logit": 1.125
+  },
+  {
+   "source_hash": "-8338532672943971928",
+   "gold_correct": false,
+   "http_delta_logit": 0.9375,
+   "inprocess_delta_logit": 9.9375
+  },
+  {
+   "source_hash": "-9075348560170260909",
+   "gold_correct": false,
+   "http_delta_logit": -3.0625,
+   "inprocess_delta_logit": -0.25
+  },
+  {
+   "source_hash": "-5211143535291026660",
+   "gold_correct": false,
+   "http_delta_logit": -7.4375,
+   "inprocess_delta_logit": -13.125
+  },
+  {
+   "source_hash": "-5959170602620819479",
+   "gold_correct": false,
+   "http_delta_logit": -7.0625,
+   "inprocess_delta_logit": -2.75
+  },
+  {
+   "source_hash": "5300609828886042533",
+   "gold_correct": false,
+   "http_delta_logit": -6.8125,
+   "inprocess_delta_logit": 1.75
+  },
+  {
+   "source_hash": "3354280495470399550",
+   "gold_correct": false,
+   "http_delta_logit": -2.8125,
+   "inprocess_delta_logit": 4.75
+  },
+  {
+   "source_hash": "-7171683270012453994",
+   "gold_correct": false,
+   "http_delta_logit": -6.9375,
+   "inprocess_delta_logit": -11.125
+  },
+  {
+   "source_hash": "8407687517526731364",
+   "gold_correct": false,
+   "http_delta_logit": -6.875,
+   "inprocess_delta_logit": -11.5625
+  },
+  {
+   "source_hash": "-2569687769945832",
+   "gold_correct": false,
+   "http_delta_logit": 2.9375,
+   "inprocess_delta_logit": 3.625
+  },
+  {
+   "source_hash": "-2990593902128477929",
+   "gold_correct": false,
+   "http_delta_logit": -7.4375,
+   "inprocess_delta_logit": -15.375
+  },
+  {
+   "source_hash": "3826227231431813103",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -4.25
+  },
+  {
+   "source_hash": "-4739872092881174617",
+   "gold_correct": false,
+   "http_delta_logit": -5.4375,
+   "inprocess_delta_logit": -11.0
+  },
+  {
+   "source_hash": "2926866095095836490",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -5.875
+  },
+  {
+   "source_hash": "8445243632356020026",
+   "gold_correct": false,
+   "http_delta_logit": -4.3125,
+   "inprocess_delta_logit": 6.375
+  },
+  {
+   "source_hash": "9184085631487005832",
+   "gold_correct": false,
+   "http_delta_logit": 4.5625,
+   "inprocess_delta_logit": 19.5
+  },
+  {
+   "source_hash": "1081994031161848959",
+   "gold_correct": false,
+   "http_delta_logit": -2.625,
+   "inprocess_delta_logit": 6.375
+  },
+  {
+   "source_hash": "-2106355656327645088",
+   "gold_correct": false,
+   "http_delta_logit": 0.0625,
+   "inprocess_delta_logit": 7.1875
+  },
+  {
+   "source_hash": "1081994031161848959",
+   "gold_correct": false,
+   "http_delta_logit": -2.625,
+   "inprocess_delta_logit": 6.375
+  },
+  {
+   "source_hash": "1783508540209793719",
+   "gold_correct": false,
+   "http_delta_logit": -5.9375,
+   "inprocess_delta_logit": -0.625
+  },
+  {
+   "source_hash": "-287817784750176219",
+   "gold_correct": false,
+   "http_delta_logit": -0.75,
+   "inprocess_delta_logit": 7.25
+  },
+  {
+   "source_hash": "-4959388662018449654",
+   "gold_correct": false,
+   "http_delta_logit": -6.0,
+   "inprocess_delta_logit": -8.5625
+  },
+  {
+   "source_hash": "-5058801903624579119",
+   "gold_correct": false,
+   "http_delta_logit": 4.0,
+   "inprocess_delta_logit": 10.75
+  },
+  {
+   "source_hash": "7000495654339556085",
+   "gold_correct": false,
+   "http_delta_logit": -7.625,
+   "inprocess_delta_logit": -9.0625
+  },
+  {
+   "source_hash": "701824935552823819",
+   "gold_correct": false,
+   "http_delta_logit": -3.125,
+   "inprocess_delta_logit": 1.0
+  },
+  {
+   "source_hash": "4510626270099266591",
+   "gold_correct": false,
+   "http_delta_logit": -0.125,
+   "inprocess_delta_logit": 6.375
+  },
+  {
+   "source_hash": "-6713888919674982041",
+   "gold_correct": false,
+   "http_delta_logit": 5.5625,
+   "inprocess_delta_logit": 12.125
+  },
+  {
+   "source_hash": "-5298660904921688186",
+   "gold_correct": false,
+   "http_delta_logit": 1.0,
+   "inprocess_delta_logit": 12.375
+  },
+  {
+   "source_hash": "1289393856121869997",
+   "gold_correct": false,
+   "http_delta_logit": 6.8125,
+   "inprocess_delta_logit": 21.0
+  },
+  {
+   "source_hash": "8445243632356020026",
+   "gold_correct": false,
+   "http_delta_logit": -4.3125,
+   "inprocess_delta_logit": 6.375
+  },
+  {
+   "source_hash": "738125139148336131",
+   "gold_correct": false,
+   "http_delta_logit": -7.1875,
+   "inprocess_delta_logit": -8.25
+  },
+  {
+   "source_hash": "425468769483446701",
+   "gold_correct": false,
+   "http_delta_logit": 2.1875,
+   "inprocess_delta_logit": 11.0
+  },
+  {
+   "source_hash": "3984197420090359222",
+   "gold_correct": false,
+   "http_delta_logit": 8.6875,
+   "inprocess_delta_logit": 22.0
+  },
+  {
+   "source_hash": "7956780352653234244",
+   "gold_correct": false,
+   "http_delta_logit": 3.0625,
+   "inprocess_delta_logit": 6.375
+  },
+  {
+   "source_hash": "4417129118011258825",
+   "gold_correct": false,
+   "http_delta_logit": -4.125,
+   "inprocess_delta_logit": 0.25
+  },
+  {
+   "source_hash": "-7214159303195368661",
+   "gold_correct": false,
+   "http_delta_logit": 4.625,
+   "inprocess_delta_logit": 17.0
+  },
+  {
+   "source_hash": "-6743558940605825672",
+   "gold_correct": false,
+   "http_delta_logit": 0.5,
+   "inprocess_delta_logit": 6.1875
+  },
+  {
+   "source_hash": "8580618505393629061",
+   "gold_correct": false,
+   "http_delta_logit": -4.8125,
+   "inprocess_delta_logit": -0.875
+  },
+  {
+   "source_hash": "-7596718346510991253",
+   "gold_correct": false,
+   "http_delta_logit": -4.875,
+   "inprocess_delta_logit": -6.0
+  },
+  {
+   "source_hash": "-7297776670094404026",
+   "gold_correct": false,
+   "http_delta_logit": -3.0,
+   "inprocess_delta_logit": 7.25
+  },
+  {
+   "source_hash": "5244616135406645358",
+   "gold_correct": false,
+   "http_delta_logit": 2.0,
+   "inprocess_delta_logit": 10.0625
+  },
+  {
+   "source_hash": "5703760162117497314",
+   "gold_correct": false,
+   "http_delta_logit": -8.0625,
+   "inprocess_delta_logit": -12.1875
+  },
+  {
+   "source_hash": "-8917614230907125219",
+   "gold_correct": false,
+   "http_delta_logit": 3.8125,
+   "inprocess_delta_logit": 13.5
+  },
+  {
+   "source_hash": "-7524979377395668257",
+   "gold_correct": false,
+   "http_delta_logit": -5.875,
+   "inprocess_delta_logit": -7.875
+  },
+  {
+   "source_hash": "7448956282418237741",
+   "gold_correct": false,
+   "http_delta_logit": -1.875,
+   "inprocess_delta_logit": 0.0
+  },
+  {
+   "source_hash": "1684653436641572846",
+   "gold_correct": false,
+   "http_delta_logit": 5.5625,
+   "inprocess_delta_logit": 10.3125
+  },
+  {
+   "source_hash": "-9095153032992844125",
+   "gold_correct": false,
+   "http_delta_logit": -5.4375,
+   "inprocess_delta_logit": 0.875
+  },
+  {
+   "source_hash": "1644352886574577037",
+   "gold_correct": false,
+   "http_delta_logit": -2.5625,
+   "inprocess_delta_logit": 0.375
+  },
+  {
+   "source_hash": "5377370464997653682",
+   "gold_correct": false,
+   "http_delta_logit": -2.4375,
+   "inprocess_delta_logit": 4.375
+  },
+  {
+   "source_hash": "7448956282418237741",
+   "gold_correct": false,
+   "http_delta_logit": -1.875,
+   "inprocess_delta_logit": -1.75
+  },
+  {
+   "source_hash": "8043161639477968324",
+   "gold_correct": false,
+   "http_delta_logit": -7.6875,
+   "inprocess_delta_logit": -11.875
+  },
+  {
+   "source_hash": "-2624464980236847124",
+   "gold_correct": false,
+   "http_delta_logit": -6.9375,
+   "inprocess_delta_logit": -9.8125
+  },
+  {
+   "source_hash": "5400820467751436588",
+   "gold_correct": false,
+   "http_delta_logit": 2.25,
+   "inprocess_delta_logit": 13.0625
+  },
+  {
+   "source_hash": "4292179780000786967",
+   "gold_correct": false,
+   "http_delta_logit": 4.25,
+   "inprocess_delta_logit": 19.125
+  },
+  {
+   "source_hash": "8458781167322656027",
+   "gold_correct": false,
+   "http_delta_logit": -5.625,
+   "inprocess_delta_logit": -4.125
+  },
+  {
+   "source_hash": "3107332611515648677",
+   "gold_correct": false,
+   "http_delta_logit": -6.625,
+   "inprocess_delta_logit": -8.625
+  },
+  {
+   "source_hash": "7178703672778942026",
+   "gold_correct": false,
+   "http_delta_logit": -7.9375,
+   "inprocess_delta_logit": -18.375
+  },
+  {
+   "source_hash": "3672084371957372933",
+   "gold_correct": false,
+   "http_delta_logit": 3.625,
+   "inprocess_delta_logit": 16.125
+  },
+  {
+   "source_hash": "6104649844435798453",
+   "gold_correct": false,
+   "http_delta_logit": -5.0625,
+   "inprocess_delta_logit": 0.625
+  },
+  {
+   "source_hash": "-5915379763826597856",
+   "gold_correct": false,
+   "http_delta_logit": -5.25,
+   "inprocess_delta_logit": -7.125
+  },
+  {
+   "source_hash": "-5829083074713573448",
+   "gold_correct": false,
+   "http_delta_logit": -6.3125,
+   "inprocess_delta_logit": -0.625
+  },
+  {
+   "source_hash": "-2589553259824229459",
+   "gold_correct": false,
+   "http_delta_logit": -4.6875,
+   "inprocess_delta_logit": -3.75
+  },
+  {
+   "source_hash": "3934064133303539878",
+   "gold_correct": false,
+   "http_delta_logit": 6.6875,
+   "inprocess_delta_logit": 22.0
+  },
+  {
+   "source_hash": "5409522788897698829",
+   "gold_correct": false,
+   "http_delta_logit": -0.75,
+   "inprocess_delta_logit": 5.25
+  },
+  {
+   "source_hash": "2722541429990726790",
+   "gold_correct": false,
+   "http_delta_logit": -7.1875,
+   "inprocess_delta_logit": -14.8125
+  },
+  {
+   "source_hash": "-8141245330193114564",
+   "gold_correct": false,
+   "http_delta_logit": -5.25,
+   "inprocess_delta_logit": -6.125
+  },
+  {
+   "source_hash": "3973974428120976914",
+   "gold_correct": false,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -12.75
+  },
+  {
+   "source_hash": "2252561840351212394",
+   "gold_correct": false,
+   "http_delta_logit": 3.25,
+   "inprocess_delta_logit": 12.25
+  },
+  {
+   "source_hash": "2999851952539068373",
+   "gold_correct": false,
+   "http_delta_logit": -7.3125,
+   "inprocess_delta_logit": -8.75
+  },
+  {
+   "source_hash": "-7535791182284393162",
+   "gold_correct": false,
+   "http_delta_logit": -4.5625,
+   "inprocess_delta_logit": -1.0
+  },
+  {
+   "source_hash": "6346227701802518566",
+   "gold_correct": false,
+   "http_delta_logit": -3.6875,
+   "inprocess_delta_logit": 3.375
+  },
+  {
+   "source_hash": "321137675651475901",
+   "gold_correct": false,
+   "http_delta_logit": 7.1875,
+   "inprocess_delta_logit": 19.875
+  },
+  {
+   "source_hash": "1479107905830679581",
+   "gold_correct": false,
+   "http_delta_logit": 1.0625,
+   "inprocess_delta_logit": 9.75
+  },
+  {
+   "source_hash": "3663265692163446537",
+   "gold_correct": false,
+   "http_delta_logit": -5.75,
+   "inprocess_delta_logit": -2.625
+  },
+  {
+   "source_hash": "-4351975221749184693",
+   "gold_correct": false,
+   "http_delta_logit": 6.0625,
+   "inprocess_delta_logit": 19.25
+  },
+  {
+   "source_hash": "6660506638532761216",
+   "gold_correct": false,
+   "http_delta_logit": -1.9375,
+   "inprocess_delta_logit": 7.25
+  },
+  {
+   "source_hash": "2732316767503813444",
+   "gold_correct": false,
+   "http_delta_logit": 4.8125,
+   "inprocess_delta_logit": 15.1875
+  },
+  {
+   "source_hash": "3788213811393155556",
+   "gold_correct": false,
+   "http_delta_logit": 3.75,
+   "inprocess_delta_logit": 10.6875
+  },
+  {
+   "source_hash": "2572095338383275609",
+   "gold_correct": false,
+   "http_delta_logit": -6.5625,
+   "inprocess_delta_logit": -12.625
+  },
+  {
+   "source_hash": "9071666417578494359",
+   "gold_correct": false,
+   "http_delta_logit": -3.4375,
+   "inprocess_delta_logit": 5.5
+  },
+  {
+   "source_hash": "9171071122280494475",
+   "gold_correct": false,
+   "http_delta_logit": 3.4375,
+   "inprocess_delta_logit": 12.75
+  },
+  {
+   "source_hash": "-7325463482545607064",
+   "gold_correct": false,
+   "http_delta_logit": -3.875,
+   "inprocess_delta_logit": 6.375
+  },
+  {
+   "source_hash": "4752216296409539692",
+   "gold_correct": false,
+   "http_delta_logit": -2.3125,
+   "inprocess_delta_logit": 7.75
+  },
+  {
+   "source_hash": "2992278842630331197",
+   "gold_correct": false,
+   "http_delta_logit": 5.1875,
+   "inprocess_delta_logit": 21.125
+  },
+  {
+   "source_hash": "3962486394834351479",
+   "gold_correct": false,
+   "http_delta_logit": -2.125,
+   "inprocess_delta_logit": 5.25
+  },
+  {
+   "source_hash": "1395592913402547057",
+   "gold_correct": false,
+   "http_delta_logit": -3.25,
+   "inprocess_delta_logit": 4.125
+  },
+  {
+   "source_hash": "-8172516790559751020",
+   "gold_correct": false,
+   "http_delta_logit": -7.125,
+   "inprocess_delta_logit": -11.375
+  },
+  {
+   "source_hash": "4153626664361706715",
+   "gold_correct": false,
+   "http_delta_logit": -6.5625,
+   "inprocess_delta_logit": -10.3125
+  },
+  {
+   "source_hash": "-9106563557716223709",
+   "gold_correct": false,
+   "http_delta_logit": -7.4375,
+   "inprocess_delta_logit": -14.8125
+  },
+  {
+   "source_hash": "-8426462034980488310",
+   "gold_correct": false,
+   "http_delta_logit": -6.3125,
+   "inprocess_delta_logit": -0.875
+  },
+  {
+   "source_hash": "9106688410440907650",
+   "gold_correct": false,
+   "http_delta_logit": 2.6875,
+   "inprocess_delta_logit": 16.25
+  },
+  {
+   "source_hash": "6945200791704516321",
+   "gold_correct": false,
+   "http_delta_logit": 2.6875,
+   "inprocess_delta_logit": 13.75
+  },
+  {
+   "source_hash": "8040868078295689056",
+   "gold_correct": false,
+   "http_delta_logit": -6.875,
+   "inprocess_delta_logit": -17.25
+  },
+  {
+   "source_hash": "1142110265793306722",
+   "gold_correct": false,
+   "http_delta_logit": 3.625,
+   "inprocess_delta_logit": 17.25
+  },
+  {
+   "source_hash": "-1300266981055867583",
+   "gold_correct": false,
+   "http_delta_logit": 6.75,
+   "inprocess_delta_logit": 21.25
+  },
+  {
+   "source_hash": "-1771388998328084879",
+   "gold_correct": false,
+   "http_delta_logit": 2.875,
+   "inprocess_delta_logit": 9.5625
+  },
+  {
+   "source_hash": "-8077568448932480912",
+   "gold_correct": false,
+   "http_delta_logit": 2.9375,
+   "inprocess_delta_logit": 17.0
+  },
+  {
+   "source_hash": "-1771388998328084879",
+   "gold_correct": false,
+   "http_delta_logit": 2.875,
+   "inprocess_delta_logit": 9.5625
+  },
+  {
+   "source_hash": "-320610374394481812",
+   "gold_correct": false,
+   "http_delta_logit": 0.9375,
+   "inprocess_delta_logit": 11.25
+  },
+  {
+   "source_hash": "-2976276594695338189",
+   "gold_correct": false,
+   "http_delta_logit": -6.75,
+   "inprocess_delta_logit": -12.875
+  },
+  {
+   "source_hash": "516296838694090919",
+   "gold_correct": false,
+   "http_delta_logit": 4.875,
+   "inprocess_delta_logit": 20.75
+  },
+  {
+   "source_hash": "-6924975154579066643",
+   "gold_correct": false,
+   "http_delta_logit": 7.125,
+   "inprocess_delta_logit": 20.875
+  },
+  {
+   "source_hash": "-5723292336818413990",
+   "gold_correct": true,
+   "http_delta_logit": -8.4375,
+   "inprocess_delta_logit": -18.25
+  },
+  {
+   "source_hash": "3023420152269456075",
+   "gold_correct": true,
+   "http_delta_logit": 3.375,
+   "inprocess_delta_logit": 11.4375
+  },
+  {
+   "source_hash": "4977207248436322908",
+   "gold_correct": true,
+   "http_delta_logit": 4.5,
+   "inprocess_delta_logit": 19.0
+  },
+  {
+   "source_hash": "-2589553259824229459",
+   "gold_correct": false,
+   "http_delta_logit": -4.6875,
+   "inprocess_delta_logit": -3.75
+  },
+  {
+   "source_hash": "-4131313457450531252",
+   "gold_correct": true,
+   "http_delta_logit": -5.25,
+   "inprocess_delta_logit": -2.625
+  },
+  {
+   "source_hash": "3944392559249882705",
+   "gold_correct": true,
+   "http_delta_logit": 5.0625,
+   "inprocess_delta_logit": 17.875
+  },
+  {
+   "source_hash": "5753822583476438813",
+   "gold_correct": false,
+   "http_delta_logit": -4.8125,
+   "inprocess_delta_logit": -4.625
+  },
+  {
+   "source_hash": "-9183686990941252565",
+   "gold_correct": true,
+   "http_delta_logit": -2.0,
+   "inprocess_delta_logit": 9.0
+  },
+  {
+   "source_hash": "-6559306636877112436",
+   "gold_correct": true,
+   "http_delta_logit": 7.0,
+   "inprocess_delta_logit": 20.5
+  },
+  {
+   "source_hash": "-5549532700835154575",
+   "gold_correct": true,
+   "http_delta_logit": -6.0,
+   "inprocess_delta_logit": -4.625
+  },
+  {
+   "source_hash": "-5905947038727007613",
+   "gold_correct": true,
+   "http_delta_logit": 6.6875,
+   "inprocess_delta_logit": 21.25
+  },
+  {
+   "source_hash": "164802501236951686",
+   "gold_correct": false,
+   "http_delta_logit": 3.75,
+   "inprocess_delta_logit": 15.8125
+  },
+  {
+   "source_hash": "1127962858914986102",
+   "gold_correct": true,
+   "http_delta_logit": -1.875,
+   "inprocess_delta_logit": 7.3125
+  },
+  {
+   "source_hash": "-287817784750176219",
+   "gold_correct": false,
+   "http_delta_logit": -0.75,
+   "inprocess_delta_logit": 15.75
+  },
+  {
+   "source_hash": "737647142875491400",
+   "gold_correct": false,
+   "http_delta_logit": 3.8125,
+   "inprocess_delta_logit": 15.75
+  },
+  {
+   "source_hash": "4888180505448226930",
+   "gold_correct": true,
+   "http_delta_logit": -6.375,
+   "inprocess_delta_logit": -8.0625
+  },
+  {
+   "source_hash": "7340262247315701566",
+   "gold_correct": false,
+   "http_delta_logit": 1.4375,
+   "inprocess_delta_logit": 9.125
+  },
+  {
+   "source_hash": "-1168966325259203432",
+   "gold_correct": true,
+   "http_delta_logit": 6.4375,
+   "inprocess_delta_logit": 15.375
+  },
+  {
+   "source_hash": "1984065287987569333",
+   "gold_correct": false,
+   "http_delta_logit": -4.125,
+   "inprocess_delta_logit": 1.25
+  },
+  {
+   "source_hash": "-8765612515617598592",
+   "gold_correct": false,
+   "http_delta_logit": -7.3125,
+   "inprocess_delta_logit": -18.0
+  },
+  {
+   "source_hash": "-6900291188106588636",
+   "gold_correct": false,
+   "http_delta_logit": 2.3125,
+   "inprocess_delta_logit": -10.9375
+  },
+  {
+   "source_hash": "8602304581870421239",
+   "gold_correct": false,
+   "http_delta_logit": -5.8125,
+   "inprocess_delta_logit": -1.25
+  },
+  {
+   "source_hash": "7080285921714882292",
+   "gold_correct": true,
+   "http_delta_logit": -4.9375,
+   "inprocess_delta_logit": 1.625
+  },
+  {
+   "source_hash": "-7014930834672814664",
+   "gold_correct": true,
+   "http_delta_logit": -2.375,
+   "inprocess_delta_logit": 5.25
+  },
+  {
+   "source_hash": "-7284052700970948490",
+   "gold_correct": true,
+   "http_delta_logit": -1.375,
+   "inprocess_delta_logit": 7.25
+  },
+  {
+   "source_hash": "280262518910975144",
+   "gold_correct": true,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 17.125
+  },
+  {
+   "source_hash": "2160496840488104825",
+   "gold_correct": true,
+   "http_delta_logit": 7.0,
+   "inprocess_delta_logit": 17.875
+  },
+  {
+   "source_hash": "-1406509122767801694",
+   "gold_correct": true,
+   "http_delta_logit": -4.0,
+   "inprocess_delta_logit": 3.875
+  },
+  {
+   "source_hash": "-1780065629650635995",
+   "gold_correct": false,
+   "http_delta_logit": -5.6875,
+   "inprocess_delta_logit": 2.625
+  },
+  {
+   "source_hash": "-5031990337317338195",
+   "gold_correct": true,
+   "http_delta_logit": 1.4375,
+   "inprocess_delta_logit": 8.125
+  },
+  {
+   "source_hash": "-1489216062893547910",
+   "gold_correct": false,
+   "http_delta_logit": 6.625,
+   "inprocess_delta_logit": 21.125
+  },
+  {
+   "source_hash": "-3949999103161472467",
+   "gold_correct": false,
+   "http_delta_logit": -6.25,
+   "inprocess_delta_logit": -14.75
+  },
+  {
+   "source_hash": "-4890617181173102254",
+   "gold_correct": false,
+   "http_delta_logit": -5.75,
+   "inprocess_delta_logit": 3.875
+  },
+  {
+   "source_hash": "-5561501477152236428",
+   "gold_correct": false,
+   "http_delta_logit": -7.5,
+   "inprocess_delta_logit": -10.5
+  },
+  {
+   "source_hash": "4090220082580124104",
+   "gold_correct": true,
+   "http_delta_logit": 6.625,
+   "inprocess_delta_logit": 20.875
+  },
+  {
+   "source_hash": "49729615794078017",
+   "gold_correct": false,
+   "http_delta_logit": -5.8125,
+   "inprocess_delta_logit": -4.75
+  },
+  {
+   "source_hash": "3968546960360489435",
+   "gold_correct": true,
+   "http_delta_logit": 5.5625,
+   "inprocess_delta_logit": 19.0
+  },
+  {
+   "source_hash": "-5263512109928303944",
+   "gold_correct": false,
+   "http_delta_logit": -6.875,
+   "inprocess_delta_logit": -11.375
+  },
+  {
+   "source_hash": "5759420772233239633",
+   "gold_correct": true,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -16.5
+  },
+  {
+   "source_hash": "939145158058868901",
+   "gold_correct": false,
+   "http_delta_logit": -1.3125,
+   "inprocess_delta_logit": 7.5625
+  },
+  {
+   "source_hash": "2197704957443961708",
+   "gold_correct": true,
+   "http_delta_logit": -6.0,
+   "inprocess_delta_logit": -10.8125
+  },
+  {
+   "source_hash": "-5684921158674873885",
+   "gold_correct": true,
+   "http_delta_logit": -7.125,
+   "inprocess_delta_logit": -8.4375
+  },
+  {
+   "source_hash": "-2523740338347555904",
+   "gold_correct": false,
+   "http_delta_logit": 4.8125,
+   "inprocess_delta_logit": 11.75
+  },
+  {
+   "source_hash": "-1894512899309697017",
+   "gold_correct": false,
+   "http_delta_logit": -9.3125,
+   "inprocess_delta_logit": -15.625
+  },
+  {
+   "source_hash": "-4361709804206109282",
+   "gold_correct": true,
+   "http_delta_logit": -6.5,
+   "inprocess_delta_logit": -6.125
+  },
+  {
+   "source_hash": "7490102736422761274",
+   "gold_correct": false,
+   "http_delta_logit": -4.0,
+   "inprocess_delta_logit": 2.625
+  },
+  {
+   "source_hash": "361000139328782049",
+   "gold_correct": true,
+   "http_delta_logit": 8.0,
+   "inprocess_delta_logit": 22.25
+  },
+  {
+   "source_hash": "-2021455773235937612",
+   "gold_correct": false,
+   "http_delta_logit": -2.0,
+   "inprocess_delta_logit": 8.125
+  },
+  {
+   "source_hash": "-73177782039695817",
+   "gold_correct": false,
+   "http_delta_logit": -1.125,
+   "inprocess_delta_logit": 10.0625
+  },
+  {
+   "source_hash": "6721143057983204114",
+   "gold_correct": true,
+   "http_delta_logit": 6.8125,
+   "inprocess_delta_logit": 21.75
+  },
+  {
+   "source_hash": "-2458387722697583240",
+   "gold_correct": true,
+   "http_delta_logit": 5.3125,
+   "inprocess_delta_logit": 18.375
+  },
+  {
+   "source_hash": "1325283732043120557",
+   "gold_correct": false,
+   "http_delta_logit": 6.0625,
+   "inprocess_delta_logit": 16.375
+  },
+  {
+   "source_hash": "-2824836581765573593",
+   "gold_correct": false,
+   "http_delta_logit": -5.875,
+   "inprocess_delta_logit": -6.25
+  },
+  {
+   "source_hash": "-1393553068546678256",
+   "gold_correct": false,
+   "http_delta_logit": -3.3125,
+   "inprocess_delta_logit": 3.375
+  },
+  {
+   "source_hash": "-6202371266986938978",
+   "gold_correct": false,
+   "http_delta_logit": -1.6875,
+   "inprocess_delta_logit": 7.0
+  },
+  {
+   "source_hash": "2159888898067879335",
+   "gold_correct": true,
+   "http_delta_logit": -3.0,
+   "inprocess_delta_logit": 5.0
+  },
+  {
+   "source_hash": "-7146187314586793512",
+   "gold_correct": true,
+   "http_delta_logit": 7.875,
+   "inprocess_delta_logit": 21.125
+  },
+  {
+   "source_hash": "655996215082211869",
+   "gold_correct": true,
+   "http_delta_logit": -2.8125,
+   "inprocess_delta_logit": 5.0
+  },
+  {
+   "source_hash": "-2822667322074971509",
+   "gold_correct": true,
+   "http_delta_logit": -7.6875,
+   "inprocess_delta_logit": -10.875
+  },
+  {
+   "source_hash": "-4084956313184641813",
+   "gold_correct": true,
+   "http_delta_logit": 5.0625,
+   "inprocess_delta_logit": 16.125
+  }
+ ],
+ "fit_rows": [
+  {
+   "source_hash": "5601073623556076320",
+   "gold_correct": true,
+   "http_delta_logit": -5.25,
+   "inprocess_delta_logit": -5.25
+  },
+  {
+   "source_hash": "-4580803790573543470",
+   "gold_correct": false,
+   "http_delta_logit": 3.875,
+   "inprocess_delta_logit": 15.75
+  },
+  {
+   "source_hash": "-5056214755032734313",
+   "gold_correct": true,
+   "http_delta_logit": 6.4375,
+   "inprocess_delta_logit": 20.75
+  },
+  {
+   "source_hash": "-8814819703060879711",
+   "gold_correct": false,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -13.4375
+  },
+  {
+   "source_hash": "8069169015489853021",
+   "gold_correct": false,
+   "http_delta_logit": -7.9375,
+   "inprocess_delta_logit": -17.125
+  },
+  {
+   "source_hash": "-990239902884246073",
+   "gold_correct": false,
+   "http_delta_logit": -4.25,
+   "inprocess_delta_logit": 6.0
+  },
+  {
+   "source_hash": "7451214931467211889",
+   "gold_correct": true,
+   "http_delta_logit": 5.4375,
+   "inprocess_delta_logit": 15.9375
+  },
+  {
+   "source_hash": "5244870600622285456",
+   "gold_correct": true,
+   "http_delta_logit": -5.6875,
+   "inprocess_delta_logit": -9.1875
+  },
+  {
+   "source_hash": "3768689485305047324",
+   "gold_correct": false,
+   "http_delta_logit": -3.5,
+   "inprocess_delta_logit": 6.875
+  },
+  {
+   "source_hash": "4045850545731946635",
+   "gold_correct": true,
+   "http_delta_logit": -2.25,
+   "inprocess_delta_logit": 9.0625
+  },
+  {
+   "source_hash": "2368859852508531748",
+   "gold_correct": false,
+   "http_delta_logit": 2.75,
+   "inprocess_delta_logit": 10.9375
+  },
+  {
+   "source_hash": "-2226472435712451858",
+   "gold_correct": true,
+   "http_delta_logit": 7.4375,
+   "inprocess_delta_logit": 21.375
+  },
+  {
+   "source_hash": "8214821856789384105",
+   "gold_correct": false,
+   "http_delta_logit": -6.0625,
+   "inprocess_delta_logit": -4.125
+  },
+  {
+   "source_hash": "-5208716673575817847",
+   "gold_correct": false,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -16.25
+  },
+  {
+   "source_hash": "-5747868344716695718",
+   "gold_correct": true,
+   "http_delta_logit": 3.6875,
+   "inprocess_delta_logit": 19.5
+  },
+  {
+   "source_hash": "-1481378238491439238",
+   "gold_correct": true,
+   "http_delta_logit": 2.9375,
+   "inprocess_delta_logit": 14.875
+  },
+  {
+   "source_hash": "-4028433384614887218",
+   "gold_correct": true,
+   "http_delta_logit": -5.375,
+   "inprocess_delta_logit": -3.875
+  },
+  {
+   "source_hash": "-7929404477699102365",
+   "gold_correct": true,
+   "http_delta_logit": 0.625,
+   "inprocess_delta_logit": 12.875
+  },
+  {
+   "source_hash": "-1553891885455491898",
+   "gold_correct": false,
+   "http_delta_logit": 3.125,
+   "inprocess_delta_logit": 11.25
+  },
+  {
+   "source_hash": "-4812890360968304568",
+   "gold_correct": false,
+   "http_delta_logit": 5.25,
+   "inprocess_delta_logit": 15.5
+  },
+  {
+   "source_hash": "6542766808151237286",
+   "gold_correct": true,
+   "http_delta_logit": 7.9375,
+   "inprocess_delta_logit": 19.625
+  },
+  {
+   "source_hash": "-1182015383065271101",
+   "gold_correct": true,
+   "http_delta_logit": -5.375,
+   "inprocess_delta_logit": 0.375
+  },
+  {
+   "source_hash": "-7049332465899245273",
+   "gold_correct": true,
+   "http_delta_logit": 7.75,
+   "inprocess_delta_logit": 21.5
+  },
+  {
+   "source_hash": "-564655977488713882",
+   "gold_correct": false,
+   "http_delta_logit": -0.0625,
+   "inprocess_delta_logit": 6.25
+  },
+  {
+   "source_hash": "-4109779665116001026",
+   "gold_correct": false,
+   "http_delta_logit": -2.6875,
+   "inprocess_delta_logit": 7.25
+  },
+  {
+   "source_hash": "-910994447678537738",
+   "gold_correct": true,
+   "http_delta_logit": -5.8125,
+   "inprocess_delta_logit": 3.0
+  },
+  {
+   "source_hash": "-2779568897113234854",
+   "gold_correct": true,
+   "http_delta_logit": 4.75,
+   "inprocess_delta_logit": 19.125
+  },
+  {
+   "source_hash": "6611954052545840028",
+   "gold_correct": true,
+   "http_delta_logit": -5.0,
+   "inprocess_delta_logit": 0.5
+  },
+  {
+   "source_hash": "7569425262853005911",
+   "gold_correct": false,
+   "http_delta_logit": -6.25,
+   "inprocess_delta_logit": -15.6875
+  },
+  {
+   "source_hash": "-7708287577181604897",
+   "gold_correct": true,
+   "http_delta_logit": -2.75,
+   "inprocess_delta_logit": 0.375
+  },
+  {
+   "source_hash": "7109041703193363206",
+   "gold_correct": true,
+   "http_delta_logit": -3.625,
+   "inprocess_delta_logit": 8.8125
+  },
+  {
+   "source_hash": "9099316517578732997",
+   "gold_correct": true,
+   "http_delta_logit": 5.75,
+   "inprocess_delta_logit": 20.25
+  },
+  {
+   "source_hash": "-7327691813241456682",
+   "gold_correct": true,
+   "http_delta_logit": 7.3125,
+   "inprocess_delta_logit": 18.0
+  },
+  {
+   "source_hash": "-8098020440492611615",
+   "gold_correct": true,
+   "http_delta_logit": -7.0625,
+   "inprocess_delta_logit": -9.625
+  },
+  {
+   "source_hash": "-490694033621333146",
+   "gold_correct": false,
+   "http_delta_logit": -3.375,
+   "inprocess_delta_logit": 3.5
+  },
+  {
+   "source_hash": "-1932751352774896694",
+   "gold_correct": false,
+   "http_delta_logit": -7.6875,
+   "inprocess_delta_logit": -17.75
+  },
+  {
+   "source_hash": "4024870748278643831",
+   "gold_correct": true,
+   "http_delta_logit": 5.6875,
+   "inprocess_delta_logit": 15.6875
+  },
+  {
+   "source_hash": "3181900308834282024",
+   "gold_correct": false,
+   "http_delta_logit": 3.25,
+   "inprocess_delta_logit": 15.375
+  },
+  {
+   "source_hash": "3759069689773230046",
+   "gold_correct": false,
+   "http_delta_logit": -6.5,
+   "inprocess_delta_logit": -10.375
+  },
+  {
+   "source_hash": "8861000254770653590",
+   "gold_correct": true,
+   "http_delta_logit": -2.75,
+   "inprocess_delta_logit": 5.875
+  },
+  {
+   "source_hash": "-1659878359720044016",
+   "gold_correct": false,
+   "http_delta_logit": -6.3125,
+   "inprocess_delta_logit": -4.375
+  },
+  {
+   "source_hash": "8747978650885615130",
+   "gold_correct": true,
+   "http_delta_logit": -7.75,
+   "inprocess_delta_logit": -15.5
+  },
+  {
+   "source_hash": "7150487612531413214",
+   "gold_correct": true,
+   "http_delta_logit": -3.6875,
+   "inprocess_delta_logit": 5.5
+  },
+  {
+   "source_hash": "4468451612869951764",
+   "gold_correct": true,
+   "http_delta_logit": -8.0,
+   "inprocess_delta_logit": -14.9375
+  },
+  {
+   "source_hash": "-89611334224478256",
+   "gold_correct": false,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -18.5
+  },
+  {
+   "source_hash": "5594748854765064867",
+   "gold_correct": true,
+   "http_delta_logit": 3.625,
+   "inprocess_delta_logit": 14.5
+  },
+  {
+   "source_hash": "8535955311903806747",
+   "gold_correct": false,
+   "http_delta_logit": -6.625,
+   "inprocess_delta_logit": -17.0
+  },
+  {
+   "source_hash": "2183065739722093909",
+   "gold_correct": true,
+   "http_delta_logit": 4.4375,
+   "inprocess_delta_logit": 15.5
+  },
+  {
+   "source_hash": "-6771466981096975891",
+   "gold_correct": true,
+   "http_delta_logit": 6.0625,
+   "inprocess_delta_logit": 20.375
+  },
+  {
+   "source_hash": "3339879099964216000",
+   "gold_correct": false,
+   "http_delta_logit": -6.0,
+   "inprocess_delta_logit": -4.875
+  },
+  {
+   "source_hash": "-922382054072634415",
+   "gold_correct": true,
+   "http_delta_logit": -7.1875,
+   "inprocess_delta_logit": -7.9375
+  },
+  {
+   "source_hash": "470294221403012450",
+   "gold_correct": false,
+   "http_delta_logit": -8.5,
+   "inprocess_delta_logit": -7.5
+  },
+  {
+   "source_hash": "7375068093964375709",
+   "gold_correct": false,
+   "http_delta_logit": 6.125,
+   "inprocess_delta_logit": 19.0
+  },
+  {
+   "source_hash": "1095129517427259895",
+   "gold_correct": false,
+   "http_delta_logit": -2.75,
+   "inprocess_delta_logit": 2.5
+  },
+  {
+   "source_hash": "-3348847951721232043",
+   "gold_correct": false,
+   "http_delta_logit": -6.1875,
+   "inprocess_delta_logit": -11.6875
+  },
+  {
+   "source_hash": "4636142904772158282",
+   "gold_correct": false,
+   "http_delta_logit": -7.1875,
+   "inprocess_delta_logit": -17.25
+  },
+  {
+   "source_hash": "4813006385011573323",
+   "gold_correct": true,
+   "http_delta_logit": 2.6875,
+   "inprocess_delta_logit": 12.0
+  },
+  {
+   "source_hash": "-2892225387726103364",
+   "gold_correct": false,
+   "http_delta_logit": -5.625,
+   "inprocess_delta_logit": -4.5
+  },
+  {
+   "source_hash": "5857124676221826815",
+   "gold_correct": false,
+   "http_delta_logit": -6.5,
+   "inprocess_delta_logit": 2.75
+  },
+  {
+   "source_hash": "2836004423304789967",
+   "gold_correct": false,
+   "http_delta_logit": -6.75,
+   "inprocess_delta_logit": -15.6875
+  },
+  {
+   "source_hash": "-5144257857118793221",
+   "gold_correct": false,
+   "http_delta_logit": 2.4375,
+   "inprocess_delta_logit": 7.8125
+  },
+  {
+   "source_hash": "2811030332756192705",
+   "gold_correct": true,
+   "http_delta_logit": 6.75,
+   "inprocess_delta_logit": 18.0
+  },
+  {
+   "source_hash": "1369231537414676522",
+   "gold_correct": false,
+   "http_delta_logit": -7.1875,
+   "inprocess_delta_logit": -13.5625
+  },
+  {
+   "source_hash": "-4330148606022851533",
+   "gold_correct": false,
+   "http_delta_logit": -0.1875,
+   "inprocess_delta_logit": 9.4375
+  },
+  {
+   "source_hash": "3866355557395864660",
+   "gold_correct": false,
+   "http_delta_logit": 4.875,
+   "inprocess_delta_logit": 14.25
+  },
+  {
+   "source_hash": "528715347526272581",
+   "gold_correct": false,
+   "http_delta_logit": -3.6875,
+   "inprocess_delta_logit": 8.125
+  },
+  {
+   "source_hash": "-8284544958407804413",
+   "gold_correct": true,
+   "http_delta_logit": 2.5625,
+   "inprocess_delta_logit": 10.0
+  },
+  {
+   "source_hash": "8986575265707367476",
+   "gold_correct": true,
+   "http_delta_logit": 5.875,
+   "inprocess_delta_logit": 18.5
+  },
+  {
+   "source_hash": "-3645840274648846839",
+   "gold_correct": true,
+   "http_delta_logit": -5.8125,
+   "inprocess_delta_logit": -3.25
+  },
+  {
+   "source_hash": "636027516011892079",
+   "gold_correct": true,
+   "http_delta_logit": -3.875,
+   "inprocess_delta_logit": 5.875
+  },
+  {
+   "source_hash": "789343938633691623",
+   "gold_correct": true,
+   "http_delta_logit": -1.6875,
+   "inprocess_delta_logit": 4.625
+  },
+  {
+   "source_hash": "-7045962629886753714",
+   "gold_correct": true,
+   "http_delta_logit": -7.3125,
+   "inprocess_delta_logit": -16.5
+  },
+  {
+   "source_hash": "1349458351847516132",
+   "gold_correct": false,
+   "http_delta_logit": -8.25,
+   "inprocess_delta_logit": -11.0
+  },
+  {
+   "source_hash": "6042903765601570046",
+   "gold_correct": true,
+   "http_delta_logit": 4.4375,
+   "inprocess_delta_logit": 18.375
+  },
+  {
+   "source_hash": "-3040912086942886178",
+   "gold_correct": true,
+   "http_delta_logit": 5.75,
+   "inprocess_delta_logit": 19.5
+  },
+  {
+   "source_hash": "6702955212850006582",
+   "gold_correct": false,
+   "http_delta_logit": 4.875,
+   "inprocess_delta_logit": 12.75
+  },
+  {
+   "source_hash": "5732669812667545070",
+   "gold_correct": true,
+   "http_delta_logit": 6.5,
+   "inprocess_delta_logit": 15.75
+  },
+  {
+   "source_hash": "4541897926230478817",
+   "gold_correct": true,
+   "http_delta_logit": -6.9375,
+   "inprocess_delta_logit": -2.5
+  },
+  {
+   "source_hash": "1980268779330551474",
+   "gold_correct": true,
+   "http_delta_logit": 5.9375,
+   "inprocess_delta_logit": 17.5
+  },
+  {
+   "source_hash": "2373855887586096140",
+   "gold_correct": true,
+   "http_delta_logit": -1.875,
+   "inprocess_delta_logit": 3.125
+  },
+  {
+   "source_hash": "3152833976359722191",
+   "gold_correct": false,
+   "http_delta_logit": 3.6875,
+   "inprocess_delta_logit": 16.125
+  },
+  {
+   "source_hash": "6853724326166553395",
+   "gold_correct": true,
+   "http_delta_logit": 2.875,
+   "inprocess_delta_logit": 11.125
+  },
+  {
+   "source_hash": "-6236362120738304954",
+   "gold_correct": false,
+   "http_delta_logit": 1.0625,
+   "inprocess_delta_logit": 9.5
+  },
+  {
+   "source_hash": "2493146963769862924",
+   "gold_correct": true,
+   "http_delta_logit": 6.5,
+   "inprocess_delta_logit": 16.625
+  },
+  {
+   "source_hash": "-8564133023007976974",
+   "gold_correct": false,
+   "http_delta_logit": 1.6875,
+   "inprocess_delta_logit": 9.625
+  },
+  {
+   "source_hash": "-6519526513209739151",
+   "gold_correct": false,
+   "http_delta_logit": 4.1875,
+   "inprocess_delta_logit": 14.625
+  },
+  {
+   "source_hash": "-8794647816703327039",
+   "gold_correct": true,
+   "http_delta_logit": -4.4375,
+   "inprocess_delta_logit": 1.5
+  },
+  {
+   "source_hash": "3556236368272379237",
+   "gold_correct": true,
+   "http_delta_logit": 7.0625,
+   "inprocess_delta_logit": 19.0
+  },
+  {
+   "source_hash": "-4703502050168573612",
+   "gold_correct": true,
+   "http_delta_logit": 3.6875,
+   "inprocess_delta_logit": 12.0
+  },
+  {
+   "source_hash": "3467743521880692586",
+   "gold_correct": false,
+   "http_delta_logit": 7.0,
+   "inprocess_delta_logit": 21.0
+  },
+  {
+   "source_hash": "390671326274498937",
+   "gold_correct": true,
+   "http_delta_logit": 2.75,
+   "inprocess_delta_logit": 12.5625
+  },
+  {
+   "source_hash": "-8141453282787139669",
+   "gold_correct": true,
+   "http_delta_logit": -7.6875,
+   "inprocess_delta_logit": -2.625
+  },
+  {
+   "source_hash": "2911779014081228413",
+   "gold_correct": false,
+   "http_delta_logit": -2.8125,
+   "inprocess_delta_logit": 4.5
+  },
+  {
+   "source_hash": "-4820636289692551325",
+   "gold_correct": true,
+   "http_delta_logit": 2.75,
+   "inprocess_delta_logit": 12.1875
+  },
+  {
+   "source_hash": "6944556960386312591",
+   "gold_correct": false,
+   "http_delta_logit": -7.0625,
+   "inprocess_delta_logit": -15.625
+  },
+  {
+   "source_hash": "3232179606577535815",
+   "gold_correct": false,
+   "http_delta_logit": 0.1875,
+   "inprocess_delta_logit": 8.75
+  },
+  {
+   "source_hash": "5677214721172774204",
+   "gold_correct": false,
+   "http_delta_logit": 5.375,
+   "inprocess_delta_logit": 18.375
+  },
+  {
+   "source_hash": "7068504011396344415",
+   "gold_correct": true,
+   "http_delta_logit": 3.625,
+   "inprocess_delta_logit": 15.75
+  },
+  {
+   "source_hash": "-4381980141992218112",
+   "gold_correct": false,
+   "http_delta_logit": 0.0625,
+   "inprocess_delta_logit": 10.25
+  },
+  {
+   "source_hash": "-2800166750101112336",
+   "gold_correct": false,
+   "http_delta_logit": 2.25,
+   "inprocess_delta_logit": 14.0625
+  },
+  {
+   "source_hash": "-8399105858799351624",
+   "gold_correct": true,
+   "http_delta_logit": -7.875,
+   "inprocess_delta_logit": -12.75
+  },
+  {
+   "source_hash": "-6320073933528116621",
+   "gold_correct": true,
+   "http_delta_logit": 4.625,
+   "inprocess_delta_logit": 15.75
+  },
+  {
+   "source_hash": "8078357897641156953",
+   "gold_correct": true,
+   "http_delta_logit": 3.6875,
+   "inprocess_delta_logit": 16.5
+  },
+  {
+   "source_hash": "1827237357938105618",
+   "gold_correct": false,
+   "http_delta_logit": -5.125,
+   "inprocess_delta_logit": -9.1875
+  },
+  {
+   "source_hash": "-8769488009320710220",
+   "gold_correct": true,
+   "http_delta_logit": -4.0,
+   "inprocess_delta_logit": 7.3125
+  },
+  {
+   "source_hash": "3223310448088516676",
+   "gold_correct": true,
+   "http_delta_logit": 6.4375,
+   "inprocess_delta_logit": 20.625
+  },
+  {
+   "source_hash": "7440216925586820264",
+   "gold_correct": false,
+   "http_delta_logit": 2.0625,
+   "inprocess_delta_logit": 11.75
+  },
+  {
+   "source_hash": "5996173704544825407",
+   "gold_correct": true,
+   "http_delta_logit": 5.6875,
+   "inprocess_delta_logit": 14.625
+  },
+  {
+   "source_hash": "-8072335475306737079",
+   "gold_correct": true,
+   "http_delta_logit": 3.5625,
+   "inprocess_delta_logit": 17.25
+  },
+  {
+   "source_hash": "-7402452817592975290",
+   "gold_correct": true,
+   "http_delta_logit": 3.4375,
+   "inprocess_delta_logit": 15.9375
+  },
+  {
+   "source_hash": "-1760589562781975048",
+   "gold_correct": false,
+   "http_delta_logit": 4.3125,
+   "inprocess_delta_logit": 12.375
+  },
+  {
+   "source_hash": "-3885400526548150518",
+   "gold_correct": true,
+   "http_delta_logit": 6.0625,
+   "inprocess_delta_logit": 21.0
+  },
+  {
+   "source_hash": "-8965116171778918199",
+   "gold_correct": true,
+   "http_delta_logit": 4.25,
+   "inprocess_delta_logit": 13.25
+  },
+  {
+   "source_hash": "-5070564945578574494",
+   "gold_correct": true,
+   "http_delta_logit": 5.375,
+   "inprocess_delta_logit": 13.5
+  },
+  {
+   "source_hash": "1932280550364823147",
+   "gold_correct": true,
+   "http_delta_logit": 2.375,
+   "inprocess_delta_logit": 11.0625
+  },
+  {
+   "source_hash": "-5772468211120519841",
+   "gold_correct": true,
+   "http_delta_logit": -3.625,
+   "inprocess_delta_logit": 8.9375
+  },
+  {
+   "source_hash": "-7384985783742457771",
+   "gold_correct": true,
+   "http_delta_logit": 4.875,
+   "inprocess_delta_logit": 14.875
+  },
+  {
+   "source_hash": "-5696097222836819710",
+   "gold_correct": false,
+   "http_delta_logit": 1.8125,
+   "inprocess_delta_logit": 8.0
+  },
+  {
+   "source_hash": "8904766982827470176",
+   "gold_correct": true,
+   "http_delta_logit": 2.8125,
+   "inprocess_delta_logit": 11.75
+  },
+  {
+   "source_hash": "-171795894170402959",
+   "gold_correct": true,
+   "http_delta_logit": -3.0625,
+   "inprocess_delta_logit": 1.875
+  },
+  {
+   "source_hash": "-8939197406483207121",
+   "gold_correct": true,
+   "http_delta_logit": -6.25,
+   "inprocess_delta_logit": 3.0
+  },
+  {
+   "source_hash": "-5260206708128793295",
+   "gold_correct": false,
+   "http_delta_logit": -4.625,
+   "inprocess_delta_logit": -4.5625
+  },
+  {
+   "source_hash": "1917940374957964327",
+   "gold_correct": false,
+   "http_delta_logit": -4.6875,
+   "inprocess_delta_logit": 3.25
+  },
+  {
+   "source_hash": "-6633220514524575207",
+   "gold_correct": false,
+   "http_delta_logit": -7.4375,
+   "inprocess_delta_logit": -11.75
+  },
+  {
+   "source_hash": "-8034536910902245637",
+   "gold_correct": true,
+   "http_delta_logit": 6.5,
+   "inprocess_delta_logit": 21.0
+  },
+  {
+   "source_hash": "-7883748154064523079",
+   "gold_correct": true,
+   "http_delta_logit": -7.625,
+   "inprocess_delta_logit": -14.875
+  },
+  {
+   "source_hash": "-653609023554768315",
+   "gold_correct": false,
+   "http_delta_logit": -4.625,
+   "inprocess_delta_logit": -0.25
+  },
+  {
+   "source_hash": "-8089071794053193044",
+   "gold_correct": true,
+   "http_delta_logit": 5.25,
+   "inprocess_delta_logit": 14.3125
+  },
+  {
+   "source_hash": "-8932121659635579858",
+   "gold_correct": false,
+   "http_delta_logit": 5.1875,
+   "inprocess_delta_logit": 17.0
+  },
+  {
+   "source_hash": "5959835473301879901",
+   "gold_correct": true,
+   "http_delta_logit": 7.375,
+   "inprocess_delta_logit": 20.0
+  },
+  {
+   "source_hash": "-5574473642642080922",
+   "gold_correct": false,
+   "http_delta_logit": -4.0625,
+   "inprocess_delta_logit": 6.25
+  },
+  {
+   "source_hash": "7549780038321820359",
+   "gold_correct": true,
+   "http_delta_logit": -4.0625,
+   "inprocess_delta_logit": 2.625
+  },
+  {
+   "source_hash": "-3106640016224100059",
+   "gold_correct": true,
+   "http_delta_logit": -2.6875,
+   "inprocess_delta_logit": 8.6875
+  },
+  {
+   "source_hash": "1670099801462862831",
+   "gold_correct": false,
+   "http_delta_logit": -8.25,
+   "inprocess_delta_logit": -9.625
+  },
+  {
+   "source_hash": "1518483856295337853",
+   "gold_correct": true,
+   "http_delta_logit": 5.0625,
+   "inprocess_delta_logit": 14.75
+  },
+  {
+   "source_hash": "4265219685769440497",
+   "gold_correct": false,
+   "http_delta_logit": -7.375,
+   "inprocess_delta_logit": -13.0
+  },
+  {
+   "source_hash": "-1045950966064077807",
+   "gold_correct": false,
+   "http_delta_logit": 3.625,
+   "inprocess_delta_logit": 15.6875
+  },
+  {
+   "source_hash": "-14127087596939149",
+   "gold_correct": false,
+   "http_delta_logit": 0.375,
+   "inprocess_delta_logit": 10.25
+  },
+  {
+   "source_hash": "6938492745075486908",
+   "gold_correct": false,
+   "http_delta_logit": -7.375,
+   "inprocess_delta_logit": -13.125
+  },
+  {
+   "source_hash": "-5477945887540708916",
+   "gold_correct": false,
+   "http_delta_logit": 3.9375,
+   "inprocess_delta_logit": 18.75
+  },
+  {
+   "source_hash": "-5367312554271604432",
+   "gold_correct": false,
+   "http_delta_logit": -3.4375,
+   "inprocess_delta_logit": 6.625
+  },
+  {
+   "source_hash": "-2785530001338316518",
+   "gold_correct": true,
+   "http_delta_logit": 7.4375,
+   "inprocess_delta_logit": 20.625
+  },
+  {
+   "source_hash": "5661372866233827350",
+   "gold_correct": false,
+   "http_delta_logit": -2.5625,
+   "inprocess_delta_logit": 7.625
+  },
+  {
+   "source_hash": "248301011749701863",
+   "gold_correct": false,
+   "http_delta_logit": -3.4375,
+   "inprocess_delta_logit": 7.6875
+  },
+  {
+   "source_hash": "4454159840405249160",
+   "gold_correct": true,
+   "http_delta_logit": -6.5,
+   "inprocess_delta_logit": -12.6875
+  },
+  {
+   "source_hash": "7814890499285406163",
+   "gold_correct": true,
+   "http_delta_logit": 2.0,
+   "inprocess_delta_logit": 12.3125
+  },
+  {
+   "source_hash": "-324037764021406191",
+   "gold_correct": true,
+   "http_delta_logit": -6.0,
+   "inprocess_delta_logit": -5.5
+  },
+  {
+   "source_hash": "-6593545968076228679",
+   "gold_correct": true,
+   "http_delta_logit": 7.125,
+   "inprocess_delta_logit": 21.875
+  },
+  {
+   "source_hash": "8576364972281168256",
+   "gold_correct": false,
+   "http_delta_logit": 1.625,
+   "inprocess_delta_logit": 6.5
+  },
+  {
+   "source_hash": "3390023733785240975",
+   "gold_correct": true,
+   "http_delta_logit": -6.0,
+   "inprocess_delta_logit": -7.0
+  },
+  {
+   "source_hash": "4123360803006383504",
+   "gold_correct": true,
+   "http_delta_logit": 5.875,
+   "inprocess_delta_logit": 15.4375
+  },
+  {
+   "source_hash": "4015932886428065127",
+   "gold_correct": false,
+   "http_delta_logit": 0.75,
+   "inprocess_delta_logit": 4.125
+  },
+  {
+   "source_hash": "6111714534168787779",
+   "gold_correct": false,
+   "http_delta_logit": -2.3125,
+   "inprocess_delta_logit": 5.5
+  },
+  {
+   "source_hash": "-6987111000084847425",
+   "gold_correct": false,
+   "http_delta_logit": -4.5,
+   "inprocess_delta_logit": -4.625
+  },
+  {
+   "source_hash": "8277400607097716362",
+   "gold_correct": false,
+   "http_delta_logit": -6.875,
+   "inprocess_delta_logit": -9.625
+  },
+  {
+   "source_hash": "-1680460220332918111",
+   "gold_correct": false,
+   "http_delta_logit": -7.6875,
+   "inprocess_delta_logit": -4.9375
+  },
+  {
+   "source_hash": "6024169522233476641",
+   "gold_correct": true,
+   "http_delta_logit": 6.25,
+   "inprocess_delta_logit": 18.5
+  },
+  {
+   "source_hash": "2424708395898872247",
+   "gold_correct": true,
+   "http_delta_logit": 6.375,
+   "inprocess_delta_logit": 19.0
+  },
+  {
+   "source_hash": "-2704820025046795910",
+   "gold_correct": false,
+   "http_delta_logit": -7.3125,
+   "inprocess_delta_logit": -18.25
+  },
+  {
+   "source_hash": "7978104553337577733",
+   "gold_correct": false,
+   "http_delta_logit": -6.0,
+   "inprocess_delta_logit": -5.0
+  },
+  {
+   "source_hash": "2191491093689038229",
+   "gold_correct": true,
+   "http_delta_logit": -1.8125,
+   "inprocess_delta_logit": 6.625
+  },
+  {
+   "source_hash": "3265709867181042806",
+   "gold_correct": false,
+   "http_delta_logit": -1.8125,
+   "inprocess_delta_logit": 4.625
+  },
+  {
+   "source_hash": "8987086592737799727",
+   "gold_correct": false,
+   "http_delta_logit": -0.125,
+   "inprocess_delta_logit": 9.4375
+  },
+  {
+   "source_hash": "-6437509441922254647",
+   "gold_correct": false,
+   "http_delta_logit": -3.1875,
+   "inprocess_delta_logit": 5.25
+  },
+  {
+   "source_hash": "9056070401262158457",
+   "gold_correct": false,
+   "http_delta_logit": -3.3125,
+   "inprocess_delta_logit": 4.125
+  },
+  {
+   "source_hash": "-8849716725091573594",
+   "gold_correct": false,
+   "http_delta_logit": -6.8125,
+   "inprocess_delta_logit": -4.625
+  },
+  {
+   "source_hash": "-7584180848541032302",
+   "gold_correct": true,
+   "http_delta_logit": -0.0625,
+   "inprocess_delta_logit": 11.4375
+  },
+  {
+   "source_hash": "8873165114982527271",
+   "gold_correct": false,
+   "http_delta_logit": -6.0625,
+   "inprocess_delta_logit": -4.75
+  },
+  {
+   "source_hash": "8316169480749153577",
+   "gold_correct": true,
+   "http_delta_logit": 5.6875,
+   "inprocess_delta_logit": 18.625
+  },
+  {
+   "source_hash": "-8211304152375668642",
+   "gold_correct": false,
+   "http_delta_logit": 4.125,
+   "inprocess_delta_logit": 11.5
+  },
+  {
+   "source_hash": "1862362011378501882",
+   "gold_correct": false,
+   "http_delta_logit": -8.625,
+   "inprocess_delta_logit": -15.875
+  },
+  {
+   "source_hash": "-6557938914140160279",
+   "gold_correct": true,
+   "http_delta_logit": 2.125,
+   "inprocess_delta_logit": 11.875
+  },
+  {
+   "source_hash": "-807343010621395558",
+   "gold_correct": false,
+   "http_delta_logit": -7.1875,
+   "inprocess_delta_logit": -11.9375
+  },
+  {
+   "source_hash": "-1154271355059483839",
+   "gold_correct": true,
+   "http_delta_logit": 3.6875,
+   "inprocess_delta_logit": 12.25
+  },
+  {
+   "source_hash": "5555522978919160050",
+   "gold_correct": true,
+   "http_delta_logit": -2.625,
+   "inprocess_delta_logit": -0.75
+  },
+  {
+   "source_hash": "-4978397209490389285",
+   "gold_correct": false,
+   "http_delta_logit": -4.25,
+   "inprocess_delta_logit": 2.875
+  },
+  {
+   "source_hash": "4433932112777062620",
+   "gold_correct": false,
+   "http_delta_logit": -2.625,
+   "inprocess_delta_logit": 2.75
+  },
+  {
+   "source_hash": "-5679341757730240847",
+   "gold_correct": true,
+   "http_delta_logit": -1.5625,
+   "inprocess_delta_logit": 5.25
+  },
+  {
+   "source_hash": "-8772664079716260529",
+   "gold_correct": true,
+   "http_delta_logit": 2.0625,
+   "inprocess_delta_logit": 9.5625
+  },
+  {
+   "source_hash": "3594723124422681449",
+   "gold_correct": true,
+   "http_delta_logit": 10.0,
+   "inprocess_delta_logit": 20.375
+  },
+  {
+   "source_hash": "5855724906406790854",
+   "gold_correct": true,
+   "http_delta_logit": -7.5625,
+   "inprocess_delta_logit": -3.125
+  },
+  {
+   "source_hash": "-1941289444539674503",
+   "gold_correct": false,
+   "http_delta_logit": 3.75,
+   "inprocess_delta_logit": 8.75
+  },
+  {
+   "source_hash": "4610387640648269661",
+   "gold_correct": false,
+   "http_delta_logit": -3.125,
+   "inprocess_delta_logit": 3.625
+  },
+  {
+   "source_hash": "934434250214986669",
+   "gold_correct": true,
+   "http_delta_logit": -6.5,
+   "inprocess_delta_logit": -4.375
+  },
+  {
+   "source_hash": "4379299607176355561",
+   "gold_correct": true,
+   "http_delta_logit": 1.75,
+   "inprocess_delta_logit": 15.5
+  },
+  {
+   "source_hash": "7901061017127629237",
+   "gold_correct": false,
+   "http_delta_logit": -3.8125,
+   "inprocess_delta_logit": 0.875
+  },
+  {
+   "source_hash": "5840305288893599341",
+   "gold_correct": true,
+   "http_delta_logit": 5.375,
+   "inprocess_delta_logit": 17.5
+  },
+  {
+   "source_hash": "-5150301727801643066",
+   "gold_correct": false,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 19.625
+  },
+  {
+   "source_hash": "-3690643007444633581",
+   "gold_correct": true,
+   "http_delta_logit": 5.75,
+   "inprocess_delta_logit": 17.875
+  },
+  {
+   "source_hash": "-6012636181132763806",
+   "gold_correct": true,
+   "http_delta_logit": 6.125,
+   "inprocess_delta_logit": 18.75
+  },
+  {
+   "source_hash": "-1547175820639641643",
+   "gold_correct": false,
+   "http_delta_logit": -6.8125,
+   "inprocess_delta_logit": -8.0625
+  },
+  {
+   "source_hash": "-6368062851919768282",
+   "gold_correct": true,
+   "http_delta_logit": 4.4375,
+   "inprocess_delta_logit": 17.25
+  },
+  {
+   "source_hash": "-2505437826103216366",
+   "gold_correct": false,
+   "http_delta_logit": -7.875,
+   "inprocess_delta_logit": -10.125
+  },
+  {
+   "source_hash": "-3523747061431500979",
+   "gold_correct": true,
+   "http_delta_logit": -6.625,
+   "inprocess_delta_logit": -0.375
+  },
+  {
+   "source_hash": "1800389367076629388",
+   "gold_correct": false,
+   "http_delta_logit": 0.25,
+   "inprocess_delta_logit": 8.625
+  },
+  {
+   "source_hash": "-4086227747279805250",
+   "gold_correct": true,
+   "http_delta_logit": 2.0,
+   "inprocess_delta_logit": 13.5
+  },
+  {
+   "source_hash": "1009147744799295771",
+   "gold_correct": false,
+   "http_delta_logit": -3.875,
+   "inprocess_delta_logit": 0.75
+  },
+  {
+   "source_hash": "2570180383406754151",
+   "gold_correct": false,
+   "http_delta_logit": -4.8125,
+   "inprocess_delta_logit": 3.125
+  },
+  {
+   "source_hash": "2015224905182480663",
+   "gold_correct": true,
+   "http_delta_logit": -6.8125,
+   "inprocess_delta_logit": -15.625
+  },
+  {
+   "source_hash": "6875998916440347136",
+   "gold_correct": true,
+   "http_delta_logit": -3.875,
+   "inprocess_delta_logit": 5.875
+  },
+  {
+   "source_hash": "-55128956406390520",
+   "gold_correct": true,
+   "http_delta_logit": -0.625,
+   "inprocess_delta_logit": 9.0
+  },
+  {
+   "source_hash": "-2676785172510725081",
+   "gold_correct": true,
+   "http_delta_logit": 6.4375,
+   "inprocess_delta_logit": 20.375
+  },
+  {
+   "source_hash": "-7623511945330324021",
+   "gold_correct": false,
+   "http_delta_logit": -8.75,
+   "inprocess_delta_logit": -18.875
+  },
+  {
+   "source_hash": "-1409891147828640316",
+   "gold_correct": true,
+   "http_delta_logit": 4.75,
+   "inprocess_delta_logit": 16.125
+  },
+  {
+   "source_hash": "-1598064670700244411",
+   "gold_correct": false,
+   "http_delta_logit": -7.375,
+   "inprocess_delta_logit": -12.5625
+  },
+  {
+   "source_hash": "380826976872913385",
+   "gold_correct": false,
+   "http_delta_logit": 4.625,
+   "inprocess_delta_logit": 19.125
+  },
+  {
+   "source_hash": "8906130294766023279",
+   "gold_correct": false,
+   "http_delta_logit": -4.125,
+   "inprocess_delta_logit": 7.25
+  },
+  {
+   "source_hash": "-6193497382524048073",
+   "gold_correct": true,
+   "http_delta_logit": 0.6875,
+   "inprocess_delta_logit": 7.375
+  },
+  {
+   "source_hash": "2109108360385280740",
+   "gold_correct": false,
+   "http_delta_logit": 5.625,
+   "inprocess_delta_logit": 15.1875
+  },
+  {
+   "source_hash": "-874690732483621962",
+   "gold_correct": false,
+   "http_delta_logit": -8.125,
+   "inprocess_delta_logit": -18.625
+  },
+  {
+   "source_hash": "-8845290110286514017",
+   "gold_correct": true,
+   "http_delta_logit": 4.625,
+   "inprocess_delta_logit": 18.75
+  },
+  {
+   "source_hash": "680279755345831696",
+   "gold_correct": false,
+   "http_delta_logit": -0.4375,
+   "inprocess_delta_logit": 7.75
+  },
+  {
+   "source_hash": "4819297244791743714",
+   "gold_correct": true,
+   "http_delta_logit": 5.1875,
+   "inprocess_delta_logit": 15.625
+  },
+  {
+   "source_hash": "-8724454563493605444",
+   "gold_correct": true,
+   "http_delta_logit": -8.1875,
+   "inprocess_delta_logit": -12.125
+  },
+  {
+   "source_hash": "8392383892638236353",
+   "gold_correct": true,
+   "http_delta_logit": 3.125,
+   "inprocess_delta_logit": 10.5
+  },
+  {
+   "source_hash": "-38059600034315963",
+   "gold_correct": true,
+   "http_delta_logit": 7.0,
+   "inprocess_delta_logit": 20.25
+  },
+  {
+   "source_hash": "678143915461184896",
+   "gold_correct": false,
+   "http_delta_logit": -1.0625,
+   "inprocess_delta_logit": 5.75
+  },
+  {
+   "source_hash": "-4668779355169973199",
+   "gold_correct": true,
+   "http_delta_logit": 6.0,
+   "inprocess_delta_logit": 19.875
+  },
+  {
+   "source_hash": "-7391716690280787656",
+   "gold_correct": true,
+   "http_delta_logit": -0.375,
+   "inprocess_delta_logit": 11.0625
+  },
+  {
+   "source_hash": "-6739320950743721490",
+   "gold_correct": true,
+   "http_delta_logit": 4.3125,
+   "inprocess_delta_logit": 14.0625
+  },
+  {
+   "source_hash": "-1660364425371638567",
+   "gold_correct": true,
+   "http_delta_logit": 3.625,
+   "inprocess_delta_logit": 8.25
+  },
+  {
+   "source_hash": "-8161765290852274942",
+   "gold_correct": false,
+   "http_delta_logit": 4.9375,
+   "inprocess_delta_logit": 19.25
+  },
+  {
+   "source_hash": "-2672096811862269371",
+   "gold_correct": true,
+   "http_delta_logit": -1.4375,
+   "inprocess_delta_logit": 3.125
+  },
+  {
+   "source_hash": "-4391647627084222256",
+   "gold_correct": false,
+   "http_delta_logit": -5.25,
+   "inprocess_delta_logit": -5.9375
+  },
+  {
+   "source_hash": "4361886754258579995",
+   "gold_correct": false,
+   "http_delta_logit": -1.1875,
+   "inprocess_delta_logit": 8.125
+  },
+  {
+   "source_hash": "-2344228185879827979",
+   "gold_correct": false,
+   "http_delta_logit": 1.25,
+   "inprocess_delta_logit": 7.875
+  },
+  {
+   "source_hash": "4230919738734121916",
+   "gold_correct": true,
+   "http_delta_logit": -5.375,
+   "inprocess_delta_logit": -1.5
+  },
+  {
+   "source_hash": "2830326819422599618",
+   "gold_correct": false,
+   "http_delta_logit": -7.5,
+   "inprocess_delta_logit": -20.0
+  },
+  {
+   "source_hash": "-7839407811620861687",
+   "gold_correct": false,
+   "http_delta_logit": -5.0625,
+   "inprocess_delta_logit": -2.5
+  },
+  {
+   "source_hash": "1652429534252039022",
+   "gold_correct": false,
+   "http_delta_logit": -5.0,
+   "inprocess_delta_logit": -5.25
+  },
+  {
+   "source_hash": "2915366660168159270",
+   "gold_correct": true,
+   "http_delta_logit": -6.0625,
+   "inprocess_delta_logit": -3.25
+  },
+  {
+   "source_hash": "2183902302543736445",
+   "gold_correct": true,
+   "http_delta_logit": -7.9375,
+   "inprocess_delta_logit": -12.875
+  },
+  {
+   "source_hash": "1749471227542308247",
+   "gold_correct": true,
+   "http_delta_logit": 6.25,
+   "inprocess_delta_logit": 14.125
+  },
+  {
+   "source_hash": "5019006833289004085",
+   "gold_correct": false,
+   "http_delta_logit": -2.1875,
+   "inprocess_delta_logit": 5.875
+  },
+  {
+   "source_hash": "6671035029073828370",
+   "gold_correct": false,
+   "http_delta_logit": -7.4375,
+   "inprocess_delta_logit": -12.125
+  },
+  {
+   "source_hash": "3216513195657341413",
+   "gold_correct": true,
+   "http_delta_logit": -8.5625,
+   "inprocess_delta_logit": -15.5
+  },
+  {
+   "source_hash": "3661432569625212059",
+   "gold_correct": true,
+   "http_delta_logit": -1.4375,
+   "inprocess_delta_logit": 6.375
+  },
+  {
+   "source_hash": "774471230581641794",
+   "gold_correct": true,
+   "http_delta_logit": -4.4375,
+   "inprocess_delta_logit": 3.75
+  },
+  {
+   "source_hash": "-3356060757629767965",
+   "gold_correct": false,
+   "http_delta_logit": -6.9375,
+   "inprocess_delta_logit": -10.9375
+  },
+  {
+   "source_hash": "4947070906365800621",
+   "gold_correct": false,
+   "http_delta_logit": 3.5,
+   "inprocess_delta_logit": 14.0
+  },
+  {
+   "source_hash": "6712566501588404598",
+   "gold_correct": false,
+   "http_delta_logit": -5.6875,
+   "inprocess_delta_logit": 0.375
+  },
+  {
+   "source_hash": "-3084048804411981642",
+   "gold_correct": false,
+   "http_delta_logit": 3.75,
+   "inprocess_delta_logit": 14.125
+  },
+  {
+   "source_hash": "3920106614078950360",
+   "gold_correct": false,
+   "http_delta_logit": 4.5,
+   "inprocess_delta_logit": 15.5625
+  },
+  {
+   "source_hash": "7410800496400513910",
+   "gold_correct": true,
+   "http_delta_logit": 6.625,
+   "inprocess_delta_logit": 18.875
+  },
+  {
+   "source_hash": "1519199816771775314",
+   "gold_correct": true,
+   "http_delta_logit": 7.125,
+   "inprocess_delta_logit": 21.5
+  },
+  {
+   "source_hash": "588670771132759720",
+   "gold_correct": true,
+   "http_delta_logit": -2.25,
+   "inprocess_delta_logit": 6.25
+  },
+  {
+   "source_hash": "4999901056726287637",
+   "gold_correct": false,
+   "http_delta_logit": -9.125,
+   "inprocess_delta_logit": -16.0
+  },
+  {
+   "source_hash": "3530547423443512646",
+   "gold_correct": true,
+   "http_delta_logit": -1.9375,
+   "inprocess_delta_logit": 5.75
+  },
+  {
+   "source_hash": "5561220089868605063",
+   "gold_correct": false,
+   "http_delta_logit": -2.5,
+   "inprocess_delta_logit": 3.625
+  },
+  {
+   "source_hash": "-3255216330971839586",
+   "gold_correct": true,
+   "http_delta_logit": 5.875,
+   "inprocess_delta_logit": 16.125
+  },
+  {
+   "source_hash": "-1979782581959403759",
+   "gold_correct": true,
+   "http_delta_logit": 3.625,
+   "inprocess_delta_logit": 14.5
+  },
+  {
+   "source_hash": "-5140794093758940526",
+   "gold_correct": false,
+   "http_delta_logit": 5.8125,
+   "inprocess_delta_logit": 15.3125
+  },
+  {
+   "source_hash": "-518293060136027436",
+   "gold_correct": true,
+   "http_delta_logit": -1.0,
+   "inprocess_delta_logit": 7.8125
+  },
+  {
+   "source_hash": "-6953872826601549922",
+   "gold_correct": false,
+   "http_delta_logit": -0.75,
+   "inprocess_delta_logit": 2.25
+  },
+  {
+   "source_hash": "7905928970239191105",
+   "gold_correct": false,
+   "http_delta_logit": -8.3125,
+   "inprocess_delta_logit": -18.625
+  },
+  {
+   "source_hash": "972635722318896357",
+   "gold_correct": false,
+   "http_delta_logit": -7.125,
+   "inprocess_delta_logit": -15.875
+  },
+  {
+   "source_hash": "-4690325004423259828",
+   "gold_correct": false,
+   "http_delta_logit": 1.5625,
+   "inprocess_delta_logit": 9.3125
+  },
+  {
+   "source_hash": "1644228133257672449",
+   "gold_correct": true,
+   "http_delta_logit": 4.9375,
+   "inprocess_delta_logit": 15.3125
+  },
+  {
+   "source_hash": "-1597319438324532567",
+   "gold_correct": false,
+   "http_delta_logit": -4.3125,
+   "inprocess_delta_logit": -2.75
+  },
+  {
+   "source_hash": "-8482966774325726497",
+   "gold_correct": false,
+   "http_delta_logit": -0.25,
+   "inprocess_delta_logit": 7.125
+  },
+  {
+   "source_hash": "-1490225023588290948",
+   "gold_correct": true,
+   "http_delta_logit": -3.5,
+   "inprocess_delta_logit": 5.5
+  },
+  {
+   "source_hash": "-9105862366371965078",
+   "gold_correct": true,
+   "http_delta_logit": 5.875,
+   "inprocess_delta_logit": 19.75
+  },
+  {
+   "source_hash": "-3728583426947385640",
+   "gold_correct": false,
+   "http_delta_logit": -8.9375,
+   "inprocess_delta_logit": -16.75
+  },
+  {
+   "source_hash": "-3698785553057089920",
+   "gold_correct": false,
+   "http_delta_logit": -7.625,
+   "inprocess_delta_logit": -20.125
+  },
+  {
+   "source_hash": "-1927612253865555232",
+   "gold_correct": true,
+   "http_delta_logit": -2.125,
+   "inprocess_delta_logit": 8.0625
+  },
+  {
+   "source_hash": "5630329019675354141",
+   "gold_correct": false,
+   "http_delta_logit": -5.75,
+   "inprocess_delta_logit": -1.875
+  },
+  {
+   "source_hash": "9212035992208938129",
+   "gold_correct": false,
+   "http_delta_logit": 2.8125,
+   "inprocess_delta_logit": 13.9375
+  },
+  {
+   "source_hash": "-1223096867422157810",
+   "gold_correct": false,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -16.25
+  },
+  {
+   "source_hash": "3543873868345253239",
+   "gold_correct": false,
+   "http_delta_logit": 5.9375,
+   "inprocess_delta_logit": 17.625
+  },
+  {
+   "source_hash": "-5844254949876501592",
+   "gold_correct": false,
+   "http_delta_logit": -5.0625,
+   "inprocess_delta_logit": 3.25
+  },
+  {
+   "source_hash": "1326940577935850919",
+   "gold_correct": false,
+   "http_delta_logit": 2.0625,
+   "inprocess_delta_logit": 10.5
+  },
+  {
+   "source_hash": "300431921030561171",
+   "gold_correct": true,
+   "http_delta_logit": 2.875,
+   "inprocess_delta_logit": 16.75
+  },
+  {
+   "source_hash": "3930691152963980877",
+   "gold_correct": false,
+   "http_delta_logit": -6.625,
+   "inprocess_delta_logit": -3.25
+  },
+  {
+   "source_hash": "5227382267008401138",
+   "gold_correct": true,
+   "http_delta_logit": 3.75,
+   "inprocess_delta_logit": 8.0
+  },
+  {
+   "source_hash": "3226278506290024042",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -13.625
+  },
+  {
+   "source_hash": "5276492563216482098",
+   "gold_correct": false,
+   "http_delta_logit": -6.8125,
+   "inprocess_delta_logit": -8.5
+  },
+  {
+   "source_hash": "6979693747761404670",
+   "gold_correct": true,
+   "http_delta_logit": 7.6875,
+   "inprocess_delta_logit": 22.375
+  },
+  {
+   "source_hash": "663067349192918867",
+   "gold_correct": true,
+   "http_delta_logit": 8.0,
+   "inprocess_delta_logit": 21.0
+  },
+  {
+   "source_hash": "7370236547362600095",
+   "gold_correct": true,
+   "http_delta_logit": 7.25,
+   "inprocess_delta_logit": 18.625
+  },
+  {
+   "source_hash": "4670257633463521794",
+   "gold_correct": false,
+   "http_delta_logit": 4.0,
+   "inprocess_delta_logit": 12.5
+  },
+  {
+   "source_hash": "5804921553763305727",
+   "gold_correct": false,
+   "http_delta_logit": 4.125,
+   "inprocess_delta_logit": 15.375
+  },
+  {
+   "source_hash": "2092675525945534032",
+   "gold_correct": false,
+   "http_delta_logit": 1.1875,
+   "inprocess_delta_logit": 10.125
+  },
+  {
+   "source_hash": "-8569594451013376468",
+   "gold_correct": false,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -15.375
+  },
+  {
+   "source_hash": "-2285452961037502028",
+   "gold_correct": true,
+   "http_delta_logit": 5.1875,
+   "inprocess_delta_logit": 18.125
+  },
+  {
+   "source_hash": "6086872593525309636",
+   "gold_correct": false,
+   "http_delta_logit": -6.375,
+   "inprocess_delta_logit": -11.25
+  },
+  {
+   "source_hash": "-2447827096159583127",
+   "gold_correct": false,
+   "http_delta_logit": -7.8125,
+   "inprocess_delta_logit": -12.625
+  },
+  {
+   "source_hash": "-6374610926606435989",
+   "gold_correct": false,
+   "http_delta_logit": -7.5625,
+   "inprocess_delta_logit": -11.5
+  },
+  {
+   "source_hash": "-5378097372239690327",
+   "gold_correct": true,
+   "http_delta_logit": 6.3125,
+   "inprocess_delta_logit": 16.25
+  },
+  {
+   "source_hash": "2482120208526264450",
+   "gold_correct": false,
+   "http_delta_logit": -4.0625,
+   "inprocess_delta_logit": 1.5
+  },
+  {
+   "source_hash": "6439152611162528102",
+   "gold_correct": false,
+   "http_delta_logit": -1.5,
+   "inprocess_delta_logit": 4.875
+  },
+  {
+   "source_hash": "-7663518183226043720",
+   "gold_correct": true,
+   "http_delta_logit": 6.875,
+   "inprocess_delta_logit": 20.625
+  },
+  {
+   "source_hash": "3920118446814753989",
+   "gold_correct": false,
+   "http_delta_logit": -3.875,
+   "inprocess_delta_logit": 4.5
+  },
+  {
+   "source_hash": "2156133922918567893",
+   "gold_correct": true,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -16.875
+  },
+  {
+   "source_hash": "-8592311746619412993",
+   "gold_correct": true,
+   "http_delta_logit": 5.1875,
+   "inprocess_delta_logit": 16.0
+  },
+  {
+   "source_hash": "2134293988291560807",
+   "gold_correct": false,
+   "http_delta_logit": -2.1875,
+   "inprocess_delta_logit": 4.375
+  },
+  {
+   "source_hash": "-5656595065390785397",
+   "gold_correct": false,
+   "http_delta_logit": -3.9375,
+   "inprocess_delta_logit": 1.875
+  },
+  {
+   "source_hash": "1706088355194059812",
+   "gold_correct": true,
+   "http_delta_logit": -0.0625,
+   "inprocess_delta_logit": 8.875
+  },
+  {
+   "source_hash": "-3967057514251969313",
+   "gold_correct": true,
+   "http_delta_logit": -1.5625,
+   "inprocess_delta_logit": 9.6875
+  },
+  {
+   "source_hash": "-6929722397943776752",
+   "gold_correct": false,
+   "http_delta_logit": -5.4375,
+   "inprocess_delta_logit": 3.0
+  },
+  {
+   "source_hash": "1297499966948236193",
+   "gold_correct": true,
+   "http_delta_logit": 6.0,
+   "inprocess_delta_logit": 20.375
+  },
+  {
+   "source_hash": "40508208203893258",
+   "gold_correct": true,
+   "http_delta_logit": -8.625,
+   "inprocess_delta_logit": -16.0
+  },
+  {
+   "source_hash": "1907774251319181816",
+   "gold_correct": true,
+   "http_delta_logit": -0.5625,
+   "inprocess_delta_logit": 7.875
+  },
+  {
+   "source_hash": "-8280485552518034525",
+   "gold_correct": true,
+   "http_delta_logit": -8.875,
+   "inprocess_delta_logit": -13.875
+  },
+  {
+   "source_hash": "-2460593737233527284",
+   "gold_correct": true,
+   "http_delta_logit": 0.6875,
+   "inprocess_delta_logit": 9.5
+  },
+  {
+   "source_hash": "-687959999797586881",
+   "gold_correct": true,
+   "http_delta_logit": -4.3125,
+   "inprocess_delta_logit": 3.75
+  },
+  {
+   "source_hash": "-4315595352090310053",
+   "gold_correct": false,
+   "http_delta_logit": -6.6875,
+   "inprocess_delta_logit": -13.375
+  },
+  {
+   "source_hash": "-7587478879425471434",
+   "gold_correct": false,
+   "http_delta_logit": -5.8125,
+   "inprocess_delta_logit": 0.5
+  },
+  {
+   "source_hash": "8240014400410219685",
+   "gold_correct": true,
+   "http_delta_logit": -0.75,
+   "inprocess_delta_logit": -2.0
+  },
+  {
+   "source_hash": "-1402556732034533750",
+   "gold_correct": true,
+   "http_delta_logit": 3.8125,
+   "inprocess_delta_logit": 16.75
+  },
+  {
+   "source_hash": "-8640897769143517355",
+   "gold_correct": true,
+   "http_delta_logit": 5.375,
+   "inprocess_delta_logit": 16.875
+  },
+  {
+   "source_hash": "-1957014360619179028",
+   "gold_correct": false,
+   "http_delta_logit": -4.5,
+   "inprocess_delta_logit": -0.375
+  },
+  {
+   "source_hash": "7323317017753854968",
+   "gold_correct": false,
+   "http_delta_logit": -6.3125,
+   "inprocess_delta_logit": -18.5
+  },
+  {
+   "source_hash": "2113866994383642189",
+   "gold_correct": true,
+   "http_delta_logit": 8.5625,
+   "inprocess_delta_logit": 22.0
+  },
+  {
+   "source_hash": "4809839643638100128",
+   "gold_correct": false,
+   "http_delta_logit": 3.9375,
+   "inprocess_delta_logit": 12.1875
+  },
+  {
+   "source_hash": "-4667847593963671390",
+   "gold_correct": false,
+   "http_delta_logit": -0.75,
+   "inprocess_delta_logit": 4.75
+  },
+  {
+   "source_hash": "4963189237192075412",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -7.0
+  },
+  {
+   "source_hash": "8015800004964407911",
+   "gold_correct": true,
+   "http_delta_logit": -6.4375,
+   "inprocess_delta_logit": -4.25
+  },
+  {
+   "source_hash": "1162569428193374073",
+   "gold_correct": true,
+   "http_delta_logit": 1.5,
+   "inprocess_delta_logit": 10.0625
+  },
+  {
+   "source_hash": "3556540991188008949",
+   "gold_correct": true,
+   "http_delta_logit": 4.1875,
+   "inprocess_delta_logit": 17.625
+  },
+  {
+   "source_hash": "7691369718955874395",
+   "gold_correct": true,
+   "http_delta_logit": -0.75,
+   "inprocess_delta_logit": 10.8125
+  },
+  {
+   "source_hash": "-6456887412657182495",
+   "gold_correct": true,
+   "http_delta_logit": 4.25,
+   "inprocess_delta_logit": 13.3125
+  },
+  {
+   "source_hash": "-6224355366014093312",
+   "gold_correct": true,
+   "http_delta_logit": 1.0,
+   "inprocess_delta_logit": 11.875
+  },
+  {
+   "source_hash": "6513501599159787476",
+   "gold_correct": true,
+   "http_delta_logit": 2.625,
+   "inprocess_delta_logit": 14.0
+  },
+  {
+   "source_hash": "-3839937412438487948",
+   "gold_correct": true,
+   "http_delta_logit": 1.375,
+   "inprocess_delta_logit": 9.5
+  },
+  {
+   "source_hash": "6626605957463305024",
+   "gold_correct": true,
+   "http_delta_logit": 4.1875,
+   "inprocess_delta_logit": 15.375
+  },
+  {
+   "source_hash": "-4216829906056689378",
+   "gold_correct": false,
+   "http_delta_logit": -1.0625,
+   "inprocess_delta_logit": 9.625
+  },
+  {
+   "source_hash": "5195050089707174198",
+   "gold_correct": false,
+   "http_delta_logit": -0.3125,
+   "inprocess_delta_logit": 10.3125
+  },
+  {
+   "source_hash": "7287082231099591921",
+   "gold_correct": true,
+   "http_delta_logit": -2.75,
+   "inprocess_delta_logit": 7.625
+  },
+  {
+   "source_hash": "-926289194414600340",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -12.25
+  },
+  {
+   "source_hash": "6792216324248095219",
+   "gold_correct": false,
+   "http_delta_logit": 4.3125,
+   "inprocess_delta_logit": 12.8125
+  },
+  {
+   "source_hash": "5149960255345600244",
+   "gold_correct": false,
+   "http_delta_logit": -3.3125,
+   "inprocess_delta_logit": 6.5
+  },
+  {
+   "source_hash": "-6116655396900580774",
+   "gold_correct": true,
+   "http_delta_logit": 4.4375,
+   "inprocess_delta_logit": 15.5625
+  },
+  {
+   "source_hash": "1877070283629427369",
+   "gold_correct": false,
+   "http_delta_logit": 4.3125,
+   "inprocess_delta_logit": 12.0
+  },
+  {
+   "source_hash": "3318473915868394255",
+   "gold_correct": true,
+   "http_delta_logit": 4.125,
+   "inprocess_delta_logit": 18.375
+  },
+  {
+   "source_hash": "6957304415825341472",
+   "gold_correct": true,
+   "http_delta_logit": 2.9375,
+   "inprocess_delta_logit": 13.8125
+  },
+  {
+   "source_hash": "-8596783185155145960",
+   "gold_correct": true,
+   "http_delta_logit": -7.0625,
+   "inprocess_delta_logit": -15.5625
+  },
+  {
+   "source_hash": "1814842631641796072",
+   "gold_correct": false,
+   "http_delta_logit": -5.1875,
+   "inprocess_delta_logit": 1.75
+  },
+  {
+   "source_hash": "-3182840432371245336",
+   "gold_correct": false,
+   "http_delta_logit": -7.1875,
+   "inprocess_delta_logit": -16.25
+  },
+  {
+   "source_hash": "-5231853779138598856",
+   "gold_correct": false,
+   "http_delta_logit": 4.4375,
+   "inprocess_delta_logit": 18.625
+  },
+  {
+   "source_hash": "-3080366232866922102",
+   "gold_correct": true,
+   "http_delta_logit": -7.25,
+   "inprocess_delta_logit": -3.0
+  },
+  {
+   "source_hash": "-5862190790437238155",
+   "gold_correct": true,
+   "http_delta_logit": 2.1875,
+   "inprocess_delta_logit": 13.5625
+  },
+  {
+   "source_hash": "-6887851703886004618",
+   "gold_correct": false,
+   "http_delta_logit": -0.125,
+   "inprocess_delta_logit": 7.875
+  },
+  {
+   "source_hash": "6103644555589251973",
+   "gold_correct": false,
+   "http_delta_logit": -7.625,
+   "inprocess_delta_logit": -10.4375
+  },
+  {
+   "source_hash": "-6589510964879137285",
+   "gold_correct": true,
+   "http_delta_logit": 5.0,
+   "inprocess_delta_logit": 19.75
+  },
+  {
+   "source_hash": "-6373014105542712517",
+   "gold_correct": false,
+   "http_delta_logit": 2.3125,
+   "inprocess_delta_logit": 12.1875
+  },
+  {
+   "source_hash": "-5432349589479620922",
+   "gold_correct": true,
+   "http_delta_logit": 0.8125,
+   "inprocess_delta_logit": 7.0
+  },
+  {
+   "source_hash": "-4422032648882042226",
+   "gold_correct": true,
+   "http_delta_logit": 8.0625,
+   "inprocess_delta_logit": 20.625
+  },
+  {
+   "source_hash": "1867559557147149799",
+   "gold_correct": false,
+   "http_delta_logit": -3.8125,
+   "inprocess_delta_logit": 2.0
+  },
+  {
+   "source_hash": "-6145802031899258858",
+   "gold_correct": true,
+   "http_delta_logit": 8.375,
+   "inprocess_delta_logit": 22.0
+  },
+  {
+   "source_hash": "3270703424228471928",
+   "gold_correct": true,
+   "http_delta_logit": 2.25,
+   "inprocess_delta_logit": 11.3125
+  },
+  {
+   "source_hash": "6240661678830806137",
+   "gold_correct": false,
+   "http_delta_logit": -1.5,
+   "inprocess_delta_logit": 7.0
+  },
+  {
+   "source_hash": "-4280012815460674136",
+   "gold_correct": false,
+   "http_delta_logit": -4.1875,
+   "inprocess_delta_logit": 2.25
+  },
+  {
+   "source_hash": "-4769832392690659546",
+   "gold_correct": true,
+   "http_delta_logit": 2.8125,
+   "inprocess_delta_logit": 12.625
+  },
+  {
+   "source_hash": "5792704430549462062",
+   "gold_correct": true,
+   "http_delta_logit": 4.25,
+   "inprocess_delta_logit": 15.0
+  },
+  {
+   "source_hash": "-7755183840357502019",
+   "gold_correct": false,
+   "http_delta_logit": -6.0,
+   "inprocess_delta_logit": -2.375
+  },
+  {
+   "source_hash": "562819267246086791",
+   "gold_correct": false,
+   "http_delta_logit": -6.3125,
+   "inprocess_delta_logit": -13.75
+  },
+  {
+   "source_hash": "-7305031653008646479",
+   "gold_correct": false,
+   "http_delta_logit": 0.0,
+   "inprocess_delta_logit": 9.875
+  },
+  {
+   "source_hash": "-2274493842406966373",
+   "gold_correct": false,
+   "http_delta_logit": 2.0,
+   "inprocess_delta_logit": 8.9375
+  },
+  {
+   "source_hash": "5338853331981603971",
+   "gold_correct": false,
+   "http_delta_logit": -8.125,
+   "inprocess_delta_logit": -16.75
+  },
+  {
+   "source_hash": "-2646585658159211137",
+   "gold_correct": false,
+   "http_delta_logit": -2.6875,
+   "inprocess_delta_logit": 5.0
+  },
+  {
+   "source_hash": "7004251516096089556",
+   "gold_correct": true,
+   "http_delta_logit": -4.1875,
+   "inprocess_delta_logit": 0.25
+  },
+  {
+   "source_hash": "8939909013110588681",
+   "gold_correct": true,
+   "http_delta_logit": 8.0,
+   "inprocess_delta_logit": 20.75
+  },
+  {
+   "source_hash": "-5914477333383412513",
+   "gold_correct": true,
+   "http_delta_logit": 1.0625,
+   "inprocess_delta_logit": 10.375
+  },
+  {
+   "source_hash": "5244352368551306772",
+   "gold_correct": false,
+   "http_delta_logit": -1.5,
+   "inprocess_delta_logit": 7.5
+  },
+  {
+   "source_hash": "5185857893559781107",
+   "gold_correct": true,
+   "http_delta_logit": 6.5625,
+   "inprocess_delta_logit": 21.125
+  },
+  {
+   "source_hash": "3297012891732007616",
+   "gold_correct": false,
+   "http_delta_logit": -7.5625,
+   "inprocess_delta_logit": -18.5
+  },
+  {
+   "source_hash": "-6762084772488760391",
+   "gold_correct": true,
+   "http_delta_logit": -0.3125,
+   "inprocess_delta_logit": 12.6875
+  },
+  {
+   "source_hash": "-8031302430646454585",
+   "gold_correct": true,
+   "http_delta_logit": 5.4375,
+   "inprocess_delta_logit": 17.0
+  },
+  {
+   "source_hash": "-1409443675420064898",
+   "gold_correct": false,
+   "http_delta_logit": 2.3125,
+   "inprocess_delta_logit": 2.75
+  },
+  {
+   "source_hash": "-374785839881851379",
+   "gold_correct": false,
+   "http_delta_logit": -4.8125,
+   "inprocess_delta_logit": 3.875
+  },
+  {
+   "source_hash": "8223971052747297227",
+   "gold_correct": false,
+   "http_delta_logit": -5.25,
+   "inprocess_delta_logit": 1.25
+  },
+  {
+   "source_hash": "8452015857561714675",
+   "gold_correct": true,
+   "http_delta_logit": 1.5,
+   "inprocess_delta_logit": 12.875
+  },
+  {
+   "source_hash": "8403942193243052215",
+   "gold_correct": true,
+   "http_delta_logit": -1.4375,
+   "inprocess_delta_logit": 12.0
+  },
+  {
+   "source_hash": "-4564287042265094929",
+   "gold_correct": false,
+   "http_delta_logit": 0.1875,
+   "inprocess_delta_logit": 8.75
+  },
+  {
+   "source_hash": "-8140847025356371882",
+   "gold_correct": false,
+   "http_delta_logit": 5.75,
+   "inprocess_delta_logit": 18.625
+  },
+  {
+   "source_hash": "-1384404677079768477",
+   "gold_correct": true,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 14.3125
+  },
+  {
+   "source_hash": "9001045962703372991",
+   "gold_correct": false,
+   "http_delta_logit": -0.375,
+   "inprocess_delta_logit": 9.5625
+  },
+  {
+   "source_hash": "-7244925247702171399",
+   "gold_correct": true,
+   "http_delta_logit": -8.1875,
+   "inprocess_delta_logit": -11.375
+  },
+  {
+   "source_hash": "-2793711141016880311",
+   "gold_correct": false,
+   "http_delta_logit": -0.1875,
+   "inprocess_delta_logit": 7.375
+  },
+  {
+   "source_hash": "-4642138793425304292",
+   "gold_correct": false,
+   "http_delta_logit": -5.1875,
+   "inprocess_delta_logit": -0.75
+  },
+  {
+   "source_hash": "-5353106877659772309",
+   "gold_correct": false,
+   "http_delta_logit": 2.4375,
+   "inprocess_delta_logit": 13.5
+  },
+  {
+   "source_hash": "4042498794192931216",
+   "gold_correct": true,
+   "http_delta_logit": -1.9375,
+   "inprocess_delta_logit": 6.125
+  },
+  {
+   "source_hash": "4861844180322324505",
+   "gold_correct": true,
+   "http_delta_logit": 6.8125,
+   "inprocess_delta_logit": 20.5
+  },
+  {
+   "source_hash": "-7329104633030122553",
+   "gold_correct": true,
+   "http_delta_logit": 7.875,
+   "inprocess_delta_logit": 18.5
+  },
+  {
+   "source_hash": "8272417085943660997",
+   "gold_correct": false,
+   "http_delta_logit": -2.3125,
+   "inprocess_delta_logit": 6.625
+  },
+  {
+   "source_hash": "-2712442632951850308",
+   "gold_correct": true,
+   "http_delta_logit": 1.25,
+   "inprocess_delta_logit": 9.8125
+  },
+  {
+   "source_hash": "-1110855166117730955",
+   "gold_correct": true,
+   "http_delta_logit": 5.75,
+   "inprocess_delta_logit": 13.6875
+  },
+  {
+   "source_hash": "144910906382302094",
+   "gold_correct": false,
+   "http_delta_logit": 6.75,
+   "inprocess_delta_logit": 20.25
+  },
+  {
+   "source_hash": "-8395855789819507499",
+   "gold_correct": true,
+   "http_delta_logit": 2.9375,
+   "inprocess_delta_logit": 13.125
+  },
+  {
+   "source_hash": "-2810303103604230161",
+   "gold_correct": false,
+   "http_delta_logit": -2.6875,
+   "inprocess_delta_logit": -0.125
+  },
+  {
+   "source_hash": "5716036186617436680",
+   "gold_correct": true,
+   "http_delta_logit": -5.875,
+   "inprocess_delta_logit": 1.625
+  },
+  {
+   "source_hash": "6094898972973036792",
+   "gold_correct": true,
+   "http_delta_logit": -3.5625,
+   "inprocess_delta_logit": 4.375
+  },
+  {
+   "source_hash": "4405634760689241397",
+   "gold_correct": false,
+   "http_delta_logit": 3.875,
+   "inprocess_delta_logit": 15.375
+  },
+  {
+   "source_hash": "4280085114578462082",
+   "gold_correct": true,
+   "http_delta_logit": 7.8125,
+   "inprocess_delta_logit": 22.125
+  },
+  {
+   "source_hash": "7517156545309366385",
+   "gold_correct": true,
+   "http_delta_logit": 7.25,
+   "inprocess_delta_logit": 21.75
+  },
+  {
+   "source_hash": "6261067885496691601",
+   "gold_correct": false,
+   "http_delta_logit": -5.625,
+   "inprocess_delta_logit": -1.625
+  },
+  {
+   "source_hash": "5092336697035732962",
+   "gold_correct": false,
+   "http_delta_logit": 4.5,
+   "inprocess_delta_logit": 14.125
+  },
+  {
+   "source_hash": "-8967148935103753924",
+   "gold_correct": false,
+   "http_delta_logit": -0.8125,
+   "inprocess_delta_logit": 13.6875
+  },
+  {
+   "source_hash": "4166605766845478679",
+   "gold_correct": true,
+   "http_delta_logit": -4.625,
+   "inprocess_delta_logit": 0.125
+  },
+  {
+   "source_hash": "3983936619977616283",
+   "gold_correct": true,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 13.8125
+  },
+  {
+   "source_hash": "7771713250306142177",
+   "gold_correct": false,
+   "http_delta_logit": -4.375,
+   "inprocess_delta_logit": 1.125
+  },
+  {
+   "source_hash": "-319617331444025500",
+   "gold_correct": false,
+   "http_delta_logit": -6.9375,
+   "inprocess_delta_logit": -11.875
+  },
+  {
+   "source_hash": "-7733070063454578607",
+   "gold_correct": true,
+   "http_delta_logit": 7.5,
+   "inprocess_delta_logit": 19.75
+  },
+  {
+   "source_hash": "-2474777389657663741",
+   "gold_correct": true,
+   "http_delta_logit": 6.6875,
+   "inprocess_delta_logit": 17.75
+  },
+  {
+   "source_hash": "9194640761808974240",
+   "gold_correct": false,
+   "http_delta_logit": -3.5625,
+   "inprocess_delta_logit": 4.75
+  },
+  {
+   "source_hash": "6532145592003867586",
+   "gold_correct": false,
+   "http_delta_logit": -9.375,
+   "inprocess_delta_logit": -16.625
+  },
+  {
+   "source_hash": "5895193493559815470",
+   "gold_correct": false,
+   "http_delta_logit": -2.9375,
+   "inprocess_delta_logit": 5.625
+  },
+  {
+   "source_hash": "2713924121928519230",
+   "gold_correct": true,
+   "http_delta_logit": -0.5,
+   "inprocess_delta_logit": 7.1875
+  },
+  {
+   "source_hash": "3038820715603429854",
+   "gold_correct": true,
+   "http_delta_logit": -6.6875,
+   "inprocess_delta_logit": -18.875
+  },
+  {
+   "source_hash": "5959695458699642619",
+   "gold_correct": true,
+   "http_delta_logit": 5.0,
+   "inprocess_delta_logit": 17.375
+  },
+  {
+   "source_hash": "-6529592568603091724",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -15.5
+  },
+  {
+   "source_hash": "4729782720236017729",
+   "gold_correct": true,
+   "http_delta_logit": 6.1875,
+   "inprocess_delta_logit": 17.75
+  },
+  {
+   "source_hash": "-725609277071875977",
+   "gold_correct": true,
+   "http_delta_logit": -7.9375,
+   "inprocess_delta_logit": -17.875
+  },
+  {
+   "source_hash": "-210719891814447540",
+   "gold_correct": false,
+   "http_delta_logit": -6.8125,
+   "inprocess_delta_logit": -12.5625
+  },
+  {
+   "source_hash": "7820603080094543375",
+   "gold_correct": false,
+   "http_delta_logit": 0.75,
+   "inprocess_delta_logit": 11.25
+  },
+  {
+   "source_hash": "1494866138756364275",
+   "gold_correct": false,
+   "http_delta_logit": 4.9375,
+   "inprocess_delta_logit": 18.625
+  },
+  {
+   "source_hash": "-2580348602033631624",
+   "gold_correct": true,
+   "http_delta_logit": 1.0625,
+   "inprocess_delta_logit": 10.625
+  },
+  {
+   "source_hash": "-5863545238841746383",
+   "gold_correct": false,
+   "http_delta_logit": -2.625,
+   "inprocess_delta_logit": 2.5
+  },
+  {
+   "source_hash": "-409558505872339839",
+   "gold_correct": true,
+   "http_delta_logit": 6.125,
+   "inprocess_delta_logit": 16.125
+  },
+  {
+   "source_hash": "-2765418496495983555",
+   "gold_correct": false,
+   "http_delta_logit": 3.1875,
+   "inprocess_delta_logit": 15.1875
+  },
+  {
+   "source_hash": "1317098703469312010",
+   "gold_correct": true,
+   "http_delta_logit": -1.4375,
+   "inprocess_delta_logit": 7.5
+  },
+  {
+   "source_hash": "-7796736243722571610",
+   "gold_correct": true,
+   "http_delta_logit": 5.0625,
+   "inprocess_delta_logit": 18.0
+  },
+  {
+   "source_hash": "3535322770547169547",
+   "gold_correct": true,
+   "http_delta_logit": -6.25,
+   "inprocess_delta_logit": -14.5
+  },
+  {
+   "source_hash": "-759157925285992869",
+   "gold_correct": false,
+   "http_delta_logit": -3.5625,
+   "inprocess_delta_logit": 1.25
+  },
+  {
+   "source_hash": "3092960976166712315",
+   "gold_correct": true,
+   "http_delta_logit": -8.0,
+   "inprocess_delta_logit": -18.0
+  },
+  {
+   "source_hash": "-1783196248198859424",
+   "gold_correct": false,
+   "http_delta_logit": -2.625,
+   "inprocess_delta_logit": 6.375
+  },
+  {
+   "source_hash": "5828058213320757040",
+   "gold_correct": true,
+   "http_delta_logit": 5.5,
+   "inprocess_delta_logit": 13.625
+  },
+  {
+   "source_hash": "-4089677153323582692",
+   "gold_correct": true,
+   "http_delta_logit": 3.875,
+   "inprocess_delta_logit": 12.5
+  },
+  {
+   "source_hash": "5432630253475281081",
+   "gold_correct": true,
+   "http_delta_logit": 1.625,
+   "inprocess_delta_logit": 10.6875
+  },
+  {
+   "source_hash": "5038115284982705742",
+   "gold_correct": true,
+   "http_delta_logit": 4.625,
+   "inprocess_delta_logit": 17.875
+  },
+  {
+   "source_hash": "8298945169163766628",
+   "gold_correct": true,
+   "http_delta_logit": -4.0625,
+   "inprocess_delta_logit": 3.5
+  },
+  {
+   "source_hash": "8972250952524691536",
+   "gold_correct": false,
+   "http_delta_logit": -8.5625,
+   "inprocess_delta_logit": -16.5
+  },
+  {
+   "source_hash": "-5058156343918274975",
+   "gold_correct": true,
+   "http_delta_logit": -1.1875,
+   "inprocess_delta_logit": -0.25
+  },
+  {
+   "source_hash": "-8659903975819483513",
+   "gold_correct": false,
+   "http_delta_logit": -4.125,
+   "inprocess_delta_logit": 1.875
+  },
+  {
+   "source_hash": "5140834385555826781",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -14.0
+  },
+  {
+   "source_hash": "5963798883905152997",
+   "gold_correct": true,
+   "http_delta_logit": 6.1875,
+   "inprocess_delta_logit": 21.375
+  },
+  {
+   "source_hash": "960785552643314117",
+   "gold_correct": true,
+   "http_delta_logit": -4.125,
+   "inprocess_delta_logit": 5.125
+  },
+  {
+   "source_hash": "-4671487798611512700",
+   "gold_correct": false,
+   "http_delta_logit": -4.8125,
+   "inprocess_delta_logit": -6.0
+  },
+  {
+   "source_hash": "-8026780516598143773",
+   "gold_correct": true,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 14.9375
+  },
+  {
+   "source_hash": "4327580786089992572",
+   "gold_correct": true,
+   "http_delta_logit": 4.8125,
+   "inprocess_delta_logit": 12.75
+  },
+  {
+   "source_hash": "132756948987837056",
+   "gold_correct": false,
+   "http_delta_logit": -5.6875,
+   "inprocess_delta_logit": -4.5
+  },
+  {
+   "source_hash": "2395714733522833077",
+   "gold_correct": false,
+   "http_delta_logit": -5.5,
+   "inprocess_delta_logit": 0.25
+  },
+  {
+   "source_hash": "-2388542813072511759",
+   "gold_correct": true,
+   "http_delta_logit": -5.0,
+   "inprocess_delta_logit": -4.375
+  },
+  {
+   "source_hash": "4965108394753537109",
+   "gold_correct": false,
+   "http_delta_logit": 3.875,
+   "inprocess_delta_logit": 11.0625
+  },
+  {
+   "source_hash": "-3230101459109905329",
+   "gold_correct": false,
+   "http_delta_logit": -3.3125,
+   "inprocess_delta_logit": 3.125
+  },
+  {
+   "source_hash": "-5468409209377123242",
+   "gold_correct": true,
+   "http_delta_logit": -0.0625,
+   "inprocess_delta_logit": 7.8125
+  },
+  {
+   "source_hash": "-6281748677808393234",
+   "gold_correct": true,
+   "http_delta_logit": -7.0625,
+   "inprocess_delta_logit": 2.75
+  },
+  {
+   "source_hash": "-216300428420499152",
+   "gold_correct": true,
+   "http_delta_logit": -0.875,
+   "inprocess_delta_logit": 6.5
+  },
+  {
+   "source_hash": "-7538473299607856420",
+   "gold_correct": false,
+   "http_delta_logit": -7.1875,
+   "inprocess_delta_logit": -14.25
+  },
+  {
+   "source_hash": "4200803785825669597",
+   "gold_correct": false,
+   "http_delta_logit": 8.0625,
+   "inprocess_delta_logit": 20.625
+  },
+  {
+   "source_hash": "-8570989168139238444",
+   "gold_correct": false,
+   "http_delta_logit": 1.3125,
+   "inprocess_delta_logit": 11.0
+  },
+  {
+   "source_hash": "-5950372755779221949",
+   "gold_correct": false,
+   "http_delta_logit": -0.25,
+   "inprocess_delta_logit": 5.375
+  },
+  {
+   "source_hash": "-6884842029649692609",
+   "gold_correct": true,
+   "http_delta_logit": -4.875,
+   "inprocess_delta_logit": 1.0
+  },
+  {
+   "source_hash": "-7607728828332943225",
+   "gold_correct": false,
+   "http_delta_logit": -3.625,
+   "inprocess_delta_logit": 6.875
+  },
+  {
+   "source_hash": "-8608439087603865646",
+   "gold_correct": false,
+   "http_delta_logit": 4.625,
+   "inprocess_delta_logit": 12.875
+  },
+  {
+   "source_hash": "-1741564087587882917",
+   "gold_correct": false,
+   "http_delta_logit": 4.4375,
+   "inprocess_delta_logit": 18.75
+  },
+  {
+   "source_hash": "-8768243381437670168",
+   "gold_correct": true,
+   "http_delta_logit": 5.375,
+   "inprocess_delta_logit": 19.5
+  },
+  {
+   "source_hash": "-239508306376493971",
+   "gold_correct": false,
+   "http_delta_logit": -6.75,
+   "inprocess_delta_logit": -6.5
+  },
+  {
+   "source_hash": "8592364450914921497",
+   "gold_correct": true,
+   "http_delta_logit": -0.625,
+   "inprocess_delta_logit": 9.5625
+  },
+  {
+   "source_hash": "-4014711631675589923",
+   "gold_correct": false,
+   "http_delta_logit": -5.3125,
+   "inprocess_delta_logit": -2.75
+  },
+  {
+   "source_hash": "-8234456522114385828",
+   "gold_correct": true,
+   "http_delta_logit": 7.3125,
+   "inprocess_delta_logit": 20.5
+  },
+  {
+   "source_hash": "-5158171788924004394",
+   "gold_correct": true,
+   "http_delta_logit": -1.1875,
+   "inprocess_delta_logit": 7.9375
+  },
+  {
+   "source_hash": "-5876724148399255025",
+   "gold_correct": false,
+   "http_delta_logit": -6.375,
+   "inprocess_delta_logit": -5.625
+  },
+  {
+   "source_hash": "4674662817302075154",
+   "gold_correct": true,
+   "http_delta_logit": -2.0625,
+   "inprocess_delta_logit": 5.375
+  },
+  {
+   "source_hash": "-6725437033897735203",
+   "gold_correct": false,
+   "http_delta_logit": 5.125,
+   "inprocess_delta_logit": 20.5
+  },
+  {
+   "source_hash": "4828349854434206799",
+   "gold_correct": true,
+   "http_delta_logit": 5.5625,
+   "inprocess_delta_logit": 14.8125
+  },
+  {
+   "source_hash": "1725954559622477827",
+   "gold_correct": true,
+   "http_delta_logit": -4.3125,
+   "inprocess_delta_logit": 2.0
+  },
+  {
+   "source_hash": "-1322062715835271856",
+   "gold_correct": false,
+   "http_delta_logit": -2.25,
+   "inprocess_delta_logit": 8.25
+  },
+  {
+   "source_hash": "5330001187967222381",
+   "gold_correct": false,
+   "http_delta_logit": -7.5,
+   "inprocess_delta_logit": -8.3125
+  },
+  {
+   "source_hash": "796868672742121035",
+   "gold_correct": true,
+   "http_delta_logit": -0.3125,
+   "inprocess_delta_logit": 8.25
+  },
+  {
+   "source_hash": "4619761719611273023",
+   "gold_correct": true,
+   "http_delta_logit": 4.125,
+   "inprocess_delta_logit": 17.25
+  },
+  {
+   "source_hash": "1608095716781458965",
+   "gold_correct": false,
+   "http_delta_logit": -8.0,
+   "inprocess_delta_logit": -11.75
+  },
+  {
+   "source_hash": "8769103751268505924",
+   "gold_correct": true,
+   "http_delta_logit": 1.8125,
+   "inprocess_delta_logit": 8.4375
+  },
+  {
+   "source_hash": "1459752152289529716",
+   "gold_correct": true,
+   "http_delta_logit": -2.625,
+   "inprocess_delta_logit": 5.75
+  },
+  {
+   "source_hash": "-8254053006045623505",
+   "gold_correct": true,
+   "http_delta_logit": 8.5625,
+   "inprocess_delta_logit": 20.125
+  },
+  {
+   "source_hash": "1652776501746460652",
+   "gold_correct": true,
+   "http_delta_logit": 4.3125,
+   "inprocess_delta_logit": 17.375
+  },
+  {
+   "source_hash": "4291644329214692625",
+   "gold_correct": true,
+   "http_delta_logit": 0.625,
+   "inprocess_delta_logit": 8.5
+  },
+  {
+   "source_hash": "7311355531223662823",
+   "gold_correct": true,
+   "http_delta_logit": 3.5625,
+   "inprocess_delta_logit": 17.5
+  },
+  {
+   "source_hash": "-8626686699418125404",
+   "gold_correct": false,
+   "http_delta_logit": -4.125,
+   "inprocess_delta_logit": 2.25
+  },
+  {
+   "source_hash": "-2806641801524379547",
+   "gold_correct": true,
+   "http_delta_logit": 4.5,
+   "inprocess_delta_logit": 13.9375
+  },
+  {
+   "source_hash": "-2467969513059408259",
+   "gold_correct": false,
+   "http_delta_logit": -3.4375,
+   "inprocess_delta_logit": 6.0
+  },
+  {
+   "source_hash": "5377142644925729983",
+   "gold_correct": true,
+   "http_delta_logit": -4.9375,
+   "inprocess_delta_logit": 0.375
+  },
+  {
+   "source_hash": "-779471269150414080",
+   "gold_correct": false,
+   "http_delta_logit": -2.75,
+   "inprocess_delta_logit": 4.5
+  },
+  {
+   "source_hash": "-6296946588834910596",
+   "gold_correct": false,
+   "http_delta_logit": -4.25,
+   "inprocess_delta_logit": -3.375
+  },
+  {
+   "source_hash": "-8863650758110651026",
+   "gold_correct": false,
+   "http_delta_logit": 5.375,
+   "inprocess_delta_logit": 14.9375
+  },
+  {
+   "source_hash": "-1490636182331654215",
+   "gold_correct": true,
+   "http_delta_logit": 4.1875,
+   "inprocess_delta_logit": 19.0
+  },
+  {
+   "source_hash": "3293142798634409760",
+   "gold_correct": false,
+   "http_delta_logit": -7.75,
+   "inprocess_delta_logit": -13.125
+  },
+  {
+   "source_hash": "4572310859383701603",
+   "gold_correct": false,
+   "http_delta_logit": -4.875,
+   "inprocess_delta_logit": 3.5
+  },
+  {
+   "source_hash": "8541889426837456615",
+   "gold_correct": false,
+   "http_delta_logit": -3.375,
+   "inprocess_delta_logit": 3.0
+  },
+  {
+   "source_hash": "2489921516828038992",
+   "gold_correct": true,
+   "http_delta_logit": 6.3125,
+   "inprocess_delta_logit": 20.25
+  },
+  {
+   "source_hash": "118684476539451061",
+   "gold_correct": false,
+   "http_delta_logit": -3.0625,
+   "inprocess_delta_logit": 3.875
+  },
+  {
+   "source_hash": "4480699966910561987",
+   "gold_correct": false,
+   "http_delta_logit": -0.25,
+   "inprocess_delta_logit": 12.6875
+  },
+  {
+   "source_hash": "-2597318040358621764",
+   "gold_correct": false,
+   "http_delta_logit": 2.25,
+   "inprocess_delta_logit": 10.75
+  },
+  {
+   "source_hash": "-836685233657831123",
+   "gold_correct": true,
+   "http_delta_logit": 7.0625,
+   "inprocess_delta_logit": 20.5
+  },
+  {
+   "source_hash": "-856391378090205702",
+   "gold_correct": false,
+   "http_delta_logit": 2.0625,
+   "inprocess_delta_logit": 12.75
+  },
+  {
+   "source_hash": "-6374462135587419991",
+   "gold_correct": false,
+   "http_delta_logit": 2.1875,
+   "inprocess_delta_logit": 13.625
+  },
+  {
+   "source_hash": "-6914046718139928512",
+   "gold_correct": false,
+   "http_delta_logit": -6.4375,
+   "inprocess_delta_logit": -12.75
+  },
+  {
+   "source_hash": "-1188620665566879331",
+   "gold_correct": false,
+   "http_delta_logit": -2.0,
+   "inprocess_delta_logit": 7.0
+  },
+  {
+   "source_hash": "8848799033434800114",
+   "gold_correct": true,
+   "http_delta_logit": 5.3125,
+   "inprocess_delta_logit": 15.8125
+  },
+  {
+   "source_hash": "3706944293520424132",
+   "gold_correct": false,
+   "http_delta_logit": -6.4375,
+   "inprocess_delta_logit": -17.375
+  },
+  {
+   "source_hash": "-8631483973725026932",
+   "gold_correct": false,
+   "http_delta_logit": -6.1875,
+   "inprocess_delta_logit": -1.625
+  },
+  {
+   "source_hash": "2671855309059735826",
+   "gold_correct": true,
+   "http_delta_logit": -0.375,
+   "inprocess_delta_logit": 11.1875
+  },
+  {
+   "source_hash": "436125925827628215",
+   "gold_correct": false,
+   "http_delta_logit": -7.5625,
+   "inprocess_delta_logit": -16.5
+  },
+  {
+   "source_hash": "9219096198879795497",
+   "gold_correct": false,
+   "http_delta_logit": -7.375,
+   "inprocess_delta_logit": -16.625
+  },
+  {
+   "source_hash": "-7867940776903290132",
+   "gold_correct": true,
+   "http_delta_logit": 5.0625,
+   "inprocess_delta_logit": 18.375
+  },
+  {
+   "source_hash": "1570606882920952316",
+   "gold_correct": true,
+   "http_delta_logit": 6.375,
+   "inprocess_delta_logit": 19.25
+  },
+  {
+   "source_hash": "9156982215664302302",
+   "gold_correct": false,
+   "http_delta_logit": -5.9375,
+   "inprocess_delta_logit": -3.625
+  },
+  {
+   "source_hash": "1733005624111501285",
+   "gold_correct": true,
+   "http_delta_logit": 3.5,
+   "inprocess_delta_logit": 16.25
+  },
+  {
+   "source_hash": "4907797744168954441",
+   "gold_correct": true,
+   "http_delta_logit": 6.625,
+   "inprocess_delta_logit": 20.75
+  },
+  {
+   "source_hash": "-3551015063753752228",
+   "gold_correct": false,
+   "http_delta_logit": -4.8125,
+   "inprocess_delta_logit": 3.25
+  },
+  {
+   "source_hash": "-2466055648331527443",
+   "gold_correct": true,
+   "http_delta_logit": 10.0,
+   "inprocess_delta_logit": 21.75
+  },
+  {
+   "source_hash": "7594589313842222232",
+   "gold_correct": false,
+   "http_delta_logit": -3.25,
+   "inprocess_delta_logit": 3.0
+  },
+  {
+   "source_hash": "-2175314073829977250",
+   "gold_correct": true,
+   "http_delta_logit": 8.1875,
+   "inprocess_delta_logit": 20.75
+  },
+  {
+   "source_hash": "-3650524536980509803",
+   "gold_correct": true,
+   "http_delta_logit": -8.25,
+   "inprocess_delta_logit": -8.5
+  },
+  {
+   "source_hash": "5431819542107297746",
+   "gold_correct": true,
+   "http_delta_logit": 3.6875,
+   "inprocess_delta_logit": 12.875
+  },
+  {
+   "source_hash": "6892536364107124822",
+   "gold_correct": false,
+   "http_delta_logit": 6.375,
+   "inprocess_delta_logit": 16.125
+  },
+  {
+   "source_hash": "8375099831522515020",
+   "gold_correct": true,
+   "http_delta_logit": -1.75,
+   "inprocess_delta_logit": 7.125
+  },
+  {
+   "source_hash": "4668292879178369334",
+   "gold_correct": false,
+   "http_delta_logit": -6.5,
+   "inprocess_delta_logit": -16.25
+  },
+  {
+   "source_hash": "5646608777429478814",
+   "gold_correct": false,
+   "http_delta_logit": -5.8125,
+   "inprocess_delta_logit": -7.375
+  },
+  {
+   "source_hash": "-7015181758551161126",
+   "gold_correct": false,
+   "http_delta_logit": 0.8125,
+   "inprocess_delta_logit": 8.5625
+  },
+  {
+   "source_hash": "3756276718746018127",
+   "gold_correct": true,
+   "http_delta_logit": 6.25,
+   "inprocess_delta_logit": 18.5
+  },
+  {
+   "source_hash": "-3452975211234993801",
+   "gold_correct": true,
+   "http_delta_logit": -6.75,
+   "inprocess_delta_logit": -3.0
+  },
+  {
+   "source_hash": "-5282842221960219631",
+   "gold_correct": true,
+   "http_delta_logit": -3.8125,
+   "inprocess_delta_logit": 5.625
+  },
+  {
+   "source_hash": "3675017027162512044",
+   "gold_correct": false,
+   "http_delta_logit": -2.1875,
+   "inprocess_delta_logit": 7.5
+  },
+  {
+   "source_hash": "7622897853141282400",
+   "gold_correct": true,
+   "http_delta_logit": 6.0625,
+   "inprocess_delta_logit": 18.875
+  },
+  {
+   "source_hash": "-1551347131718822635",
+   "gold_correct": true,
+   "http_delta_logit": -4.0625,
+   "inprocess_delta_logit": 3.125
+  },
+  {
+   "source_hash": "-8886201607513880118",
+   "gold_correct": false,
+   "http_delta_logit": -1.3125,
+   "inprocess_delta_logit": 7.375
+  },
+  {
+   "source_hash": "7430126662151926105",
+   "gold_correct": false,
+   "http_delta_logit": -7.0,
+   "inprocess_delta_logit": -11.0
+  },
+  {
+   "source_hash": "-5862343040371699809",
+   "gold_correct": false,
+   "http_delta_logit": -5.875,
+   "inprocess_delta_logit": -8.25
+  },
+  {
+   "source_hash": "-1257779432680358040",
+   "gold_correct": false,
+   "http_delta_logit": -1.5625,
+   "inprocess_delta_logit": 5.25
+  },
+  {
+   "source_hash": "7117092686649401026",
+   "gold_correct": true,
+   "http_delta_logit": 0.75,
+   "inprocess_delta_logit": 9.0625
+  },
+  {
+   "source_hash": "1289189573397497958",
+   "gold_correct": false,
+   "http_delta_logit": -7.1875,
+   "inprocess_delta_logit": -15.4375
+  },
+  {
+   "source_hash": "7972772464914364340",
+   "gold_correct": true,
+   "http_delta_logit": 3.9375,
+   "inprocess_delta_logit": 11.5625
+  },
+  {
+   "source_hash": "-2487572322505632226",
+   "gold_correct": false,
+   "http_delta_logit": 1.5,
+   "inprocess_delta_logit": 11.8125
+  },
+  {
+   "source_hash": "1454330744255538830",
+   "gold_correct": false,
+   "http_delta_logit": -8.125,
+   "inprocess_delta_logit": -9.4375
+  },
+  {
+   "source_hash": "-6454573379283467541",
+   "gold_correct": true,
+   "http_delta_logit": -6.75,
+   "inprocess_delta_logit": -12.6875
+  },
+  {
+   "source_hash": "9068356011939978279",
+   "gold_correct": true,
+   "http_delta_logit": 4.5625,
+   "inprocess_delta_logit": 12.875
+  },
+  {
+   "source_hash": "-5829182045708869516",
+   "gold_correct": true,
+   "http_delta_logit": -5.5625,
+   "inprocess_delta_logit": -3.375
+  },
+  {
+   "source_hash": "8143323403903630642",
+   "gold_correct": true,
+   "http_delta_logit": -2.9375,
+   "inprocess_delta_logit": 9.0
+  },
+  {
+   "source_hash": "8697858438297663330",
+   "gold_correct": false,
+   "http_delta_logit": 4.0625,
+   "inprocess_delta_logit": 16.125
+  },
+  {
+   "source_hash": "-5901984314174415916",
+   "gold_correct": false,
+   "http_delta_logit": -3.75,
+   "inprocess_delta_logit": 4.125
+  },
+  {
+   "source_hash": "-7500347059604103366",
+   "gold_correct": true,
+   "http_delta_logit": 8.25,
+   "inprocess_delta_logit": 20.875
+  },
+  {
+   "source_hash": "1692028783475210198",
+   "gold_correct": true,
+   "http_delta_logit": 4.75,
+   "inprocess_delta_logit": 10.875
+  },
+  {
+   "source_hash": "-4051674309537733844",
+   "gold_correct": true,
+   "http_delta_logit": 0.5,
+   "inprocess_delta_logit": 8.75
+  },
+  {
+   "source_hash": "8621510665914062541",
+   "gold_correct": true,
+   "http_delta_logit": 5.8125,
+   "inprocess_delta_logit": 16.625
+  },
+  {
+   "source_hash": "3883117333838176717",
+   "gold_correct": true,
+   "http_delta_logit": 4.5,
+   "inprocess_delta_logit": 15.5625
+  },
+  {
+   "source_hash": "-4030818053580432517",
+   "gold_correct": true,
+   "http_delta_logit": 0.3125,
+   "inprocess_delta_logit": 4.625
+  },
+  {
+   "source_hash": "-4553741808476889292",
+   "gold_correct": false,
+   "http_delta_logit": -7.6875,
+   "inprocess_delta_logit": -11.4375
+  },
+  {
+   "source_hash": "2764001021461420973",
+   "gold_correct": true,
+   "http_delta_logit": -2.875,
+   "inprocess_delta_logit": 7.9375
+  },
+  {
+   "source_hash": "-1514502110091320451",
+   "gold_correct": true,
+   "http_delta_logit": 5.625,
+   "inprocess_delta_logit": 20.0
+  },
+  {
+   "source_hash": "8190801279646419350",
+   "gold_correct": true,
+   "http_delta_logit": 7.6875,
+   "inprocess_delta_logit": 21.0
+  },
+  {
+   "source_hash": "4350038197595607277",
+   "gold_correct": true,
+   "http_delta_logit": 4.1875,
+   "inprocess_delta_logit": 13.5
+  },
+  {
+   "source_hash": "-3781001353695605878",
+   "gold_correct": true,
+   "http_delta_logit": 1.0,
+   "inprocess_delta_logit": 15.3125
+  },
+  {
+   "source_hash": "-4721433231359750682",
+   "gold_correct": true,
+   "http_delta_logit": 1.3125,
+   "inprocess_delta_logit": 8.6875
+  },
+  {
+   "source_hash": "-1546912553541707414",
+   "gold_correct": true,
+   "http_delta_logit": 5.625,
+   "inprocess_delta_logit": 18.375
+  },
+  {
+   "source_hash": "7089851305625604681",
+   "gold_correct": false,
+   "http_delta_logit": 3.4375,
+   "inprocess_delta_logit": 13.875
+  },
+  {
+   "source_hash": "2573222648187244264",
+   "gold_correct": true,
+   "http_delta_logit": 4.4375,
+   "inprocess_delta_logit": 11.625
+  },
+  {
+   "source_hash": "-1172889923453608920",
+   "gold_correct": true,
+   "http_delta_logit": 4.125,
+   "inprocess_delta_logit": 14.125
+  },
+  {
+   "source_hash": "8142306542102803045",
+   "gold_correct": true,
+   "http_delta_logit": -1.0,
+   "inprocess_delta_logit": 7.5
+  },
+  {
+   "source_hash": "6904619921430543636",
+   "gold_correct": false,
+   "http_delta_logit": -7.3125,
+   "inprocess_delta_logit": -12.5
+  },
+  {
+   "source_hash": "6875241833648447673",
+   "gold_correct": true,
+   "http_delta_logit": 3.8125,
+   "inprocess_delta_logit": 15.5625
+  },
+  {
+   "source_hash": "-8370445993571590286",
+   "gold_correct": true,
+   "http_delta_logit": 3.875,
+   "inprocess_delta_logit": 10.875
+  },
+  {
+   "source_hash": "-3632758535009470069",
+   "gold_correct": true,
+   "http_delta_logit": 4.375,
+   "inprocess_delta_logit": 14.75
+  },
+  {
+   "source_hash": "5940896082872900779",
+   "gold_correct": true,
+   "http_delta_logit": -8.75,
+   "inprocess_delta_logit": -20.25
+  },
+  {
+   "source_hash": "4972965958648426600",
+   "gold_correct": false,
+   "http_delta_logit": 0.0,
+   "inprocess_delta_logit": 7.75
+  },
+  {
+   "source_hash": "8841927761667667240",
+   "gold_correct": true,
+   "http_delta_logit": -7.0625,
+   "inprocess_delta_logit": -16.5
+  },
+  {
+   "source_hash": "4456042040866574837",
+   "gold_correct": false,
+   "http_delta_logit": -2.4375,
+   "inprocess_delta_logit": 7.125
+  },
+  {
+   "source_hash": "-2448693703036064176",
+   "gold_correct": false,
+   "http_delta_logit": 2.1875,
+   "inprocess_delta_logit": 12.875
+  },
+  {
+   "source_hash": "-2301546805871360650",
+   "gold_correct": true,
+   "http_delta_logit": 1.9375,
+   "inprocess_delta_logit": 11.4375
+  },
+  {
+   "source_hash": "-6017288208259452548",
+   "gold_correct": true,
+   "http_delta_logit": 6.8125,
+   "inprocess_delta_logit": 19.625
+  },
+  {
+   "source_hash": "-7471679281150024242",
+   "gold_correct": true,
+   "http_delta_logit": 5.5,
+   "inprocess_delta_logit": 18.25
+  },
+  {
+   "source_hash": "-697743119640212693",
+   "gold_correct": true,
+   "http_delta_logit": -5.375,
+   "inprocess_delta_logit": -3.375
+  },
+  {
+   "source_hash": "-1860235211727566587",
+   "gold_correct": false,
+   "http_delta_logit": -1.125,
+   "inprocess_delta_logit": 6.375
+  },
+  {
+   "source_hash": "-702682462304679198",
+   "gold_correct": true,
+   "http_delta_logit": 4.5,
+   "inprocess_delta_logit": 14.3125
+  },
+  {
+   "source_hash": "-7982832843175559525",
+   "gold_correct": false,
+   "http_delta_logit": -5.5,
+   "inprocess_delta_logit": 3.625
+  },
+  {
+   "source_hash": "-1058036027744871984",
+   "gold_correct": false,
+   "http_delta_logit": -6.4375,
+   "inprocess_delta_logit": -11.25
+  },
+  {
+   "source_hash": "6388392896351352054",
+   "gold_correct": false,
+   "http_delta_logit": -7.0625,
+   "inprocess_delta_logit": -7.875
+  },
+  {
+   "source_hash": "9130966287590659043",
+   "gold_correct": true,
+   "http_delta_logit": 4.9375,
+   "inprocess_delta_logit": 13.25
+  },
+  {
+   "source_hash": "2982583455886663224",
+   "gold_correct": true,
+   "http_delta_logit": 5.9375,
+   "inprocess_delta_logit": 20.5
+  },
+  {
+   "source_hash": "4954063778435245538",
+   "gold_correct": false,
+   "http_delta_logit": -8.75,
+   "inprocess_delta_logit": -18.875
+  },
+  {
+   "source_hash": "-1446395180340423862",
+   "gold_correct": true,
+   "http_delta_logit": -4.1875,
+   "inprocess_delta_logit": 2.75
+  },
+  {
+   "source_hash": "6170573826924896546",
+   "gold_correct": false,
+   "http_delta_logit": -1.0,
+   "inprocess_delta_logit": 6.125
+  },
+  {
+   "source_hash": "7956417752842179302",
+   "gold_correct": true,
+   "http_delta_logit": -0.8125,
+   "inprocess_delta_logit": 8.25
+  },
+  {
+   "source_hash": "-7839305879399672346",
+   "gold_correct": true,
+   "http_delta_logit": 4.0,
+   "inprocess_delta_logit": 11.6875
+  },
+  {
+   "source_hash": "635590274291441370",
+   "gold_correct": true,
+   "http_delta_logit": 2.25,
+   "inprocess_delta_logit": 11.875
+  },
+  {
+   "source_hash": "-2293191034410406870",
+   "gold_correct": true,
+   "http_delta_logit": 5.75,
+   "inprocess_delta_logit": 17.125
+  },
+  {
+   "source_hash": "-3007351841241347753",
+   "gold_correct": false,
+   "http_delta_logit": -7.4375,
+   "inprocess_delta_logit": -14.0
+  },
+  {
+   "source_hash": "7652940498130543601",
+   "gold_correct": false,
+   "http_delta_logit": -6.5625,
+   "inprocess_delta_logit": -8.0
+  },
+  {
+   "source_hash": "-7277584912283327660",
+   "gold_correct": true,
+   "http_delta_logit": -5.3125,
+   "inprocess_delta_logit": -0.625
+  },
+  {
+   "source_hash": "2311548423151221230",
+   "gold_correct": true,
+   "http_delta_logit": 3.0,
+   "inprocess_delta_logit": 14.625
+  },
+  {
+   "source_hash": "1601185705010822565",
+   "gold_correct": false,
+   "http_delta_logit": -6.75,
+   "inprocess_delta_logit": -0.875
+  },
+  {
+   "source_hash": "-4637653561645368352",
+   "gold_correct": true,
+   "http_delta_logit": 4.25,
+   "inprocess_delta_logit": 12.125
+  },
+  {
+   "source_hash": "7690533862525094442",
+   "gold_correct": false,
+   "http_delta_logit": -5.875,
+   "inprocess_delta_logit": -10.75
+  },
+  {
+   "source_hash": "-3008915378393669727",
+   "gold_correct": true,
+   "http_delta_logit": 5.0625,
+   "inprocess_delta_logit": 16.375
+  },
+  {
+   "source_hash": "-7809077326910047651",
+   "gold_correct": true,
+   "http_delta_logit": 5.5625,
+   "inprocess_delta_logit": 16.375
+  },
+  {
+   "source_hash": "3171604498197597157",
+   "gold_correct": false,
+   "http_delta_logit": -2.625,
+   "inprocess_delta_logit": 7.0
+  },
+  {
+   "source_hash": "5733691533641439138",
+   "gold_correct": true,
+   "http_delta_logit": 0.6875,
+   "inprocess_delta_logit": 8.375
+  },
+  {
+   "source_hash": "-712777079981901238",
+   "gold_correct": false,
+   "http_delta_logit": -3.8125,
+   "inprocess_delta_logit": 7.375
+  },
+  {
+   "source_hash": "-2295264718865650191",
+   "gold_correct": false,
+   "http_delta_logit": -1.5625,
+   "inprocess_delta_logit": 8.9375
+  },
+  {
+   "source_hash": "-4937499300864431882",
+   "gold_correct": true,
+   "http_delta_logit": 3.8125,
+   "inprocess_delta_logit": 15.0625
+  }
+ ]
+}
