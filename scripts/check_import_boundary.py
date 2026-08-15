@@ -29,7 +29,7 @@ computed two ways that must agree, and both of them make "checked" the DEFAULT:
     what `import indra_belief` and its siblings actually cost at runtime. Most of
     the entry set is read out of `src/indra_belief/__init__.py` itself (the
     module that calls its own contents "Public API"), so it tracks the package
-    rather than a copy of it; `DECLARED_ENTRY_POINTS` adds the four serving
+    rather than a copy of it; `DECLARED_ENTRY_POINTS` adds the five serving
     surfaces the package `__init__` does not re-export, each with its reason.
   * `core_modules()` is every first-party module NOT under a declared research
     root. A closure alone would leave the unreached unguarded — `belief_scorer`,
@@ -97,7 +97,7 @@ read as "the core is deployable". THIS IS AN IMPORT-GRAPH CHECK, NOTHING MORE.
   * Third-party weight. This says nothing about whether the core is SMALL, only
     about which side of the line it imports from. The size claim belongs to the
     Dockerfile's `test` stage, which builds without gilda or indra installed.
-  * The entry points, the research roots and the tool root are JUDGMENTS. Four
+  * The entry points, the research roots and the tool root are JUDGMENTS. Five
     entry points, six research roots and one directory are declared here, each
     with the reason it is what it is. `main` fails if any of them stops naming
     something real (exit 3) but nothing can tell you they name the right ones.
@@ -169,6 +169,10 @@ DECLARED_ENTRY_POINTS: Mapping[str, str] = {
         "a deployed service that dispatches to a paid provider cannot enforce a "
         "cap without it, which is also why its `corpus.cost` import is a core "
         "edge and not a violation.",
+    f"{PACKAGE}.probes":
+        "the public forced-verdict reader for one evidence record. Unlike the "
+        "offline measurements under scripts/, this transport read is callable "
+        "by serving code.",
 }
 
 # The measurement side. A module under one of these prefixes exists to say
@@ -379,7 +383,7 @@ def core_modules() -> frozenset[str]:
 
 
 def serving_entry_points() -> tuple[str, ...]:
-    """The serving surface: the package's own Public API plus the declared four.
+    """The serving surface: the package's own Public API plus the declared five.
 
     The first half is READ from `src/indra_belief/__init__.py` — its module-level
     imports and the ones inside `__getattr__` — so adding a name to the package's

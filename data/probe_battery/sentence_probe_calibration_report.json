@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "kind": "sentence_probe_calibration_evaluation",
+  "grain": "sentence",
+  "probe_id": "pol.verdict_direct",
+  "source": "settle_probe_scores.jsonl",
+  "artifact": "sentence_probe_calibration.json",
+  "artifact_sha256": "130be54bdab2638175f6cceb4de2a57a663ab01fd206df1ea024e8b578da2b46",
+  "fit": {
+    "split": "fit",
+    "curation": "external_curator_gold_v1",
+    "n": 556,
+    "n_correct": 273,
+    "base_rate": 0.4910071942446043,
+    "record_id": "f{source_hash}",
+    "n_splits": 5,
+    "C": 1.0,
+    "seed": 0
+  },
+  "held_out": {
+    "split": "test",
+    "curation": "eval_curation_v1",
+    "n": 1600,
+    "n_correct": 800,
+    "base_rate": 0.5,
+    "record_id": "t{source_hash}"
+  },
+  "raw_delta_logit": {
+    "is_probability": false,
+    "ece_bins8": null,
+    "ece_reason": "undefined: delta_logit is log-odds, not a probability; it was never passed to ECE",
+    "auroc": 0.73691171875
+  },
+  "raw_label_probability": {
+    "definition": "sigmoid(delta_logit), equal to ProbeReading.p_raw",
+    "ece_bins8": 0.2596503129349514,
+    "brier": 0.27870038064264774
+  },
+  "calibrated_probability": {
+    "definition": "FrozenCombiner.score(delta_logit)",
+    "ece_bins8": 0.05988766898506697,
+    "brier": 0.21288085397819043,
+    "auroc": 0.73371796875,
+    "distinct_scores": 29,
+    "minimum": 0.20705797547118798,
+    "maximum": 1.0
+  },
+  "ece_absolute_improvement_vs_p_raw": 0.1997626439498844,
+  "weight_of_evidence": {
+    "definition": "ell = logit(p_hat) - logit(fit base_rate)",
+    "base_rate": 0.4910071942446043,
+    "logit_clip_eps": 1e-06
+  },
+  "checks": {
+    "artifact_reload_scores_exactly": true,
+    "fit_id_guard_fired_after_reload": true,
+    "all_held_out_rows_scored": true
+  }
+}

@@ -9,12 +9,9 @@ regression-locked by
 ``tests/test_metrics.py::test_auprc_matches_sklearn_average_precision``, and was
 re-measured today.  This node deliberately does not edit those two scripts.
 
-Measured on ``data/results/cc_holdout_cc/holdout_cc.jsonl``, the incumbent
-``grid_score`` takes SIX distinct values: 0.05x63, 0.20x130, 0.35x23,
-0.65x98, 0.80x18, and 0.95x168.  It does not take only two values there.
-The "~2 occupied bins" observation in ``scripts/calibration_stage0.py`` is the
-confidence-collapsed FIT regime.  The AP-flattery argument survives because
-six distinct values are still far fewer than 500.
+Historical incumbent exports may have very low score resolution. This
+evaluator reads the persisted incumbent measurement only; it never recreates a
+missing value from categorical verdict/confidence.
 
 Timing is a measurement only when a number was recorded.  An absent key, a
 JSON ``null``, or a call log in which no call carries ``duration_s`` produces
@@ -45,9 +42,6 @@ from indra_belief.metrics import (
     ece,
     reliability_bins,
 )
-from indra_belief.verdict import grid_score
-
-
 ROOT = Path(__file__).resolve().parents[1]
 # NOTE: a module-level `AP_REQUIRES_DISTINCT_COUNT = True` used to sit here. It
 # was read by nothing — a symbol shaped like a compliance switch for the
@@ -273,18 +267,12 @@ def load_pairs(scores_path: str | Path, gold_path: str | Path | None = None) -> 
         )
         candidate_seconds.append(_candidate_seconds(score_row))
 
-        if "incumbent_score" in score_row:
-            incumbent_score = score_row["incumbent_score"]
-        else:
-            incumbent_score = grid_score(
-                gold_row["verdict"], gold_row["confidence"]
+        incumbent_score = score_row.get("incumbent_score")
+        if incumbent_score is None:
+            raise ValueError(
+                "incumbent_score is required; missing scores are not derived "
+                f"from verdict/confidence (record_id={record_id})"
             )
-            if incumbent_score is None:
-                raise ValueError(
-                    "grid_score returned None for "
-                    f"record_id={record_id} verdict={gold_row['verdict']!r} "
-                    f"confidence={gold_row['confidence']!r}"
-                )
         incumbent.append(float(incumbent_score))
 
         incumbent_value = _score_incumbent_seconds(score_row)
@@ -333,10 +321,8 @@ def score_block(
 ) -> dict:
     """Compute one arm's metrics, with calibration refused off the unit interval.
 
-    ``VERDICT_SCORE_GRID`` has six cells and collapses toward the "~2 occupied
-    bins" confidence-degenerate FIT regime documented by
-    ``scripts/calibration_stage0.py``.  AP can therefore flatter a continuous
-    arm, so its distinct-threshold count is produced by the same helper call.
+    A low-resolution incumbent can flatter a continuous arm in AP comparisons,
+    so its distinct-threshold count is produced by the same helper call.
 
     Re-measured today, ``metrics.BINS_8`` spans [0.0, 1.001), and out-of-range
     rows leave the numerator while remaining in ``n_all``:

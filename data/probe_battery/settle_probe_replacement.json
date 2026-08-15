@@ -1,0 +1,21 @@
+{
+ "kind": "probe_replacement_settlement",
+ "n_fit": 556,
+ "n_test": 1600,
+ "auroc_incumbent": 0.851109,
+ "auroc_probe": 0.739588,
+ "delta_auroc": -0.111521,
+ "delta_auroc_ci95": [
+  -0.139312,
+  -0.086449
+ ],
+ "ece_incumbent": 0.099062,
+ "ece_probe": 0.039911,
+ "distinct_incumbent": 3,
+ "distinct_probe": 35,
+ "gate": {
+  "rule": "ci95_low > -0.02 AND lower ECE AND more distinct scores",
+  "non_inferior": false,
+  "verdict": "NO-GO"
+ }
+}

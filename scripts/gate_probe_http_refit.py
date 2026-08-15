@@ -34,7 +34,6 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from indra_belief.probe_combiner import fit_combiner  # noqa: E402
-from indra_belief.verdict import grid_score  # noqa: E402
 from refit_probe_over_http import auroc, clustered_ci  # noqa: E402
 
 PROBE_DIR = ROOT / "data" / "probe_battery"
@@ -48,7 +47,7 @@ EPS = 1e-6
 
 
 def incumbent_by_source_hash(path: Path) -> dict[str, float]:
-    """source_hash -> the deployed six-cell grid score for that evidence."""
+    """source_hash -> the score actually persisted for that evidence."""
     out: dict[str, float] = {}
     for line in path.read_text().splitlines():
         if not line.strip():
@@ -58,8 +57,6 @@ def incumbent_by_source_hash(path: Path) -> dict[str, float]:
         if sh is None:
             continue
         s = r.get("our_score")
-        if s is None:
-            s = grid_score(r.get("verdict"), r.get("confidence"))
         if s is None:
             continue
         out.setdefault(str(sh), float(s))
