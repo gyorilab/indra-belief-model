@@ -242,9 +242,8 @@ class MonolithicPrompt:
         is the READING, so a reply that scores here scores identically on the
         live scorer and the batch replay.
 
-        An unreadable reply stays (None, None). It must not become a number —
-        `grid_score` returns None off-grid precisely so an absent measurement
-        stays absent.
+        An unreadable reply stays (None, None). Parsing never fabricates a
+        probability from categorical output.
         """
         for text in ([content, f"{reasoning}\n{content}"] if reasoning else [content]):
             read = self.parse_verdict(text)

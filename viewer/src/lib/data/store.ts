@@ -16,6 +16,7 @@ import {
 	type CurationIndex
 } from './curation';
 import type { RunMeta, StatementRollup, EvidenceRow, CurationRow, RunMetrics } from './types';
+import { sentenceProbabilityOrNull } from './calibration';
 
 // Re-export the curation domain surface so existing call sites can keep importing
 // from './store' (the IO entry point) without reaching into ./curation directly.
@@ -74,7 +75,11 @@ export function getEvidenceIndex(meta: RunMeta): EvidenceIndex {
 		if (end === -1) end = text.length;
 		if (end > nl) {
 			try {
-				const row = JSON.parse(text.slice(nl, end)) as EvidenceRow;
+				const parsed = JSON.parse(text.slice(nl, end)) as EvidenceRow;
+				const row: EvidenceRow = {
+					...parsed,
+					our_score: sentenceProbabilityOrNull(parsed.our_score)
+				};
 				all.push(row);
 				let arr = byStmt.get(row.stmt_hash);
 				if (!arr) {

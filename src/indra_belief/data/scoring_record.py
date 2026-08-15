@@ -419,7 +419,10 @@ class ScoringRecord:
                 if entity.is_pseudogene:
                     tier = "deterministic_pseudogene"
                 return {
-                    "score": 0.05,
+                    # The categorical deterministic verdict is not a calibrated
+                    # sentence probability. The serving boundary may replace
+                    # this explicit absence with its independent probe reading.
+                    "score": None,
                     "verdict": "incorrect",
                     "confidence": "high",
                     "raw_text": reason,

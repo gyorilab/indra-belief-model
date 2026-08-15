@@ -1115,14 +1115,17 @@ def test_divergence_a_no_text_live_only_keys(expected):
     shared value differs. K1-prepared-execution owns the reconciliation."""
     entry = expected["deterministic_results"]["2:41"]
     assert entry["route"] == "no_text"
-    assert entry["live_only_keys"] == ["selected_example_ids", "selected_examples"]
+    assert entry["live_only_keys"] == [
+        "score_error", "selected_example_ids", "selected_examples"
+    ]
     assert entry["batch_only_keys"] == []
     assert entry["value_differences"] == {}
     assert entry["live"]["selected_example_ids"] == []
     assert entry["live"]["selected_examples"] == []
     # deterministic_mismatch has no divergence at all.
     mismatch = expected["deterministic_results"]["2:31"]
-    assert mismatch["live_only_keys"] == mismatch["batch_only_keys"] == []
+    assert mismatch["live_only_keys"] == ["score_error"]
+    assert mismatch["batch_only_keys"] == []
     assert mismatch["value_differences"] == {}
 
 
@@ -1139,7 +1142,8 @@ def test_divergence_b_pseudogene_raw_text_prefix(expected):
     sides. K2-one-parser owns the reconciliation."""
     entry = expected["deterministic_results"]["909:0"]
     assert entry["route"] == "deterministic_pseudogene"
-    assert entry["live_only_keys"] == entry["batch_only_keys"] == []
+    assert entry["live_only_keys"] == ["score_error"]
+    assert entry["batch_only_keys"] == []
     assert sorted(entry["value_differences"]) == ["raw_text"]
     live = entry["value_differences"]["raw_text"]["live"]
     batch = entry["value_differences"]["raw_text"]["batch"]

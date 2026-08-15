@@ -646,9 +646,9 @@ prefix space is 9 values on this corpus.
 
 [M] The returned dict has 11 keys: `score, verdict, confidence, raw_text, tokens, tier,
 grounding_status, provenance_triggered, selected_example_ids, selected_examples, call_log`.
-[V] `score` is `float | None`, and `None` means absence — `grid_score` in
-`src/indra_belief/verdict.py` returns `None` on an unparseable verdict and 0.5 is not a
-value this scorer can produce. [M] `json.dumps(call_log)` is 19,675 bytes against 2,024
+[V] `score` is a calibrated sentence probability or `None`; an unparseable verdict,
+unsupported calibration profile, or failed probe never fabricates a categorical
+midpoint. [M] `json.dumps(call_log)` is 19,675 bytes against 2,024
 for everything else: **91% of the response is the call log**, which embeds the full system
 prompt and all 28 few-shot messages verbatim. [V] The model's own justification is not
 top-level — `_stamp_committed_justification` writes `support`/`objection` into the last

@@ -64,7 +64,7 @@ from indra_belief.scorers.monolithic._prompts_disconfirm import (
     render_example_reasonfirst as _render_example_reasonfirst,
 )
 from indra_belief.scorers.monolithic._prompts_relation import resolve_relation_nature
-from indra_belief.verdict import NO_TEXT_RESULT, grid_score, parse_response
+from indra_belief.verdict import NO_TEXT_RESULT, parse_response
 
 # --- Scoring variants ---
 # A variant is the whole scoring profile — prompt, few-shot renderer, and the
@@ -528,14 +528,14 @@ def _score_with_tools(
     }
 
 
-def score(
+def _score_categorical(
     client: ModelClient,
     record: ScoringRecord,
     max_tokens: int | None = None,
     *,
     variant: ScoringVariant | None = None,
 ) -> dict:
-    """Score a single extraction with a single deterministic LLM call.
+    """Produce categorical audit output for one extraction.
 
     Two-tier:
       Tier 1: deterministic grounding auto-reject (mismatch/pseudogene).
@@ -561,10 +561,8 @@ def score(
     # grounding + the asserted relation) is planned and will replace this branch.
     if not (record.evidence_text or "").strip():
         return {
-            # ("correct", "high") is an on-grid pair, so this is always 0.95 —
-            # a real cell, not the neutral value the parse-failure path used to
-            # fabricate. The shared core derives it through `grid_score`, which
-            # can only return None off-grid.
+            # There is no sentence to probe, so calibrated score availability is
+            # explicitly absent even though the categorical default is correct.
             **NO_TEXT_RESULT,
             "selected_example_ids": [],
             "selected_examples": [],
@@ -612,9 +610,9 @@ def score(
     call_log = _pop()
 
     return {
-        # None when the model's reply named no scorable verdict. That absence is
-        # the result — it is not a 0.5, and no caller may make it one.
-        "score": grid_score(verdict, confidence),
+        # The public score() boundary replaces this placeholder with the
+        # calibrated direct-probe probability when it is available.
+        "score": None,
         "verdict": verdict,
         "confidence": confidence,
         "raw_text": raw,
@@ -626,6 +624,47 @@ def score(
         "selected_examples": result.get("selected_examples", []),
         "call_log": call_log,
     }
+
+
+def score(
+    client: ModelClient,
+    record: ScoringRecord,
+    max_tokens: int | None = None,
+    *,
+    variant: ScoringVariant | None = None,
+) -> dict:
+    """Score one extraction and emit one calibrated sentence probability.
+
+    The categorical verdict remains an audit output.  The numeric ``score`` is
+    replaced at this canonical boundary by the persisted direct-probe
+    calibration; an unsupported client, empty sentence, fitted-row leakage
+    guard, or probe failure yields ``None`` rather than a categorical midpoint.
+    """
+
+    categorical = _score_categorical(
+        client,
+        record,
+        max_tokens=max_tokens,
+        variant=variant,
+    )
+    from indra_belief.probes.calibration import replace_sentence_score
+
+    try:
+        record_id = f"f{record.source_hash}"
+    except Exception:
+        record_id = None
+
+    return replace_sentence_score(
+        categorical,
+        {
+            "subject": record.subject,
+            "object": record.object,
+            "stmt_type": record.stmt_type,
+            "evidence_text": record.evidence_text,
+        },
+        client,
+        record_id=record_id,
+    )
 
 
 def score_statement(
@@ -657,11 +696,10 @@ def score_statement(
 
     Returns:
         A dict with keys:
-            score            float on the six-cell grid; 0.95=correct/high …
-                             0.05=incorrect/high. **None** when the verdict
-                             cannot be parsed — an absent measurement stays
-                             absent, and 0.5 is not a value this scorer can
-                             produce.
+            score            calibrated sentence probability when a serving
+                             boundary can perform the fitted direct-probe read;
+                             otherwise **None**. This categorical call never
+                             derives a number from verdict/confidence.
             verdict          "correct" | "incorrect" | None (parse failure)
             confidence       "high" | "medium" | "low" | None
             tier             which scoring path produced the verdict

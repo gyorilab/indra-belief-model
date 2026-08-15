@@ -288,16 +288,25 @@ def test_fixture_is_sorted_json_with_provenance(expected):
 
 def test_every_divergent_mutant_rereads_as_recorded(expected):
     """The fixture keeps each mutant's FULL prefix, so all four parsers run on
-    the real input rather than on a report tail. A parser change moves a triple
-    here even though the corpus is absent."""
+    the real input rather than on a report tail. The frozen ``new`` reading
+    includes the grid projection present when the measurement was captured;
+    its categorical coordinates remain the parser contract, while current
+    scoring deliberately leaves the retired third coordinate absent."""
     entries = expected["divergent_mutants"]
     assert len(entries) == _MEASURED["old_live_ne_old_batch"] == 6
     assert len({entry["label"] for entry in entries}) == 6
     for entry in entries:
         for name, reader in READERS:
-            assert list(reader(entry["text"])) == entry["readings"][name], (
-                entry["label"], name
-            )
+            actual = list(reader(entry["text"]))
+            recorded = entry["readings"][name]
+            if name == "new":
+                assert actual[:2] == recorded[:2], (entry["label"], name)
+                assert actual[2] is None, (entry["label"], name)
+                assert recorded[2] == entry["readings"]["old_live"][2], (
+                    entry["label"], name
+                )
+            else:
+                assert actual == recorded, (entry["label"], name)
 
 
 def test_the_divergence_is_the_batch_parser_losing_the_verdict(expected):

@@ -499,7 +499,7 @@ complement.
 | pooling | log-odds sum, with a non-Bayesian floor | log-odds sum of weights of evidence |
 | disconfirming evidence | reads deleted, sources dropped | negative weight, no special case |
 | source reliability | hard-coded maximum | fitted coefficient, or dropped if not significant |
-| assigned constants removed | — | 6 grid values, the floor (the 0.5 parse fallback was already removed in `a10df62`: an unparseable reply is now typed absence — `grid_score` and `parse_response` return `None` — not a fabricated midpoint) |
+| assigned constants removed | — | 6 grid values, the floor (the 0.5 parse fallback was already removed in `a10df62`; an unparseable reply is typed absence, not a fabricated midpoint) |
 
 The estimator is not new — it is naive Bayes in log-odds, which is what the
 deployed system already approximates. What changes is that the per-read input

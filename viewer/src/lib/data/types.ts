@@ -62,6 +62,30 @@ export interface CalibrationProvenance {
 	evaluation_set_sha256: string | null;
 }
 
+/** Provenance for the single sentence-level numeric score carried by schema-v8
+ * exports. Historical v8 exports reused the same JSON field for the categorical
+ * verdict grid, so the viewer must require this complete contract before
+ * treating `our_score` as a calibrated probability. */
+export interface SentenceScoreProvenance {
+	status: 'available' | 'unavailable';
+	source_status?: 'enabled' | 'unavailable' | null;
+	contract_version: number;
+	grain: 'sentence';
+	kind: 'calibrated_probability_correct';
+	calibration_model: string;
+	calibration_model_id: string;
+	probe_id: string;
+	probe_digest: string;
+	calibration_artifact: string;
+	calibration_artifact_sha256: string;
+	raw_field: 'score';
+	export_field: 'our_score';
+	unavailable_value: null;
+	rows_available: number;
+	rows_unavailable: number;
+	reason?: string;
+}
+
 /** Pre-v8 survival-weight payload retained so old schema-v7 exports still load. */
 export interface LegacySoftWeights {
 	w_correct: number;
@@ -90,6 +114,9 @@ export interface RunMeta {
 	/** Content digests mirrored from metrics.json for end-to-end inspection.
 	 * `undefined` on exports created before schema v8. */
 	provenance?: CalibrationProvenance | null;
+	/** Exact meaning and fitted artifact behind `per_evidence.our_score`.
+	 * Missing on pre-W1 exports, even when those exports also claimed schema v8. */
+	sentence_score?: SentenceScoreProvenance | null;
 	/** Display name of the corpus this run was scored against
 	 * (`generated_from.corpus`, basename). Cross-run calibration compatibility uses
 	 * baked provenance digests, never this mutable/path-derived label. */
@@ -274,6 +301,7 @@ export interface EvidenceRow {
 	evidence_text: string | null;
 	text_len: number;
 	rasmachine_belief: number | null;
+	/** Calibrated sentence-level P(correct), or null when unavailable. */
 	our_score: number | null;
 	verdict: string | null;
 	confidence: string | null;

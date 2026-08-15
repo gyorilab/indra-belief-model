@@ -7,13 +7,12 @@ contract the frozen substrate commits to. `ReplayError` and `prompt_sha256`
 moved there with it and are re-exported here, so every existing importer and
 every `except ReplayError` still resolves.
 
-It no longer READS one either. `indra_belief.verdict` owns the parser and the
-(verdict, confidence) -> score grid, for this path and for the live scorer
-alike. The copies that lived here were not equivalent to the live ones: this
-one's nullish set omitted "no support", and its fallback patterns were a strict
-subset, so under truncation it lost verdicts the live path recovered. Its SCORE
-map, by contrast, was the correct half of that split, and is what the unified
-`grid_score` kept — an off-grid pair is None, and None means RETRY, not 0.5.
+It no longer READS one either. `indra_belief.verdict` owns the parser for this
+path and for the live scorer alike. Frozen raw rows are integrity-checked by
+their hash-chained spend WAL, so replay does not need to re-derive an obsolete
+display score from verdict/confidence. New replay rows carry `score=None`: the
+calibrated forced-verdict probe is not representable by the guarded provider
+client, and absence must remain explicit.
 """
 
 from __future__ import annotations
@@ -42,7 +41,7 @@ from indra_belief.prepared_execution import (
     relation_user_message,
 )
 from indra_belief.spend_guard import classify_provider_failure
-from indra_belief.verdict import NO_TEXT_RESULT, grid_score, parse_response
+from indra_belief.verdict import NO_TEXT_RESULT, parse_response
 
 from .contracts import (
     Action,
@@ -377,7 +376,7 @@ class ReplayIndex:
         expected = "deterministic_pseudogene" if pseudogene else "deterministic_mismatch"
         if reason is None or route != expected:
             raise ReplayError("deterministic route no longer reproduces its rejection")
-        return _result(0.05, "incorrect", "high", route, status, False, reason, 0, [])
+        return _result(None, "incorrect", "high", route, status, False, reason, 0, [])
 
 
 def _entity_in_text(entity: Mapping[str, Any], text: str) -> bool:
@@ -446,7 +445,7 @@ def _relation_note(text: str, subject: str, object_: str) -> str:
     )
 
 
-def _result(score: float, verdict: str | None, confidence: str | None, tier: str,
+def _result(score: float | None, verdict: str | None, confidence: str | None, tier: str,
             grounding: str | None, provenance: bool, raw: str, tokens: int | None,
             calls: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     return {"score": score, "verdict": verdict, "confidence": confidence, "tier": tier,
@@ -481,7 +480,7 @@ def score_execution(index: ReplayIndex, row: Mapping[str, Any], client: ClientLi
             "objection": None if parsed is None else parsed.objection,
             "source": "answer_json",
         }
-    return _result(None if parsed is None else parsed.score, verdict, confidence,
+    return _result(None, verdict, confidence,
                    "llm_tool_use" if route == "tool" else "llm_comprehension",
                    "flagged" if route == "tool" else "all_match", bool(row.get("provenance")),
                    response.raw_text, response.tokens, client.pop_call_log())
@@ -625,8 +624,18 @@ def validate_row(row: Mapping[str, Any], *, source: Mapping[str, Any], action: A
             raise ReplayError("deterministic scored row contains provider calls")
         if row.get("verdict") not in {None, "correct", "incorrect"} or row.get("confidence") not in {None, "high", "medium", "low"}:
             raise ReplayError("scored verdict/confidence is invalid")
-        if row.get("score") != grid_score(row.get("verdict"), row.get("confidence")):
-            raise ReplayError("scored row score differs from verdict/confidence")
+        # Historical rows may contain the retired display score. Their exact
+        # bytes are already committed by the hash-chained WAL; only keep a
+        # generic schema/domain check here. Newly generated replay rows use None
+        # because the calibrated probe is unavailable through this guarded path.
+        score = row.get("score")
+        if score is not None and (
+            isinstance(score, bool)
+            or not isinstance(score, (int, float))
+            or not math.isfinite(float(score))
+            or not 0.0 <= float(score) <= 1.0
+        ):
+            raise ReplayError("scored row score is neither null nor a probability")
         route = str(source["route"])
         expected_tier = (
             "llm_tool_use" if route == "tool" else

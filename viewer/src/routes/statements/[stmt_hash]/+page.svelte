@@ -164,8 +164,8 @@
 			<span class="counter">{evidences.length}</span>
 		</h2>
 		<p class="ev-section-note">
-			Each evidence is one LLM call. Its verdict (supported / contradicted / abstained) and confidence map
-			to a categorical score; the model's chain-of-thought is shown under <em>reasoning</em>.
+			Each evidence row is one sentence. Its calibrated correctness probability is shown when available;
+			the model's chain-of-thought is shown under <em>reasoning</em>.
 		</p>
 
 		{#if evidences.length === 0}
@@ -183,7 +183,7 @@
 							<span class="ev-verdict tone-abstain">unscored</span>
 						{/if}
 						{#if e.confidence}<span class="ev-confidence">{e.confidence} confidence</span>{/if}
-						<span class="ev-score">score <span class="ev-score-num">{fmtBelief(e.our_score)}</span></span>
+						<span class="ev-score">calibrated <span class="ev-score-num">{fmtBelief(e.our_score)}</span></span>
 					</div>
 					<div class="ev-meta-secondary">
 						<span class="ev-source">[{e.source_api ?? 'no source'}]</span>

@@ -12,7 +12,7 @@
 	//
 	// `compact` renders a fluid inline micro-ruler (one per cohort row) and is
 	// DECORATIVE — it reinforces the row's own A/B/gold cells, so it carries no
-	// aria. Full mode is a labelled figure with bucket ticks, ends, and a legend.
+	// aria. Full mode is a labelled continuous scale with ends and a legend.
 
 	let {
 		a = null,
@@ -31,8 +31,6 @@
 		bLabel?: string;
 		compact?: boolean;
 	} = $props();
-
-	const SCORE_BUCKETS = [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95];
 
 	const W = $derived(compact ? 116 : 320);
 	const M = $derived(compact ? 6 : 14);
@@ -78,12 +76,6 @@
 		<line x1={M} y1={axisY} x2={W - M} y2={axisY} stroke="var(--ink)" stroke-width="1" />
 		<line x1={M} y1={axisY - 3} x2={M} y2={axisY + 3} stroke="var(--ink-faint)" />
 		<line x1={W - M} y1={axisY - 3} x2={W - M} y2={axisY + 3} stroke="var(--ink-faint)" />
-		{#if !compact}
-			{#each SCORE_BUCKETS as bk}
-				<line x1={tickX(bk)} y1={axisY - 3} x2={tickX(bk)} y2={axisY + 3} stroke="var(--ink-faint)" stroke-width="0.6" opacity="0.6" />
-			{/each}
-		{/if}
-
 		<!-- the A↔B gap, drawn as a length when the two beliefs differ -->
 		{#if ax != null && bx != null && !close}
 			<line x1={ax} y1={dotLane} x2={bx} y2={dotLane} stroke="var(--ink-faint)" stroke-width="1" opacity="0.5" />

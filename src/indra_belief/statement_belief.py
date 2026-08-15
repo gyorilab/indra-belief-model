@@ -112,23 +112,20 @@ def _dedup_priority(row: dict) -> tuple:
 
     Retry rows should agree, but historical files contain a few conflicts.  A
     semantic read beats an unread/parse-failed row; among semantic reads the
-    conservative any-incorrect-wins rule applies.  The remaining fields only
-    break ties and deliberately exclude input position, making the result
-    invariant to JSONL row order.
+    conservative any-incorrect-wins rule applies. The remaining
+    behavior-relevant fields break ties and deliberately exclude input
+    position, making the result invariant to JSONL row order. Rows tied on all
+    of them are aggregation-equivalent.
     """
     tier = str(row.get("tier") or "").lower()
     verdict = row.get("verdict")
     readable = tier != _NO_TEXT_TIER and verdict in {"correct", "incorrect"}
     verdict_rank = 0 if verdict == "incorrect" else 1 if verdict == "correct" else 2
     tier_rank = 0 if tier in _DETERMINISTIC_TIERS else 1
-    confidence_rank = {"high": 0, "medium": 1, "low": 2}.get(
-        str(row.get("confidence") or "").lower(), 3
-    )
     return (
         0 if readable else 1,
         verdict_rank,
         tier_rank,
-        confidence_rank,
         str(row.get("source_api") or "").casefold(),
         tier,
         str(row.get("evidence_text") or ""),
@@ -146,8 +143,8 @@ def statement_belief(
     """Roll a statement's per-evidence rows up to a belief + verdict + tally.
 
     Each ``ev_row`` is a per-evidence dict carrying at least ``source_api``,
-    ``verdict`` (``correct`` | ``incorrect`` | None), ``confidence``, and
-    ``tier``; optionally ``evidence_text`` / ``evidence_hash`` (for de-dup).
+    ``verdict`` (``correct`` | ``incorrect`` | None), and ``tier``; optionally
+    ``evidence_text`` / ``evidence_hash`` (for de-dup).
 
     ``soft`` is the historical API name for a ship-approved reader profile from
     ``calibration_for_run(run_path, model)``. When present, the canonical scalar

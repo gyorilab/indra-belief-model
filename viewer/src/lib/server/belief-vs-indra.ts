@@ -101,21 +101,22 @@ export interface Mechanism {
 }
 
 /**
- * The token-probability probe: measured, and NOT deployed.
+ * A frozen token-probability experiment that predates the W1 scoring path.
  *
  * A separate call with reasoning disabled, reading the model's probability at a
  * single forced verdict token. It is scored on its OWN holdout — different
  * statements, different curations, a different bin partition — so it must never
- * share axes with the corpus comparison above. Its interest here is calibration:
- * the deployed verdict grid emits three distinct scores, this emits thirty.
+ * share axes with the corpus comparison above. Its interest here is historical:
+ * it records why the verdict grid was rejected, but its grid-plus-probe candidate
+ * is not the calibrated single-score contract now used by serving.
  */
 export interface ProbePanel {
 	n: number;
 	/** The frozen decision artifact's own verdict, e.g. "GO". */
 	verdict: string | null;
-	deployed: false;
-	/** Why not: the import boundary reports the combiner unreachable from serving. */
-	deployment_note: string;
+	historical: true;
+	/** Boundary between this old experiment and the current sentence scorer. */
+	historical_note: string;
 	incumbent: BeliefSeries;
 	candidate: BeliefSeries;
 	delta_auroc: number | null;
@@ -297,12 +298,12 @@ function loadProbePanel(): ProbePanel | null {
 	return {
 		n: candidate.length,
 		verdict,
-		deployed: false,
-		deployment_note:
-			'the import boundary reports no serving path reaches the combiner, and no fitted ' +
-			'combiner is persisted anywhere in the repository',
-		incumbent: probeSeries('probe_incumbent', 'Verdict grid, as deployed', incumbent),
-		candidate: probeSeries('probe_candidate', 'Verdict grid plus the probe', candidate),
+		historical: true,
+		historical_note:
+			'this frozen grid-plus-probe candidate predates W1 and is not the calibrated ' +
+			'single-score contract now emitted by the sentence scorer',
+		incumbent: probeSeries('probe_incumbent', 'Historical verdict grid', incumbent),
+		candidate: probeSeries('probe_candidate', 'Historical grid plus the probe', candidate),
 		delta_auroc: delta,
 		ci95: ci,
 		incumbent_seconds: incSec,

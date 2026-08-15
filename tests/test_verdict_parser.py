@@ -1,4 +1,4 @@
-"""The one verdict parser and the one score map — `indra_belief.verdict`.
+"""The one categorical verdict parser — `indra_belief.verdict`.
 
 Hermetic: no network, no model, no `data/` access. Every case is a literal reply
 body, because that is the only input the parser has.
@@ -22,11 +22,10 @@ because a parse failure erased its own evidence.
 """
 from __future__ import annotations
 
-from indra_belief.scorers._shared import VERDICT_SCORE_GRID
+import indra_belief.verdict as verdict_module
 from indra_belief.verdict import (
     DEFAULT_CONFIDENCE,
     Verdict,
-    grid_score,
     parse_response,
     parse_verdict,
 )
@@ -49,66 +48,32 @@ def _answer(verdict, confidence, **extra) -> str:
 
 
 # --------------------------------------------------------------------------
-# The grid — six cells, and nothing else
+# Closed-set categorical commitments
 # --------------------------------------------------------------------------
 
-@pytest.mark.parametrize("verdict,confidence,score", [
-    ("correct", "high", 0.95),
-    ("correct", "medium", 0.80),
-    ("correct", "low", 0.65),
-    ("incorrect", "low", 0.35),
-    ("incorrect", "medium", 0.20),
-    ("incorrect", "high", 0.05),
+@pytest.mark.parametrize("verdict,confidence", [
+    ("correct", "high"),
+    ("correct", "medium"),
+    ("correct", "low"),
+    ("incorrect", "low"),
+    ("incorrect", "medium"),
+    ("incorrect", "high"),
 ])
-def test_the_six_grid_cells(verdict, confidence, score):
-    """All three retired parsers produced these; unchanged."""
-    assert grid_score(verdict, confidence) == score
+def test_all_closed_set_label_confidence_pairs(verdict, confidence):
+    """The parser preserves every categorical pair the model may emit."""
     read = parse_verdict(_answer(verdict, confidence))
-    assert read == Verdict(verdict, confidence, score, None, None)
-
-
-def test_grid_is_the_shared_table_not_a_copy():
-    """The grid stays in `scorers/_shared.py`, whose FILE BYTES feed the
-    `implementation_digest` published in data/comparison/models/*/manifest.json.
-    The batch path used to carry a byte-identical copy of it; this module
-    imports the original instead of making a third."""
-    assert {(v, c): grid_score(v, c) for v, c in VERDICT_SCORE_GRID} == \
-        dict(VERDICT_SCORE_GRID)
+    assert read == Verdict(verdict, confidence, None, None)
 
 
 # --------------------------------------------------------------------------
 # Absence — the behaviour this node changed
 # --------------------------------------------------------------------------
 
-def test_an_absent_verdict_has_no_score():
-    """PRE-CHANGE: live `verdict_to_score(None, None)` returned 0.5 — a value
-    off the six-cell grid, which no model output can produce, landing exactly on
-    the point a calibration curve is most sensitive to. Batch returned None.
-    They disagreed; the disagreement resolves to None."""
-    assert grid_score(None, None) is None
-    assert grid_score(None, "high") is None
-    assert 0.5 not in VERDICT_SCORE_GRID.values()
-
-
-def test_an_off_grid_confidence_has_no_score():
-    """PRE-CHANGE: the SECOND, quieter fabrication — live
-    `_SCORE_GRID.get((verdict, confidence or "medium"), 0.50)` answered an
-    on-grid verdict with an unknown confidence at 0.50 rather than failing.
-    Batch's `.get` had no default and returned None."""
-    assert grid_score("correct", "certain") is None
-    assert grid_score("incorrect", "very high") is None
-    assert grid_score("maybe", "high") is None
-
-
 def test_an_absent_confidence_still_reads_as_medium():
-    """Deliberately NOT absence: "medium" is a real cell (0.80 / 0.20). All
-    three retired parsers defaulted this way and so does the unified one — the
-    change is only to values the grid has no cell for."""
-    assert grid_score("correct", None) == 0.80
-    assert grid_score("incorrect", None) == 0.20
+    """All three retired parsers defaulted absent confidence to ``medium``."""
     read = parse_verdict('{"verdict": "correct"}')
     assert read is not None
-    assert read.confidence == DEFAULT_CONFIDENCE and read.score == 0.80
+    assert read.confidence == DEFAULT_CONFIDENCE
 
 
 @pytest.mark.parametrize("text", [
@@ -119,18 +84,12 @@ def test_an_absent_confidence_still_reads_as_medium():
     "The evidence is interesting but I am not going to say.",
 ])
 def test_unreadable_input_is_none_never_a_neutral_verdict(text):
-    """PRE-CHANGE: all three parsers agreed on (None, None) here — the LIVE
-    SCORE MAP is what then fabricated 0.5. `parse_verdict` never returns a
-    Verdict carrying it, because a Verdict only exists for a scorable pair."""
+    """A Verdict exists only when the reply names a valid categorical pair."""
     assert parse_verdict(text) is None
 
 
-def test_an_off_grid_confidence_is_absence_not_a_downgrade():
-    """PRE-CHANGE: live read this as ("correct", "certain") and scored it 0.50;
-    the batch path read the same pair and scored it None, which
-    `runner._attempt` turned into InvalidModelOutput -> retry -> error row.
-    Now the PARSER refuses it, so both paths take the batch outcome and no
-    caller has to re-check the confidence to avoid an invented number."""
+def test_an_unknown_confidence_is_absence_not_a_downgrade():
+    """Unknown labels and confidences are not categorical commitments."""
     assert parse_verdict('{"verdict": "correct", "confidence": "certain"}') is None
     assert parse_verdict('{"verdict":"medium","confidence":"medium"}') is None
 
@@ -146,7 +105,8 @@ def test_both_json_field_orders():
     forward = parse_verdict('{"verdict": "incorrect", "confidence": "low"}')
     reversed_ = parse_verdict('{"confidence": "low", "verdict": "incorrect"}')
     assert forward == reversed_
-    assert forward is not None and forward.score == 0.35
+    assert forward is not None
+    assert (forward.label, forward.confidence) == ("incorrect", "low")
 
 
 def test_nested_brace_json_falls_through_to_the_pattern_read():
@@ -159,16 +119,16 @@ def test_nested_brace_json_falls_through_to_the_pattern_read():
             '"verdict": "correct", "confidence": "high"}')
     read = parse_verdict(text)
     assert read is not None
-    assert (read.label, read.confidence, read.score) == ("correct", "high", 0.95)
+    assert (read.label, read.confidence) == ("correct", "high")
     assert read.support is None
 
 
-@pytest.mark.parametrize("text,label,confidence,score", [
-    ('{"verdict":"correct","confidence":"high",}', "correct", "high", 0.95),
-    ('{"confidence":"low","verdict":"incorrect",}', "incorrect", "low", 0.35),
+@pytest.mark.parametrize("text,label,confidence", [
+    ('{"verdict":"correct","confidence":"high",}', "correct", "high"),
+    ('{"confidence":"low","verdict":"incorrect",}', "incorrect", "low"),
 ])
 def test_a_trailing_comma_answer_is_read_by_the_strict_pair_step(
-    text, label, confidence, score
+    text, label, confidence
 ):
     """Step (b) of the documented three-step order, which nothing exercised.
 
@@ -190,7 +150,7 @@ def test_a_trailing_comma_answer_is_read_by_the_strict_pair_step(
     """
     read = parse_verdict(text)
     assert read is not None, "the strict-pair step declined a recoverable answer"
-    assert (read.label, read.confidence, read.score) == (label, confidence, score)
+    assert (read.label, read.confidence) == (label, confidence)
 
 
 @pytest.mark.parametrize("text", [
@@ -212,16 +172,16 @@ def test_the_strict_pair_step_keeps_verdict_and_confidence_in_ONE_object(text):
     Here the answer object is malformed (trailing comma, so step (a) declines)
     and a later object carries a DIFFERENT confidence and no verdict:
 
-        step (b), the pair from the answer object   -> ("incorrect", "high") 0.05
-        step (c), cross-paired across both objects  -> ("incorrect", "low")  0.35
+        step (b), the pair from the answer object   -> ("incorrect", "high")
+        step (c), cross-paired across both objects  -> ("incorrect", "low")
 
-    Delete step (b) and the reply scores 0.35 — the model's own high-confidence
-    rejection reported as a low-confidence one, from a confidence it never
-    attached to that verdict. That is a 0.30 error, and it is silent.
+    Delete step (b) and the model's own high-confidence rejection is reported
+    as a low-confidence one, from a confidence it never attached to that
+    verdict.
     """
     read = parse_verdict(text)
     assert read is not None
-    assert (read.label, read.confidence, read.score) == ("incorrect", "high", 0.05), (
+    assert (read.label, read.confidence) == ("incorrect", "high"), (
         "the confidence was cross-paired from a different object — the strict "
         "(verdict, confidence) pair step is not doing its job"
     )
@@ -238,14 +198,14 @@ def test_a_malformed_span_is_skipped_not_abandoned():
 
     Under the mutant, step (a) abandons the whole body on the first bad span and
     the reply falls through to the pattern read, which takes the LAST strict pair
-    — the malformed one — and answers `correct`/0.95 where the model's committed
-    object says `incorrect`/0.05. A 0.90 swing produced by giving up early.
+    — the malformed one — and answers `correct` where the model's committed
+    object says `incorrect`.
     """
     text = ('{"verdict":"incorrect","confidence":"high"}\n'
             '{"verdict":"correct","confidence":"high",}')
     read = parse_verdict(text)
     assert read is not None
-    assert (read.label, read.confidence, read.score) == ("incorrect", "high", 0.05), (
+    assert (read.label, read.confidence) == ("incorrect", "high"), (
         "a malformed trailing span ended the JSON-object walk instead of being "
         "skipped — the well-formed answer behind it was never reached"
     )
@@ -313,14 +273,16 @@ def test_the_unified_reading_is_narrower_on_exactly_one_axis(text):
 
 def test_prose_confidence_is_read_when_stated():
     read = parse_verdict("the verdict is correct with high confidence")
-    assert read is not None and read.confidence == "high" and read.score == 0.95
+    assert read is not None and (read.label, read.confidence) == ("correct", "high")
     read = parse_verdict("Final verdict: incorrect")
-    assert read is not None and read.confidence == "medium" and read.score == 0.20
+    assert read is not None
+    assert (read.label, read.confidence) == ("incorrect", "medium")
 
 
 def test_markdown_fenced_answer():
     read = parse_verdict('```json\n{"verdict": "correct", "confidence": "low"}\n```')
-    assert read is not None and read.score == 0.65
+    assert read is not None
+    assert (read.label, read.confidence) == ("correct", "low")
 
 
 # --------------------------------------------------------------------------
@@ -360,13 +322,13 @@ def test_the_last_verdict_phrase_wins_not_the_first():
         "Initial verdict: correct. On reflection, final verdict: incorrect"
     )
     assert read is not None
-    assert (read.label, read.confidence, read.score) == ("incorrect", "medium", 0.20), (
+    assert (read.label, read.confidence) == ("incorrect", "medium"), (
         "the FIRST verdict phrase won — a reply that changes its mind would be "
-        "scored on the position it abandoned"
+        "reported at the position it abandoned"
     )
     # The same rule, one level up: the last CONFIDENCE phrase wins too.
     read = parse_verdict("Verdict: incorrect. Confidence: low. Actually confidence: high")
-    assert read is not None and (read.confidence, read.score) == ("high", 0.05)
+    assert read is not None and (read.label, read.confidence) == ("incorrect", "high")
 
 
 def test_a_verdictless_object_does_not_shadow_a_later_real_one():
@@ -456,12 +418,11 @@ def test_a_truncated_answer_outranks_a_complete_hypothetical_in_the_reasoning():
     object for the opposite verdict. So raw_text's last parseable verdict object
     is the hypothetical, and the two bodies disagree:
 
-        content first   -> ("incorrect", "high") = 0.05   the model's answer
-        raw_text first  -> ("correct",   "low")  = 0.65   what it argued against
+        content first   -> ("incorrect", "high")  the model's answer
+        raw_text first  -> ("correct",   "low")   what it argued against
 
-    A 0.60 swing on a real reply, from swapping two identifiers with no change in
-    byte count. `parse_response`'s docstring asserts content-first; this asserts
-    it too, where it costs something.
+    `parse_response`'s docstring asserts content-first; this asserts it with a
+    fixture where the two bodies genuinely disagree.
     """
     truncated_answer = ('{"support": "A binds B directly", '
                         '"verdict": "incorrect", "confidence": "high"')
@@ -473,7 +434,7 @@ def test_a_truncated_answer_outranks_a_complete_hypothetical_in_the_reasoning():
 
     read = parse_response(reply)
     assert read is not None
-    assert (read.label, read.confidence, read.score) == ("incorrect", "high", 0.05), (
+    assert (read.label, read.confidence) == ("incorrect", "high"), (
         "parse_response returned the reasoning's hypothetical instead of the "
         "answer — the content-before-raw_text order is inverted"
     )
@@ -481,25 +442,21 @@ def test_a_truncated_answer_outranks_a_complete_hypothetical_in_the_reasoning():
     # assertion above would hold under either order and prove nothing.
     assert parse_verdict(truncated_answer) == read
     from_raw = parse_verdict(reply.raw_text)
-    assert from_raw is not None and (from_raw.label, from_raw.score) == ("correct", 0.65)
+    assert from_raw is not None
+    assert (from_raw.label, from_raw.confidence) == ("correct", "low")
 
 
-def test_an_off_grid_answer_is_absence_not_a_fallback_to_the_other_body():
-    """The grid is consulted ONCE, after the two-body search — `_candidate`'s
-    documented invariant, which nothing asserted.
+def test_an_invalid_answer_is_absence_not_a_fallback_to_the_other_body():
+    """Validation happens after the two-body search — `_candidate`'s invariant.
 
     `parse_response` stops at the first body that NAMES a verdict, and only then
-    asks the grid to score it. Moving the grid inside the loop — gating each body
-    through `_scored` instead of `_candidate` — left the file passing while
-    changing what a reply means: a model that answered `correct` with a
-    confidence the grid has no cell for would be OVERRULED by whatever its other
-    body said, and the row would carry a verdict the answer never gave.
+    validates its categorical confidence. Moving validation inside the loop left
+    the file passing while changing what a reply means: a model that answered
+    `correct` with an unknown confidence would be overruled by whatever its
+    other body said, and the row would carry a verdict the answer never gave.
 
-    Absence is the right outcome. The model DID commit to a verdict; what it
-    committed to cannot be scored, and `runner` turns that into a retry and then
-    an ERROR row. Reaching past it for a second opinion is the same move as the
-    0.5 this module deleted — manufacturing a number where the answer was
-    unreadable.
+    Absence is the right outcome. Reaching past an invalid final answer for a
+    second opinion changes the categorical commitment rather than recovering it.
 
     The fixture is constructed rather than drawn from a run: the two bodies have
     to genuinely disagree for the invariant to be observable at all, and most
@@ -509,10 +466,10 @@ def test_an_off_grid_answer_is_absence_not_a_fallback_to_the_other_body():
     reply = _Reply(content='{"verdict": "correct", "confidence": "certain"}',
                    raw_text='{"verdict": "incorrect", "confidence": "high"}')
     assert parse_response(reply) is None, (
-        "an unscorable answer fell through to the other body — the grid is being "
-        "consulted per-body instead of once, after the search"
+        "an invalid answer fell through to the other body — categorical "
+        "validation is happening per-body instead of after the search"
     )
-    # Both halves of the setup are load-bearing: the other body IS scorable, so
+    # Both halves of the setup are load-bearing: the other body IS valid, so
     # the assertion above is about ordering rather than about both being absent.
     assert parse_verdict(reply.raw_text) is not None
     assert parse_verdict(reply.content) is None
@@ -530,7 +487,8 @@ def test_content_without_a_verdict_falls_back_to_raw_text():
     reply = _Reply(content="Let me think about this claim carefully.",
                    raw_text='reasoning...\n{"verdict": "correct", "confidence": "low"}')
     read = parse_response(reply)
-    assert read is not None and (read.label, read.score) == ("correct", 0.65)
+    assert read is not None
+    assert (read.label, read.confidence) == ("correct", "low")
 
 
 def test_parse_response_returns_none_when_neither_body_commits():
@@ -542,17 +500,18 @@ def test_parse_response_returns_none_when_neither_body_commits():
 # The type itself
 # --------------------------------------------------------------------------
 
-def test_a_verdict_is_frozen_and_always_on_grid():
+def test_a_verdict_is_frozen_and_has_no_score_attribute():
     read = parse_verdict('{"verdict": "correct", "confidence": "high"}')
     assert read is not None
-    with pytest.raises(Exception):
-        read.score = 0.5
-    assert read.score in set(VERDICT_SCORE_GRID.values())
+    assert not hasattr(read, "score")
+    assert "score" not in Verdict.__dataclass_fields__
+    assert not hasattr(verdict_module, "grid_score")
+    with pytest.raises(AttributeError):
+        read.label = "incorrect"
 
 
-def test_every_parseable_input_yields_an_on_grid_score():
-    """The invariant that makes absence unambiguous: there is no input for which
-    `parse_verdict` returns a Verdict whose score is off the grid."""
+def test_every_parseable_input_yields_only_closed_set_categories():
+    """Every Verdict contains a valid label/confidence pair and no probability."""
     bodies = [
         '{"verdict": "correct", "confidence": "high"}',
         '{"confidence": "low", "verdict": "incorrect"}',
@@ -566,5 +525,7 @@ def test_every_parseable_input_yields_an_on_grid_score():
     ]
     for body in bodies:
         read = parse_verdict(body)
-        assert read is None or read.score in set(VERDICT_SCORE_GRID.values()), body
-        assert read is None or read.score == grid_score(read.label, read.confidence)
+        if read is not None:
+            assert read.label in {"correct", "incorrect"}, body
+            assert read.confidence in {"high", "medium", "low"}, body
+            assert not hasattr(read, "score"), body

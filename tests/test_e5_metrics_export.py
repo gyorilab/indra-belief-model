@@ -24,6 +24,15 @@ from pathlib import Path
 import pytest
 
 from indra_belief.calibration_constants import BASELINE_PROMPT_SHA256
+from indra_belief.probes.calibration import (
+    CALIBRATION_FILENAME,
+    CALIBRATION_MODEL,
+    CALIBRATION_MODEL_ID,
+    CALIBRATION_PROBE_DIGEST,
+    DEFAULT_CALIBRATION_PATH,
+    SENTENCE_SCORE_CONTRACT_VERSION,
+    SENTENCE_SCORE_KIND,
+)
 from indra_belief.results import (
     build_run_export as _build_run_export,
     build_run_metrics,
@@ -72,9 +81,51 @@ def _row(ei, sh, verdict, score, conf="high"):
 def _write(tmp_path, rows, corpus):
     run = tmp_path / "run.jsonl"
     run.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    run.with_suffix(".meta.json").write_text(json.dumps({
+        "sentence_score": {
+            "status": "enabled",
+            "contract_version": SENTENCE_SCORE_CONTRACT_VERSION,
+            "grain": "sentence",
+            "kind": SENTENCE_SCORE_KIND,
+            "calibration_model": CALIBRATION_MODEL,
+            "calibration_model_id": CALIBRATION_MODEL_ID,
+            "probe_id": "pol.verdict_direct",
+            "probe_digest": CALIBRATION_PROBE_DIGEST,
+            "calibration_artifact": CALIBRATION_FILENAME,
+            "calibration_artifact_sha256": hashlib.sha256(
+                DEFAULT_CALIBRATION_PATH.read_bytes()
+            ).hexdigest(),
+            "raw_field": "score",
+            "export_field": "our_score",
+            "unavailable_value": None,
+        }
+    }))
     corp = tmp_path / "corpus.json"
     corp.write_text(json.dumps(corpus))
     return str(run), str(corp)
+
+
+def test_legacy_raw_score_is_not_relabelled_as_calibrated(tmp_path):
+    run, corp = _write(
+        tmp_path,
+        [_row(0, 11, "correct", 0.95)],
+        _corpus(),
+    )
+    Path(run).with_suffix(".meta.json").unlink()
+    gold = _gold(tmp_path, [
+        {"matches_hash": 123, "source_hash": 11, "tag": "correct"},
+    ])
+
+    per_ev, per_stmt, meta, metrics = build_run_export(
+        run, corp, run_id="legacy", model="gemma", gold_path=gold
+    )
+
+    assert per_ev[0]["our_score"] is None
+    assert per_stmt[0]["our_mean_score"] is None
+    assert per_stmt[0]["our_noisy_or"] is None
+    assert meta["sentence_score"]["status"] == "unavailable"
+    assert meta["sentence_score"]["rows_available"] == 0
+    assert metrics["tiers"]["ev"]["status"] == "unavailable"
 
 
 def _gold(tmp_path, gold_rows):
@@ -116,9 +167,9 @@ def test_per_statement_no_internal_join_keys_leak(tmp_path):
 
 
 def test_per_evidence_has_no_soft_belief(tmp_path):
-    # The fitted profile is a statement-level recalibration; there is no per-evidence
-    # calibrated belief. per_evidence rows must carry no belief_* / soft key (keeps the
-    # file byte-identical to pre-E5).
+    # The fitted statement profile remains statement-level.  The independent
+    # sentence-probe probability is not a belief_* arm and must not leak into
+    # this statement-belief namespace.
     rows = [_row(0, 11, "correct", 0.95)]
     run, corp = _write(tmp_path, rows, _corpus())
     per_ev, _ps, _meta, _metrics = build_run_export(run, corp, run_id="r", model="gemma")
@@ -164,7 +215,29 @@ def test_metrics_schema_with_gold(tmp_path):
     assert m["run_id"] == "r" and m["model"] == "remote-gemma-4-26b"
     assert set(m["tiers"]) == {"ev", "stmt"}
     assert m["metrics_basis"]["bins"] == "BINS_8"
-    assert m["metrics_basis"]["tau"] == 0.5
+    assert "tau" not in m["metrics_basis"]
+    thresholds = m["metrics_basis"]["thresholds"]
+    assert set(thresholds) == {"tier1_sentence", "tier2_statement"}
+    tier1_threshold = thresholds["tier1_sentence"]
+    assert tier1_threshold["value"] == 0.5
+    assert tier1_threshold["score"] == "calibrated sentence P(correct)"
+    assert tier1_threshold["rule"] == "predict correct iff score >= value"
+    assert "not tuned on held-out labels" in tier1_threshold["derivation"]
+    sentence_profile = tier1_threshold["calibration_profile"]
+    sentence_artifact = ROOT / "data" / "probe_battery" / "sentence_probe_calibration.json"
+    assert sentence_profile == {
+        "model": "local-gemma-4-26b",
+        "model_id": CALIBRATION_MODEL_ID,
+        "probe_id": "pol.verdict_direct",
+        "probe_digest": CALIBRATION_PROBE_DIGEST,
+        "artifact": sentence_artifact.name,
+        "artifact_sha256": hashlib.sha256(sentence_artifact.read_bytes()).hexdigest(),
+    }
+    assert thresholds["tier2_statement"] == {
+        "value": 0.5,
+        "score": "statement belief",
+        "rule": "predict error iff belief < value",
+    }
     assert m["metrics_basis"]["soft_calibration"]["status"] == "available"
     assert "hybrid log-odds" in m["metrics_basis"]["soft_weights_note"]
     assert m["provenance"]["corpus_sha256"] == hashlib.sha256(Path(corp).read_bytes()).hexdigest()
@@ -181,6 +254,37 @@ def test_metrics_schema_with_gold(tmp_path):
     assert set(st["arms"]) == {"hard", "parametric", "soft"}
     for arm in st["arms"].values():
         _assert_arm_shape(arm)
+
+
+def test_tier1_probability_boundary_and_missing_score_exclusion():
+    per_ev = [
+        {"our_score": 0.49, "gold": {"verdict": "correct"}},
+        {"our_score": 0.49, "gold": {"verdict": "wrong_relation"}},
+        {"our_score": 0.50, "gold": {"verdict": "correct"}},
+        {"our_score": 0.51, "gold": {"verdict": "wrong_relation"}},
+        {"our_score": None, "gold": {"verdict": "correct"}},
+    ]
+
+    metrics = build_run_metrics(
+        per_ev,
+        {},
+        {},  # non-None: gold is baked directly into each synthetic row
+        "reader",
+        "boundary",
+        "gold.jsonl",
+    )
+
+    ev = metrics["tiers"]["ev"]
+    assert ev["status"] == "available"
+    assert ev["n"] == 4
+    assert ev["arms"]["score"]["n"] == 4
+    # Positive = correct; equality belongs to the predicted-correct side.
+    assert ev["arms"]["score"]["confusion"] == {
+        "tp": 1,
+        "fp": 1,
+        "fn": 1,
+        "tn": 1,
+    }
 
 
 def test_evaluation_set_digest_changes_with_evaluated_keys(tmp_path):
@@ -329,8 +433,9 @@ def _synth_per_ev(run_path: Path, gold_map) -> list[dict]:
             rows[(d["stmt_i"], d["evidence_i"])] = d
     out = []
     for d in rows.values():
-        s = d.get("score")
-        out.append({"our_score": round(s, 3) if isinstance(s, (int, float)) else None,
+        # Frozen holdout runs predate the calibrated sentence-score contract.
+        # Their numeric score is historical grid output, never Tier-1 input.
+        out.append({"our_score": None,
                     "gold": gold_map.for_row(None, d.get("source_hash"))})
     return out
 

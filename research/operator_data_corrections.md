@@ -144,9 +144,8 @@ and measured too, and **rejected**. Its file digest is
 recorded so the choice is auditable rather than assumed. Three reasons the scored-with-no-
 verdict shape wins for this **historical** row:
 
-1. **It validates.** `validate_row` in `src/indra_belief/comparison/replay.py` accepts it:
-   `grid_score` in `src/indra_belief/verdict.py` returns `None` for `(None, None)`, so the
-   score check passes, and the remaining scored-branch checks already hold — `tier` equals
+1. **It validates.** The historical replay contract accepts an absent probability for
+   `(None, None)`, so the score check passes, and the remaining scored-branch checks already hold — `tier` equals
    the route's `llm_tool_use`, `provenance_triggered` is a bool, and `tokens` is not
    `None` on a callable route. Run against the real source: the row as it stands raises
    `ReplayError: scored row score differs from verdict/confidence`; the patched row

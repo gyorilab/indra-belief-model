@@ -32,6 +32,13 @@ pytestmark = _artifacts.requires()
 HISTORICAL_STATEMENT_BELIEF_SHA256 = (
     "8327ff74a8f34a4872abbe37a3754255031605bf9bece07c38e4ba4f6425ed06"
 )
+HISTORICAL_IMPLEMENTATION_COMPONENTS = {
+    "noise_model": "6a4276840d3281f32e01948a62699d566e01be306e3f628d9901936ff5730e73",
+    "shared_text_normalization": (
+        "a95ada5c8ca5e376beb60ab3934f58dff58b834b9d31f6a005f004bbe9139145"
+    ),
+    "statement_belief": HISTORICAL_STATEMENT_BELIEF_SHA256,
+}
 
 BUNDLE_DIR = ROOT / "data/comparison/models/gemma_4_e2b"
 MANIFEST_PATH = BUNDLE_DIR / "manifest.json"
@@ -270,23 +277,20 @@ def test_historical_e2b_bundle_is_audited_under_the_canonical_contract() -> None
     assert manifest["run_id"] == RUN_ID
 
     implementation = manifest["implementation"]
-    # The implementation freeze is BEHAVIOURAL for statement_belief and byte-exact
-    # for the other two components. The old assertion proved one file had not been
-    # touched; this one proves the 13460 published scores still re-derive from the
-    # frozen observations that produced them — the property the numbers depend on,
-    # and one a comment-only edit cannot break while a logic edit cannot survive.
-    # The published JSON keeps its recorded digest: it is the historical record of
-    # the code that produced those numbers, and llm._implementation_digest() is
-    # unchanged, so new bundles still record the live digest.
+    # The manifest's complete component vector is a historical record, so audit
+    # its recorded digest from those recorded bytes rather than splicing today's
+    # unrelated component hashes into it. Behaviour remains independently
+    # re-derived below from the frozen observations; noise_model is additionally
+    # byte-frozen and therefore still matches its historical component digest.
     _, current_components = llm._implementation_digest()
-    frozen_components = dict(current_components)
-    frozen_components["statement_belief"] = HISTORICAL_STATEMENT_BELIEF_SHA256
+    frozen_components = dict(HISTORICAL_IMPLEMENTATION_COMPONENTS)
     assert implementation["implementation_digest"] == llm._sha256(
         llm._canonical(frozen_components)
     )
     assert implementation["training_data_sha256"] is None
     notes = implementation["notes"]
     assert notes["implementation_components"] == frozen_components
+    assert current_components["noise_model"] == frozen_components["noise_model"]
     assert published_reproduction().ok, [
         mismatch.describe() for mismatch in published_reproduction().mismatches
     ]

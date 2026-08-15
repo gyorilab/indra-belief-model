@@ -659,6 +659,9 @@ export interface JoinedEvidence {
 	rasmachine_belief: number | null;
 	a_verdict: V;
 	b_verdict: V;
+	/** Calibrated per-sentence probabilities carried by each export. */
+	a_score: number | null;
+	b_score: number | null;
 	a_confidence: string | null;
 	b_confidence: string | null;
 	/** Bucket from each run (the artifact-vs-semantic taxonomy). */
@@ -718,6 +721,8 @@ function joinEvidence(runIdA: string, runIdB: string): { a: RunMeta; b: RunMeta;
 			rasmachine_belief: ra.rasmachine_belief,
 			a_verdict: normV(ra.verdict),
 			b_verdict: normV(rb.verdict),
+			a_score: ra.our_score,
+			b_score: rb.our_score,
 			a_confidence: ra.confidence,
 			b_confidence: rb.confidence,
 			a_bucket: ra.bucket,
@@ -1229,6 +1234,8 @@ export interface CohortRow {
 	rasmachine_belief: number | null;
 	a_verdict: V;
 	b_verdict: V;
+	a_score: number | null;
+	b_score: number | null;
 	a_confidence: string | null;
 	b_confidence: string | null;
 	a_bucket: string | null;
@@ -1307,6 +1314,8 @@ export function cohortForCell(
 		rasmachine_belief: e.rasmachine_belief,
 		a_verdict: e.a_verdict,
 		b_verdict: e.b_verdict,
+		a_score: e.a_score,
+		b_score: e.b_score,
 		a_confidence: e.a_confidence,
 		b_confidence: e.b_confidence,
 		a_bucket: e.a_bucket,

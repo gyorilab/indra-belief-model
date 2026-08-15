@@ -34,9 +34,9 @@ the losers:
   re-checks the stored digests on every path. **[V]** Four assemblers were deleted:
   `grep -rnE "def (_build_messages|format_user_message|main_request|_record)\(" src/ scripts/`
   returns nothing. **[V]**
-- **`src/indra_belief/verdict.py`** is the one parser and the one score map, replacing
-  three implementations. `grid_score` returns `None` off-grid instead of fabricating
-  0.5. **[V]**
+- **`src/indra_belief/verdict.py`** is the one categorical parser. The retired six-cell
+  lookup is absent from both parsing and scoring; an unavailable calibrated sentence
+  probability is represented as `None`. **[V]**
 - **`src/indra_belief/scorers/monolithic/scorer.py`** carries a `ScoringVariant`
   registry; every entry point takes `variant=`, so the scoring profile is an argument
   rather than an import-time read of `MONO_VARIANT`. **[V]** The *fallback*
@@ -91,10 +91,11 @@ default. **[V]** at `git show 58767d8:src/indra_belief/scorers/monolithic/_promp
 0.5 is not on the six-cell grid, so both wrote an invented number where the model gave
 no answer.
 
-`verdict.grid_score` now returns `None` on either axis, and absence propagates: the
-runner turns `score is None` into `InvalidModelOutput` → retry → an ERROR row once the
-per-source budget is spent. Twelve of twelve consumers were checked and **zero coercions
-back to a number** were found. **[M]**
+That transitional projection has now been removed from the scoring path. The unified
+parser returns only the categorical reading; `score` remains `None` unless the
+persisted sentence-probe combiner supplies a calibrated probability. An unavailable
+calibrated value therefore stays absent rather than being coerced back to a number.
+**[M]**
 
 The measure of what was being fabricated is the arc's best single number:
 `scripts/replay_parser_diff.py` cuts stored responses at seeded random offsets — which

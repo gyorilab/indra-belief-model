@@ -213,8 +213,8 @@ def test_the_runner_reads_that_reply_through_the_same_parser():
 def test_an_unreadable_reply_stays_absent_rather_than_becoming_a_number():
     """(None, None), never a fabricated score.
 
-    `grid_score` returns None off-grid so an absent measurement stays absent;
-    this runner must not be the path that reintroduces a default.
+    An unreadable categorical answer stays absent; this runner must not be the
+    path that reintroduces a default measurement.
     """
     assert runner.MonolithicPrompt().parse("I cannot decide from this text.", "") == (
         None,

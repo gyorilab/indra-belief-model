@@ -44,14 +44,15 @@ def test_correct_with_resolved_objection_stays_correct():
     assert read is not None
     assert read.label == "correct"
     assert read.confidence == "high"
-    assert read.score == 0.95
+    assert not hasattr(read, "score")
     assert read.objection  # carried through as telemetry, not as an input
 
 
 def test_incorrect_stays_incorrect():
     read = parse_verdict(_answer(objection="amount not activity",
                                  verdict="incorrect", confidence="high"))
-    assert read is not None and read.label == "incorrect" and read.score == 0.05
+    assert read is not None and read.label == "incorrect"
+    assert read.confidence == "high"
 
 
 def test_correct_without_support_is_not_overridden():

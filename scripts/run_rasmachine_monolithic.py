@@ -35,6 +35,18 @@ from indra_belief.model_client import (  # noqa: E402
     ModelClient,
     canonical_model_name,
 )
+from indra_belief.probes.calibration import (  # noqa: E402
+    CALIBRATION_FILENAME,
+    CALIBRATION_MODEL,
+    CALIBRATION_MODEL_ID,
+    CALIBRATION_PROBE_DIGEST,
+    DEFAULT_CALIBRATION_PATH,
+    SENTENCE_SCORE_CONTRACT_VERSION,
+    SENTENCE_SCORE_KIND,
+    replace_sentence_score,
+    supports_sentence_calibration,
+)
+from indra_belief.probes.reader import DIRECT_PROBE_ID  # noqa: E402
 from indra_belief.scorers.monolithic import scorer as monolithic_scorer  # noqa: E402
 
 
@@ -63,13 +75,29 @@ def _score_one(stmt: Any, evidence: Any, client: ModelClient, max_tokens: int | 
     if _ARCH == "panel":
         from indra_belief.scorers.panel import score_via_panel
 
-        return score_via_panel(stmt, evidence, client)
-    if _ARCH == "decomposed":
+        result = score_via_panel(stmt, evidence, client)
+    elif _ARCH == "decomposed":
         from indra_belief.scorers.probes.orchestrator import score_via_probes
 
-        return score_via_probes(stmt, evidence, client)
-    return monolithic_scorer.score_statement(
-        stmt, evidence, client, max_tokens=max_tokens
+        result = score_via_probes(stmt, evidence, client)
+    else:
+        # The canonical monolithic boundary already applies the sentence
+        # calibration. Do not issue the forced-verdict probe twice here.
+        return monolithic_scorer.score_statement(
+            stmt, evidence, client, max_tokens=max_tokens
+        )
+
+    statement = _statement_metadata(stmt)
+    return replace_sentence_score(
+        result,
+        {
+            "subject": statement["subject"],
+            "object": statement["object"],
+            "stmt_type": statement["stmt_type"],
+            "evidence_text": str(getattr(evidence, "text", None) or ""),
+        },
+        client,
+        record_id=_sentence_probe_record_id("", 0, 0, evidence),
     )
 
 
@@ -144,6 +172,73 @@ def _statement_metadata(stmt: Any) -> dict[str, Any]:
         "stmt_type": type(stmt).__name__,
         "belief": getattr(stmt, "belief", None),
     }
+
+
+def _sentence_probe_available(client: Any) -> bool:
+    """Whether this client exactly matches the fitted sentence profile."""
+
+    return supports_sentence_calibration(client)
+
+
+def _sentence_score_contract(enabled: bool) -> dict[str, Any]:
+    """Describe the one numeric sentence field and its exact fitted profile."""
+
+    return {
+        "status": "enabled" if enabled else "unavailable",
+        "contract_version": SENTENCE_SCORE_CONTRACT_VERSION,
+        "grain": "sentence",
+        "kind": SENTENCE_SCORE_KIND,
+        "calibration_model": CALIBRATION_MODEL,
+        "calibration_model_id": CALIBRATION_MODEL_ID,
+        "probe_id": DIRECT_PROBE_ID,
+        "probe_digest": CALIBRATION_PROBE_DIGEST,
+        "calibration_artifact": CALIBRATION_FILENAME,
+        "calibration_artifact_sha256": hashlib.sha256(
+            DEFAULT_CALIBRATION_PATH.read_bytes()
+        ).hexdigest(),
+        "raw_field": "score",
+        "export_field": "our_score",
+        "unavailable_value": None,
+    }
+
+
+def _require_compatible_resume_score_contract(
+    previous_meta: dict[str, Any],
+    current_contract: dict[str, Any],
+    completed_rows: int,
+) -> None:
+    """Refuse to mix historical grid rows with calibrated rows on resume."""
+
+    if completed_rows == 0:
+        return
+    previous = previous_meta.get("sentence_score")
+    if not isinstance(previous, dict) or any(
+        previous.get(key) != value for key, value in current_contract.items()
+    ):
+        raise ValueError(
+            "cannot resume a populated run without the identical calibrated "
+            "sentence-score contract; choose a fresh output and regenerate"
+        )
+
+
+def _sentence_probe_record_id(
+    run_id: str,
+    stmt_i: int,
+    evidence_i: int,
+    evidence: Any,
+) -> str:
+    """Return the calibration-domain identity for this evidence sentence.
+
+    The fitted combiner records its training evidence as ``f{source_hash}``.
+    Serving must use that same identity domain: choosing a fresh run-scoped ID
+    would make a fitted sentence look out-of-sample and silently defeat the
+    combiner's leakage guard.  The positional arguments remain in the public
+    helper signature because callers use it while constructing a run row; they
+    deliberately do not participate in calibration identity.
+    """
+
+    del run_id, stmt_i, evidence_i
+    return f"f{evidence.get_source_hash()}"
 
 
 def _truncated_calls(call_log: Iterable[dict[str, Any]] | None) -> list[dict[str, Any]]:
@@ -353,17 +448,15 @@ def _scored_row(
     result: dict[str, Any],
     latency_s: float,
 ) -> dict[str, Any]:
-    """Build the scored row, withholding the verdict of a truncated read.
+    """Build a row, withholding categorical output from a truncated read.
 
     A read cut off at the token cap never reached its concluding line, so any
     verdict recovered from it comes from mid-chain-of-thought text rather than
     from the model's stated answer. That is not a reader measurement, so
-    verdict/score/confidence are withheld (None) and the recovered value is kept
-    under ``truncated_verdict`` as an audit trail. Downstream this is exactly "no
-    reader signal": ``calibration_stage1.fit_reader_profile`` counts only
-    ``correct``/``incorrect``, so the row enters no confusion cell, and
-    ``noise_model._soft_gated_belief`` maps a non-verdict to the source-prior
-    term.
+    verdict/confidence are withheld and the recovered value is kept under
+    ``truncated_verdict`` as an audit trail. The independent calibrated
+    sentence probe is not truncated with that answer, so its score remains
+    usable. Statement belief still sees no categorical reader signal.
 
     Resume caveat, measured not assumed: ``_load_done_keys`` sees a verdict-None
     non-error row and retries it, but at ``temperature 0.0`` a cap hit is
@@ -380,7 +473,8 @@ def _scored_row(
         **_base_row(run_id, stmt_i, evidence_i, evidence, statement, latency_s),
         "row_status": "scored",
         "verdict": None if truncated else result.get("verdict"),
-        "score": None if truncated else result.get("score"),
+        "score": result.get("score"),
+        "score_error": result.get("score_error"),
         "confidence": None if truncated else result.get("confidence"),
         "truncated": bool(truncated),
         "truncated_verdict": result.get("verdict") if truncated else None,
@@ -411,6 +505,7 @@ def _error_row(
         "row_status": "error",
         "verdict": None,
         "score": None,
+        "score_error": None,
         "confidence": None,
         "tier": "row_error",
         "grounding_status": None,
@@ -531,6 +626,14 @@ def _run(args: argparse.Namespace) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path = output_path.with_suffix(".meta.json")
     progress_path = output_path.with_suffix(".progress.ndjson")
+    previous_meta: dict[str, Any] = {}
+    if args.resume and meta_path.exists():
+        try:
+            loaded_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(loaded_meta, dict):
+                previous_meta = loaded_meta
+        except (OSError, json.JSONDecodeError):
+            pass
     run_id = _load_or_create_run_id(meta_path, args.run_id) if args.resume else (
         args.run_id or uuid.uuid4().hex
     )
@@ -556,6 +659,11 @@ def _run(args: argparse.Namespace) -> int:
     if args.workers > 1:
         _prewarm_grounding(stmts)
     client = _unmetered_client(args.model)
+    sentence_probe_available = _sentence_probe_available(client)
+    sentence_score_contract = _sentence_score_contract(sentence_probe_available)
+    _require_compatible_resume_score_contract(
+        previous_meta, sentence_score_contract, len(done)
+    )
     meta: dict[str, Any] = {
         "run_id": run_id,
         "status": "running",
@@ -571,6 +679,7 @@ def _run(args: argparse.Namespace) -> int:
         "retryable_row_errors": state.retryable_errors,
         "truncated_rows_before_start": state.truncated_total,
         "workers": args.workers,
+        "sentence_score": sentence_score_contract,
     }
     _write_meta(meta_path, meta)
 

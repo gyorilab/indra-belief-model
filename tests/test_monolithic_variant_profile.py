@@ -558,7 +558,8 @@ def test_the_parser_is_not_variant_selected():
         assert not hasattr(variant, "derive_verdict")
     reply = _StubResponse('{"verdict": "incorrect", "confidence": "low"}')
     read = V.parse_response(reply)
-    assert (read.label, read.confidence, read.score) == ("incorrect", "low", 0.35)
+    assert (read.label, read.confidence) == ("incorrect", "low")
+    assert not hasattr(read, "score")
     assert all(entry["parse_verdict"] == _EXPECTED[""]["parse_verdict"]
                for entry in _EXPECTED.values())
 

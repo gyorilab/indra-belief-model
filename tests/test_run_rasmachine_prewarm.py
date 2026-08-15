@@ -15,10 +15,23 @@ from run_rasmachine_monolithic import (  # noqa: E402
     _load_done_keys,
     _prewarm_grounding,
     _scored_row,
+    _sentence_probe_available,
+    _require_compatible_resume_score_contract,
+    _sentence_score_contract,
+    _sentence_probe_record_id,
     _truncated_calls,
     _unmetered_client,
 )
+import run_rasmachine_monolithic as runner  # noqa: E402
 from indra_belief.data.entity import GroundedEntity  # noqa: E402
+from indra_belief.probes import calibration as sentence_calibration  # noqa: E402
+from indra_belief.probes.calibration import (  # noqa: E402
+    CALIBRATION_MODEL_ID,
+    CalibratedProbeReading,
+    calibrated_sentence_reading,
+    replace_sentence_score,
+)
+from indra_belief.probes.reader import ProbeReading  # noqa: E402
 from indra.ontology.bio import bio_ontology  # noqa: E402
 
 
@@ -181,7 +194,8 @@ def test_no_retry_parser_nulls_carries_a_truncated_row_as_terminal(tmp_path):
 def test_truncated_read_withholds_the_verdict_and_keeps_the_audit_trail():
     result = {
         "verdict": "incorrect",
-        "score": 0.83,
+        "score": 0.714,
+        "score_error": None,
         "confidence": "high",
         "tier": "llm_comprehension",
         "call_log": [
@@ -191,7 +205,8 @@ def test_truncated_read_withholds_the_verdict_and_keeps_the_audit_trail():
     }
     row = _scored_row("r", 14, 1, _fake_evidence(), _STATEMENT, result, 134.356)
 
-    assert (row["verdict"], row["score"], row["confidence"]) == (None, None, None)
+    assert (row["verdict"], row["score"], row["confidence"]) == (None, 0.714, None)
+    assert row["score_error"] is None
     assert row["truncated"] is True
     assert row["truncated_verdict"] == "incorrect"
     assert row["truncated_call_kind"] == "monolithic"
@@ -203,17 +218,142 @@ def test_truncated_read_withholds_the_verdict_and_keeps_the_audit_trail():
 def test_untruncated_read_passes_the_verdict_through_unchanged():
     result = {
         "verdict": "correct",
-        "score": 0.91,
+        "score": 0.643,
+        "score_error": None,
         "confidence": "high",
         "call_log": [{"kind": "monolithic", "out_tokens": 3695, "finish_reason": "stop"}],
     }
     row = _scored_row("r", 0, 0, _fake_evidence(), _STATEMENT, result, 22.28)
 
-    assert (row["verdict"], row["score"], row["confidence"]) == ("correct", 0.91, "high")
+    assert (row["verdict"], row["score"], row["confidence"]) == ("correct", 0.643, "high")
+    assert row["score_error"] is None
     assert row["truncated"] is False
     assert row["truncated_verdict"] is None
     assert (row["truncated_call_kind"], row["truncated_out_tokens"]) == (None, None)
     assert _truncated_calls(result["call_log"]) == []
+
+
+def test_sentence_probe_is_enabled_only_for_its_fitted_reader():
+    capable = SimpleNamespace(
+        model_name="local-gemma-4-26b",
+        backend="openai_compat",
+        config={
+            "model_id": CALIBRATION_MODEL_ID,
+            "max_top_logprobs": 1024,
+        },
+    )
+    assert _sentence_probe_available(capable)
+    assert not _sentence_probe_available(
+        SimpleNamespace(**{**vars(capable), "model_name": "local-gemma-4-31b"})
+    )
+    assert not _sentence_probe_available(
+        SimpleNamespace(**{**vars(capable), "config": {"max_top_logprobs": 1}})
+    )
+
+
+def test_sentence_probe_serving_id_uses_fit_domain_to_activate_leakage_guard():
+    evidence = _fake_evidence(source_hash=-123)
+    record_id = _sentence_probe_record_id("run-7", 4, 2, evidence)
+
+    assert record_id == "f-123"
+
+
+def test_sentence_probe_reads_delta_and_applies_persisted_calibration(monkeypatch):
+    seen: dict[str, object] = {}
+
+    def fake_read(record, client):
+        seen["record"] = record
+        seen["client"] = client
+        return ProbeReading(p_raw=0.75, delta_logit=1.0)
+
+    monkeypatch.setattr(sentence_calibration, "read_probe", fake_read)
+    client = object()
+    calibrated = calibrated_sentence_reading(
+        {
+            "subject": _STATEMENT["subject"],
+            "object": _STATEMENT["object"],
+            "stmt_type": _STATEMENT["stmt_type"],
+            "evidence_text": "t",
+        },
+        client,
+        record_id="fresh:test:0:0:e",
+    )
+
+    assert isinstance(calibrated, CalibratedProbeReading)
+    assert 0.0 <= calibrated.p_hat <= 1.0
+    assert seen == {
+        "record": {
+            "subject": "EGFR",
+            "object": "AKT1",
+            "stmt_type": "Complex",
+            "evidence_text": "t",
+        },
+        "client": client,
+    }
+
+
+def test_sentence_probe_failure_makes_the_only_score_explicitly_unavailable(monkeypatch):
+    original = {"verdict": "incorrect", "score": 0.05}
+    monkeypatch.setattr(
+        sentence_calibration,
+        "calibrated_sentence_reading",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("probe down")),
+    )
+
+    enriched = replace_sentence_score(
+        original,
+        {"evidence_text": "t"},
+        object(),
+        record_id="fresh:test",
+        enabled=True,
+    )
+
+    assert enriched["score"] is None
+    assert enriched["score_error"] == "RuntimeError: probe down"
+    assert enriched["verdict"] == "incorrect"
+    assert original == {"verdict": "incorrect", "score": 0.05}
+
+
+def test_disabled_sentence_probe_never_preserves_an_architecture_score():
+    enriched = replace_sentence_score(
+        {"verdict": "correct", "score": 0.95},
+        {"evidence_text": "t"},
+        object(),
+        record_id="fresh:test",
+        enabled=False,
+    )
+
+    assert enriched["score"] is None
+    assert enriched["score_error"] is None
+
+
+def test_resume_rejects_historical_rows_without_calibrated_score_contract():
+    current = _sentence_score_contract(enabled=True)
+
+    with pytest.raises(ValueError, match="fresh output and regenerate"):
+        _require_compatible_resume_score_contract({}, current, completed_rows=1)
+
+    # An empty output has no historical numeric rows to contaminate.
+    _require_compatible_resume_score_contract({}, current, completed_rows=0)
+
+
+def test_empty_sentence_has_no_calibrated_read(monkeypatch):
+    monkeypatch.setattr(
+        sentence_calibration,
+        "read_probe",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not call")),
+    )
+
+    assert calibrated_sentence_reading(
+        {
+            "subject": _STATEMENT["subject"],
+            "object": _STATEMENT["object"],
+            "stmt_type": _STATEMENT["stmt_type"],
+            "evidence_text": "",
+        },
+        object(),
+        record_id="fresh:empty",
+    ) is None
 
 
 def test_generic_runner_rejects_provider_backed_models():

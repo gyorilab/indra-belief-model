@@ -17,6 +17,21 @@ import type {
 } from './types';
 
 export const HYBRID_METRICS_SCHEMA = 3;
+const SENTENCE_SCORE_CONTRACT = {
+	contract_version: 1,
+	grain: 'sentence',
+	kind: 'calibrated_probability_correct',
+	calibration_model: 'local-gemma-4-26b',
+	calibration_model_id: 'mlx-community/gemma-4-26b-a4b-it-8bit',
+	probe_id: 'pol.verdict_direct',
+	probe_digest: '2aa7729f9b4f5e897c6e99baf25956c710c1a36f4f49dfd7f89b4fc747d641ed',
+	calibration_artifact: 'sentence_probe_calibration.json',
+	calibration_artifact_sha256:
+		'130be54bdab2638175f6cceb4de2a57a663ab01fd206df1ea024e8b578da2b46',
+	raw_field: 'score',
+	export_field: 'our_score',
+	unavailable_value: null
+} as const;
 const EXPECTED_EXPORT_SCHEMA = new Map([
 	[1, 6],
 	[2, 7],
@@ -85,8 +100,10 @@ type CalibrationRun = Pick<
 	| 'model'
 	| 'substrate'
 	| 'export_schema_version'
+	| 'counts'
 	| 'source_run'
 	| 'provenance'
+	| 'sentence_score'
 	| 'soft_calibration'
 	| 'finished_at'
 	| 'started_at'
@@ -96,6 +113,14 @@ type CalibrationRun = Pick<
 function asRecord(value: unknown): Record<string, unknown> | null {
 	return value != null && typeof value === 'object' && !Array.isArray(value)
 		? (value as Record<string, unknown>)
+		: null;
+}
+
+/** Runtime boundary for exported sentence scores. Invalid values are explicit
+ * unavailability; booleans and out-of-range numbers never enter viewer math. */
+export function sentenceProbabilityOrNull(value: unknown): number | null {
+	return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+		? value
 		: null;
 }
 
@@ -146,6 +171,94 @@ function metricsConfigurationIdentity(metrics: RunMetrics): string | null {
 function metricsProfileId(metrics: RunMetrics): string | null {
 	const value = metricsSoftCalibration(metrics)?.profile_id;
 	return typeof value === 'string' && value ? value : null;
+}
+
+function metricsSentenceCalibrationProfile(metrics: RunMetrics): Record<string, unknown> | null {
+	const thresholds = asRecord(metrics.metrics_basis?.thresholds);
+	const tier1 = asRecord(thresholds?.tier1_sentence);
+	return asRecord(tier1?.calibration_profile);
+}
+
+/** Validate the score identity separately from the reader-profile calibration.
+ * Schema-v8 existed before W1, so schema numbers alone cannot distinguish the
+ * historical verdict grid from the calibrated sentence probability. */
+function validateSentenceScoreContract(
+	run: CalibrationRun,
+	metrics: RunMetrics,
+	reasons: string[]
+): void {
+	const profile = metricsSentenceCalibrationProfile(metrics);
+	if (!profile) {
+		reasons.push('metrics sentence-score calibration profile is missing');
+	} else {
+		const expectedProfile = {
+			model: SENTENCE_SCORE_CONTRACT.calibration_model,
+			model_id: SENTENCE_SCORE_CONTRACT.calibration_model_id,
+			probe_id: SENTENCE_SCORE_CONTRACT.probe_id,
+			probe_digest: SENTENCE_SCORE_CONTRACT.probe_digest,
+			artifact: SENTENCE_SCORE_CONTRACT.calibration_artifact,
+			artifact_sha256: SENTENCE_SCORE_CONTRACT.calibration_artifact_sha256
+		};
+		for (const [field, expected] of Object.entries(expectedProfile)) {
+			if (profile[field] !== expected) {
+				reasons.push(`metrics sentence-score calibration profile has incompatible ${field}`);
+			}
+		}
+	}
+
+	const declared = asRecord(run.sentence_score);
+	if (!declared) {
+		reasons.push('export sentence-score contract is missing');
+		return;
+	}
+	for (const [field, expected] of Object.entries(SENTENCE_SCORE_CONTRACT)) {
+		if (declared[field] !== expected) {
+			reasons.push(`export sentence-score contract has incompatible ${field}`);
+		}
+	}
+
+	const status = declared.status;
+	if (status !== 'available' && status !== 'unavailable') {
+		reasons.push('export sentence-score status is missing or invalid');
+	}
+	const sourceStatus = declared.source_status;
+	if (
+		sourceStatus !== undefined &&
+		sourceStatus !== null &&
+		sourceStatus !== 'enabled' &&
+		sourceStatus !== 'unavailable'
+	) {
+		reasons.push('export sentence-score source status is invalid');
+	}
+	if (status === 'available' && sourceStatus !== 'enabled') {
+		reasons.push('available sentence scores do not identify an enabled serving source');
+	}
+
+	const rowsAvailable = declared.rows_available;
+	const rowsUnavailable = declared.rows_unavailable;
+	for (const [field, value] of [
+		['rows_available', rowsAvailable],
+		['rows_unavailable', rowsUnavailable]
+	] as const) {
+		if (!Number.isInteger(value) || (value as number) < 0) {
+			reasons.push(`export sentence-score ${field} is missing or invalid`);
+		}
+	}
+	if (status === 'unavailable' && rowsAvailable !== 0) {
+		reasons.push('unavailable sentence-score contract reports available rows');
+	}
+	const expectedRows = run.counts?.unique_evidence_rows;
+	if (
+		typeof expectedRows === 'number' &&
+		Number.isInteger(rowsAvailable) &&
+		Number.isInteger(rowsUnavailable) &&
+		(rowsAvailable as number) + (rowsUnavailable as number) !== expectedRows
+	) {
+		reasons.push('sentence-score row counts do not match the export evidence count');
+	}
+	if (metricArm(metrics, 'ev', 'score') && status !== 'available') {
+		reasons.push('a realized Tier-1 score arm has unavailable sentence-score provenance');
+	}
 }
 
 function metricsProfileProvenance(metrics: RunMetrics): Record<string, unknown> {
@@ -410,6 +523,7 @@ export function calibrationArtifactConsistency(
 	}
 
 	if (metrics.schema_version === HYBRID_METRICS_SCHEMA) {
+		validateSentenceScoreContract(run, metrics, reasons);
 		const metricsCorpus = digest(metrics.provenance?.corpus_sha256);
 		const exportCorpus = digest(run.provenance?.corpus_sha256);
 		if (!metricsCorpus) reasons.push('metrics corpus provenance digest is missing or invalid');

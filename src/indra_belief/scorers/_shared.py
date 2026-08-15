@@ -1,20 +1,9 @@
 """Shared scorer primitives used by more than one scorer module.
 
-Single source of truth for the (verdict, confidence) -> score grid and for Greek
-letter normalization, both of which were previously copied across modules (and
-the Greek copy had diverged, dropping xi/upsilon).
+Greek normalization previously existed in divergent copies; keeping it here
+prevents the xi/upsilon omissions from recurring.
 """
 from __future__ import annotations
-
-# (verdict, confidence) -> belief score on the 0.05-0.95 grid.
-VERDICT_SCORE_GRID: dict[tuple[str, str], float] = {
-    ("correct", "high"): 0.95,
-    ("correct", "medium"): 0.80,
-    ("correct", "low"): 0.65,
-    ("incorrect", "low"): 0.35,
-    ("incorrect", "medium"): 0.20,
-    ("incorrect", "high"): 0.05,
-}
 
 # Greek letter glyphs (lowercase + capitalized) -> Latin shortform.
 GREEK_GLYPHS: dict[str, str] = {

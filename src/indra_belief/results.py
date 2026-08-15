@@ -51,10 +51,22 @@ from indra_belief.metrics import (
     ece,
     reliability_bins,
 )
+from indra_belief.probes.calibration import (
+    CALIBRATION_FILENAME as SENTENCE_CALIBRATION_FILENAME,
+    CALIBRATION_MODEL as SENTENCE_CALIBRATION_MODEL,
+    CALIBRATION_MODEL_ID as SENTENCE_CALIBRATION_MODEL_ID,
+    CALIBRATION_PROBE_DIGEST as SENTENCE_CALIBRATION_PROBE_DIGEST,
+    DEFAULT_CALIBRATION_PATH as SENTENCE_CALIBRATION_PATH,
+    SENTENCE_SCORE_CONTRACT_VERSION,
+    SENTENCE_SCORE_KIND,
+)
+from indra_belief.probes.reader import DIRECT_PROBE_ID
 from indra_belief.noise_model import RECALIBRATED_PRIORS
 from indra_belief.statement_belief import statement_belief
 
 DEFAULT_CORPUS = "data/corpora/latest_statements_rasmachine.json"
+TIER1_CORRECT_PROBABILITY_THRESHOLD = 0.5
+TIER2_STATEMENT_BELIEF_THRESHOLD = 0.5
 
 
 def _file_sha256(path: str | None) -> str | None:
@@ -206,6 +218,77 @@ _CORPUS_TEXT: dict[tuple[int, int], str] | None = None
 
 def _r3(x: Any) -> float | None:
     return round(x, 3) if isinstance(x, (int, float)) else None
+
+
+def _probability_or_none(value: Any) -> float | None:
+    """Accept only a real, finite probability; keep unavailability explicit."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    probability = float(value)
+    if not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
+        return None
+    return probability
+
+
+def _sentence_score_export_contract(
+    run_meta: dict[str, Any],
+) -> tuple[bool, dict[str, Any]]:
+    """Authenticate the meaning of raw ``score`` before exporting it.
+
+    Historical raw runs used the same field for the categorical six-cell grid.
+    A numeric value alone therefore proves nothing. Only runs that declare the
+    current calibrated-score contract and exact persisted combiner may carry a
+    raw score into ``our_score``; every legacy or incompatible run is named-empty.
+    """
+    declared = run_meta.get("sentence_score")
+    expected = {
+        "contract_version": SENTENCE_SCORE_CONTRACT_VERSION,
+        "grain": "sentence",
+        "kind": SENTENCE_SCORE_KIND,
+        "calibration_model": SENTENCE_CALIBRATION_MODEL,
+        "calibration_model_id": SENTENCE_CALIBRATION_MODEL_ID,
+        "probe_id": DIRECT_PROBE_ID,
+        "probe_digest": SENTENCE_CALIBRATION_PROBE_DIGEST,
+        "calibration_artifact": SENTENCE_CALIBRATION_FILENAME,
+        "calibration_artifact_sha256": _file_sha256(
+            str(SENTENCE_CALIBRATION_PATH)
+        ),
+        "raw_field": "score",
+        "export_field": "our_score",
+        "unavailable_value": None,
+    }
+    output = dict(expected)
+    if not isinstance(declared, dict):
+        output.update(
+            status="unavailable",
+            reason=(
+                "run metadata does not identify raw score as the calibrated "
+                "sentence probability; legacy values were not exported"
+            ),
+        )
+        return False, output
+
+    mismatched = [key for key, value in expected.items() if declared.get(key) != value]
+    source_status = declared.get("status")
+    output["source_status"] = source_status
+    if mismatched:
+        output.update(
+            status="unavailable",
+            reason=(
+                "run sentence-score contract is incompatible in: "
+                + ", ".join(mismatched)
+            ),
+        )
+        return False, output
+    if source_status != "enabled":
+        output.update(
+            status="unavailable",
+            reason="the calibrated sentence probe was unavailable for this run",
+        )
+        return False, output
+
+    output["status"] = "available"
+    return True, output
 
 
 def call_log_cost(call_log: list[dict]) -> dict:
@@ -612,7 +695,8 @@ def build_run_metrics(
     run_id: str | None,
     gold_path: str | None,
     *,
-    tau: float = 0.5,
+    sentence_tau: float = TIER1_CORRECT_PROBABILITY_THRESHOLD,
+    statement_tau: float = TIER2_STATEMENT_BELIEF_THRESHOLD,
     soft_profile: dict | None = None,
     reader_configuration: dict | None = None,
     provenance: dict[str, str | None] | None = None,
@@ -620,7 +704,7 @@ def build_run_metrics(
     """The per-run calibration-product contract (E5) — `metrics.json`.
 
     Two tiers, keyed per run + per model:
-      ev   (Tier-1) one realized arm — the per-evidence `our_score` vs gold.
+      ev   (Tier-1) calibrated sentence `P(correct)` vs evidence gold.
       stmt (Tier-2) three arms — hard / parametric / soft belief vs statement gold.
 
     Gold travels with the run (baked `gold_map`, exact pair first with a
@@ -635,9 +719,33 @@ def build_run_metrics(
     any-incorrect-wins statement gold. The calibrated arm is configuration-specific
     and uses the same profile resolver as the exported canonical belief."""
     soft = soft_profile
+    sentence_profile = {
+        "model": SENTENCE_CALIBRATION_MODEL,
+        "model_id": SENTENCE_CALIBRATION_MODEL_ID,
+        "probe_id": DIRECT_PROBE_ID,
+        "probe_digest": SENTENCE_CALIBRATION_PROBE_DIGEST,
+        "artifact": SENTENCE_CALIBRATION_FILENAME,
+        "artifact_sha256": _file_sha256(str(SENTENCE_CALIBRATION_PATH)),
+    }
     basis = {
         "bins": "BINS_8",
-        "tau": tau,
+        "thresholds": {
+            "tier1_sentence": {
+                "value": sentence_tau,
+                "score": "calibrated sentence P(correct)",
+                "rule": "predict correct iff score >= value",
+                "derivation": (
+                    "equal-cost probability decision boundary; not tuned on "
+                    "held-out labels"
+                ),
+                "calibration_profile": sentence_profile,
+            },
+            "tier2_statement": {
+                "value": statement_tau,
+                "score": "statement belief",
+                "rule": "predict error iff belief < value",
+            },
+        },
         "join": ("Tier-1/Tier-2: exact (matches_hash, source_hash) pair; "
                  "source_hash fallback only when all statement contexts agree on truth."),
         "tier2_statement_key": ("run stmt_hash (production grain); statement gold = "
@@ -660,9 +768,12 @@ def build_run_metrics(
                           "reader_configuration": reader_configuration}),
         "definitions": ("ece/BINS_8/confusion_metrics + auroc/auprc/brier_murphy/"
                         "reliability_bins all from src/indra_belief/metrics.py"),
-        "confusion_axis": ("Tier-1: pred_correct = our_score >= tau (positive=correct). "
-                           "Tier-2: pred_error = belief < tau (positive=ERROR), matching "
-                           "calibration_ship_gate err-F1."),
+        "confusion_axis": (
+            "Tier-1: pred_correct = calibrated sentence P(correct) >= "
+            "thresholds.tier1_sentence.value (positive=correct). Tier-2: "
+            "pred_error = belief < thresholds.tier2_statement.value "
+            "(positive=ERROR), matching calibration_ship_gate err-F1."
+        ),
         "soft_weights_note": ("soft arm = hybrid log-odds score: reader log-LRs are "
                               "derived from the configuration's verdict×gold confusion "
                               "matrix; confirmations retain a separately fitted source-"
@@ -673,7 +784,8 @@ def build_run_metrics(
                              "provide repeated observations of one shared latent truth."),
         "statement_verdict_err": ("tiers.stmt.verdict_err (+ per stratum): error-"
                                   "detection confusion on the TIERED verdict_statement, NOT "
-                                  "belief<tau. positive=ERROR; pred_error = verdict_statement "
+                                  "belief<thresholds.tier2_statement.value. positive=ERROR; "
+                                  "pred_error = verdict_statement "
                                   "!= 'correct' (review AND incorrect flagged); gold_error = "
                                   "statement gold incorrect (any-incorrect-wins)."),
         "statement_strata": ("tiers.stmt.stratified dims: by_stmt_type, by_n_sources "
@@ -713,21 +825,26 @@ def build_run_metrics(
 
     # ── Tier-1: per-evidence realized score vs gold ──────────────────────────
     evaluated_ev = [
-        r for r in per_ev
-        if r.get("gold") and isinstance(r.get("our_score"), (int, float))
+        (r, score)
+        for r in per_ev
+        if r.get("gold")
+        and (score := _probability_or_none(r.get("our_score"))) is not None
     ]
     ev_pairs = [
-        (r["our_score"], is_gold_correct(r["gold"]["verdict"]))
-        for r in evaluated_ev
+        (score, is_gold_correct(r["gold"]["verdict"]))
+        for r, score in evaluated_ev
     ]
     if ev_pairs:
         ev_scores = [s for s, _ in ev_pairs]
         ev_labels = [y for _, y in ev_pairs]
-        # Tier-1 confusion axis: positive = CORRECT (pred_correct = score >= tau).
-        ev_block = _metric_block(ev_scores, ev_labels, tau=tau)
+        # Tier-1 positive = CORRECT. Exactly 0.5 predicts correct under the
+        # equal-cost probability rule; missing scores never enter ev_pairs.
+        ev_block = _metric_block(ev_scores, ev_labels, tau=sentence_tau)
         ev_block["confusion"] = {  # override to the correct-positive axis
             k: v for k, v in
-            confusion_metrics([(y, (s >= tau)) for s, y in ev_pairs]).items()
+            confusion_metrics(
+                [(y, (s >= sentence_tau)) for s, y in ev_pairs]
+            ).items()
             if k in ("tp", "fp", "fn", "tn")
         }
         out["tiers"]["ev"] = {
@@ -799,7 +916,7 @@ def build_run_metrics(
                 str(row.get("source_hash")),
                 is_gold_correct(row["gold"]["verdict"]),
             )
-            for row in evaluated_ev
+            for row, _score in evaluated_ev
         ],
         [(row["statement_key"], row["gold_correct"]) for row in stmt_rows],
     )
@@ -807,11 +924,17 @@ def build_run_metrics(
     if stmt_rows:
         labels = [r["gold_correct"] for r in stmt_rows]
         arms: dict = {
-            "hard": _metric_block([r["hard"] for r in stmt_rows], labels, tau=tau),
-            "parametric": _metric_block([r["parametric"] for r in stmt_rows], labels, tau=tau),
+            "hard": _metric_block(
+                [r["hard"] for r in stmt_rows], labels, tau=statement_tau
+            ),
+            "parametric": _metric_block(
+                [r["parametric"] for r in stmt_rows], labels, tau=statement_tau
+            ),
         }
         if soft:
-            arms["soft"] = _metric_block([r["soft"] for r in stmt_rows], labels, tau=tau)
+            arms["soft"] = _metric_block(
+                [r["soft"] for r in stmt_rows], labels, tau=statement_tau
+            )
         else:
             arms["soft"] = {
                 "status": "unavailable",
@@ -828,13 +951,25 @@ def build_run_metrics(
             # stratified = where the residual error mass concentrates (R7 reads it).
             "verdict_err": _verdict_err_confusion(stmt_rows),
             "stratified": {
-                "by_stmt_type": _stratify(stmt_rows, lambda r: r["stmt_type"], tau),
+                "by_stmt_type": _stratify(
+                    stmt_rows, lambda r: r["stmt_type"], statement_tau
+                ),
                 "by_n_sources": _stratify(
-                    stmt_rows, lambda r: "multi" if r["n_distinct_sources"] > 1 else "single", tau),
+                    stmt_rows,
+                    lambda r: "multi" if r["n_distinct_sources"] > 1 else "single",
+                    statement_tau,
+                ),
                 "by_n_evidence": _stratify(
-                    stmt_rows, lambda r: "multi" if r["n_evidence"] > 1 else "single", tau),
-                "by_dominant_bucket": _stratify(stmt_rows, lambda r: r["dominant_bucket"], tau),
-                "by_driver": _stratify(stmt_rows, lambda r: r["driver"], tau),
+                    stmt_rows,
+                    lambda r: "multi" if r["n_evidence"] > 1 else "single",
+                    statement_tau,
+                ),
+                "by_dominant_bucket": _stratify(
+                    stmt_rows, lambda r: r["dominant_bucket"], statement_tau
+                ),
+                "by_driver": _stratify(
+                    stmt_rows, lambda r: r["driver"], statement_tau
+                ),
             },
         }
     else:
@@ -866,6 +1001,9 @@ def build_run_export(
     """
     rmeta = _read_run_meta(run_path)
     run_id = run_id or rmeta.get("run_id")
+    raw_score_is_calibrated, sentence_score_meta = _sentence_score_export_contract(
+        rmeta
+    )
     # Canonicalize the recorded model name (host-prefix + full tag) so every
     # export — incl. legacy runs recorded under abbreviated names — reads
     # consistently; model_size/_soft_calibration_block downstream use this.
@@ -986,6 +1124,11 @@ def build_run_export(
         rchars = len(d.get("raw_text_preview") or "")
         reasoning_truncated = (fin == "length") or bool(out_tok and out_tok * 3.5 > rchars + 200)
 
+        sentence_score = (
+            _probability_or_none(d.get("score"))
+            if raw_score_is_calibrated
+            else None
+        )
         ev_row = {
             "stmt_hash": d.get("stmt_hash"),
             "evidence_hash": d.get("evidence_hash"),
@@ -1001,7 +1144,9 @@ def build_run_export(
             "evidence_text": ev_text,
             "text_len": tl,
             "rasmachine_belief": _r3(d.get("belief")),
-            "our_score": _r3(d.get("score")),
+            # Preserve the fitted probability itself. Rounding here could move a
+            # value across the 0.5 decision boundary used by Tier-1 metrics.
+            "our_score": sentence_score,
             "verdict": d.get("verdict"),
             "confidence": d.get("confidence"),
             "reasoning": d.get("raw_text_preview"),
@@ -1060,8 +1205,8 @@ def build_run_export(
             a["ni"] += 1
         else:
             a["nother"] += 1
-        if isinstance(d.get("score"), (int, float)):
-            a["scores"].append(d["score"])
+        if sentence_score is not None:
+            a["scores"].append(sentence_score)
         a["buckets"][bucket] += 1
         if a["belief"] is None and isinstance(d.get("belief"), (int, float)):
             a["belief"] = d["belief"]
@@ -1228,8 +1373,9 @@ def build_run_export(
             # across whatever models scored the run. None = legacy row, no trace.
             "trace_status": _count_trace_status(per_ev),
             "note": "reasoning is a clipped ~1000-char preview for the truncated rows; the full "
-                    "chain-of-thought was not recorded. verdict/confidence/score were parsed before "
-                    "clipping and are unaffected. reasoning_trace carries the per-evidence CoT-access "
+                    "chain-of-thought was not recorded. verdict/confidence were parsed, and the "
+                    "sentence score was calibrated, before clipping; all are unaffected. "
+                    "reasoning_trace carries the per-evidence CoT-access "
                     "status (plaintext/inline/encrypted/not_returned/none) + committed support/objection.",
         },
         "cost": {
@@ -1258,6 +1404,15 @@ def build_run_export(
         "soft_calibration": _soft_calibration_block(
             model, reader_configuration, calib, fitted_calib
         ),
+        "sentence_score": {
+            **sentence_score_meta,
+            "rows_available": sum(
+                isinstance(row.get("our_score"), (int, float)) for row in per_ev
+            ),
+            "rows_unavailable": sum(
+                row.get("our_score") is None for row in per_ev
+            ),
+        },
         # Ground-truth model size (params), so F1 can be read over scale, not just
         # cost. Static model metadata baked per-run (travels with the run; viewer
         # holds no size table). Closed models -> status 'unknown' (never guessed).
