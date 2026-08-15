@@ -52,6 +52,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 from sklearn.metrics import roc_auc_score
+from indra_belief.indra_priors import (
+    INDRA_DEFAULT_PRIORS,
+    INDRA_DEFAULT_PRIORS_SHA256,
+)
 
 
 import _local_artifacts as _artifacts
@@ -241,14 +245,19 @@ def test_the_simple_scorer_floor_is_rederived_from_indras_own_resource(artifact:
 
     resource = Path(indra.__file__).resolve().parent / "resources" / "default_belief_probs.json"
     raw = resource.read_bytes()
-    probs = json.loads(raw)
-    worst = max(probs["syst"][s] + probs["rand"][s] for s in probs["syst"])
-    floor = 1.0 - worst
+    worst_source, (rand, syst) = max(
+        INDRA_DEFAULT_PRIORS.complete_priors.items(),
+        key=lambda item: item[1][0] + item[1][1],
+    )
+    floor = 1.0 - (rand + syst)
 
     identity = artifact["served_belief_identity"]
+    assert worst_source == "gnbr"
+    assert floor == pytest.approx(0.60)
     assert abs(identity["simple_scorer_floor"] - floor) <= _PARITY_TOL, (
         "the artifact's SimpleScorer floor is not the floor INDRA's own priors imply"
     )
+    assert INDRA_DEFAULT_PRIORS_SHA256 == hashlib.sha256(raw).hexdigest()
     assert identity["floor_source_sha256"] == hashlib.sha256(raw).hexdigest(), (
         "the artifact pins a different prior resource than the installed indra ships"
     )
@@ -693,8 +702,9 @@ def test_paper_panel_agrees_with_the_shipped_head_to_head(artifact: dict) -> Non
 # (panel key, sibling artifact, {artifact level -> sibling belief_discrimination key})
 # `belief_stored` is the belief INDRA served; `belief_llm` is the production hard
 # gate at the recalibrated priors, which this artifact carries as a sensitivity
-# rather than drawing. `belief_indra` is NOT matched exactly — see
-# `test_the_recomputed_library_default_pins_its_divergence_from_the_sibling`.
+# rather than drawing. New siblings also match `belief_indra`; the historical
+# artifact predating the shared resource loader carries its old mismatch
+# explicitly and is checked below.
 _SIBLING_CROSS_CHECKS = [
     (
         "eval_curation_v1",
@@ -738,28 +748,35 @@ def test_curation_levels_agree_with_shipped_siblings(
     ) <= _SIBLING_TOL
 
 
-def test_the_recomputed_library_default_pins_its_divergence_from_the_sibling(
+def test_recomputed_library_default_matches_a_resource_identified_sibling(
     artifact: dict,
 ) -> None:
-    """A DELIBERATE divergence, pinned on both ends rather than smoothed over.
+    """New siblings share one resource; the checked legacy bytes stay auditable.
 
-    ``belief_headtohead_gemma.json`` scores the same statements with
-    ``noise_model.INDRA_PRIORS`` — an 18-source transcription of INDRA's priors
-    with a (0.30, 0.10) fallback. That module is byte-frozen under the reader
-    bundle's implementation digest, so this artifact reads
-    ``indra/resources/default_belief_probs.json`` itself instead, which is what
-    makes the variant literally "INDRA's bundled default priors". The two land
-    0.0009 apart. Both numbers are pinned here, and the drawn one must be the
-    STRONGER — otherwise reading INDRA's own resource would have handed us an
-    easier comparator, which is the argmax rule running backwards.
+    Regenerated head-to-head artifacts identify the shared resource by digest
+    and must agree with this variant. The currently shipped sibling predates
+    that loader. Its historical mismatch remains pinned in the old generated
+    artifact until the operator regenerates both artifacts; it is never treated
+    as the desired steady-state contract.
     """
     panel = _panel(artifact, "eval_curation_v1")
     variant = [v for v in panel["incumbent_variants"] if v["key"] == "simple_scorer_recomputed"]
     assert len(variant) == 1
+    sibling_artifact = _load(ROOT / "data/results/belief_headtohead_gemma.json")
+    sibling = sibling_artifact["belief_discrimination"]["belief_indra"]["all"]
     cross = variant[0].get("cross_check")
-    assert cross is not None, "the divergence must be recorded, not discovered later"
 
-    sibling = _load(ROOT / cross["sibling"])["belief_discrimination"]["belief_indra"]["all"]
+    sibling_resource = sibling_artifact.get("indra_default_priors")
+    if sibling_resource is not None:
+        assert sibling_resource["sha256"] == artifact["served_belief_identity"][
+            "floor_source_sha256"
+        ]
+        assert cross is None, "same-resource siblings must not preserve a legacy divergence"
+        assert sibling["n"] == panel["n_statements"]
+        assert abs(variant[0]["auroc"] - sibling["auroc"]) <= _SIBLING_TOL
+        return
+
+    assert cross is not None, "the divergence must be recorded, not discovered later"
     assert abs(cross["sibling_auroc"] - sibling["auroc"]) <= _PARITY_TOL, (
         "the recorded sibling value is not the value the sibling ships"
     )

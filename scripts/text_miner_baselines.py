@@ -19,7 +19,8 @@ Two recorded baselines:
      any-incorrect-wins rule and measure how well that belief separates gold-correct from
      gold-incorrect statements: AUROC (positive class = correct) and the 8-bin
      ECE. We report the belief as STORED on the gold rows, and as recomputed from
-     source_counts under both INDRA_PRIORS and RECALIBRATED_PRIORS.
+     source_counts under both INDRA's installed defaults and the benchmark
+     overrides layered on those defaults.
 
 Outputs a recorded artifact pair: data/results/text_miner_baselines.json (machine)
 and reports/text_miner_baselines.md (human). Nothing here reads an LLM verdict —
@@ -41,14 +42,22 @@ sys.path.insert(0, str(ROOT / "src"))
 from indra_belief.metrics import ece  # noqa: E402
 from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
 from indra_belief.noise_model import (  # noqa: E402
-    INDRA_PRIORS,
     RECALIBRATED_PRIORS,
     _DEFAULT_PRIOR,
     compute_edge_reliability_from_counts,
 )
+from indra_belief.indra_priors import (  # noqa: E402
+    INDRA_DEFAULT_PRIOR_RESOURCE,
+    INDRA_DEFAULT_PRIORS,
+    INDRA_DEFAULT_PRIORS_SHA256,
+    with_benchmark_recalibration,
+)
 
 # Text-mining readers (the "text miners"); everything else is a curated DB.
 TEXT_MINERS = {"reach", "sparser", "trips", "medscan", "rlimsp", "eidos", "cwms", "isi"}
+
+# Recalibration is an override set, not a replacement source registry.
+RECALIBRATED_WITH_INDRA_DEFAULTS = with_benchmark_recalibration(RECALIBRATED_PRIORS)
 
 
 def auroc(scored: list[tuple[float, bool]]) -> float | None:
@@ -112,8 +121,10 @@ def main() -> None:
             "is_text_miner": src in TEXT_MINERS,
             "n_pairs": n,
             "gold_accuracy": round(acc, 4),
-            "implied_acc_indra": round(implied_accuracy(INDRA_PRIORS, src), 4),
-            "implied_acc_recalibrated": round(implied_accuracy(RECALIBRATED_PRIORS, src), 4),
+            "implied_acc_indra": round(implied_accuracy(INDRA_DEFAULT_PRIORS, src), 4),
+            "implied_acc_recalibrated": round(
+                implied_accuracy(RECALIBRATED_WITH_INDRA_DEFAULTS, src), 4
+            ),
         })
 
     # ── (2) belief discrimination at statement grain ─────────────────────────
@@ -139,8 +150,12 @@ def main() -> None:
             "depth": n,
             "gold_correct": gold_correct,
             "belief_stored": s["belief"],
-            "belief_indra": compute_edge_reliability_from_counts(sc, INDRA_PRIORS) if sc else None,
-            "belief_recal": compute_edge_reliability_from_counts(sc, RECALIBRATED_PRIORS) if sc else None,
+            "belief_indra": compute_edge_reliability_from_counts(
+                sc, INDRA_DEFAULT_PRIORS
+            ) if sc else None,
+            "belief_recal": compute_edge_reliability_from_counts(
+                sc, RECALIBRATED_WITH_INDRA_DEFAULTS
+            ) if sc else None,
         })
 
     def discrimination(rows: list[dict], key: str) -> dict:
@@ -165,6 +180,13 @@ def main() -> None:
 
     artifact = {
         "gold_source": args.gold,
+        "indra_default_priors": {
+            "resource": INDRA_DEFAULT_PRIOR_RESOURCE,
+            "sha256": INDRA_DEFAULT_PRIORS_SHA256,
+            "n_declared_sources": len(INDRA_DEFAULT_PRIORS.declared_sources),
+            "n_complete_sources": len(INDRA_DEFAULT_PRIORS),
+            "incomplete_sources": sorted(INDRA_DEFAULT_PRIORS.incomplete_sources),
+        },
         "evidence_pairs": {
             "n": n_pairs,
             "n_correct": n_correct_pairs,
@@ -184,6 +206,7 @@ def main() -> None:
             "statement gold = conservative any-incorrect-wins over evidence-pair gold",
             "belief_stored = INDRA belief as written on the statement (incl. supports-graph propagation)",
             "belief_indra / belief_recal = recomputed from source_counts (no propagation)",
+            "recalibrated entries override installed INDRA defaults; unmeasured sources keep those defaults",
             "this is the pre-LLM floor: no text is read; belief is a function of source + count only",
         ],
     }

@@ -1,23 +1,22 @@
 <!--
   BeliefVsIndra — INDRA's belief and ours on one calibration picture.
 
-  THE PERCEPTUAL POINT, and the reason for the shaded band: SimpleScorer AT THE
-  PRIORS THE LIBRARY SHIPS cannot produce a belief below 0.65. Its worst default
-  source is reach at (rand 0.30, syst 0.05), so one piece of evidence gives
-  1 − (0.05 + 0.30) = 0.65, and the noisy-OR is monotone increasing in evidence —
-  more readings only push upward. The band makes that reachability limit VISIBLE
-  rather than something to infer from where the marks happen to sit.
+  THE PERCEPTUAL POINT, and the reason for the shaded band: it marks the region
+  below the minimum SimpleScorer belief OBSERVED IN THIS CORPUS. It is an
+  empirical range marker, not a reachability limit of SimpleScorer or INDRA.
 
-  SCOPE, corrected 2026-08-13 after this shipped wrong: the band is NOT a claim
-  that "INDRA cannot assign a lower belief". Stored INDRA beliefs in our own
-  data/benchmark/belief_benchmark.jsonl run down to 0.3195, with 941 of 9,342
-  statements (10.1%) below 0.65 — those come from source priors weaker than any
-  entry in the shipped table. The floor belongs to THIS scorer at THESE priors.
-  The page must say that, because the paper corpus alone cannot distinguish a
-  model limit from a corpus that was selected at 0.65.
+  SOURCE CHECK, corrected 2026-08-15: INDRA's own
+  indra/resources/default_belief_probs.json contains 36 sources. The largest
+  shipped rand+syst is gnbr at 0.30 + 0.10 = 0.40, so one gnbr evidence gives
+  1 − 0.40 = 0.60. The 18-source INDRA_PRIORS copy behind the retracted claim
+  omits gnbr and cannot establish the shipped single-evidence floor.
 
-  Everything is read from the server payload. No rate, count or belief value is
-  written in this file; only SVG layout constants are.
+  SCOPE: stored INDRA beliefs in data/benchmark/belief_benchmark.jsonl reach
+  0.3195. That 18-source copy does not explain those values, so this page
+  does not assign them a cause.
+
+  Plotted rates, counts and beliefs come from the server payload. The shipped
+  prior derivation above is explanatory copy, not an SVG layout input.
 
   Deliberate constraints (do not "improve" these):
     · Both series share ONE unit square with the y = x diagonal. Never a
@@ -63,8 +62,8 @@
 			: 1
 	);
 
-	/** The unreachable region: everything below INDRA's observed floor. */
-	const floor = $derived(data.indra.min);
+	/** Region below the minimum SimpleScorer value observed in this corpus. */
+	const observedMin = $derived(data.indra.min);
 	const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
 	const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
 </script>
@@ -82,10 +81,10 @@
 		<figure class="plot">
 			<svg viewBox="0 0 {S + PAD * 2} {S + PAD * 2}" role="img"
 				aria-label="Calibration: assigned belief against observed correct rate, for INDRA's SimpleScorer and for reading the evidence.">
-				<!-- the region INDRA's noisy-OR cannot reach -->
-				<rect x={px(0)} y={py(1)} width={px(floor) - px(0)} height={S} class="unreachable" />
+				<!-- the region below this corpus's observed SimpleScorer range -->
+				<rect x={px(0)} y={py(1)} width={px(observedMin) - px(0)} height={S} class="unobserved" />
 				<text x={px(0) + 2} y={py(1) + 6} class="band-label">
-					below SimpleScorer's floor at the shipped priors
+					below this corpus's observed range
 				</text>
 
 				<!-- perfect calibration -->
@@ -154,17 +153,18 @@
 				INDRA's belief comes from the noisy-OR over per-source priors,
 				<code>1 − Π<sub>s</sub> (syst<sub>s</sub> + rand<sub>s</sub><sup>n<sub>s</sub></sup>)</code>.
 				Every input to it is a <em>count</em>: which sources reported the statement, and how many
-				times each. The sentence is never consulted. At the priors the library ships, the worst
-				source is <code>reach</code> at <code>(0.30, 0.05)</code>, so a single piece of evidence
-				gives 0.65 and more evidence only raises it — on this corpus there is nothing below that
-				to say <em>this reading looks wrong</em>.
+				times each. The sentence is never consulted. INDRA's shipped
+				<code>indra/resources/default_belief_probs.json</code> lists 36 sources. Its largest
+				random-plus-systematic error sum is <code>gnbr</code> at
+				<code>0.30 + 0.10 = 0.40</code>, so one <code>gnbr</code> evidence gives
+				<code>1 − 0.40 = 0.60</code>. That source sets the shipped single-evidence floor.
 			</p>
 			<p class="scope">
-				That floor is this scorer's, at these priors — not INDRA's in general. Stored INDRA
-				beliefs elsewhere in our benchmark data reach 0.3195, with about a tenth of statements
-				below 0.65, from sources weaker than any in the shipped table. This corpus on its own
-				cannot separate a reachability limit from a corpus selected at 0.65; the arithmetic can,
-				and it is the arithmetic being shown.
+				The shaded cutoff is the minimum observed in this corpus, not that arithmetic floor.
+				The earlier claim came from this project's 18-source <code>INDRA_PRIORS</code> copy,
+				which omits half of INDRA's 36 shipped sources, including <code>gnbr</code>. Stored INDRA
+				beliefs elsewhere in our benchmark data reach 0.3195; that 18-source copy does not
+				explain those values, so their cause is left open here.
 			</p>
 
 			<dl class="ece">
@@ -213,9 +213,9 @@
 			the same statements as the disagreement band below. Nothing else in the formula moved.
 		</p>
 		<p class="foot">
-			A separately fitted calibration for the reader also exists in the codebase, and it is
-			<em>not</em> what produced these numbers; this page reports the aggregation the frozen
-			artifact declares.
+			The current sentence scorer's separately fitted calibrated probability did
+			<em>not</em> produce these frozen statement-level numbers; this page reports the
+			aggregation the artifact declares.
 		</p>
 	</div>
 
@@ -271,16 +271,16 @@
 		<div class="panel">
 			<div class="probe-head">
 				<h3>Asking the model for a probability instead of a word</h3>
-				<span class="tag">measured · not deployed</span>
+				<span class="tag">frozen historical experiment</span>
 			</div>
 			<p>
-				Everything above turns on a single word from the reader: <em>correct</em> or
-				<em>incorrect</em>. Three words in, three numbers out — the deployed scorer emits
+				This experiment predates the current calibrated sentence-score path. Its reader
+				returned <em>correct</em> or <em>incorrect</em>; its six-cell categorical lookup produced
 				<strong>{data.probe.incumbent.distinct_values}</strong> distinct scores across
 				{data.probe.n.toLocaleString()} statements, so it can rank almost nothing within a verdict.
 			</p>
 			<p>
-				A second call, with reasoning switched off, instead reads the model's probability at the
+				A second call, with reasoning switched off, instead read the model's probability at the
 				one token where the verdict is about to appear. That is a number, not a word, and it gives
 				<strong>{data.probe.candidate.distinct_values}</strong> distinct scores over the same
 				statements — at
@@ -292,7 +292,7 @@
 			<div class="probe-grid">
 				<figure class="plot small">
 					<svg viewBox="0 0 {S + PAD * 2} {S + PAD * 2}" role="img"
-						aria-label="Calibration of the deployed verdict grid against the same grid plus the token-probability probe.">
+						aria-label="Frozen historical calibration experiment comparing the verdict grid with the same grid plus a token-probability probe.">
 						<line x1={px(0)} y1={py(0)} x2={px(1)} y2={py(1)} class="diagonal" />
 						{#each data.probe.incumbent.bins as b}
 							<circle cx={px(b.p_mean)} cy={py(b.y_rate)} r={rOf(b.n, probeMaxN)} class="mark a" />
@@ -342,7 +342,7 @@
 				This is a different evaluation — {data.probe.n.toLocaleString()} statements from a separate
 				holdout with its own curations and its own bin edges. Its numbers are not comparable to the
 				corpus figures above and the two are deliberately not drawn on shared axes.
-				<strong>It is not deployed:</strong> {data.probe.deployment_note}.
+				<strong>Historical scope:</strong> {data.probe.historical_note}.
 			</p>
 		</div>
 	{/if}
@@ -357,7 +357,7 @@
 
 	.plot { margin: 0; }
 	.plot svg { width: 100%; height: auto; overflow: visible; }
-	.unreachable { fill: var(--accent); opacity: .06; }
+	.unobserved { fill: var(--accent); opacity: .06; }
 	.band-label { font-family: var(--mono, monospace); font-size: 3.1px; fill: var(--accent); opacity: .8; }
 	.diagonal { stroke: var(--ink-faint); stroke-width: .4; stroke-dasharray: 2 1.6; }
 	.diag-label { font-family: var(--mono, monospace); font-size: 3.1px; fill: var(--ink-faint); }

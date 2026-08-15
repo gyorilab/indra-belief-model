@@ -1,5 +1,19 @@
 """Tests for parametric belief scoring (noise model)."""
+import ast
+import hashlib
+import json
+from importlib.resources import files
+from pathlib import Path
+
 import pytest
+from indra_belief.indra_priors import (
+    BENCHMARK_RECALIBRATED_SOURCES,
+    INDRA_DEFAULT_PRIOR_RESOURCE,
+    INDRA_DEFAULT_PRIORS,
+    INDRA_DEFAULT_PRIORS_SHA256,
+    IncompleteIndraPriorError,
+    with_benchmark_recalibration,
+)
 from indra_belief.noise_model import (
     compute_edge_reliability,
     compute_edge_reliability_from_counts,
@@ -9,6 +23,118 @@ from indra_belief.noise_model import (
     INDRA_PRIORS,
     RECALIBRATED_PRIORS,
 )
+
+
+def _installed_indra_prior_resource() -> tuple[dict, bytes]:
+    raw = files("indra").joinpath("resources", "default_belief_probs.json").read_bytes()
+    return json.loads(raw), raw
+
+
+class TestInstalledIndraPriors:
+    """The caller-side defaults are INDRA's resource, never a transcription."""
+
+    def test_loader_covers_every_declared_resource_source(self):
+        payload, raw = _installed_indra_prior_resource()
+        rand_sources = set(payload["rand"])
+        syst_sources = set(payload["syst"])
+        declared = rand_sources | syst_sources
+        complete = rand_sources & syst_sources
+
+        assert INDRA_DEFAULT_PRIOR_RESOURCE == "indra/resources/default_belief_probs.json"
+        assert INDRA_DEFAULT_PRIORS_SHA256 == hashlib.sha256(raw).hexdigest()
+        assert INDRA_DEFAULT_PRIORS.declared_sources == declared
+        assert set(INDRA_DEFAULT_PRIORS) == complete
+        assert INDRA_DEFAULT_PRIORS.incomplete_sources == declared - complete
+
+        formerly_invisible = {
+            "gnbr", "geneways", "semrep", "isi", "tees",
+            "ctd", "bel", "biopax", "omnipath",
+        }
+        assert formerly_invisible <= INDRA_DEFAULT_PRIORS.declared_sources
+
+    def test_every_complete_tuple_matches_the_installed_resource(self):
+        payload, _ = _installed_indra_prior_resource()
+        complete = set(payload["rand"]) & set(payload["syst"])
+        for source in complete:
+            assert INDRA_DEFAULT_PRIORS[source] == pytest.approx(
+                (payload["rand"][source], payload["syst"][source])
+            )
+
+    def test_missing_components_fail_loudly_instead_of_using_fallback(self):
+        payload, _ = _installed_indra_prior_resource()
+        incomplete = (set(payload["rand"]) | set(payload["syst"])) - (
+            set(payload["rand"]) & set(payload["syst"])
+        )
+        for source in incomplete:
+            missing = INDRA_DEFAULT_PRIORS.missing_components[source]
+            with pytest.raises(
+                IncompleteIndraPriorError,
+                match=rf"{source!s}.*{'|'.join(missing)}",
+            ):
+                compute_edge_reliability_from_counts(
+                    {source: 1}, priors=INDRA_DEFAULT_PRIORS
+                )
+
+    def test_real_missing_sources_do_not_receive_the_generic_floor(self):
+        assert INDRA_DEFAULT_PRIORS["gnbr"] == pytest.approx((0.30, 0.10))
+        gnbr = compute_edge_reliability_from_counts(
+            {"gnbr": 1}, priors=INDRA_DEFAULT_PRIORS
+        )
+        assert gnbr == pytest.approx(0.60)
+
+        # Unlike gnbr, this tuple differs from the generic fallback, proving the
+        # lookup really reached the resource rather than coincidentally scoring
+        # to the same number.
+        assert INDRA_DEFAULT_PRIORS["biopax"] == pytest.approx((0.20, 0.01))
+        biopax = compute_edge_reliability_from_counts(
+            {"biopax": 1}, priors=INDRA_DEFAULT_PRIORS
+        )
+        assert biopax == pytest.approx(0.79)
+
+    def test_recalibration_is_layered_over_all_installed_defaults(self):
+        copied_rows_cannot_override = {
+            **RECALIBRATED_PRIORS,
+            "hprd": (0.88, 0.01),
+        }
+        merged = with_benchmark_recalibration(copied_rows_cannot_override)
+        assert BENCHMARK_RECALIBRATED_SOURCES == {
+            "reach", "sparser", "trips", "medscan", "rlimsp",
+        }
+        assert merged["reach"] == RECALIBRATED_PRIORS["reach"]
+        assert merged["biopax"] == INDRA_DEFAULT_PRIORS["biopax"]
+        # hprd is an unfitted copied row in the frozen recalibration table. Even
+        # an obviously divergent copy must not overwrite the installed value.
+        assert merged["hprd"] == INDRA_DEFAULT_PRIORS["hprd"]
+        # Nor may copied rows resurrect sources removed from current INDRA.
+        assert "cbn" not in merged.declared_sources
+
+    @pytest.mark.parametrize(
+        "relative_path",
+        [
+            "scripts/belief_headtohead.py",
+            "scripts/text_miner_baselines.py",
+            "scripts/compute_deployed_baseline_replication.py",
+        ],
+    )
+    def test_default_baseline_callers_do_not_import_the_frozen_table(self, relative_path):
+        root = Path(__file__).resolve().parents[1]
+        tree = ast.parse((root / relative_path).read_text())
+        noise_imports = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            and node.module == "indra_belief.noise_model"
+            for alias in node.names
+        }
+        resource_imports = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            and node.module == "indra_belief.indra_priors"
+            for alias in node.names
+        }
+        assert "INDRA_PRIORS" not in noise_imports
+        assert "INDRA_DEFAULT_PRIORS" in resource_imports
 
 
 class TestComputeEdgeReliability:
