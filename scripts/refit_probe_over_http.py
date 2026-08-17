@@ -56,8 +56,26 @@ PROBE_DIR = ROOT / "data" / "probe_battery"
 OUT = PROBE_DIR / "http_base1_scores.json"
 
 
-def endpoint() -> tuple[str, str, int]:
-    cfg = LOCAL_MODELS["local-gemma-4-26b"]
+def endpoint(model: str = "local-gemma-4-26b") -> tuple[str, str, int]:
+    """Resolve a probe endpoint for any registry entry that declares a top-k.
+
+    Was pinned to local-gemma-4-26b, which made the transport question
+    answerable exactly once. The same question recurs for every new serving
+    stack — and it is not rhetorical: the SAME weights read in-process vs over
+    HTTP gave r=0.955 but a 2.4x range compression and 10% sign flips, so a
+    combiner fitted on one cannot be fed the other. Quantization is a larger
+    perturbation than transport, so 8-bit MLX and bf16 vLLM are a bigger gap
+    than the one that already forced a refit.
+    """
+    if model not in LOCAL_MODELS:
+        raise SystemExit(f"unknown registry entry: {model}")
+    cfg = LOCAL_MODELS[model]
+    if not cfg.get("max_top_logprobs"):
+        raise SystemExit(
+            f"{model} declares no max_top_logprobs — it cannot return the label "
+            "window the probe needs. For vLLM, launch with --max-logprobs 1024 "
+            "and declare it in the registry entry."
+        )
     return (
         cfg["base_url"].rstrip("/") + "/chat/completions",
         cfg["model_id"],
@@ -162,8 +180,9 @@ def clustered_ci(a, b, labels, clusters, seed=0, n_boot=2000):
     return auroc(a, labels) - auroc(b, labels), float(lo), float(hi)
 
 
-def score_split(name: str, path: Path, limit: int | None) -> list[dict]:
-    url, model_id, k = endpoint()
+def score_split(name: str, path: Path, limit: int | None,
+                model: str = "local-gemma-4-26b") -> list[dict]:
+    url, model_id, k = endpoint(model)
     pairs = joined(path)
     if limit:
         pairs = pairs[:limit]
@@ -196,9 +215,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--full", action="store_true", help="also score the fit split and refit")
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--model", default="local-gemma-4-26b",
+                    help="registry entry to read the probe on; the "
+                         "question is whether ITS delta_logit scale "
+                         "matches the fitted artifact's")
     args = ap.parse_args()
 
-    test = score_split("test", PROBE_DIR / "probes_test.jsonl", args.limit)
+    test = score_split("test", PROBE_DIR / "probes_test.jsonl", args.limit, args.model)
     both = [r for r in test if r["inprocess_delta_logit"] is not None]
     y = np.array([r["gold_correct"] for r in both])
     http = np.array([r["http_delta_logit"] for r in both])
@@ -231,7 +254,7 @@ def main() -> int:
         "test_rows": test,
     }
     if args.full:
-        fit = score_split("fit", PROBE_DIR / "probes_fit.jsonl", args.limit)
+        fit = score_split("fit", PROBE_DIR / "probes_fit.jsonl", args.limit, args.model)
         result["fit_rows"] = fit
     OUT.write_text(json.dumps(result, indent=1) + "\n")
     print(f"\nwrote {OUT}")

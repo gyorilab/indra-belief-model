@@ -12,6 +12,7 @@ from indra_belief.probes import (
     read_probe,
 )
 from indra_belief.probes.battery import probe_by_id, render
+from indra_belief.probes.reader import PROBE_FIRST_TRY_TOP_LOGPROBS
 
 
 RECORD = {
@@ -103,7 +104,10 @@ def test_read_probe_forces_position_zero_and_returns_both_measurements():
         "max_tokens": 1,
         "temperature": 0.0,
         "logprobs": True,
-        "top_logprobs": 1024,
+        # the FIRST-TRY width, not the route ceiling (the client declares
+        # max_top_logprobs=1024). A label outside this window triggers one
+        # retry at the ceiling — see the retry test below.
+        "top_logprobs": PROBE_FIRST_TRY_TOP_LOGPROBS,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -336,3 +340,59 @@ def test_calibration_loader_rejects_direct_probe_content_drift(monkeypatch):
     assert not calibration.supports_sentence_calibration(_calibrated_client())
     with pytest.raises(ValueError, match="does not match the fitted calibration"):
         calibration.load_calibration()
+
+
+def test_a_label_outside_the_first_window_widens_instead_of_failing():
+    """The narrow default must degrade to SLOWER, never to a lost reading.
+
+    MEASURED on 40 records over HTTP: the losing label's rank is median 6, p90
+    11, max 15, so the 128-wide first try carries ~8x headroom. The window costs
+    no latency (0.16-0.17 s flat from 64 to 1024 on MLX) but its payload is
+    linear — 3.8 KB at 64 against 54.7 KB at 1024, which at corpus scale is the
+    difference between ~230 GB and ~3.2 TB of JSON for the same two numbers.
+
+    A different stack can rank differently (vLLM bf16 vs MLX 8-bit), so the
+    first try must not be a cap. This pins the widening: a record whose losing
+    label sits outside the first window is retried at the route ceiling and
+    still returns a reading.
+    """
+    import math
+    from types import SimpleNamespace
+
+    from indra_belief.probes.reader import (
+        PROBE_FIRST_TRY_TOP_LOGPROBS,
+        read_probe,
+    )
+
+    calls: list[int] = []
+
+    class _Completions:
+        def create(self, **request):
+            width = request["top_logprobs"]
+            calls.append(width)
+            alts = [{"token": "correct", "logprob": math.log(0.6)}]
+            if width > PROBE_FIRST_TRY_TOP_LOGPROBS:
+                # only the WIDER window contains the losing label
+                alts.append({"token": "incorrect", "logprob": math.log(0.2)})
+            return SimpleNamespace(choices=[SimpleNamespace(
+                logprobs=SimpleNamespace(content=[SimpleNamespace(
+                    top_logprobs=[SimpleNamespace(**a) for a in alts])]))])
+
+    class _Client:
+        _guard = None
+        backend = "openai_compat"
+        model_name = "local-gemma-4-26b"
+        config = {"model_id": "mlx-community/gemma-4-26b-a4b-it-8bit",
+                  "max_top_logprobs": 1024, "timeout": 30}
+        completions = _Completions()
+        chat = SimpleNamespace(completions=_Completions())
+
+    reading = read_probe(
+        {"evidence_text": "A activates B.", "subject": "A", "object": "B",
+         "stmt_type": "Activation"},
+        _Client(),
+    )
+    assert reading.delta_logit == pytest.approx(math.log(0.6) - math.log(0.2))
+    assert calls == [PROBE_FIRST_TRY_TOP_LOGPROBS, 1024], (
+        f"expected one narrow try then one widened retry, got {calls}"
+    )

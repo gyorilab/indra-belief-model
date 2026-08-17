@@ -19,6 +19,7 @@ can express assistant continuation.
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 from collections.abc import Mapping
 from functools import partial
 from typing import Any, NamedTuple
@@ -30,13 +31,26 @@ from indra_belief.probes.battery import LABELS, probe_by_id, render
 
 DIRECT_PROBE_ID = "pol.verdict_direct"
 
-# The window the probe asks for, and the number a probe-capable serving entry
-# must be able to return. vLLM defaults to 20 and stock mlx_lm.server hard-codes
-# 11, so BOTH need raising before the probe can read: vLLM with
+# The window a probe-capable serving entry must be ABLE to return. vLLM defaults
+# to 20 and stock mlx_lm.server hard-codes 11, so both need raising: vLLM with
 # `--max-logprobs 1024` at launch, MLX with the patch in scripts/serve_mlx.sh.
-# A registry entry declaring `max_top_logprobs` is asserting its server was
-# started that way.
+# A registry entry declaring `max_top_logprobs` asserts its server was started
+# that way. This is the CEILING, not what we ask for on a typical call.
 PROBE_TOP_LOGPROBS = 1024
+
+# What we actually request first. MEASURED on 40 records over HTTP: the LOSING
+# label's rank is median 6, p90 11, max 15 — so 128 carries ~8x headroom over
+# the worst case observed. The window costs no latency (0.16-0.17 s flat from 64
+# to 1024 on MLX) but the payload is linear in it: 3.8 KB at 64 against 54.7 KB
+# at 1024. At corpus scale that is the difference between ~230 GB and ~3.2 TB of
+# JSON for the same two numbers.
+#
+# It is a FIRST TRY, not a cap: a label outside the window raises ProbeTopKError,
+# and `read_probe` retries that record once at the route's full width. So a
+# too-narrow default costs a rare second call rather than a lost reading, and a
+# different stack (vLLM bf16 vs MLX 8-bit could rank differently) degrades to
+# slower rather than wrong.
+PROBE_FIRST_TRY_TOP_LOGPROBS = 128
 
 
 class ProbeReading(NamedTuple):
@@ -124,6 +138,109 @@ def _label_logprobs(
     return observed["correct"], observed["incorrect"]
 
 
+
+def build_probe_request(
+    record: Mapping[str, Any], *, model_id: str, top_logprobs: int,
+    inline_extra_body: bool = False,
+) -> dict[str, Any]:
+    """The probe's request body, for ANY transport.
+
+    Split out from :func:`read_probe` so a caller with its own HTTP client — the
+    corpus-scale shard runner drives a bare ``httpx.Client``, not a
+    ``ModelClient`` — can issue the probe without adopting our transport. One
+    definition of the request shape, so the three things that make the read work
+    cannot drift apart:
+
+      * ``enable_thinking: False`` suppresses the reasoning channel;
+      * the assistant PREFILL opens the JSON string the label must close;
+      * ``continue_final_message`` extends that turn instead of starting a new
+        one, which is what puts the verdict at generated position zero.
+
+    Getting any one of those wrong yields a saturated read rather than an error
+    — MEASURED: with the thinking channel off but the production prompt, the
+    verdict lands 56 tokens deep at delta_logit +22.50, indistinguishable from
+    full deliberation.
+    """
+    probe = probe_by_id(DIRECT_PROBE_ID)
+    system, user, prefill = render(probe, record)
+    extra = {
+        "chat_template_kwargs": {"enable_thinking": False},
+        "continue_final_message": True,
+        "add_generation_prompt": False,
+    }
+    body = {
+        "model": model_id,
+        "max_tokens": 1,
+        "temperature": 0.0,
+        "logprobs": True,
+        "top_logprobs": top_logprobs,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+            {"role": "assistant", "content": prefill},
+        ],
+    }
+    # The OpenAI SDK hoists `extra_body` onto the wire; a raw HTTP client must
+    # send those keys at the top level itself. Same request either way — the
+    # difference is the transport's, so it is named here rather than
+    # reconstructed by every caller that does not use the SDK.
+    if inline_extra_body:
+        body.update(extra)
+    else:
+        body["extra_body"] = extra
+    return body
+
+
+def _as_choice(payload: Any) -> Any:
+    """Adapt a plain JSON dict to the attribute shape the normalizer reads.
+
+    ``_normalize_openai_logprobs`` handles two real provider quirks (the entry
+    scalar reporting argmax rather than the sampled token, and bare ``{}``
+    positions). Reimplementing that for dict payloads would duplicate exactly the
+    knowledge it exists to hold, so a raw response is adapted INTO it instead.
+    """
+    if isinstance(payload, Mapping):
+        return SimpleNamespace(**{k: _as_choice(v) for k, v in payload.items()})
+    if isinstance(payload, list):
+        return [_as_choice(v) for v in payload]
+    return payload
+
+
+def probe_reading_from_payload(payload: Any, *, top_k: int) -> ProbeReading:
+    """Parse an OpenAI-shaped response into a reading, whatever produced it.
+
+    Accepts a decoded JSON dict (any HTTP client) or an SDK response object.
+    """
+    choice = _as_choice(payload)
+    choices = getattr(choice, "choices", None)
+    if not choices:
+        raise ProbeReadError("probe response contains no choices")
+    logprobs = _normalize_openai_logprobs(choices[0])
+    if not logprobs:
+        raise ProbeReadError("probe response contains no token logprobs")
+    return _reading_from_labels(*_label_logprobs(logprobs, top_k=top_k))
+
+
+def _reading_from_labels(log_p_correct: float, log_p_incorrect: float) -> ProbeReading:
+    """The two label logprobs -> the reading. One definition of the arithmetic."""
+    anchor = max(log_p_correct, log_p_incorrect)
+    info = label_probability(
+        [{"top": [
+            {"token": "correct", "logprob": log_p_correct - anchor},
+            {"token": "incorrect", "logprob": log_p_incorrect - anchor},
+        ]}],
+        position=0,
+    )
+    if info["status"] != "ok" or info["p_raw"] is None or not info["both_observed"]:
+        raise ProbeReadError(
+            f"probe label probability unavailable: {info['status']}"
+        )
+    p_raw = float(info["p_raw"])
+    if not math.isfinite(p_raw):
+        raise ProbeReadError("probe label probability is non-finite")
+    return ProbeReading(p_raw=p_raw, delta_logit=log_p_correct - log_p_incorrect)
+
+
 def read_probe(
     record: Mapping[str, object],
     client: Any,
@@ -156,88 +273,48 @@ def read_probe(
     # default so a new serving entry does not have to rediscover the number; the
     # min() keeps us from serializing 4096 alternatives on a route that allows
     # them, which is pure transfer cost for ranks we will never read.
-    top_k = min(declared, PROBE_TOP_LOGPROBS)
+    ceiling = min(declared, PROBE_TOP_LOGPROBS)
+    top_k = min(declared, PROBE_FIRST_TRY_TOP_LOGPROBS)
 
-    probe = probe_by_id(DIRECT_PROBE_ID)
-    system, user, prefill = render(probe, record)
-    request: dict[str, Any] = {
-        "model": model_id,
-        "max_tokens": 1,
-        "temperature": 0.0,
-        "logprobs": True,
-        "top_logprobs": top_k,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-            {"role": "assistant", "content": prefill},
-        ],
-        "extra_body": {
-            "chat_template_kwargs": {"enable_thinking": False},
-            "continue_final_message": True,
-            "add_generation_prompt": False,
-        },
-    }
+    request: dict[str, Any] = build_probe_request(
+        record, model_id=model_id, top_logprobs=top_k
+    )
     timeout = config.get("timeout")
     if timeout is not None:
         request["timeout"] = timeout
 
     create = _completion_create(client)
     wall_timeout = getattr(client, "_invoke_with_wall_timeout", None)
-    if callable(wall_timeout):
-        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
-            raise ProbeReadError(
-                "a ModelClient probe transport requires a numeric timeout"
-            )
-        response = wall_timeout(partial(create, **request), timeout)
-    else:
-        response = create(**request)
-    choices = getattr(response, "choices", None)
-    if not choices:
-        raise ProbeReadError("probe response contains no choices")
-    logprobs = _normalize_openai_logprobs(choices[0])
-    if not logprobs:
-        raise ProbeReadError("probe response contains no token logprobs")
 
-    log_p_correct, log_p_incorrect = _label_logprobs(logprobs, top_k=top_k)
+    def _issue(width: int) -> ProbeReading:
+        request["top_logprobs"] = width
+        if callable(wall_timeout):
+            if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+                raise ProbeReadError(
+                    "a ModelClient probe transport requires a numeric timeout"
+                )
+            response = wall_timeout(partial(create, **request), timeout)
+        else:
+            response = create(**request)
+        return probe_reading_from_payload(response, top_k=width)
 
-    # label_probability is the canonical renormalizer.  Subtracting a common
-    # anchor leaves its ratio unchanged while keeping exp(logprob) representable
-    # even for an extreme (-800, -801) pair.  The exact log-odds stays in log
-    # space below, as it does in the probe-battery runner.
-    anchor = max(log_p_correct, log_p_incorrect)
-    info = label_probability(
-        [
-            {
-                "top": [
-                    {"token": "correct", "logprob": log_p_correct - anchor},
-                    {
-                        "token": "incorrect",
-                        "logprob": log_p_incorrect - anchor,
-                    },
-                ]
-            }
-        ],
-        position=0,
-    )
-    if (
-        info["status"] != "ok"
-        or info["p_raw"] is None
-        or not info["both_observed"]
-    ):
-        raise ProbeReadError(
-            f"probe label probability unavailable: {info['status']}"
-        )
-
-    p_raw = float(info["p_raw"])
-    if not math.isfinite(p_raw):
-        raise ProbeReadError("probe label probability is non-finite")
-    delta_logit = log_p_correct - log_p_incorrect
-    return ProbeReading(p_raw=p_raw, delta_logit=delta_logit)
+    try:
+        return _issue(top_k)
+    except ProbeTopKError:
+        # The narrow first try missed a label. Widen to the route's full width
+        # rather than lose the reading — one extra call on a rare record beats
+        # paying 8x the payload on every record for a tail measured at rank 15.
+        # If this fires often on a new stack, its rank distribution differs from
+        # MLX's and PROBE_FIRST_TRY_TOP_LOGPROBS should be re-measured there.
+        if ceiling <= top_k:
+            raise
+        return _issue(ceiling)
 
 
 __all__ = [
     "DIRECT_PROBE_ID",
     "PROBE_TOP_LOGPROBS",
+    "PROBE_FIRST_TRY_TOP_LOGPROBS",
     "ProbeReadError",
     "ProbeReading",
     "ProbeTopKError",
