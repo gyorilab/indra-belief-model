@@ -2,7 +2,8 @@
 
 There are no hand-set *reader* weights here. Each reader **configuration** is
 characterized by its confusion matrix on gold — the model's verdict crossed with
-the curator's label, tallied on unique evidence pairs in eval_curation_v1:
+the curator's label, tallied on unique evidence pairs of that profile's own fit
+gold (named per profile in ``_PROFILE_META``; not one shared corpus):
 
     cc = confirmed & correct      ci = confirmed & incorrect
     ic = rejected  & correct      ii = rejected  & incorrect
@@ -44,20 +45,57 @@ from .model_client import LOCAL_MODELS, canonical_model_name
 # fit-run call logs.  The full digest is pinned; prefixes are display-only.
 BASELINE_PROMPT_SHA256 = "b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581"
 REASONING_FIRST_PROMPT_SHA256 = "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364"
+REASONING_FIRST_NOCONF_PROMPT_SHA256 = "bad4cb2d9f894a8bcf5dee689e558372eb92b20f43dd3b3015b0a6865613167e"
 FIT_GOLD_SHA256 = "8e266acefd191e25a92f88febcb6f6d7f1b3be8c8d8f45a18012f76d9930f600"
 HOLDOUT_GOLD_SHA256 = "aa022aa0d2543f7031a686ec661a3bc3f59dec7cb9cc12f049ff0068653ecb49"
 EXTERNAL_GOLD_SHA256 = "52cde61f8f3e3dac01ad13f09c9d6db623eea888ffd617410d1c88de6527c80f"
+HOLDOUT_LARGE_FIT_GOLD_SHA256 = "f042ba6769995667f48e5a12b145b64e231aac063104c690ad21bb22aeb0c019"
 
-# Reader configuration -> confusion matrix (verdict × curator gold) tallied on
-# eval_curation_v1 after exact-pair multi-curator aggregation and duplicate-pair
-# removal (n=1604 unique pairs). These four counts are the reader calibration.
+# Reader configuration -> confusion matrix (verdict × curator gold) tallied after
+# exact-pair multi-curator aggregation and duplicate-pair removal. These four
+# counts are the reader calibration. The fit corpus is PER PROFILE: most are
+# eval_curation_v1 (n=1604 unique pairs); gemma_bedrock_rf was refitted onto
+# holdout_large_fit (n=4610) — see its note below.
 _CONFUSION: dict[str, dict[str, int]] = {
     "gemma_remote": {"cc": 704, "ci": 157, "ic": 97, "ii": 646},
-    "gemma_bedrock_rf": {"cc": 662, "ci": 81, "ic": 139, "ii": 722},
+    # REFIT 2026-08-15 from eval_curation_v1 (662/81/139/722, n=1604) onto
+    # holdout_large_fit (n=4303 unique pairs). Same reader, same prompt, same key — a
+    # better FIT CORPUS. eval_curation_v1 is built 803/803 and its median INDRA
+    # belief is 0.9996, so it is a near-uniformly easy, prevalence-free slice; the
+    # reader misses 0.147 of correct evidence there against 0.260 on belief<0.99
+    # (95% CI [+0.084, +0.169]), which left the fitted reject weight over-confident
+    # off-distribution. Measured on three corpora NEITHER fit saw, ECE:
+    # external_curator 0.0575->0.0446, representative403 0.0664->0.0295,
+    # rasmachine_v2 0.1066->0.0973. Ship gate on external_curator_gold_v1 4/4,
+    # ECE 0.061->0.045, AUROC 0.814->0.813, err-F1 non-inferior (+0.002, 95% CI
+    # [-0.013, +0.018]).
+    #
+    # The fit gold is holdout_large MINUS every statement or evidence also present
+    # in the validation gold, then reduced to unique (matches_hash, source_hash)
+    # pairs. Raw holdout_large shares 4 pairs / 5 source_hash / 11 matches_hash
+    # with external_curator_gold_v1, where eval_curation_v1 shared none — fitting
+    # it unfiltered would have made the ship gate partly in-sample. Duplicate-pair
+    # removal is the incumbent's own protocol; it does not happen automatically
+    # here because run_vllm_gold_eval.py persists no evidence_hash for the gate to
+    # dedup on, so both gold and run are pre-reduced (4625 -> 4303). 24 duplicate
+    # pairs carried disagreeing curator tags; first-seen wins, which is arbitrary.
+    "gemma_bedrock_rf": {"cc": 1995, "ci": 336, "ic": 467, "ii": 1505},
+    # W2b: the same reader on the same fit corpus with verbalized confidence
+    # removed from the prompt. MEASURED against the confidence-carrying default on
+    # the SAME 564 shared validation rows: accuracy -0.0087 (95% CI [-0.028,
+    # +0.011]), McNemar p=0.46, 94.9% verdict agreement — a wash, not an
+    # improvement. Registered so the variant is correctly calibrated if used; the
+    # default is deliberately NOT switched, because dropping a field that costs
+    # nothing also buys nothing, and switching would retire a 4/4-gated profile
+    # for one measured slightly (non-significantly) worse.
+    "gemma_bedrock_rf_noconf": {"cc": 1969, "ci": 337, "ic": 493, "ii": 1504},
     "medpsy_remote": {"cc": 718, "ci": 230, "ic": 83, "ii": 573},
-    # Self-hosted MLX, fitted 2026-08-13 on the same eval_curation_v1 protocol.
-    # Same weights as gemma_bedrock_rf, different serving stack: the counts land
-    # close (651/91/148/710 against 662/81/139/722), and a paired evidence-grain
+    # Self-hosted MLX, fitted 2026-08-13 on the eval_curation_v1 protocol — the
+    # protocol gemma_bedrock_rf has since been refitted OFF, so this profile
+    # carries the same skew and is the next refit candidate; MLX throughput is
+    # what has deferred it. Same weights as gemma_bedrock_rf, different serving
+    # stack: against that earlier eval_curation_v1 fit the counts landed close
+    # (651/91/148/710 against 662/81/139/722), and a paired evidence-grain
     # comparison on the external gold put the two readers within noise of each
     # other (delta err-F1 -0.0082, 95% CI [-0.0259, +0.0092], 95.4% verdict
     # agreement over 560 shared pairs).
@@ -80,16 +118,34 @@ _PROFILE_META = {
         },
     },
     "gemma_bedrock_rf": {
-        "profile_id": "bedrock-gemma-4-26b@prompt-07377e338ff2@eval_curation_v1",
+        "profile_id": "bedrock-gemma-4-26b@prompt-07377e338ff2@holdout_large_fit",
         "reader_model": "bedrock-gemma-4-26b",
         "prompt_sha256": REASONING_FIRST_PROMPT_SHA256,
-        "fit_run": "data/results/eval_curation_v1_gemma_rf_bedrock.jsonl",
+        "fit_gold": "data/benchmark/holdout_large_fit.jsonl",
+        "fit_gold_sha256": HOLDOUT_LARGE_FIT_GOLD_SHA256,
+        "fit_run": "data/results/holdout_large_bedrock-gemma-4-26b.jsonl",
         "deployment_status": "enabled",
         "validation": {
             "result": "pass",
             "gold": "data/benchmark/external_curator_gold_v1.jsonl",
             "gold_sha256": EXTERNAL_GOLD_SHA256,
             "run": "data/results/external_curator_v1_bedrock-gemma.jsonl",
+            "gate": "4/4",
+        },
+    },
+    "gemma_bedrock_rf_noconf": {
+        "profile_id": "bedrock-gemma-4-26b@prompt-bad4cb2d9f89@holdout_large_fit",
+        "reader_model": "bedrock-gemma-4-26b",
+        "prompt_sha256": REASONING_FIRST_NOCONF_PROMPT_SHA256,
+        "fit_gold": "data/benchmark/holdout_large_fit.jsonl",
+        "fit_gold_sha256": HOLDOUT_LARGE_FIT_GOLD_SHA256,
+        "fit_run": "data/results/holdout_large_bedrock-gemma-4-26b_noconf_fit.jsonl",
+        "deployment_status": "enabled",
+        "validation": {
+            "result": "pass",
+            "gold": "data/benchmark/external_curator_gold_v1.jsonl",
+            "gold_sha256": EXTERNAL_GOLD_SHA256,
+            "run": "data/results/external_curator_v1_bedrock-gemma_noconf.jsonl",
             "gate": "4/4",
         },
     },
@@ -133,6 +189,7 @@ _PROFILE_META = {
 _FITTED_CONFIGS = {
     ("remote-gemma-4-26b", BASELINE_PROMPT_SHA256): "gemma_remote",
     ("bedrock-gemma-4-26b", REASONING_FIRST_PROMPT_SHA256): "gemma_bedrock_rf",
+    ("bedrock-gemma-4-26b", REASONING_FIRST_NOCONF_PROMPT_SHA256): "gemma_bedrock_rf_noconf",
     ("remote-medpsy-4b", BASELINE_PROMPT_SHA256): "medpsy_remote",
     ("local-gemma-4-26b", REASONING_FIRST_PROMPT_SHA256): "local_gemma_mlx",
 }
@@ -183,11 +240,16 @@ def _named_profile(name: str) -> dict:
         "reader_configuration": (
             f"{profile['reader_model']}@prompt-sha256:{profile['prompt_sha256']}"
         ),
-        "fit_gold": "data/benchmark/eval_curation_v1.jsonl",
-        "fit_gold_sha256": FIT_GOLD_SHA256,
         "fit_unique_pairs": sum(_CONFUSION[name].values()),
         "gold_rule": "exact pair; multi-curator any-incorrect-wins; duplicate pairs removed",
     })
+    # Per-profile fit gold, defaulting to eval_curation_v1 for the profiles still
+    # fitted there. This used to be an unconditional overwrite APPLIED AFTER
+    # _PROFILE_META, so a profile that named its own fit gold had it silently
+    # replaced — the dict reported eval_curation_v1 for every reader regardless of
+    # what it was actually tallied on.
+    profile.setdefault("fit_gold", "data/benchmark/eval_curation_v1.jsonl")
+    profile.setdefault("fit_gold_sha256", FIT_GOLD_SHA256)
     return profile
 
 
@@ -385,6 +447,45 @@ def fitted_calibration_for(
     canonical = canonical_model_name(model.strip().lower())
     name = _FITTED_CONFIGS.get((canonical, prompt_sha256.lower()))
     return _named_profile(name) if name else None
+
+
+def calibration_banner(
+    model: str | None, prompt_sha256: str | None
+) -> tuple[bool, str]:
+    """Say out loud whether a run will be calibrated, before it spends anything.
+
+    An unfitted (model, prompt) pair resolves to ``None`` and the belief falls
+    back to the hard gate. That fallback is correct — borrowing another
+    configuration's weights would be worse — but it is SILENT, and silence at
+    corpus scale is how a 60M-statement run ends up carrying ECE 0.237 numbers
+    that look exactly like ECE 0.045 numbers. This returns the sentence a runner
+    should print, and the boolean a ``--require-calibrated`` flag should gate on.
+
+    Deliberately not a warning module or a logger: a runner prints it once at
+    startup, where the operator is actually looking.
+    """
+    profile = calibration_for(model, prompt_sha256=prompt_sha256)
+    if profile is not None:
+        return True, (
+            f"calibration: FITTED — {profile['profile_id']}\n"
+            f"  reader {model} @ prompt {str(prompt_sha256)[:12]}"
+        )
+    fitted = fitted_calibration_for(model, prompt_sha256=prompt_sha256)
+    if fitted is not None:
+        why = (f"a profile exists but its deployment_status is "
+               f"{fitted.get('deployment_status')!r}")
+    else:
+        why = "no profile is fitted for this exact model+prompt pair"
+    return False, (
+        f"calibration: NONE — beliefs will use the HARD GATE\n"
+        f"  reader {model} @ prompt {str(prompt_sha256)[:12]}\n"
+        f"  reason: {why}\n"
+        f"  the hard gate measured ECE 0.237 against 0.045 calibrated on "
+        f"external_curator_gold_v1; the numbers are valid but far less "
+        f"trustworthy, and nothing downstream can tell them apart.\n"
+        f"  fix: fit a profile for this pair, or pass --require-calibrated to "
+        f"refuse the run instead of publishing hard-gate beliefs."
+    )
 
 
 def calibration_for(

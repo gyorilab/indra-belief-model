@@ -52,7 +52,18 @@ from indra_belief.calibration_constants import (  # noqa: E402
     fitted_calibration_for,
 )
 
-FIT_GOLD = "data/benchmark/eval_curation_v1.jsonl"
+# The bedrock reasoning-first profile was refitted onto holdout_large_fit on
+# 2026-08-15; the fit gold is whatever _PROFILE_META names, not a constant of
+# the repo. eval_curation_v1 remains the fit gold for the OTHER profiles.
+FIT_GOLD = "data/benchmark/holdout_large_fit.jsonl"
+# eval_curation_v1 is still the fit gold for gemma_remote / medpsy_remote /
+# local_gemma_mlx, and it is ALSO the only gold pair that overlaps
+# external_curator_gold_v1 at all. Two tests below need an overlapping pair to
+# say anything: one proves `_ukey` normalization is doing real work (against a
+# disjoint pair it would pass trivially), the other pins the benign residual
+# overlaps. Pointing them at the new, deliberately-disjoint fit gold would turn
+# both into tautologies.
+NORMALIZATION_PROBE_GOLD = "data/benchmark/eval_curation_v1.jsonl"
 VAL_GOLD = "data/benchmark/external_curator_gold_v1.jsonl"
 
 
@@ -83,12 +94,12 @@ def test_fit_and_validation_golds_are_disjoint():
     fit = _load(FIT_GOLD)
     val = _load(VAL_GOLD)
 
-    assert len(fit) == 1606, f"{FIT_GOLD} row count changed: {len(fit)} != 1606"
+    assert len(fit) == 4303, f"{FIT_GOLD} row count changed: {len(fit)} != 4303"
     assert len(val) == 578, f"{VAL_GOLD} row count changed: {len(val)} != 578"
 
     fit_pairs = _pairs(fit)
     val_pairs = _pairs(val)
-    assert len(fit_pairs) == 1604, f"fit unique pairs changed: {len(fit_pairs)}"
+    assert len(fit_pairs) == 4303, f"fit unique pairs changed: {len(fit_pairs)}"
     assert len(val_pairs) == 575, f"validation unique pairs changed: {len(val_pairs)}"
 
     overlap = fit_pairs & val_pairs
@@ -126,7 +137,7 @@ def test_pair_grain_zero_is_not_a_type_artifact():
     exactly one statement. Swap ``_ukey`` for the identity function (or any
     other lossy comparison) and this test FAILS — which is the point.
     """
-    fit = _load(FIT_GOLD)
+    fit = _load(NORMALIZATION_PROBE_GOLD)
     val = _load(VAL_GOLD)
 
     raw_fit = {r["matches_hash"] for r in fit}
@@ -165,7 +176,7 @@ def test_residual_coarse_grain_overlap_is_pinned():
         sentence appearing under two different pmids (fit 8978681,
         validation 22251027).
     """
-    fit = _load(FIT_GOLD)
+    fit = _load(NORMALIZATION_PROBE_GOLD)
     val = _load(VAL_GOLD)
 
     stmt_overlap = {_ukey(r["matches_hash"]) for r in fit} & {
@@ -197,46 +208,27 @@ def test_residual_coarse_grain_overlap_is_pinned():
 
 
 def test_fit_gold_fewshot_contamination_is_bounded():
-    """The fit gold DOES contain fewshot text. Pre-existing and ACCEPTED.
+    """Neither gold contains fewshot text.
 
-    ``check_contamination.py --holdout data/benchmark/eval_curation_v1.jsonl``
-    exits 1 with 17 hits, all from Source 1 (CONTRASTIVE_EXAMPLES). This is
-    recorded here rather than fixed, and deliberately NOT wired into the ship
-    gate, because:
+    This USED to record an accepted 17 hits, all from Source 1
+    (CONTRASTIVE_EXAMPLES), against the then-fit gold eval_curation_v1 — ~1% of
+    1604 pairs, tolerated because the contrastive fewshots are live in the
+    production prompt (scorer.py imports CONTRASTIVE_EXAMPLES as _ALL_EXAMPLES)
+    so the bias was common-mode across every profile, and because rebuilding the
+    gold would have moved the fit population out from under the shipped counts.
 
-      * The contrastive fewshots are live in the production prompt
-        (src/indra_belief/scorers/monolithic/scorer.py:57 imports
-        CONTRASTIVE_EXAMPLES as _ALL_EXAMPLES), so every reader configuration
-        saw them. The bias is common-mode across all three profiles, not a
-        thumb on one arm's scale.
-      * All three shipped profiles were fit on this same file
-        (calibration_constants.py:52-58 and the ``fit_run`` entries in
-        _PROFILE_META). Rebuilding the gold, editing CONTRASTIVE_EXAMPLES, or
-        switching to eval_curation_v1_clean.jsonl would change the fit
-        population out from under the shipped _CONFUSION counts and break
-        test_profile_gold_digests_match_pinned_artifacts.
-      * The gate's REPORTED number is measured on the clean validation gold,
-        which returns zero hits (thresholds frozen on the fit set, evaluated
-        on a disjoint test set — calibration_ship_gate.py:74-75).
-      * ~17 of 1604 pairs is ~1%.
+    The 2026-08-15 refit onto holdout_large_fit removed that residue outright:
+    the new fit gold returns ZERO hits. The tolerance is therefore gone rather
+    than inherited, and this test now bounds growth from zero on BOTH golds —
+    any fewshot reaching either one turns it red.
 
-    This test therefore bounds GROWTH: a new fewshot that leaks into the fit
-    gold, or a leak into the clean validation gold, turns it red.
-
-    Home note: node A1 seeds the guard-source tests in
-    tests/test_contamination_guard_sources.py. This assertion lives here
-    instead because B1's declared write set is one file and verify/B1.sh runs
-    both files, so coverage is identical while a same-wave edit collision on
-    an A1-owned file is avoided. Measured runtime: 0.3 s.
+    eval_curation_v1 still carries its 17 hits and is still the fit gold for the
+    other three profiles; that is asserted where those profiles are, not here.
     """
     fit_hits = cc.find_contamination(eval_paths=[ROOT / FIT_GOLD])
-    assert len(fit_hits) == 17, (
-        "fit-gold fewshot contamination changed from the accepted 17 hits to "
-        f"{len(fit_hits)}; if it grew, a new fewshot leaked into the fit gold"
-    )
-    assert {h["source"] for h in fit_hits} == {"CONTRASTIVE_EXAMPLES"}, (
-        "a fewshot source other than CONTRASTIVE_EXAMPLES now contaminates "
-        f"the fit gold: {sorted({h['source'] for h in fit_hits})}"
+    assert fit_hits == [], (
+        f"{FIT_GOLD} was fewshot-clean at the refit and must stay so; got "
+        f"{len(fit_hits)} hits from {sorted({h['source'] for h in fit_hits})}"
     )
 
     val_hits = cc.find_contamination(eval_paths=[ROOT / VAL_GOLD])

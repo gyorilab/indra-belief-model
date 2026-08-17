@@ -3,10 +3,10 @@
     "name": "bedrock-gemma-4-26b",
     "test_label": "external_curator_gold_v1",
     "provenance": {
-      "train_gold": "data/benchmark/eval_curation_v1.jsonl",
-      "train_gold_sha256": "8e266acefd191e25a92f88febcb6f6d7f1b3be8c8d8f45a18012f76d9930f600",
-      "train_run": "data/results/eval_curation_v1_gemma_rf_bedrock.jsonl",
-      "train_run_sha256": "79e3fdef98e4ee1532d9940826da695bdc36ed7a811636796fd6a39a0f8da767",
+      "train_gold": "data/benchmark/holdout_large_fit.jsonl",
+      "train_gold_sha256": "f042ba6769995667f48e5a12b145b64e231aac063104c690ad21bb22aeb0c019",
+      "train_run": "data/results/holdout_large_bedrock-gemma-4-26b_fit.jsonl",
+      "train_run_sha256": "08e96fc665869291d0d885e9601d512245b3f352933e8693d379a892bf5241fd",
       "train_configuration": "bedrock-gemma-4-26b@prompt-sha256:07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
       "test_gold": "data/benchmark/external_curator_gold_v1.jsonl",
       "test_gold_sha256": "52cde61f8f3e3dac01ad13f09c9d6db623eea888ffd617410d1c88de6527c80f",
@@ -17,13 +17,13 @@
       "statement_gold": "any-incorrect-wins",
       "train_join": {
         "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
-        "n_run_rows": 1606,
-        "n_joined_rows": 1606,
-        "n_exact_joined_rows": 1606,
+        "n_run_rows": 4303,
+        "n_joined_rows": 4303,
+        "n_exact_joined_rows": 4303,
         "n_source_fallback_rows": 0,
         "n_unmatched_rows": 0,
         "n_ambiguous_rows": 0,
-        "n_grouped_statements": 913
+        "n_grouped_statements": 2533
       },
       "test_join": {
         "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
@@ -38,25 +38,25 @@
     },
     "reader_profile": {
       "confusion": {
-        "cc": 662,
-        "ci": 81,
-        "ic": 139,
-        "ii": 722
+        "cc": 1995,
+        "ci": 336,
+        "ic": 467,
+        "ii": 1505
       },
-      "sensitivity": 0.8264669163545568,
-      "false_positive_rate": 0.10087173100871731,
-      "specificity": 0.8991282689912827,
-      "miss_rate": 0.17353308364544318,
-      "log_lr_confirm": 2.103310168142972,
-      "log_lr_reject": -1.6450574388837322,
-      "prior_correct": 0.4993765586034913,
-      "prior_logodds": -0.002493766878402462,
-      "profile_id": "bedrock-gemma-4-26b@prompt-07377e338ff2@eval_curation_v1",
+      "sensitivity": 0.8103168155970756,
+      "false_positive_rate": 0.18250950570342206,
+      "specificity": 0.8174904942965779,
+      "miss_rate": 0.18968318440292442,
+      "log_lr_confirm": 1.4906230438494388,
+      "log_lr_reject": -1.4608840450254,
+      "prior_correct": 0.5721589588659075,
+      "prior_logodds": 0.2906651255113209,
+      "profile_id": "bedrock-gemma-4-26b@prompt-07377e338ff2@holdout_large_fit",
       "reader_configuration": "bedrock-gemma-4-26b@prompt-sha256:07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
-      "fit_run": "data/results/eval_curation_v1_gemma_rf_bedrock.jsonl",
-      "fit_gold": "data/benchmark/eval_curation_v1.jsonl",
-      "fit_gold_sha256": "8e266acefd191e25a92f88febcb6f6d7f1b3be8c8d8f45a18012f76d9930f600",
-      "fit_unique_pairs": 1604,
+      "fit_run": "data/results/holdout_large_bedrock-gemma-4-26b_fit.jsonl",
+      "fit_gold": "data/benchmark/holdout_large_fit.jsonl",
+      "fit_gold_sha256": "f042ba6769995667f48e5a12b145b64e231aac063104c690ad21bb22aeb0c019",
+      "fit_unique_pairs": 4303,
       "gold_rule": "exact pair; multi-curator any-incorrect-wins; duplicate pairs removed"
     },
     "eval": {
@@ -85,33 +85,33 @@
         },
         "clean": {
           "n": 464,
-          "ece": 0.060677794820386585,
-          "brier": 0.1585047433956953,
-          "resolution": 0.09525189614871062,
-          "reliability": 0.004460339244898315,
-          "auroc": 0.8136937941285768,
-          "auprc": 0.7616221036310127,
-          "mean_correct": 0.7468701946552437,
-          "mean_incorrect": 0.29689661231538916
+          "ece": 0.04541528106428851,
+          "brier": 0.15690269205574364,
+          "resolution": 0.09633722030050806,
+          "reliability": 0.003132690966206447,
+          "auroc": 0.8129784466740988,
+          "auprc": 0.761599353580752,
+          "mean_correct": 0.7367279500755602,
+          "mean_incorrect": 0.3501150045782814
         }
       },
       "errf1_boot": {
         "tau_hard": 0.3,
-        "tau_soft": 0.65,
+        "tau_soft": 0.7,
         "f1_hard": 0.800875273522976,
-        "f1_soft": 0.8,
-        "delta": -0.0008752735229760056,
+        "f1_soft": 0.8025477707006369,
+        "delta": 0.0016724971776608255,
         "ci_hard": [
           0.7572780859916782,
           0.8373128523737977
         ],
         "ci_soft": [
-          0.7573663318334016,
-          0.8380627099664053
+          0.7587719298245615,
+          0.8391074837683735
         ],
         "ci_delta": [
-          -0.015162418309290078,
-          0.01436993048623971
+          -0.013473569080843366,
+          0.01788833769733902
         ],
         "n": 464
       },
@@ -126,15 +126,15 @@
         },
         "0.6": {
           "hard": 0.6801242236024845,
-          "soft": 0.8068669527896997
+          "soft": 0.8
         }
       },
       "thresholds": {
         "hard": 0.3,
-        "calibrated": 0.65,
-        "train_f1_hard": 0.8169014084507042,
-        "train_f1_calibrated": 0.8419889502762431,
-        "n_train": 913,
+        "calibrated": 0.7,
+        "train_f1_hard": 0.7116788321167883,
+        "train_f1_calibrated": 0.7580645161290323,
+        "n_train": 2533,
         "n_train_undefined": 0,
         "selection": "argmax error-detection F1 on train over TAU_GRID; frozen before test",
         "grid": [
@@ -168,21 +168,21 @@
       "ece": {
         "pass": true,
         "hard": 0.23743198882758623,
-        "soft": 0.060677794820386585
+        "soft": 0.04541528106428851
       },
       "auroc": {
         "pass": true,
         "hard": 0.7940356744704571,
-        "soft": 0.8136937941285768
+        "soft": 0.8129784466740988
       },
       "errf1": {
         "pass": true,
         "hard": 0.800875273522976,
-        "soft": 0.8,
-        "delta": -0.0008752735229760056,
+        "soft": 0.8025477707006369,
+        "delta": 0.0016724971776608255,
         "ci_delta": [
-          -0.015162418309290078,
-          0.01436993048623971
+          -0.013473569080843366,
+          0.01788833769733902
         ],
         "noninferiority_margin": 0.154
       },
