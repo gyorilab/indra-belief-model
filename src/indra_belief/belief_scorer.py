@@ -90,7 +90,7 @@ class LLMBeliefScorer(_BeliefScorerBase):
     def __init__(self, client: "ModelClient", *, priors: dict | None = None,
                  soft: dict | None | _Auto = AUTO, max_tokens: int | None = None,
                  variant: Any = None, dedup: bool = True,
-                 probe_weights: bool = False) -> None:
+                 probe_weights: bool | None = None) -> None:
         self.client = client
         self.priors = priors
         # `soft` used to default to None, and None means HARD GATE. Since no
@@ -115,7 +115,12 @@ class LLMBeliefScorer(_BeliefScorerBase):
         # UNEVALUATED at statement grain in this additive form — see
         # statement_belief's docstring. `StatementBelief.weighting` records which
         # rule produced each number.
-        self.probe_weights = probe_weights
+        # None defers to statement_belief's AUTO: engage measured weights
+        # wherever rows carry them and a profile resolved. Explicit True/False
+        # still demand or refuse.
+        from indra_belief.statement_belief import AUTO as _WEIGHTS_AUTO
+
+        self.probe_weights = _WEIGHTS_AUTO if probe_weights is None else probe_weights
 
     @staticmethod
     def _resolve_calibration(client: Any, variant: Any) -> dict | None:

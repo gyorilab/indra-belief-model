@@ -36,6 +36,18 @@ import re
 from dataclasses import dataclass, field
 
 from .noise_model import RECALIBRATED_PRIORS, compute_gated_belief
+
+
+class _Auto:
+    """Sentinel: engage probe weights wherever the data supports them."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return "AUTO"
+
+
+AUTO = _Auto()
 from .scorers._shared import GREEK_GLYPHS
 
 # Deterministic grounding rejects: high-precision, credible enough to hard-flag.
@@ -180,7 +192,7 @@ def statement_belief(
     *,
     dedup: bool = True,
     soft: dict | None = None,
-    probe_weights: bool = False,
+    probe_weights: bool | _Auto = AUTO,
 ) -> StatementBelief:
     """Roll a statement's per-evidence rows up to a belief + verdict + tally.
 
@@ -285,7 +297,19 @@ def statement_belief(
             res = compute_gated_belief(gated, priors)
         belief: float | None = res.belief
         parametric_only: float | None = res.parametric_only
-        if probe_weights:
+        # AUTO: use the measured weight wherever a row carries one and a fitted
+        # profile exists, else the verdict weight. Flag-gated, the logit path was
+        # inert by construction — nothing sets a flag, so a measurement we paid
+        # for sat unread. AUTO makes it engage the moment a stack has BOTH
+        # capability and a calibration, and stay silent otherwise. Explicit True
+        # still demands it (and raises without a profile); explicit False refuses.
+        use_probe = (
+            any(isinstance(e.get("weight_of_evidence"), (int, float))
+                and not isinstance(e.get("weight_of_evidence"), bool)
+                for e in gated)
+            and soft is not None
+        ) if probe_weights is AUTO else bool(probe_weights)
+        if use_probe:
             if soft is None:
                 raise ValueError(
                     "probe_weights=True requires a fitted reader profile: the "
