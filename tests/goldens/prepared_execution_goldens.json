@@ -1139,6 +1139,7 @@
         "call_log": [],
         "confidence": "high",
         "grounding_status": "MISMATCH",
+        "probe_delta_logit": null,
         "provenance_triggered": false,
         "raw_text": "Grounding mismatch: \"protein\" independently grounds to protein (CHEBI:CHEBI:36080), NOT SORBS1",
         "score": null,
@@ -1149,6 +1150,7 @@
         "weight_of_evidence": null
       },
       "live_only_keys": [
+        "probe_delta_logit",
         "score_error",
         "weight_of_evidence"
       ],
@@ -1172,6 +1174,7 @@
         "call_log": [],
         "confidence": "high",
         "grounding_status": "skipped",
+        "probe_delta_logit": null,
         "provenance_triggered": false,
         "raw_text": "No evidence sentence — accepted by default (database-sourced).",
         "score": null,
@@ -1184,6 +1187,7 @@
         "weight_of_evidence": null
       },
       "live_only_keys": [
+        "probe_delta_logit",
         "score_error",
         "selected_example_ids",
         "selected_examples",
@@ -1209,6 +1213,7 @@
         "call_log": [],
         "confidence": "high",
         "grounding_status": "MISMATCH",
+        "probe_delta_logit": null,
         "provenance_triggered": false,
         "raw_text": "Grounding mismatch: \"HSP\" independently grounds to N-(3-carboxypropanoyl)-N-hydroxyputrescine (CHEBI:CHEBI:50430), NOT HSP90B2P",
         "score": null,
@@ -1219,6 +1224,7 @@
         "weight_of_evidence": null
       },
       "live_only_keys": [
+        "probe_delta_logit",
         "score_error",
         "weight_of_evidence"
       ],

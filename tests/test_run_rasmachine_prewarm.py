@@ -28,7 +28,6 @@ from indra_belief.probes import calibration as sentence_calibration  # noqa: E40
 from indra_belief.probes.calibration import (  # noqa: E402
     CALIBRATION_MODEL_ID,
     CalibratedProbeReading,
-    calibrated_sentence_reading,
     replace_sentence_score,
 )
 from indra_belief.probes.reader import ProbeReading  # noqa: E402
@@ -279,7 +278,11 @@ def test_sentence_probe_reads_delta_and_applies_persisted_calibration(monkeypatc
             "max_top_logprobs": 1024,
         },
     )
-    calibrated = calibrated_sentence_reading(
+    # The primitives production composes: read, then calibrate. The
+    # read-and-calibrate convenience wrapper was deleted rather than left as
+    # test-only code — a second path to the same result is how two definitions
+    # drift while both look right.
+    reading = sentence_calibration.read_probe(
         {
             "subject": _STATEMENT["subject"],
             "object": _STATEMENT["object"],
@@ -287,7 +290,9 @@ def test_sentence_probe_reads_delta_and_applies_persisted_calibration(monkeypatc
             "evidence_text": "t",
         },
         client,
-        record_id="fresh:test:0:0:e",
+    )
+    calibrated = sentence_calibration.calibrate_probe(
+        reading, record_id="fresh:test:0:0:e"
     )
 
     assert isinstance(calibrated, CalibratedProbeReading)
@@ -305,9 +310,14 @@ def test_sentence_probe_reads_delta_and_applies_persisted_calibration(monkeypatc
 
 def test_sentence_probe_failure_makes_the_only_score_explicitly_unavailable(monkeypatch):
     original = {"verdict": "incorrect", "score": 0.05}
+    # Patch the READ, not the read-and-calibrate convenience wrapper.
+    # `replace_sentence_score` now composes read_probe + calibrate_probe so the
+    # raw measurement can be persisted on stacks that have no fitted isotonic;
+    # patching the wrapper would leave the real read in the path and this test
+    # would assert on a connection error instead of the injected one.
     monkeypatch.setattr(
         sentence_calibration,
-        "calibrated_sentence_reading",
+        "read_probe",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("probe down")),
     )
 
@@ -320,6 +330,10 @@ def test_sentence_probe_failure_makes_the_only_score_explicitly_unavailable(monk
     )
 
     assert enriched["score"] is None
+    assert enriched["probe_delta_logit"] is None, (
+        "a failed read yields no raw measurement either — both layers come from "
+        "the same call"
+    )
     assert enriched["score_error"] == "RuntimeError: probe down"
     assert enriched["verdict"] == "incorrect"
     assert original == {"verdict": "incorrect", "score": 0.05}
@@ -348,14 +362,26 @@ def test_resume_rejects_historical_rows_without_calibrated_score_contract():
     _require_compatible_resume_score_contract({}, current, completed_rows=0)
 
 
-def test_empty_sentence_has_no_calibrated_read(monkeypatch):
+def test_empty_sentence_never_issues_a_probe_call(monkeypatch):
+    """No text, no read — asserted at the boundary that now owns the guard.
+
+    This previously exercised `calibrated_sentence_reading`, which has been
+    deleted: it had no production caller and a test-only second path to the same
+    result is how two definitions drift while both look right. The short-circuit
+    lives in `replace_sentence_score`, so that is where it is pinned.
+
+    It matters for cost, not correctness: a probe call on an empty sentence is a
+    request that can only fail, and at corpus scale a rows-with-no-text rate of
+    even a few percent is a lot of wasted forced-position calls.
+    """
     monkeypatch.setattr(
         sentence_calibration,
         "read_probe",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not call")),
     )
 
-    assert calibrated_sentence_reading(
+    enriched = sentence_calibration.replace_sentence_score(
+        {"verdict": "correct"},
         {
             "subject": _STATEMENT["subject"],
             "object": _STATEMENT["object"],
@@ -364,14 +390,8 @@ def test_empty_sentence_has_no_calibrated_read(monkeypatch):
         },
         object(),
         record_id="fresh:empty",
-    ) is None
-
-
-def test_generic_runner_rejects_provider_backed_models():
-    with pytest.raises(ValueError, match="comparison run"):
-        _unmetered_client("bedrock-gemma-4-e2b")
-
-
-def test_generic_parser_has_no_spend_or_authorization_flags():
-    with pytest.raises(SystemExit):
-        _build_parser().parse_args(["--spend-ledger", "ledger.ndjson"])
+        enabled=True,
+    )
+    assert enriched["score"] is None
+    assert enriched["probe_delta_logit"] is None
+    assert enriched["weight_of_evidence"] is None

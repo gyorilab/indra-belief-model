@@ -1120,8 +1120,8 @@ def test_divergence_a_no_text_live_only_keys(expected):
     # live-only for the same reason `score_error` is: batch replay rebuilds a
     # result from a recorded row and never re-reads the model.
     assert entry["live_only_keys"] == [
-        "score_error", "selected_example_ids", "selected_examples",
-        "weight_of_evidence",
+        "probe_delta_logit", "score_error", "selected_example_ids",
+        "selected_examples", "weight_of_evidence",
     ]
     assert entry["batch_only_keys"] == []
     assert entry["value_differences"] == {}
@@ -1129,7 +1129,8 @@ def test_divergence_a_no_text_live_only_keys(expected):
     assert entry["live"]["selected_examples"] == []
     # deterministic_mismatch has no divergence at all.
     mismatch = expected["deterministic_results"]["2:31"]
-    assert mismatch["live_only_keys"] == ["score_error", "weight_of_evidence"]
+    assert mismatch["live_only_keys"] == [
+        "probe_delta_logit", "score_error", "weight_of_evidence"]
     assert mismatch["batch_only_keys"] == []
     assert mismatch["value_differences"] == {}
 
@@ -1147,7 +1148,8 @@ def test_divergence_b_pseudogene_raw_text_prefix(expected):
     sides. K2-one-parser owns the reconciliation."""
     entry = expected["deterministic_results"]["909:0"]
     assert entry["route"] == "deterministic_pseudogene"
-    assert entry["live_only_keys"] == ["score_error", "weight_of_evidence"]
+    assert entry["live_only_keys"] == [
+        "probe_delta_logit", "score_error", "weight_of_evidence"]
     assert entry["batch_only_keys"] == []
     assert sorted(entry["value_differences"]) == ["raw_text"]
     live = entry["value_differences"]["raw_text"]["live"]

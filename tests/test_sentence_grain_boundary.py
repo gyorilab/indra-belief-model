@@ -51,7 +51,8 @@ PROBE_OUTPUT_FIELDS = ("score", "score_error")
 # what the producer emits, versus what belief must never read unasked.
 # `weight_of_evidence` is in this set and not that one — it is consumable, but
 # only under an explicit flag.
-PROBE_WRITTEN_FIELDS = ("score", "score_error", "weight_of_evidence")
+PROBE_WRITTEN_FIELDS = ("score", "score_error", "weight_of_evidence",
+                        "probe_delta_logit")
 
 # A synthetic profile, NOT a registered one: the boundary is a property of the
 # code path, not of any particular fitted reader, and a synthetic profile keeps
@@ -158,6 +159,11 @@ def test_the_probe_writes_only_fields_belief_ignores():
         f"replace_sentence_score now writes {sorted(written)}; anything outside "
         f"{sorted(PROBE_WRITTEN_FIELDS)} needs checking against the belief read set"
     )
+    assert "probe_delta_logit" in enriched, (
+        "the RAW reading must be persisted even when unavailable — it is what "
+        "lets a new serving stack fit its own calibration from its first run "
+        "instead of needing a second pass"
+    )
     assert "weight_of_evidence" in enriched, (
         "the additive weight must be persisted even when unavailable — without "
         "the key, statement_belief(probe_weights=True) is a silent no-op and "
@@ -169,20 +175,64 @@ def test_the_probe_writes_only_fields_belief_ignores():
 
 # ── the opt-in half: explicitly requested, the probe DOES reach belief ────────
 
-def test_probe_weights_are_ignored_unless_explicitly_requested():
-    """Default behaviour must not move when a row happens to carry a measured weight.
+def test_a_measured_weight_engages_by_default():
+    """CONTRACT CHANGE, made deliberately: the default now USES a measured weight.
 
-    Run rows scored on a probe-capable client carry a measured weight. If the default path
-    consumed it, every existing consumer's numbers would shift the day a probe
-    ran, with nothing in the call site changed.
+    This test previously asserted the opposite — that a row carrying
+    `weight_of_evidence` was ignored unless a flag was set. That invariant was
+    traded away on purpose. Flag-gated, the logit path was inert by
+    construction: nothing in the codebase set the flag, so a measurement we paid
+    a model call for sat unread on every row that had one.
+
+    What is GIVEN UP: a consumer's numbers move the first time a probe-capable
+    client scores their corpus, with no change at their call site. That is the
+    real cost and it is why `StatementBelief.weighting` exists — the number
+    names the rule that produced it, so the shift is attributable rather than
+    mysterious.
+
+    What is KEPT: `score` and `score_error` still never reach belief (the tests
+    above), a row without a measured weight is untouched, and `probe_weights=
+    False` still refuses. Only the additive weight, only where it was actually
+    measured.
     """
     from indra_belief.statement_belief import statement_belief
 
     plain = statement_belief(BASE_ROWS, RECALIBRATED_PRIORS, soft=SYNTHETIC_PROFILE)
     carrying = statement_belief(_rows_with_ell(3.0), RECALIBRATED_PRIORS,
                                 soft=SYNTHETIC_PROFILE)
-    assert carrying.belief == plain.belief
-    assert carrying.weighting == "verdict_weight"
+    assert carrying.belief != plain.belief, (
+        "a measured weight was present and ignored — the logit path is inert again"
+    )
+    assert carrying.weighting == "probe_weight"
+    assert plain.weighting == "verdict_weight"
+
+
+def test_a_row_without_a_measured_weight_is_untouched():
+    """AUTO must not change anything it has no measurement for."""
+    from indra_belief.statement_belief import statement_belief
+
+    off = statement_belief(BASE_ROWS, RECALIBRATED_PRIORS, soft=SYNTHETIC_PROFILE,
+                           probe_weights=False)
+    auto = statement_belief(BASE_ROWS, RECALIBRATED_PRIORS, soft=SYNTHETIC_PROFILE)
+    assert auto.belief == off.belief
+    assert auto.weighting == "verdict_weight"
+
+
+def test_auto_never_engages_on_the_hard_gate():
+    """No fitted profile means no anchor for the measured weight, and no verdict
+    weight to fall back to per row. AUTO stays silent rather than raising."""
+    from indra_belief.statement_belief import statement_belief
+
+    sb = statement_belief(_rows_with_ell(3.0), RECALIBRATED_PRIORS, soft=None)
+    assert sb.weighting == "hard_gate"
+
+
+def test_probe_weights_can_still_be_refused():
+    from indra_belief.statement_belief import statement_belief
+
+    sb = statement_belief(_rows_with_ell(3.0), RECALIBRATED_PRIORS,
+                          soft=SYNTHETIC_PROFILE, probe_weights=False)
+    assert sb.weighting == "verdict_weight"
 
 
 def test_probe_weights_reach_belief_when_asked_and_say_so():

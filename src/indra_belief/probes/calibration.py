@@ -138,29 +138,6 @@ def supports_sentence_calibration(client) -> bool:
     return True
 
 
-def calibrated_sentence_reading(
-    record: Mapping[str, object],
-    client,
-    *,
-    record_id: str,
-) -> CalibratedProbeReading | None:
-    """Read and calibrate one evidence sentence at the scoring boundary."""
-
-    evidence_text = str(record.get("evidence_text") or "")
-    if not evidence_text:
-        return None
-    # Resolve the artifact for THIS client's serving identity rather than always
-    # the shipped default, so a second registered substrate uses its own fitted
-    # map instead of silently borrowing another stack's.
-    artifact = sentence_calibration_path_for(client)
-    if artifact is None:
-        return None
-    reading = read_probe(record, client)
-    return calibrate_probe(
-        reading, record_id=record_id, calibration=_calibration_at(artifact)
-    )
-
-
 def replace_sentence_score(
     result: Mapping[str, object],
     record: Mapping[str, object],
@@ -169,46 +146,68 @@ def replace_sentence_score(
     record_id: str | None,
     enabled: bool | None = None,
 ) -> dict[str, object]:
-    """Replace the sole sentence score with calibrated ``p_hat`` or ``None``.
+    """Attach whatever the probe can measure on THIS client, and nothing more.
 
-    Also persists ``weight_of_evidence`` — the same reading as an additive
-    log-odds weight, the form ``statement_belief(probe_weights=True)`` consumes.
-    Without it that flag was a silent no-op on every real run: the belief path
-    looked for a field the scorer never wrote and fell back to verdict weights
-    for every row.
+    Two independent questions, answered by two existing predicates rather than by
+    knowing anything about which model is on the other end:
 
-    Categorical output remains available when the independent probe or
-    calibration fails.  There is intentionally no verdict/confidence fallback:
-    absence of a calibrated probability has exactly one representation, and both
-    fields go to ``None`` together because they come from one reading.
+      probe_reading_supported(client)        can it produce a delta_logit?
+      sentence_calibration_path_for(client)  is an isotonic fitted for it?
+
+    So the layers come off separately:
+
+      ``probe_delta_logit``   RAW log-odds. Written whenever the client can be
+                              read AT ALL, calibrated or not. It is a
+                              measurement, not a score: comparable only within
+                              one serving stack, and never a probability.
+      ``score``               calibrated p_hat — only with a fitted artifact.
+      ``weight_of_evidence``  the additive form belief consumes — same condition.
+
+    WHY THE RAW LAYER EXISTS. Fitting a calibration for a new stack needs
+    delta_logits FROM that stack, and gating the read on having a calibration
+    made that circular: the first run on a new server collected nothing, so
+    calibrating it required a second full pass. Now any run doubles as its own
+    fitting corpus and calibration becomes an offline step over data already on
+    disk.
+
+    Model- and client-agnostic by construction. No model name appears here; the
+    only stack-specific facts are DATA — ``max_top_logprobs`` in the registry and
+    a row in ``_SENTENCE_CALIBRATIONS`` — so a new serving stack is two entries,
+    not a code change.
+
+    Cost: one extra forced-position call per evidence on a readable client
+    (~350 prompt tokens, 1 generated). It does NOT reach the corpus-scale shard
+    runner, which never calls this boundary.
     """
 
     enriched = dict(result)
     enriched["score"] = None
     enriched["score_error"] = None
-    # The same reading in additive form. PERSISTED rather than re-derived,
-    # although `weight_of_evidence(score, fit_prevalence)` would reproduce it
-    # exactly: the anchor is a property of the artifact that produced the score,
-    # and only this function knows which artifact that was. Deriving downstream
-    # would mean re-resolving the calibration per row to recover an anchor we
-    # are holding right here. One float, written once, removes that lookup and
-    # the ambiguity with it.
     enriched["weight_of_evidence"] = None
-    available = supports_sentence_calibration(client) if enabled is None else enabled
-    if not available:
+    enriched["probe_delta_logit"] = None
+
+    if enabled is False:
         return enriched
+    readable = probe_reading_supported(client) if enabled is None else True
+    if not readable:
+        return enriched
+    artifact = sentence_calibration_path_for(client)
     if not record_id:
         enriched["score_error"] = (
             "ValueError: calibrated sentence score requires a source-hash identity"
         )
         return enriched
+    if not str(record.get("evidence_text") or ""):
+        return enriched
+
     try:
-        calibrated = calibrated_sentence_reading(
-            record,
-            client,
-            record_id=record_id,
-        )
-        if calibrated is not None:
+        reading = read_probe(record, client)
+        enriched["probe_delta_logit"] = reading.delta_logit
+        if artifact is not None:
+            _validate_probe_profile()
+            calibrated = calibrate_probe(
+                reading, record_id=record_id, calibration=_calibration_at(artifact)
+            )
             enriched["score"] = calibrated.p_hat
             enriched["weight_of_evidence"] = calibrated.weight_of_evidence
     except Exception as exc:
@@ -382,7 +381,6 @@ __all__ = [
     "calibrate_reading",
     "calibrated_probabilities",
     "calibrated_probability",
-    "calibrated_sentence_reading",
     "load_calibration",
     "replace_sentence_score",
     "supports_sentence_calibration",

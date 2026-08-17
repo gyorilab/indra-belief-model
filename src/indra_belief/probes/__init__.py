@@ -28,7 +28,6 @@ _CALIBRATION_EXPORTS = (
     "calibrate_reading",
     "calibrated_probabilities",
     "calibrated_probability",
-    "calibrated_sentence_reading",
     "load_calibration",
     "replace_sentence_score",
     "supports_sentence_calibration",
