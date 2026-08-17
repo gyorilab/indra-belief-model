@@ -88,7 +88,7 @@ def test_an_unregistered_client_never_borrows_another_stacks_map(monkeypatch):
 
     fitted = C.replace_sentence_score(
         {"verdict": "correct"}, {"evidence_text": "A binds B."},
-        FITTED, record_id="sh-fitted",
+        FITTED, record_id="sh-fitted", extra_probe_call=True,
     )
     assert isinstance(fitted["score"], float), (
         "the stub must produce a real score on the FITTED client, otherwise the "
@@ -97,7 +97,7 @@ def test_an_unregistered_client_never_borrows_another_stacks_map(monkeypatch):
 
     out = C.replace_sentence_score(
         {"verdict": "correct"}, {"evidence_text": "A binds B."},
-        CAPABLE_UNFITTED, record_id="sh1",
+        CAPABLE_UNFITTED, record_id="sh1", extra_probe_call=True,
     )
     assert out["score"] is None, (
         "an unregistered serving stack produced a calibrated score; it can only "

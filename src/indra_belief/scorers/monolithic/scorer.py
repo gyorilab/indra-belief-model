@@ -491,6 +491,26 @@ def _call_kwargs(execution, note, variant) -> dict:
     return kwargs
 
 
+def _in_call_margin(response, variant) -> float | None:
+    """The label's log-odds from THIS response, for variants that can supply it.
+
+    Only variants whose output contract emits the verdict first set
+    ``in_call_label_logprobs``; for everything else the scan would find the
+    label ~56 tokens deep behind deliberative answer fields, where it reads
+    +22.50 — saturated, and a number that looks fine. So this returns None
+    unless the variant declared the read, rather than trying opportunistically.
+    """
+    resolved = variant or DEFAULT_VARIANT
+    if not getattr(resolved, "in_call_label_logprobs", None):
+        return None
+    from indra_belief.probes.reader import label_margin_from_logprobs
+
+    try:
+        return label_margin_from_logprobs(getattr(response, "logprobs", None))
+    except Exception:
+        return None
+
+
 def _score_single(
     client: ModelClient,
     record: ScoringRecord,
@@ -498,6 +518,7 @@ def _score_single(
     temperature: float = 0.1,
     *,
     variant: ScoringVariant | None = None,
+    margin_out: dict | None = None,
 ) -> dict:
     """Single LLM call for Tier 2 (+ optional relation-nature note). Returns result dict."""
     variant = variant or DEFAULT_VARIANT
@@ -509,6 +530,13 @@ def _score_single(
     parsed = parse_response(response)
     _stamp_committed_justification(response, variant=variant)
     selected_examples = _example_trace_rows(examples)
+    # Side channel, NOT a new key in the returned dict. The variant-behaviour
+    # golden captures these two functions' RETURN SHAPE and is a pre-refactor
+    # capture with no regeneration path, so widening it would mean hand-editing
+    # a fixture whose whole value is that it predates the change. The margin is
+    # probe output; it belongs in the fields replace_sentence_score writes.
+    if margin_out is not None:
+        margin_out["in_call_label_margin"] = _in_call_margin(response, variant)
     return {
         "verdict": None if parsed is None else parsed.label,
         "confidence": None if parsed is None else parsed.confidence,
@@ -564,6 +592,7 @@ def _score_with_tools(
     max_tokens: int | None,
     *,
     variant: ScoringVariant | None = None,
+    margin_out: dict | None = None,
 ) -> dict:
     """Tier 2 with pre-computed entity lookups. For records where grounding
     is flagged or entity symbols are short/ambiguous, gilda lookups are
@@ -581,6 +610,13 @@ def _score_with_tools(
     parsed = parse_response(response)
     _stamp_committed_justification(response, variant=variant)
     selected_examples = _example_trace_rows(examples)
+    # Side channel, NOT a new key in the returned dict. The variant-behaviour
+    # golden captures these two functions' RETURN SHAPE and is a pre-refactor
+    # capture with no regeneration path, so widening it would mean hand-editing
+    # a fixture whose whole value is that it predates the change. The margin is
+    # probe output; it belongs in the fields replace_sentence_score writes.
+    if margin_out is not None:
+        margin_out["in_call_label_margin"] = _in_call_margin(response, variant)
     return {
         "verdict": None if parsed is None else parsed.label,
         "confidence": None if parsed is None else parsed.confidence,
@@ -597,6 +633,7 @@ def _score_categorical(
     max_tokens: int | None = None,
     *,
     variant: ScoringVariant | None = None,
+    margin_out: dict | None = None,
 ) -> dict:
     """Produce categorical audit output for one extraction.
 
@@ -657,14 +694,16 @@ def _score_categorical(
 
     # --- Tier 2: single LLM call (deterministic, temp=0.1) ---
     if needs_tool_use:
-        result = _score_with_tools(client, record, max_tokens, variant=variant)
+        result = _score_with_tools(client, record, max_tokens, variant=variant,
+                                   margin_out=margin_out)
         verdict = result["verdict"]
         confidence = result["confidence"]
         total_tokens = result["tokens"]
         raw = result["raw_text"]
         tier = "llm_tool_use"
     else:
-        result = _score_single(client, record, max_tokens, variant=variant)
+        result = _score_single(client, record, max_tokens, variant=variant,
+                               margin_out=margin_out)
         verdict = result["verdict"]
         confidence = result["confidence"]
         total_tokens = result["tokens"]
@@ -695,6 +734,7 @@ def score(
     max_tokens: int | None = None,
     *,
     variant: ScoringVariant | None = None,
+    extra_probe_call: bool = False,
 ) -> dict:
     """Score one extraction and emit one calibrated sentence probability.
 
@@ -704,11 +744,15 @@ def score(
     guard, or probe failure yields ``None`` rather than a categorical midpoint.
     """
 
+    # Collected out-of-band so the two inner functions keep the exact return
+    # shape the variant-behaviour golden froze.
+    margin: dict = {}
     categorical = _score_categorical(
         client,
         record,
         max_tokens=max_tokens,
         variant=variant,
+        margin_out=margin,
     )
     from indra_belief.probes.calibration import replace_sentence_score
 
@@ -718,7 +762,7 @@ def score(
         record_id = None
 
     return replace_sentence_score(
-        categorical,
+        {**categorical, **{k: v for k, v in margin.items() if v is not None}},
         {
             "subject": record.subject,
             "object": record.object,
@@ -727,6 +771,7 @@ def score(
         },
         client,
         record_id=record_id,
+        extra_probe_call=extra_probe_call,
     )
 
 

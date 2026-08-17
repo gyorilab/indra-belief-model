@@ -145,6 +145,7 @@ def replace_sentence_score(
     *,
     record_id: str | None,
     enabled: bool | None = None,
+    extra_probe_call: bool = False,
 ) -> dict[str, object]:
     """Attach whatever the probe can measure on THIS client, and nothing more.
 
@@ -175,9 +176,20 @@ def replace_sentence_score(
     a row in ``_SENTENCE_CALIBRATIONS`` — so a new serving stack is two entries,
     not a code change.
 
-    Cost: one extra forced-position call per evidence on a readable client
-    (~350 prompt tokens, 1 generated). It does NOT reach the corpus-scale shard
-    runner, which never calls this boundary.
+    TWO WAYS TO GET THE MARGIN, and the cheap one is preferred.
+
+    A variant whose output contract emits the verdict FIRST already has the
+    margin in the response we just made — ``result["in_call_label_margin"]``.
+    That is free and MEASURED BETTER (n=80: AUROC 0.8734 against the separate
+    probe's 0.7237; within-verdict 0.7814 against 0.6856). It is always used
+    when present.
+
+    Otherwise a separate forced-position request can supply it, and that costs
+    ONE EXTRA CALL PER EVIDENCE. It is therefore ``extra_probe_call``, opt-in.
+    It used to fire unconditionally on any readable client, silently doubling
+    the request count of every run against a probe-capable server — and it is
+    redundant on a verdict-first variant, which reads the same quantity for
+    nothing.
     """
 
     enriched = dict(result)
@@ -188,10 +200,31 @@ def replace_sentence_score(
 
     if enabled is False:
         return enriched
+    artifact = sentence_calibration_path_for(client)
+
+    # Free path first: the scoring call already carried it.
+    in_call = result.get("in_call_label_margin")
+    if isinstance(in_call, (int, float)) and not isinstance(in_call, bool):
+        enriched["probe_delta_logit"] = float(in_call)
+        if artifact is not None:
+            try:
+                _validate_probe_profile()
+                calibrated = calibrate_probe(
+                    ProbeReading(p_raw=float("nan"), delta_logit=float(in_call)),
+                    record_id=record_id or "in-call",
+                    calibration=_calibration_at(artifact),
+                )
+                enriched["score"] = calibrated.p_hat
+                enriched["weight_of_evidence"] = calibrated.weight_of_evidence
+            except Exception as exc:
+                enriched["score_error"] = f"{type(exc).__name__}: {exc}"
+        return enriched
+
+    if not extra_probe_call:
+        return enriched
     readable = probe_reading_supported(client) if enabled is None else True
     if not readable:
         return enriched
-    artifact = sentence_calibration_path_for(client)
     if not record_id:
         enriched["score_error"] = (
             "ValueError: calibrated sentence score requires a source-hash identity"

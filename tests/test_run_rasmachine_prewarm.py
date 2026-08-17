@@ -327,6 +327,7 @@ def test_sentence_probe_failure_makes_the_only_score_explicitly_unavailable(monk
         object(),
         record_id="fresh:test",
         enabled=True,
+        extra_probe_call=True,
     )
 
     assert enriched["score"] is None

@@ -257,7 +257,8 @@ def test_canonical_monolithic_score_replaces_the_only_numeric_field(monkeypatch)
         or CalibratedProbeReading(p_hat=0.617, weight_of_evidence=0.4),
     )
 
-    result = scorer.score(_calibrated_client(), _scoring_record())
+    result = scorer.score(_calibrated_client(), _scoring_record(),
+                          extra_probe_call=True)
 
     assert result["score"] == 0.617
     assert result["score_error"] is None
@@ -305,6 +306,7 @@ def test_canonical_monolithic_score_obeys_fitted_row_leakage_guard(monkeypatch):
     result = scorer.score(
         _calibrated_client(),
         _scoring_record(source_hash=int(fit_id[1:])),
+        extra_probe_call=True,
     )
 
     assert result["score"] is None
