@@ -112,6 +112,14 @@ class ScoringVariant:
     # the model spends its budget reasoning and may emit no answer at all — the
     # first live check of this variant returned empty content and no margin.
     reasoning_effort: str | None = None
+    # Sampling temperature for this variant's scoring call, overriding the 0.1
+    # both call sites otherwise hard-code. REQUIRED with an in-call label read:
+    # ModelClient refuses top_logprobs above temperature 0, because the reported
+    # argmax token stream diverges from the sampled text there and the verdict
+    # POSITION stops being trustworthy. So an in-call variant needs all three to
+    # agree — verdict-first prompt, no reasoning channel, temperature 0 — and
+    # missing any one of them fails loudly rather than returning a bad number.
+    temperature: float | None = None
 
 
 VARIANTS: dict[str, ScoringVariant] = {
@@ -165,6 +173,7 @@ VARIANTS: dict[str, ScoringVariant] = {
             structured=True,
             in_call_label_logprobs=128,
             reasoning_effort="none",
+            temperature=0.0,
         ),
         ScoringVariant(
             name="disconfirm_relnature_rf_noconf",
@@ -488,6 +497,9 @@ def _call_kwargs(execution, note, variant) -> dict:
     effort = getattr(resolved, "reasoning_effort", None)
     if effort:
         kwargs["reasoning_effort"] = effort
+    temperature = getattr(resolved, "temperature", None)
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     return kwargs
 
 

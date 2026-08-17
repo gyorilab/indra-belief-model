@@ -2290,7 +2290,7 @@
           "kind": "monolithic",
           "max_tokens": 4096,
           "reasoning_effort": "none",
-          "temperature": 0.1,
+          "temperature": 0.0,
           "top_logprobs": 128
         },
         "message_roles": [
@@ -2338,7 +2338,7 @@
           "kind": "monolithic",
           "max_tokens": 4096,
           "reasoning_effort": "none",
-          "temperature": 0.1,
+          "temperature": 0.0,
           "top_logprobs": 128
         },
         "message_roles": [
@@ -2386,7 +2386,7 @@
           "kind": "monolithic_tool_context",
           "max_tokens": 4096,
           "reasoning_effort": "none",
-          "temperature": 0.1,
+          "temperature": 0.0,
           "top_logprobs": 128
         },
         "message_roles": [

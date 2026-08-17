@@ -954,7 +954,30 @@ def test_main_call_kwargs_are_frozen(expected):
                 # returned empty content and no margin. Prompt shape and
                 # transport have to agree.
                 want["reasoning_effort"] = "none"
+                # ...and so does SAMPLING, the third leg. ModelClient refuses
+                # top_logprobs above temperature 0 (model_client.py) because the
+                # reported argmax stream diverges from the sampled text there,
+                # which makes the located verdict POSITION untrustworthy. This
+                # golden froze 0.1 alongside top_logprobs for a while and stayed
+                # green the whole time — see the structural check below.
+                want["temperature"] = 0.0
             assert entry["main_call_kwargs"] == want, (variant, name)
+            # THE RULE, not the value. A shape-only golden pins what the request
+            # looks like and never asks whether it can RUN, so this file happily
+            # froze temperature=0.1 beside top_logprobs=128 — a combination the
+            # client rejects on sight. Every scoring call under that profile
+            # raised ValueError, and 1868 tests stayed green because not one of
+            # them executed the request they had all agreed on. Only a live
+            # model surfaced it. Asserted as an invariant so the next variant
+            # that asks for logprobs cannot reintroduce it.
+            kwargs = entry["main_call_kwargs"]
+            if kwargs.get("top_logprobs") is not None:
+                assert kwargs.get("temperature") == 0.0, (
+                    f"{variant}/{name} requests top_logprobs at temperature "
+                    f"{kwargs.get('temperature')!r}; above 0 the reported argmax "
+                    "stream can diverge from the sampled text and the verdict "
+                    "position stops being trustworthy, so ModelClient refuses it"
+                )
             # score() stamps the client's call log onto the result; the fake's is
             # empty, so a request golden carries no transport detail.
             assert entry["call_log"] == []
