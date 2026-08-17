@@ -261,8 +261,16 @@ def score_job(
     model_id: str,
     max_tokens: int,
     temperature: float,
+    probe_top_logprobs: int = 0,
 ) -> dict[str, Any]:
-    """Return the minimal row needed for resume and finalization."""
+    """Return the minimal row needed for resume and finalization.
+
+    ``probe_top_logprobs`` > 0 adds ONE forced-position label read per scored
+    evidence and persists its raw ``probe_delta_logit``. Off by default because
+    at corpus scale it doubles the request count; on for a gold-eval-sized run
+    it is minutes, and it is the only way a serving stack collects the data
+    needed to fit its own calibration without a second pass.
+    """
     base = {
         "job_id": job_id(job),
         "stmt_hash": str(job["stmt_hash"]),
@@ -349,12 +357,17 @@ def score_job(
         )
         verdict, confidence = prompt.parse(content, reasoning)
         if verdict in VALID_VERDICTS and confidence in VALID_CONFIDENCE:
-            return {
+            row = {
                 **base,
                 "verdict": verdict,
                 "confidence": confidence,
                 "source": "llm",
             }
+            if probe_top_logprobs:
+                row["probe_delta_logit"] = _read_probe_delta(
+                    client, endpoint, model_id, job, probe_top_logprobs
+                )
+            return row
         return {
             **base,
             "verdict": None,
@@ -375,6 +388,51 @@ def score_job(
     return {**base, "verdict": None, "confidence": None, "error": error}
 
 
+
+def _read_probe_delta(client, endpoint, model_id, job, top_logprobs):
+    """The forced-position label read, over this runner's own httpx client.
+
+    Uses the shared request builder and parser rather than hand-rolling the
+    body: three things make the read work (thinking suppressed, an assistant
+    prefill opening the JSON string, `continue_final_message` extending that
+    turn) and getting any one wrong yields a SATURATED number rather than an
+    error. MEASURED: thinking off but with the production prompt puts the
+    verdict 56 tokens deep at delta_logit +22.50 — indistinguishable from full
+    deliberation, and silently useless.
+
+    Returns the RAW log-odds or None. Never a probability: without a fitted
+    isotonic for this serving stack there is no calibration, and the value is
+    comparable only within one stack. Persisting it is what lets a stack fit its
+    own calibration offline from a run it already did, instead of needing a
+    second pass over the corpus.
+
+    A failure here must not lose the verdict — the probe is an extra
+    measurement, not a precondition — so every error degrades to None.
+    """
+    from indra_belief.probes.reader import (
+        build_probe_request,
+        probe_reading_from_payload,
+    )
+
+    try:
+        body = build_probe_request(
+            {
+                "subject": job.get("subject"),
+                "object": job.get("object"),
+                "stmt_type": job.get("stmt_type"),
+                "evidence_text": job.get("evidence_text") or "",
+            },
+            model_id=model_id,
+            top_logprobs=top_logprobs,
+            inline_extra_body=True,
+        )
+        response = client.post(endpoint, json=body)
+        response.raise_for_status()
+        return probe_reading_from_payload(response.json(), top_k=top_logprobs).delta_logit
+    except Exception:
+        return None
+
+
 def finalize(
     input_path: Path,
     latest: dict[str, dict[str, Any]],
@@ -390,10 +448,15 @@ def finalize(
             continue
         stmt_hash = str(job["stmt_hash"])
         source_hash = str(job["source_hash"])
-        payload.setdefault(stmt_hash, {})[source_hash] = {
+        cell = {
             "verdict": str(result["verdict"]),
             "confidence": str(result["confidence"]),
         }
+        # Raw, uncalibrated, stack-specific — carried only when measured so its
+        # absence stays distinguishable from a zero.
+        if result.get("probe_delta_logit") is not None:
+            cell["probe_delta_logit"] = float(result["probe_delta_logit"])
+        payload.setdefault(stmt_hash, {})[source_hash] = cell
     return payload, missing
 
 
@@ -443,6 +506,7 @@ def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
                         score_job,
                         job,
                         client=client,
+                        probe_top_logprobs=getattr(args, "probe_top_logprobs", 0),
                         prompt=prompt,
                         endpoint=endpoint,
                         model_id=args.model_id,
@@ -512,6 +576,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shard-index", type=int)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--probe-top-logprobs", type=int, default=0, dest="probe_top_logprobs",
+                        help="read the forced-position label logits per evidence and "
+                             "persist the raw probe_delta_logit. 0 disables. 128 is the "
+                             "measured-sufficient window (losing label rank median 6, "
+                             "max 15 over 40 records; ~7 KB/call). Costs ONE extra "
+                             "request per evidence — minutes at gold-eval scale, a "
+                             "doubling of request count at 60M.")
     parser.add_argument("--require-calibrated", action="store_true",
                         help="refuse the run unless this model+prompt resolves a "
                              "ship-approved calibration profile")
