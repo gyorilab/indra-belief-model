@@ -78,6 +78,7 @@ _FIXTURE = _ROOT / "tests" / "fixtures" / "monolithic_variant_golden.json"
 _PROBED_ENVS = ("", "disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf",
                 "bogus_typo")
 _BASELINE_ENVS = ("", "bogus_typo")
+# verdict_only is deliberately NOT here: it has no relation-nature step.
 _RELNATURE_ENVS = ("disconfirm_relnature", "disconfirm_relnature_rf",
                    "disconfirm_relnature_rf_noconf")
 
@@ -439,7 +440,8 @@ def test_variant_registry_shape():
 
     assert sorted(S.VARIANTS) == ["", "disconfirm", "disconfirm_relnature",
                                   "disconfirm_relnature_rf",
-                                  "disconfirm_relnature_rf_noconf"]
+                                  "disconfirm_relnature_rf_noconf",
+                                  "verdict_only"]
     baseline = S.VARIANTS[""]
     assert baseline.structured is False
     assert baseline.resolve_relation_nature is None
@@ -582,7 +584,7 @@ def test_the_parser_is_not_variant_selected():
 # The registry's keys. Unlike `_PROBED_ENVS` these are the four REAL profiles:
 # "bogus_typo" is an env-string that resolves to the baseline, not an entry.
 _VARIANT_KEYS = ("", "disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf",
-                 "disconfirm_relnature_rf_noconf")
+                 "verdict_only", "disconfirm_relnature_rf_noconf")
 
 
 def _wire(invoke, *, variant=_MISSING):
@@ -648,7 +650,7 @@ def test_score_puts_the_requested_variant_on_the_wire():
 def test_every_registered_variant_reaches_the_wire_through_score(name):
     """Coverage of the registry, one profile per case.
 
-    Only FOUR distinct system prompts exist across the five profiles —
+    Only FIVE distinct system prompts exist across the six profiles —
     `VARIANTS["disconfirm"].system_prompt is VARIANTS["disconfirm_relnature"]
     .system_prompt`. So the assertion is identity to the REQUESTED profile;
     claiming four distinct prompts would go red on correct code. What separates

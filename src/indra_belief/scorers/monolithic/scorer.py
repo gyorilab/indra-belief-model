@@ -65,6 +65,10 @@ from indra_belief.scorers.monolithic._prompts_disconfirm import (
     render_example_reasonfirst as _render_example_reasonfirst,
     render_example_reasonfirst_noconf as _render_example_reasonfirst_noconf,
 )
+from indra_belief.scorers.monolithic._prompts_verdict_only import (
+    VERDICT_ONLY_SYSTEM_PROMPT,
+    render_example as _render_example_verdict_only,
+)
 from indra_belief.scorers.monolithic._prompts_relation import resolve_relation_nature
 from indra_belief.verdict import NO_TEXT_RESULT, parse_response
 
@@ -95,6 +99,19 @@ class ScoringVariant:
     render_example: Callable[[dict], tuple[str, str]]
     structured: bool = False
     resolve_relation_nature: Callable[..., str] | None = None
+    # Width of the top-logprob window to request on this variant's SCORING call.
+    # Set only where the output contract puts the verdict label FIRST, so its
+    # margin is readable from the response we were making anyway. A prompt that
+    # deliberates in its answer fields lands the label ~56 tokens deep and reads
+    # +22.50 — saturated, and a scan would still return a number that looks fine.
+    in_call_label_logprobs: int | None = None
+    # Transport-level reasoning suppression. "none" is translated by ModelClient
+    # into chat_template_kwargs {"enable_thinking": False} on permissive
+    # backends. REQUIRED alongside an in-call label read: registering a
+    # verdict-first PROMPT is not enough, because with the thinking channel open
+    # the model spends its budget reasoning and may emit no answer at all — the
+    # first live check of this variant returned empty content and no margin.
+    reasoning_effort: str | None = None
 
 
 VARIANTS: dict[str, ScoringVariant] = {
@@ -135,6 +152,20 @@ VARIANTS: dict[str, ScoringVariant] = {
         # differently, so it carries its OWN calibration profile and cannot
         # borrow the default's — see REASONFIRST_NOCONF_SYSTEM_PROMPT. Not the
         # default until its profile is fitted and gated.
+        # Verdict FIRST, no reasoning channel, no intermediate fields — so the
+        # label's margin comes out of the scoring call itself. MEASURED n=80 on
+        # MLX against the second-call probe: AUROC 0.8734 vs 0.7237, and
+        # within-verdict 0.7814 vs 0.6856. The free read is also the better one.
+        # It trades deliberation, previously measured at -0.0689 err-F1 on the
+        # 26B, which is the open question this variant exists to settle.
+        ScoringVariant(
+            name="verdict_only",
+            system_prompt=VERDICT_ONLY_SYSTEM_PROMPT,
+            render_example=_render_example_verdict_only,
+            structured=True,
+            in_call_label_logprobs=128,
+            reasoning_effort="none",
+        ),
         ScoringVariant(
             name="disconfirm_relnature_rf_noconf",
             system_prompt=REASONFIRST_NOCONF_SYSTEM_PROMPT,
@@ -441,6 +472,25 @@ def _stamp_committed_justification(response, *,
     }
 
 
+def _call_kwargs(execution, note, variant) -> dict:
+    """The scoring call's kwargs, asking for label logprobs where they are free.
+
+    A variant whose output contract emits the verdict FIRST can have its label
+    margin read from this response — no second probe request. Only such variants
+    set ``in_call_label_logprobs``; for every other variant the kwargs are byte
+    unchanged, so the plain path still passes exactly what it always passed.
+    """
+    kwargs = execution.calls(note)[-1].client_kwargs()
+    resolved = variant or DEFAULT_VARIANT
+    width = getattr(resolved, "in_call_label_logprobs", None)
+    if width:
+        kwargs["top_logprobs"] = width
+    effort = getattr(resolved, "reasoning_effort", None)
+    if effort:
+        kwargs["reasoning_effort"] = effort
+    return kwargs
+
+
 def _score_single(
     client: ModelClient,
     record: ScoringRecord,
@@ -455,7 +505,7 @@ def _score_single(
     note = _relation_note(client, record, variant=variant)
     execution = _prepare(record, examples, route="plain", max_tokens=max_tokens,
                          temperature=temperature, variant=variant)
-    response = client.call(**execution.calls(note)[-1].client_kwargs())
+    response = client.call(**_call_kwargs(execution, note, variant))
     parsed = parse_response(response)
     _stamp_committed_justification(response, variant=variant)
     selected_examples = _example_trace_rows(examples)
@@ -527,7 +577,7 @@ def _score_with_tools(
     note = _relation_note(client, record, variant=variant)
     execution = _prepare(record, examples, route="tool", lookups=lookups,
                          max_tokens=max_tokens, variant=variant)
-    response = client.call(**execution.calls(note)[-1].client_kwargs())
+    response = client.call(**_call_kwargs(execution, note, variant))
     parsed = parse_response(response)
     _stamp_committed_justification(response, variant=variant)
     selected_examples = _example_trace_rows(examples)

@@ -9,7 +9,7 @@ a hidden reasoning channel.
 
 This variant removes it. The model emits the verdict and nothing else:
 
-    {"verdict": "correct" | "incorrect", "confidence": "high" | "medium" | "low"}
+    {"verdict": "correct" | "incorrect"}
 
 WHAT IS HELD FIXED. The rule body (rules 1-7) is reused BYTE-IDENTICALLY from
 ``DISCONFIRM_SYSTEM_PROMPT`` via the same ``.split("HOW TO DECIDE")[0]`` seam
@@ -60,10 +60,10 @@ HOW TO DECIDE (judge silently; emit ONLY the verdict):
   Treat the claim as incorrect ONLY when there is no licensing form AND no direct
   span; a rule-licensed form is grounds to ACCEPT.
 - Do NOT explain, quote, justify, restate the rules, or emit any field other than
-  the two below. No preamble, no commentary, no reasoning.
+  the one below. No preamble, no commentary, no reasoning.
 
-Output JSON ONLY, exactly these two keys:
-{"verdict": "correct" | "incorrect", "confidence": "high" | "medium" | "low"}\
+Output JSON ONLY, exactly this one key:
+{"verdict": "correct" | "incorrect"}\
 """
 
 
@@ -79,10 +79,7 @@ def render_example(ex: dict) -> tuple[str, str]:
     user = (
         f"CLAIM: {ex['claim']}\n"
         f"EVIDENCE: {ex['evidence']}\n\n"
-        f'Output JSON: {{"verdict": ..., "confidence": ...}}'
+        f'Output JSON: {{"verdict": ...}}'
     )
-    assistant = json.dumps(
-        {"verdict": ex["verdict"], "confidence": ex.get("confidence", "high")},
-        ensure_ascii=True,
-    )
+    assistant = json.dumps({"verdict": ex["verdict"]}, ensure_ascii=True)
     return user, assistant

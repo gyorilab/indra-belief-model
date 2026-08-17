@@ -329,11 +329,61 @@ def read_probe(
         return _issue(ceiling)
 
 
+def label_margin_from_logprobs(logprobs: Any) -> float | None:
+    """The verdict label's log-odds, read from a SCORING call's own logprobs.
+
+    The probe issues a second request to put the label at generated position
+    zero. A prompt whose output contract emits the verdict FIRST does not need
+    that: the label is already in the response, and its margin can be read for
+    free from the call we were making anyway.
+
+    MEASURED, n=80 on MLX, against the second-call probe:
+
+        in-call (verdict-only prompt)   AUROC 0.8734   within-verdict 0.7814
+        probe (own prompt + prefill)    AUROC 0.7237   within-verdict 0.6856
+
+    So the free read is also the better one. The probe's own 280-character prompt
+    makes it a weaker reader; its readings are less saturated because it is less
+    sure, not because they carry more.
+
+    This scans for the first position whose emitted token is a label — which is
+    why it belongs to a VARIANT that guarantees the verdict comes first. On a
+    prompt that deliberates in its answer fields the label lands ~56 tokens deep
+    and reads +22.50, i.e. saturated and useless; the scan would still find it
+    and return a number that looks fine. Returns None when either label is
+    outside the window, rather than a half-pair.
+    """
+    if not logprobs:
+        return None
+    for entry in logprobs:
+        # Locate by the EMITTED token, never by "a label appears among the
+        # alternatives". With a wide window an earlier position's alternative
+        # list routinely contains "correct" — at 128 alternatives per token,
+        # position 0 of `{"verdict": "correct"}` matched and the scan bailed
+        # there with only one label in view, returning None on every row.
+        if (entry or {}).get("token") not in LABELS:
+            continue
+        top = (entry or {}).get("top") or []
+        seen = {t.get("token"): t.get("logprob") for t in top}
+        if not all(label in seen for label in LABELS):
+            return None
+        try:
+            correct = float(seen["correct"])
+            incorrect = float(seen["incorrect"])
+        except (TypeError, ValueError):
+            return None
+        if not (math.isfinite(correct) and math.isfinite(incorrect)):
+            return None
+        return correct - incorrect
+    return None
+
+
 __all__ = [
     "DIRECT_PROBE_ID",
     "PROBE_TOP_LOGPROBS",
     "PROBE_FIRST_TRY_TOP_LOGPROBS",
     "probe_widen_count",
+    "label_margin_from_logprobs",
     "ProbeReadError",
     "ProbeReading",
     "ProbeTopKError",

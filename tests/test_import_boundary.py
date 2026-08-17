@@ -271,11 +271,17 @@ def test_live_assembled_bases_distinguish_repo_from_package_data():
 def test_a_script_reached_module_is_not_unreached_and_the_reason_is_derived():
     """"No closure reaches it" must mean no closure, or it is not a signal.
 
-    `_prompts_verdict_only` and the panel package are imported by build scripts,
-    so a report that put them in the third bucket would be describing live tooling
-    as unimported. The reacher is read off `scripts/` by the same AST that reads
-    the package — no per-module table — which is why the assertion can name the
-    script.
+    The panel package is imported by a build script, so a report that put it in
+    the third bucket would be describing live tooling as unimported. The reacher
+    is read off `scripts/` by the same AST that reads the package — no per-module
+    table — which is why the assertion can name the script.
+
+    `_prompts_verdict_only` USED to be the second example here, reached only by
+    build_verdict_only_replay.py. Registering `verdict_only` in scorer.VARIANTS
+    moved it into the serving closure: it is now part of what `import
+    indra_belief` costs, which is exactly the transition this split exists to
+    make visible. Asserted in its new bucket rather than deleted, so a future
+    change that quietly drops it back out is still caught.
 
     The bucket itself is asserted as a DISCRIMINATOR and not as a copied list of
     three module names. A hardcoded triple here is precisely the hand-maintained
@@ -287,7 +293,11 @@ def test_a_script_reached_module_is_not_unreached_and_the_reason_is_derived():
     prompts = f"{cib.PACKAGE}.scorers.monolithic._prompts_verdict_only"
 
     assert prompts not in split["unreached"], split["unreached"]
-    assert split["tool_only"][prompts] == ("build_verdict_only_replay.py",)
+    assert prompts in split["serving"], (
+        "the verdict-only prompt is imported by scorer.VARIANTS, so it is "
+        "serving-reachable; if it left that bucket the variant registration went "
+        "away with it"
+    )
     assert not (set(split["tool_only"]) & set(split["serving"])), (
         "a module reached by a serving entry point is not 'tool-reached only'"
     )

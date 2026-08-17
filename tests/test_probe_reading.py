@@ -396,3 +396,36 @@ def test_a_label_outside_the_first_window_widens_instead_of_failing():
     assert calls == [PROBE_FIRST_TRY_TOP_LOGPROBS, 1024], (
         f"expected one narrow try then one widened retry, got {calls}"
     )
+
+
+def test_label_margin_locates_by_the_emitted_token_not_the_alternatives():
+    """REGRESSION: a wide window put a label in an EARLIER token's alternatives.
+
+    `label_margin_from_logprobs` originally scanned for the first position where
+    a label appeared ANYWHERE in the top-k list. At 128 alternatives per token
+    that matched position 0 of `{"verdict": "correct"}` — the `{"` token, whose
+    alternative list happens to contain "correct" — found only one label there,
+    and returned None for every row. It has to key on the token the model
+    actually EMITTED.
+    """
+    from indra_belief.probes.reader import label_margin_from_logprobs
+
+    logprobs = [
+        # an early token whose ALTERNATIVES mention a label — must be skipped
+        {"token": '{"', "top": [{"token": '{"', "logprob": -0.01},
+                                {"token": "correct", "logprob": -9.0}]},
+        {"token": "ver", "top": [{"token": "ver", "logprob": -0.01}]},
+        # the position actually carrying the verdict
+        {"token": "correct", "top": [{"token": "correct", "logprob": -0.1},
+                                     {"token": "incorrect", "logprob": -2.1}]},
+    ]
+    assert label_margin_from_logprobs(logprobs) == pytest.approx(2.0)
+
+
+def test_label_margin_is_none_when_the_losing_label_is_outside_the_window():
+    """A half-pair is not a margin — better no number than a wrong one."""
+    from indra_belief.probes.reader import label_margin_from_logprobs
+
+    assert label_margin_from_logprobs(
+        [{"token": "correct", "top": [{"token": "correct", "logprob": -0.1}]}]
+    ) is None
