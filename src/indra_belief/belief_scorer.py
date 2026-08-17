@@ -37,7 +37,23 @@ from indra_belief.statement_belief import StatementBelief, statement_belief
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from indra_belief.model_client import ModelClient
 
-__all__ = ["LLMBeliefScorer", "UnscorableStatement", "HAVE_INDRA"]
+
+class _Auto:
+    """Sentinel: 'resolve the calibration profile from the client and variant'.
+
+    Distinct from None, which means 'use the hard gate' and is a legitimate
+    caller request that must keep working unchanged.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return "AUTO"
+
+
+AUTO = _Auto()
+
+__all__ = ["LLMBeliefScorer", "UnscorableStatement", "HAVE_INDRA", "AUTO"]
 
 
 try:  # The deployable core installs neither `indra` nor `gilda`, so this must
@@ -72,14 +88,70 @@ class LLMBeliefScorer(_BeliefScorerBase):
     """
 
     def __init__(self, client: "ModelClient", *, priors: dict | None = None,
-                 soft: dict | None = None, max_tokens: int | None = None,
-                 variant: Any = None, dedup: bool = True) -> None:
+                 soft: dict | None | _Auto = AUTO, max_tokens: int | None = None,
+                 variant: Any = None, dedup: bool = True,
+                 probe_weights: bool = False) -> None:
         self.client = client
         self.priors = priors
-        self.soft = soft
+        # `soft` used to default to None, and None means HARD GATE. Since no
+        # caller ever passed a profile, the documented drop-in
+        # `BeliefEngine(scorer=LLMBeliefScorer(client))` served hard-gate beliefs
+        # while a fitted, ship-gated profile sat unused: ECE 0.237 against 0.045
+        # on external_curator_gold_v1. The scorer already holds everything needed
+        # to resolve its own profile — the client names the model, the variant
+        # names the prompt — so AUTO does that lookup.
+        #
+        # AUTO is a distinct sentinel rather than a re-reading of None, because
+        # `soft=None` is a real request for the hard gate and must keep working.
+        self.soft = self._resolve_calibration(client, variant) if soft is AUTO else soft
         self.max_tokens = max_tokens
         self.variant = variant
         self.dedup = dedup
+        # Opt-in: use the direct logit probe's continuous weight of evidence in
+        # place of the two per-verdict constants. Requires rows carrying a
+        # measured `weight_of_evidence`
+        # (a probe-capable client) and a fitted profile; rows without one keep
+        # their verdict weight, so enabling it before a probe run is a no-op.
+        # UNEVALUATED at statement grain in this additive form — see
+        # statement_belief's docstring. `StatementBelief.weighting` records which
+        # rule produced each number.
+        self.probe_weights = probe_weights
+
+    @staticmethod
+    def _resolve_calibration(client: Any, variant: Any) -> dict | None:
+        """The ship-approved profile for this client+prompt, or None.
+
+        Resolution is by EXACT (model, prompt sha256). An unfitted configuration
+        returns None and the scorer stays on the hard gate — the same fail-safe
+        the rest of the codebase uses. Imports are local: this module must stay
+        importable without the monolithic scorer's dependency graph.
+        """
+        import hashlib
+
+        model = getattr(client, "model_name", None)
+        if not model:
+            return None
+        try:
+            from indra_belief.calibration_constants import calibration_for
+            from indra_belief.scorers.monolithic.scorer import DEFAULT_VARIANT
+        except Exception:  # pragma: no cover - defensive, keeps the socket usable
+            return None
+        resolved = variant if variant is not None else DEFAULT_VARIANT
+        prompt = getattr(resolved, "system_prompt", None)
+        if not isinstance(prompt, str) or not prompt:
+            return None
+        sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        return calibration_for(model, prompt_sha256=sha)
+
+    @property
+    def calibration_profile_id(self) -> str | None:
+        """Which fitted profile this scorer resolved, or None on the hard gate.
+
+        Exposed because a silently-resolved profile is as opaque as a silently
+        missing one: a caller must be able to see which calibration produced the
+        numbers it is about to publish.
+        """
+        return (self.soft or {}).get("profile_id")
 
     # ---- cost, before it is spent -------------------------------------------
 
@@ -137,7 +209,8 @@ class LLMBeliefScorer(_BeliefScorerBase):
                     "tier": result.get("tier"),
                 })
             out.append(statement_belief(rows, self.priors, dedup=self.dedup,
-                                        soft=self.soft))
+                                        soft=self.soft,
+                                        probe_weights=self.probe_weights))
         return out
 
     def score_statements(
