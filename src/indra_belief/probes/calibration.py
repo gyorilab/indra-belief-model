@@ -8,9 +8,10 @@ isotonic implementation lives here.
 
 The calibration was fitted at the sentence/evidence grain.  It must not be
 used as a statement-belief update.  Consumers that need additive evidence can
-use ``ell``, the calibrated log-odds relative to the fit-set base rate::
+use ``weight_of_evidence`` — how far this one read moves the belief, in
+log-odds relative to the fit-set base rate::
 
-    ell = logit(p_hat) - logit(base_rate)
+    weight_of_evidence = logit(p_hat) - logit(base_rate)
 
 Endpoint probabilities are clipped by the combiner's shared ``to_logit``
 policy, because an isotonic model can legitimately emit zero or one.
@@ -61,26 +62,80 @@ def _validate_probe_profile() -> None:
         )
 
 
-def supports_sentence_calibration(client) -> bool:
-    """Whether ``client`` exactly matches the persisted calibration profile."""
+# Measured on the fit corpus: the LOSING label lands at rank 42/83/168 of the
+# top-k window. A client that declares less headroom than this can physically
+# issue the probe but will lose a label on a large fraction of rows, so it is
+# not a production reading client. `read_probe` keeps its own mechanical floor
+# of 2 and raises ProbeTopKError per row, which is what a FITTING run wants.
+MIN_PROBE_TOP_LOGPROBS = 256
+
+# Serving identity -> fitted artifact. The key includes the SERVED model id, not
+# just the registry name, because delta_logit magnitudes are substrate-specific:
+# the same weights read in-process and over HTTP correlate at r=0.955 but differ
+# 2.4x in range and disagree in sign on 10% of rows. An isotonic map fitted on
+# one serving stack is therefore not valid on another, exactly as a reader
+# confusion profile is not valid across prompts.
+#
+# To add a substrate: read raw delta_logits on it (which
+# `probe_reading_supported` now permits without a calibration), fit an isotonic,
+# ship the artifact, and add one row here. Adding a row is the whole change.
+_SENTENCE_CALIBRATIONS: dict[tuple[str, str], str] = {
+    (CALIBRATION_MODEL, CALIBRATION_MODEL_ID): CALIBRATION_FILENAME,
+}
+
+
+def probe_reading_supported(client) -> bool:
+    """Whether ``client`` can produce a ``delta_logit`` at all.
+
+    A CAPABILITY question, deliberately separate from whether a calibration
+    exists for this client. Fusing the two made the remedy unreachable: fitting
+    a calibration for a new serving stack requires reading raw delta_logits on
+    that stack, which an identity-pinned gate forbids.
+    """
 
     config = getattr(client, "config", None)
     if not isinstance(config, Mapping):
         return False
     top_k = config.get("max_top_logprobs")
+    return (
+        getattr(client, "_guard", None) is None
+        and getattr(client, "backend", "openai_compat") == "openai_compat"
+        and isinstance(top_k, int)
+        and not isinstance(top_k, bool)
+        and top_k >= MIN_PROBE_TOP_LOGPROBS
+    )
+
+
+def sentence_calibration_path_for(client) -> Path | None:
+    """The fitted artifact for this client's exact serving identity, or None."""
+
+    config = getattr(client, "config", None)
+    if not isinstance(config, Mapping):
+        return None
+    key = (getattr(client, "model_name", None), config.get("model_id"))
+    filename = _SENTENCE_CALIBRATIONS.get(key)  # type: ignore[arg-type]
+    if filename is None:
+        return None
+    return DEFAULT_CALIBRATION_PATH.parent / filename
+
+
+def supports_sentence_calibration(client) -> bool:
+    """Whether ``client`` can be read AND has a calibration fitted for it.
+
+    The production gate: both halves must hold before a calibrated probability
+    is emitted. An uncalibrated but capable client reads `False` here and still
+    reads `True` from :func:`probe_reading_supported`.
+    """
+
+    if not probe_reading_supported(client):
+        return False
+    if sentence_calibration_path_for(client) is None:
+        return False
     try:
         _validate_probe_profile()
     except ValueError:
         return False
-    return (
-        getattr(client, "_guard", None) is None
-        and getattr(client, "model_name", None) == CALIBRATION_MODEL
-        and getattr(client, "backend", "openai_compat") == "openai_compat"
-        and config.get("model_id") == CALIBRATION_MODEL_ID
-        and isinstance(top_k, int)
-        and not isinstance(top_k, bool)
-        and top_k >= 2
-    )
+    return True
 
 
 def calibrated_sentence_reading(
@@ -94,8 +149,16 @@ def calibrated_sentence_reading(
     evidence_text = str(record.get("evidence_text") or "")
     if not evidence_text:
         return None
+    # Resolve the artifact for THIS client's serving identity rather than always
+    # the shipped default, so a second registered substrate uses its own fitted
+    # map instead of silently borrowing another stack's.
+    artifact = sentence_calibration_path_for(client)
+    if artifact is None:
+        return None
     reading = read_probe(record, client)
-    return calibrate_probe(reading, record_id=record_id)
+    return calibrate_probe(
+        reading, record_id=record_id, calibration=_calibration_at(artifact)
+    )
 
 
 def replace_sentence_score(
@@ -108,14 +171,29 @@ def replace_sentence_score(
 ) -> dict[str, object]:
     """Replace the sole sentence score with calibrated ``p_hat`` or ``None``.
 
+    Also persists ``weight_of_evidence`` — the same reading as an additive
+    log-odds weight, the form ``statement_belief(probe_weights=True)`` consumes.
+    Without it that flag was a silent no-op on every real run: the belief path
+    looked for a field the scorer never wrote and fell back to verdict weights
+    for every row.
+
     Categorical output remains available when the independent probe or
     calibration fails.  There is intentionally no verdict/confidence fallback:
-    absence of a calibrated probability has exactly one representation.
+    absence of a calibrated probability has exactly one representation, and both
+    fields go to ``None`` together because they come from one reading.
     """
 
     enriched = dict(result)
     enriched["score"] = None
     enriched["score_error"] = None
+    # The same reading in additive form. PERSISTED rather than re-derived,
+    # although `weight_of_evidence(score, fit_prevalence)` would reproduce it
+    # exactly: the anchor is a property of the artifact that produced the score,
+    # and only this function knows which artifact that was. Deriving downstream
+    # would mean re-resolving the calibration per row to recover an anchor we
+    # are holding right here. One float, written once, removes that lookup and
+    # the ambiguity with it.
+    enriched["weight_of_evidence"] = None
     available = supports_sentence_calibration(client) if enabled is None else enabled
     if not available:
         return enriched
@@ -132,6 +210,7 @@ def replace_sentence_score(
         )
         if calibrated is not None:
             enriched["score"] = calibrated.p_hat
+            enriched["weight_of_evidence"] = calibrated.weight_of_evidence
     except Exception as exc:
         enriched["score_error"] = f"{type(exc).__name__}: {exc}"
     return enriched
@@ -141,13 +220,7 @@ class CalibratedProbeReading(NamedTuple):
     """A calibrated correctness probability and its weight of evidence."""
 
     p_hat: float
-    ell: float
-
-    @property
-    def weight_of_evidence(self) -> float:
-        """Descriptive alias for ``ell``."""
-
-        return self.ell
+    weight_of_evidence: float
 
 
 def load_calibration(
@@ -166,6 +239,17 @@ def load_calibration(
             f"{CALIBRATED_PROBE_IDS!r}, got {calibration.probe_ids!r}"
         )
     return calibration
+
+
+@lru_cache(maxsize=8)
+def _calibration_at(path: Path) -> FrozenCombiner:
+    """Load and cache one fitted artifact per serving identity.
+
+    Keyed by path rather than a single global slot, because more than one
+    substrate can be registered at once and each has its own isotonic map.
+    """
+
+    return load_calibration(path)
 
 
 @lru_cache(maxsize=1)
@@ -275,8 +359,8 @@ def calibrate_probe(
         record_id=record_id,
         calibration=model,
     )
-    ell = weight_of_evidence(p_hat, model.fit_prevalence)
-    return CalibratedProbeReading(p_hat=p_hat, ell=ell)
+    weight = weight_of_evidence(p_hat, model.fit_prevalence)
+    return CalibratedProbeReading(p_hat=p_hat, weight_of_evidence=weight)
 
 
 # ``calibrate_reading`` reads naturally beside ``read_probe`` while the more

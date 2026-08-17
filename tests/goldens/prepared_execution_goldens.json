@@ -1145,10 +1145,12 @@
         "score_error": null,
         "tier": "deterministic_mismatch",
         "tokens": 0,
-        "verdict": "incorrect"
+        "verdict": "incorrect",
+        "weight_of_evidence": null
       },
       "live_only_keys": [
-        "score_error"
+        "score_error",
+        "weight_of_evidence"
       ],
       "route": "deterministic_mismatch",
       "value_differences": {}
@@ -1178,12 +1180,14 @@
         "selected_examples": [],
         "tier": "no_text",
         "tokens": 0,
-        "verdict": "correct"
+        "verdict": "correct",
+        "weight_of_evidence": null
       },
       "live_only_keys": [
         "score_error",
         "selected_example_ids",
-        "selected_examples"
+        "selected_examples",
+        "weight_of_evidence"
       ],
       "route": "no_text",
       "value_differences": {}
@@ -1211,10 +1215,12 @@
         "score_error": null,
         "tier": "deterministic_pseudogene",
         "tokens": 0,
-        "verdict": "incorrect"
+        "verdict": "incorrect",
+        "weight_of_evidence": null
       },
       "live_only_keys": [
-        "score_error"
+        "score_error",
+        "weight_of_evidence"
       ],
       "route": "deterministic_pseudogene",
       "value_differences": {

@@ -70,10 +70,16 @@ _FIXTURE = _ROOT / "tests" / "fixtures" / "monolithic_variant_golden.json"
 # The five MONO_VARIANT values. "" is README.md:65-66's documented baseline
 # switch; "bogus_typo" is the unrecognized-value path, which resolves to the
 # same baseline.
+# Deliberately EXCLUDES disconfirm_relnature_rf_noconf. The golden is a frozen
+# pre-refactor capture that cannot be regenerated from this tree, so a variant
+# added afterwards has no honest entry in it — inventing one would capture from
+# the modified tree and turn the gate into a tautology. The new variant is
+# covered instead by _VARIANT_KEYS, which asserts registry completeness.
 _PROBED_ENVS = ("", "disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf",
                 "bogus_typo")
 _BASELINE_ENVS = ("", "bogus_typo")
-_RELNATURE_ENVS = ("disconfirm_relnature", "disconfirm_relnature_rf")
+_RELNATURE_ENVS = ("disconfirm_relnature", "disconfirm_relnature_rf",
+                   "disconfirm_relnature_rf_noconf")
 
 _MODULE = "indra_belief.scorers.monolithic.scorer"
 
@@ -432,7 +438,8 @@ def test_variant_registry_shape():
     from indra_belief.scorers.monolithic import scorer as S
 
     assert sorted(S.VARIANTS) == ["", "disconfirm", "disconfirm_relnature",
-                                  "disconfirm_relnature_rf"]
+                                  "disconfirm_relnature_rf",
+                                  "disconfirm_relnature_rf_noconf"]
     baseline = S.VARIANTS[""]
     assert baseline.structured is False
     assert baseline.resolve_relation_nature is None
@@ -574,7 +581,8 @@ def test_the_parser_is_not_variant_selected():
 
 # The registry's keys. Unlike `_PROBED_ENVS` these are the four REAL profiles:
 # "bogus_typo" is an env-string that resolves to the baseline, not an entry.
-_VARIANT_KEYS = ("", "disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf")
+_VARIANT_KEYS = ("", "disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf",
+                 "disconfirm_relnature_rf_noconf")
 
 
 def _wire(invoke, *, variant=_MISSING):
@@ -640,7 +648,7 @@ def test_score_puts_the_requested_variant_on_the_wire():
 def test_every_registered_variant_reaches_the_wire_through_score(name):
     """Coverage of the registry, one profile per case.
 
-    Only THREE distinct system prompts exist across the four profiles —
+    Only FOUR distinct system prompts exist across the five profiles —
     `VARIANTS["disconfirm"].system_prompt is VARIANTS["disconfirm_relnature"]
     .system_prompt`. So the assertion is identity to the REQUESTED profile;
     claiming four distinct prompts would go red on correct code. What separates

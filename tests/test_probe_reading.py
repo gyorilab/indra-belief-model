@@ -249,8 +249,8 @@ def test_canonical_monolithic_score_replaces_the_only_numeric_field(monkeypatch)
     monkeypatch.setattr(
         calibration,
         "calibrate_probe",
-        lambda reading, *, record_id: ids.append(record_id)
-        or CalibratedProbeReading(p_hat=0.617, ell=0.4),
+        lambda reading, *, record_id, calibration=None: ids.append(record_id)
+        or CalibratedProbeReading(p_hat=0.617, weight_of_evidence=0.4),
     )
 
     result = scorer.score(_calibrated_client(), _scoring_record())

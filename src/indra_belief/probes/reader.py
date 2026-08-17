@@ -30,6 +30,14 @@ from indra_belief.probes.battery import LABELS, probe_by_id, render
 
 DIRECT_PROBE_ID = "pol.verdict_direct"
 
+# The window the probe asks for, and the number a probe-capable serving entry
+# must be able to return. vLLM defaults to 20 and stock mlx_lm.server hard-codes
+# 11, so BOTH need raising before the probe can read: vLLM with
+# `--max-logprobs 1024` at launch, MLX with the patch in scripts/serve_mlx.sh.
+# A registry entry declaring `max_top_logprobs` is asserting its server was
+# started that way.
+PROBE_TOP_LOGPROBS = 1024
+
 
 class ProbeReading(NamedTuple):
     """The two values measured at the forced verdict position."""
@@ -137,11 +145,18 @@ def read_probe(
     model_id = config.get("model_id")
     if not isinstance(model_id, str) or not model_id:
         raise ProbeReadError("probe client config has no model_id")
-    top_k = config.get("max_top_logprobs")
-    if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 2:
+    declared = config.get("max_top_logprobs")
+    if isinstance(declared, bool) or not isinstance(declared, int) or declared < 2:
         raise ProbeReadError(
             "probe client config must declare max_top_logprobs >= 2"
         )
+    # Ask for PROBE_TOP_LOGPROBS, bounded by what the route accepts. MEASURED:
+    # the losing label lands at rank 42/83/168, so a narrow window drops it and
+    # raises ProbeTopKError rather than returning a biased half-pair. 1024 is the
+    # default so a new serving entry does not have to rediscover the number; the
+    # min() keeps us from serializing 4096 alternatives on a route that allows
+    # them, which is pure transfer cost for ranks we will never read.
+    top_k = min(declared, PROBE_TOP_LOGPROBS)
 
     probe = probe_by_id(DIRECT_PROBE_ID)
     system, user, prefill = render(probe, record)
@@ -222,6 +237,7 @@ def read_probe(
 
 __all__ = [
     "DIRECT_PROBE_ID",
+    "PROBE_TOP_LOGPROBS",
     "ProbeReadError",
     "ProbeReading",
     "ProbeTopKError",

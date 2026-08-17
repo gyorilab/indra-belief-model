@@ -267,7 +267,18 @@ def test_sentence_probe_reads_delta_and_applies_persisted_calibration(monkeypatc
         return ProbeReading(p_raw=0.75, delta_logit=1.0)
 
     monkeypatch.setattr(sentence_calibration, "read_probe", fake_read)
-    client = object()
+    # A bare object() used to work here because the persisted artifact was applied
+    # to whoever asked. Resolution is now per serving identity, so an
+    # unidentifiable client correctly gets no calibration rather than borrowing
+    # the MLX map — the client must name the stack the artifact was fitted on.
+    client = SimpleNamespace(
+        model_name=sentence_calibration.CALIBRATION_MODEL,
+        backend="openai_compat",
+        config={
+            "model_id": sentence_calibration.CALIBRATION_MODEL_ID,
+            "max_top_logprobs": 1024,
+        },
+    )
     calibrated = calibrated_sentence_reading(
         {
             "subject": _STATEMENT["subject"],

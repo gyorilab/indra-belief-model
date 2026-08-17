@@ -74,10 +74,17 @@ class StatementBelief:
     n_credible_incorrect_det: int     # deterministic rejects (hard-flag drivers)
     n_credible_incorrect_llm: int     # any credited LLM rejection (review drivers)
     sources: list[str] = field(default_factory=list)
+    # Which rule produced `belief`: "hard_gate", "verdict_weight", or
+    # "probe_weight" — each named for the function that computes it.
+    # Defaulted so every existing constructor keeps working; travels with the
+    # number because three different scalars can appear in this field and a
+    # consumer cannot tell them apart by looking.
+    weighting: str = "verdict_weight"
 
     def as_dict(self) -> dict:
         return {
             "belief": self.belief,
+            "weighting": self.weighting,
             "verdict_statement": self.verdict_statement,
             "parametric_only": self.parametric_only,
             "n_evidence": self.n_evidence,
@@ -133,12 +140,47 @@ def _dedup_priority(row: dict) -> tuple:
     )
 
 
+
+def _probe_weighted_belief(gated, priors, soft) -> float:
+    """Belief from continuous per-read weights, falling back per row.
+
+    A row with no numeric ``weight_of_evidence`` has not been probed — that is a gap, not a
+    zero weight — so it keeps the verdict weight it would have had. A statement
+    with some probed rows therefore degrades read by read rather than being
+    scored on a partial set or refused outright.
+    """
+    from .evidence_weights import (
+        belief_from_weights,
+        probe_weight,
+        source_logodds_for,
+        verdict_weight,
+    )
+
+    lc = soft["log_lr_confirm"]
+    lr = soft["log_lr_reject"]
+    rows = []
+    for ev in gated:
+        s_logodds = source_logodds_for(ev.get("source_api"), priors)
+        measured = ev.get("weight_of_evidence")
+        if isinstance(measured, (int, float)) and not isinstance(measured, bool):
+            weight = probe_weight(float(measured), s_logodds)
+        else:
+            weight = verdict_weight(ev.get("verdict"), s_logodds,
+                                    log_lr_confirm=lc, log_lr_reject=lr)
+        rows.append({"source_api": ev.get("source_api"),
+                     "weight_of_evidence": weight})
+    return belief_from_weights(
+        rows, priors, prior_logodds=soft.get("prior_logodds", 0.0)
+    )
+
+
 def statement_belief(
     ev_rows: list[dict],
     priors: dict[str, tuple[float, float]] | None = None,
     *,
     dedup: bool = True,
     soft: dict | None = None,
+    probe_weights: bool = False,
 ) -> StatementBelief:
     """Roll a statement's per-evidence rows up to a belief + verdict + tally.
 
@@ -149,6 +191,26 @@ def statement_belief(
     ``soft`` is the historical API name for a ship-approved reader profile from
     ``calibration_for_run(run_path, model)``. When present, the canonical scalar
     uses calibrated log-likelihood ratios; ``None`` selects the hard-gate fallback.
+
+    ``probe_weights`` swaps the two per-verdict constants for the CONTINUOUS
+    weight the direct logit probe measures, read from each row's
+    ``weight_of_evidence``. The
+    aggregation is unchanged — see ``evidence_weights.belief_from_weights``,
+    which reduces bit-for-bit to the frozen model when fed verdict-derived
+    weights. Rows lacking a numeric ``weight_of_evidence`` fall back to the
+    verdict weight, so a
+    partially-probed statement degrades read by read instead of failing whole.
+
+    OFF BY DEFAULT, and not because the question is settled. It cannot be a
+    default: the probe is calibrated for one serving stack and returns nothing on
+    the others, so a default-on flag would silently change belief on the client
+    that has it and not on those that do not. It is also UNEVALUATED in this
+    additive form — the recorded statement-grain NO-GO (+0.004 AUROC, CI
+    spanning zero, ECE 0.0199 -> 0.0388) replaced the per-evidence SCORE rather
+    than supplying the measured weight. Callers who enable it are choosing an
+    unmeasured
+    scalar deliberately, and ``StatementBelief.weighting`` records which one they
+    got.
     """
     if priors is None:
         priors = RECALIBRATED_PRIORS
@@ -204,10 +266,13 @@ def statement_belief(
 
         sources.add(src.lower())
         # The calibrated path consumes verdict; the hard comparison consumes included.
-        gated.append({"source_api": src, "included": verdict == "correct", "verdict": verdict})
+        gated.append({"source_api": src, "included": verdict == "correct",
+                      "verdict": verdict,
+                      "weight_of_evidence": r.get("weight_of_evidence")})
 
     # Empty gated set means nothing was read -> UNDEFINED (None). Otherwise a
     # fitted profile rebuilds belief in log-odds; an unfitted reader uses hard gate.
+    weighting = "verdict_weight" if soft is not None else "hard_gate"
     if gated:
         if soft is not None:
             res = compute_gated_belief(
@@ -220,6 +285,19 @@ def statement_belief(
             res = compute_gated_belief(gated, priors)
         belief: float | None = res.belief
         parametric_only: float | None = res.parametric_only
+        if probe_weights:
+            if soft is None:
+                raise ValueError(
+                    "probe_weights=True requires a fitted reader profile: the "
+                    "probe's weight of evidence is calibrated against that reader's "
+                    "base rate, "
+                    "and the fallback for an unprobed row is its verdict weight, "
+                    "which the hard gate does not define"
+                )
+            # Same aggregation, continuous weight. n_evidence/tallies below are
+            # untouched — only the scalar moves.
+            belief = _probe_weighted_belief(gated, priors, soft)
+            weighting = "probe_weight"
     else:
         belief = None
         parametric_only = None
@@ -236,6 +314,7 @@ def statement_belief(
         verdict_statement = "correct"
 
     return StatementBelief(
+        weighting=weighting,
         belief=belief,
         verdict_statement=verdict_statement,
         parametric_only=parametric_only,

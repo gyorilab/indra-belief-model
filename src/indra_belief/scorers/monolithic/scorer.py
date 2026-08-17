@@ -60,8 +60,10 @@ from indra_belief.scorers.monolithic._prompts import (
 from indra_belief.scorers.monolithic._prompts_disconfirm import (
     DISCONFIRM_SYSTEM_PROMPT,
     REASONFIRST_SYSTEM_PROMPT,
+    REASONFIRST_NOCONF_SYSTEM_PROMPT,
     render_example as _render_example_disconfirm,
     render_example_reasonfirst as _render_example_reasonfirst,
+    render_example_reasonfirst_noconf as _render_example_reasonfirst_noconf,
 )
 from indra_belief.scorers.monolithic._prompts_relation import resolve_relation_nature
 from indra_belief.verdict import NO_TEXT_RESULT, parse_response
@@ -126,6 +128,17 @@ VARIANTS: dict[str, ScoringVariant] = {
             name="disconfirm_relnature_rf",
             system_prompt=REASONFIRST_SYSTEM_PROMPT,
             render_example=_render_example_reasonfirst,
+            structured=True,
+            resolve_relation_nature=resolve_relation_nature,
+        ),
+        # W2b: the default with verbalized confidence removed. Its prompt hashes
+        # differently, so it carries its OWN calibration profile and cannot
+        # borrow the default's — see REASONFIRST_NOCONF_SYSTEM_PROMPT. Not the
+        # default until its profile is fitted and gated.
+        ScoringVariant(
+            name="disconfirm_relnature_rf_noconf",
+            system_prompt=REASONFIRST_NOCONF_SYSTEM_PROMPT,
+            render_example=_render_example_reasonfirst_noconf,
             structured=True,
             resolve_relation_nature=resolve_relation_nature,
         ),

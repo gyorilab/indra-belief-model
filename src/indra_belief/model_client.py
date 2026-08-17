@@ -49,6 +49,16 @@ LOCAL_MODELS: dict[str, dict] = {
         # never resolve.
         "max_tokens": 8192,
         "timeout": 900,
+        # A CLAIM ABOUT HOW THE SERVER IS LAUNCHED, not a property of vLLM.
+        # vLLM's `--max-logprobs` defaults to 20 and the direct probe's losing
+        # label was measured at rank 42/83/168, so the server must be started
+        # with `--max-logprobs 1024` for the probe to read. If it is not, vLLM
+        # rejects the oversized `top_logprobs` and the failure surfaces per row
+        # in `score_error` — loudly, rather than as quietly wrong numbers.
+        # Declaring it makes this client probe-READABLE; it does not make it
+        # calibrated. That needs a fitted artifact registered in
+        # indra_belief.probes.calibration._SENTENCE_CALIBRATIONS.
+        "max_top_logprobs": 1024,
     },
     "ollama-local": {
         "base_url": "http://localhost:11434/v1",
