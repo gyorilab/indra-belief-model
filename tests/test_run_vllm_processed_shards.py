@@ -294,3 +294,64 @@ def test_complex_job_runs_relation_nature_before_verdict():
     assert client.calls[0]["response_format"] == {"type": "json_object"}
     assert "X alias" in client.calls[0]["messages"][-1]["content"]
     assert "Relation nature (resolved)" in client.calls[1]["messages"][-1]["content"]
+
+
+def test_main_reaches_shard_discovery_without_a_name_error(tmp_path, monkeypatch, capsys):
+    """The corpus runner's entry point must actually import and run.
+
+    REGRESSION. `main()` computed the pinned prompt's sha for the calibration
+    banner using the bare name `DISCONFIRM_SYSTEM_PROMPT` — which this module
+    imports INSIDE `MonolithicPrompt.__init__`, deliberately, so it stays
+    importable without the scorer's dependency graph. The name was never in
+    module scope, so every invocation died with NameError before touching a
+    shard. Nothing caught it: the suite exercises this file's helpers, never its
+    entry point.
+
+    This drives main() far enough to prove the banner path executes, then lets
+    it exit on an empty input directory. It asserts the failure mode, not a
+    successful run — no server is involved.
+    """
+    import sys
+
+    empty = tmp_path / "shards"
+    empty.mkdir()
+    monkeypatch.setattr(sys, "argv", [
+        "run_vllm_processed_shards.py",
+        "--input-dir", str(empty),
+        "--output-dir", str(tmp_path / "out"),
+        "--model", "vllm-local",
+    ])
+    import pytest as _pytest
+
+    # An empty input directory is a SystemExit, not a return code. What is being
+    # asserted is WHERE it dies: past the banner, at shard discovery.
+    with _pytest.raises(SystemExit) as excinfo:
+        runner.main()
+    out = capsys.readouterr().out
+    assert "calibration:" in out, (
+        "the calibration banner did not print — main() failed before reaching it"
+    )
+    assert "no shards found" in str(excinfo.value), (
+        f"expected to reach shard discovery, died earlier with: {excinfo.value}"
+    )
+
+
+def test_require_calibrated_refuses_an_unfitted_prompt(tmp_path, monkeypatch):
+    """The pinned prompt has no fitted profile, so this must refuse rather than
+    quietly publish hard-gate beliefs at corpus scale."""
+    import sys
+
+    import pytest as _pytest
+
+    empty = tmp_path / "shards"
+    empty.mkdir()
+    monkeypatch.setattr(sys, "argv", [
+        "run_vllm_processed_shards.py",
+        "--input-dir", str(empty),
+        "--output-dir", str(tmp_path / "out"),
+        "--model", "vllm-local",
+        "--require-calibrated",
+    ])
+    with _pytest.raises(SystemExit) as excinfo:
+        runner.main()
+    assert "no ship-approved profile" in str(excinfo.value)

@@ -681,8 +681,15 @@ def main() -> int:
     import hashlib
 
     from indra_belief.calibration_constants import calibration_banner
+    # Imported HERE, not taken from module scope: this runner imports the prompt
+    # inside MonolithicPrompt.__init__ so the module stays importable without the
+    # scorer's dependency graph. Reaching for the bare name in main() raised
+    # NameError on every invocation.
+    from indra_belief.scorers.monolithic._prompts_disconfirm import (
+        DISCONFIRM_SYSTEM_PROMPT as _PINNED_PROMPT,
+    )
 
-    prompt_sha256 = hashlib.sha256(DISCONFIRM_SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+    prompt_sha256 = hashlib.sha256(_PINNED_PROMPT.encode("utf-8")).hexdigest()
     calibrated, banner = calibration_banner(args.model, prompt_sha256)
     print(banner, flush=True)
     if args.require_calibrated and not calibrated:
