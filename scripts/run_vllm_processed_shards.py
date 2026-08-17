@@ -410,25 +410,42 @@ def _read_probe_delta(client, endpoint, model_id, job, top_logprobs):
     measurement, not a precondition — so every error degrades to None.
     """
     from indra_belief.probes.reader import (
+        PROBE_TOP_LOGPROBS,
+        ProbeTopKError,
         build_probe_request,
         probe_reading_from_payload,
     )
 
-    try:
+    record = {
+        "subject": job.get("subject"),
+        "object": job.get("object"),
+        "stmt_type": job.get("stmt_type"),
+        "evidence_text": job.get("evidence_text") or "",
+    }
+
+    def _issue(width: int) -> float:
         body = build_probe_request(
-            {
-                "subject": job.get("subject"),
-                "object": job.get("object"),
-                "stmt_type": job.get("stmt_type"),
-                "evidence_text": job.get("evidence_text") or "",
-            },
-            model_id=model_id,
-            top_logprobs=top_logprobs,
-            inline_extra_body=True,
+            record, model_id=model_id, top_logprobs=width, inline_extra_body=True
         )
         response = client.post(endpoint, json=body)
         response.raise_for_status()
-        return probe_reading_from_payload(response.json(), top_k=top_logprobs).delta_logit
+        return probe_reading_from_payload(response.json(), top_k=width).delta_logit
+
+    try:
+        return _issue(top_logprobs)
+    except ProbeTopKError:
+        # Same widen-on-demand as read_probe. Without it this path SILENTLY
+        # dropped any record whose losing label sat outside the window — and the
+        # width is measured on MLX, so a stack that ranks differently would lose
+        # readings with nothing to show for it. Widening keeps the parity: one
+        # extra call on a rare record, never a lost measurement.
+        ceiling = min(PROBE_TOP_LOGPROBS, max(top_logprobs, PROBE_TOP_LOGPROBS))
+        if ceiling <= top_logprobs:
+            return None
+        try:
+            return _issue(ceiling)
+        except Exception:
+            return None
     except Exception:
         return None
 

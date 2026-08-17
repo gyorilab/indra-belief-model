@@ -52,6 +52,18 @@ PROBE_TOP_LOGPROBS = 1024
 # slower rather than wrong.
 PROBE_FIRST_TRY_TOP_LOGPROBS = 128
 
+# How often the first try was too narrow. The 128 default is measured on MLX
+# (losing-label rank median 6, max 15 over 40 records); another stack may rank
+# differently, and without a count the first run there teaches us nothing. Read
+# it after a run: a high rate means re-measure the width for that stack rather
+# than paying a second call on most records.
+_WIDENED = 0
+
+
+def probe_widen_count() -> int:
+    """Times the first-try window was too narrow and had to be widened."""
+    return _WIDENED
+
 
 class ProbeReading(NamedTuple):
     """The two values measured at the forced verdict position."""
@@ -267,12 +279,16 @@ def read_probe(
         raise ProbeReadError(
             "probe client config must declare max_top_logprobs >= 2"
         )
-    # Ask for PROBE_TOP_LOGPROBS, bounded by what the route accepts. MEASURED:
-    # the losing label lands at rank 42/83/168, so a narrow window drops it and
-    # raises ProbeTopKError rather than returning a biased half-pair. 1024 is the
-    # default so a new serving entry does not have to rediscover the number; the
-    # min() keeps us from serializing 4096 alternatives on a route that allows
-    # them, which is pure transfer cost for ranks we will never read.
+    # Ask for the first-try width, bounded by what the route accepts; widen once
+    # if a label falls outside. A narrow window DROPS the losing label and raises
+    # ProbeTopKError rather than returning a biased half-pair, so the bound is a
+    # correctness knob, not only a cost one.
+    #
+    # `declared` must match the server's actual launch flag (vLLM
+    # `--max-logprobs`, MLX the serve_mlx.sh patch). If the registry claims more
+    # than the server allows, BOTH the first try and the widened retry are
+    # rejected and every row records an error — loud, but two wasted calls per
+    # evidence.
     ceiling = min(declared, PROBE_TOP_LOGPROBS)
     top_k = min(declared, PROBE_FIRST_TRY_TOP_LOGPROBS)
 
@@ -308,6 +324,8 @@ def read_probe(
         # MLX's and PROBE_FIRST_TRY_TOP_LOGPROBS should be re-measured there.
         if ceiling <= top_k:
             raise
+        global _WIDENED
+        _WIDENED += 1
         return _issue(ceiling)
 
 
@@ -315,6 +333,7 @@ __all__ = [
     "DIRECT_PROBE_ID",
     "PROBE_TOP_LOGPROBS",
     "PROBE_FIRST_TRY_TOP_LOGPROBS",
+    "probe_widen_count",
     "ProbeReadError",
     "ProbeReading",
     "ProbeTopKError",
