@@ -39,7 +39,15 @@ class CorpusIndex:
             return
 
         print(f"Loading corpus from {self._corpus_path} ...")
-        with gzip.open(self._corpus_path, "rt", encoding="utf-8") as fh:
+        # Sniff the gzip magic rather than trusting the suffix. The big benchmark
+        # corpus is .json.gz, but the per-gold corpora under data/corpora are
+        # plain .json; unconditionally gzip-opening them raised BadGzipFile from
+        # deep inside json.load, which reads as a corrupt corpus rather than a
+        # wrong codec.
+        with open(self._corpus_path, "rb") as probe:
+            gzipped = probe.read(2) == b"\x1f\x8b"
+        opener = gzip.open if gzipped else open
+        with opener(self._corpus_path, "rt", encoding="utf-8") as fh:
             corpus: list[dict] = json.load(fh)
 
         total = len(corpus)

@@ -270,11 +270,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "disconfirm",
             "disconfirm_relnature",
             "disconfirm_relnature_rf",
+            "disconfirm_relnature_rf_noconf",
         ),
         default="baseline",
         help="baseline is the closest current-code path to historical v12; "
         "disconfirm_relnature_rf is the current production default.",
     )
+    parser.add_argument("--require-calibrated", action="store_true",
+                        help="refuse the run unless this model+prompt resolves a "
+                             "ship-approved calibration profile")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--max-tokens", type=int, default=None)
     parser.add_argument("--limit", type=int, default=None)
@@ -359,9 +363,27 @@ def main() -> int:
     if args.limit is not None:
         gold_rows = gold_rows[: args.limit]
     input_sha256 = _sha256(gold_path)
+    # The prompt is per-VARIANT, so the fingerprint must be read from the variant
+    # actually selected. `mono.ACTIVE_SYSTEM_PROMPT` was a single module-level
+    # global; it no longer exists, and once variants landed it could not have been
+    # right anyway — every variant would have recorded the same sha. The registry
+    # keyed by `--variant` is the same one the scorer dispatches on.
     prompt_sha256 = hashlib.sha256(
-        mono.ACTIVE_SYSTEM_PROMPT.encode("utf-8")
+        mono.VARIANTS[args.variant].system_prompt.encode("utf-8")
     ).hexdigest()
+
+    # Say out loud whether this run will be calibrated. An unfitted (model,
+    # prompt) pair silently falls back to the hard gate, and at corpus scale
+    # that produces ECE 0.237 numbers indistinguishable from ECE 0.045 ones.
+    from indra_belief.calibration_constants import calibration_banner
+
+    calibrated, banner = calibration_banner(args.model, prompt_sha256)
+    print(banner, flush=True)
+    if args.require_calibrated and not calibrated:
+        raise SystemExit(
+            "refusing to run: --require-calibrated was passed and this "
+            "model+prompt pair has no ship-approved profile"
+        )
 
     expected_identity = {
         "gold_path": str(gold_path),

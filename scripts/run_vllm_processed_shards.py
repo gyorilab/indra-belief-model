@@ -512,6 +512,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shard-index", type=int)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--require-calibrated", action="store_true",
+                        help="refuse the run unless this model+prompt resolves a "
+                             "ship-approved calibration profile")
     parser.add_argument("--base-url", help="Override the model registry URL.")
     parser.add_argument(
         "--served-model-id",
@@ -570,6 +573,25 @@ def main() -> int:
         f"workers={args.workers} temperature={args.temperature}",
         flush=True,
     )
+
+    # This runner pins DISCONFIRM_SYSTEM_PROMPT (see MonolithicPrompt). A
+    # calibration profile is keyed on (model, prompt sha), so the prompt this
+    # path actually sends decides whether its beliefs are calibrated — and an
+    # unfitted pair falls back to the hard gate SILENTLY. At 60M statements that
+    # is the difference between ECE 0.045 and ECE 0.237 with nothing downstream
+    # able to tell which it got.
+    import hashlib
+
+    from indra_belief.calibration_constants import calibration_banner
+
+    prompt_sha256 = hashlib.sha256(DISCONFIRM_SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+    calibrated, banner = calibration_banner(args.model, prompt_sha256)
+    print(banner, flush=True)
+    if args.require_calibrated and not calibrated:
+        raise SystemExit(
+            "refusing to run: --require-calibrated was passed and this "
+            "model+prompt pair has no ship-approved profile"
+        )
 
     shards = select_shards(Path(args.input_dir), args.shard_index)
     prompt = MonolithicPrompt()
