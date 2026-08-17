@@ -33,7 +33,7 @@ import re
 from collections import Counter, defaultdict
 from typing import Any
 
-from indra_belief.curation import aggregate_gold, is_gold_correct
+from indra_belief.curation import CORRECT_TAG, aggregate_gold, is_gold_correct
 from indra_belief.corpus.cost import price_basis, token_cost_usd
 from indra_belief.model_client import canonical_model_name
 from indra_belief.model_meta import model_size
@@ -606,7 +606,13 @@ def _soft_calibration_block(
     }
 
 
-METRICS_SCHEMA_VERSION = 3  # the metrics.json contract the viewer (C4/C5) pins
+METRICS_SCHEMA_VERSION = 4  # the metrics.json contract the viewer (C4/C5) pins
+# v4: + tiers.stmt.by_rollup — the SAME statements scored against BOTH statement
+#     gold rules. Additive: every pre-existing key keeps its any-incorrect-wins
+#     meaning. Reported rather than switched because the two rules do not favour
+#     one arm consistently — on eval_curation_v1 the noisy-OR-matched rule makes
+#     calibrated ECE worse (0.0462 -> 0.0540), on holdout_large_fit it makes it
+#     better (0.1772 -> 0.1334 at 4+ evidences).
 # v2: + tiers.stmt.verdict_err (error-detection confusion on the TIERED
 #     verdict_statement, positive=ERROR) and tiers.stmt.stratified (per
 #     stmt_type / source-count / evidence-count / bucket-group / reject-driver
@@ -643,6 +649,34 @@ def _metric_block(scores: list[float], labels: list[bool], tau: float) -> dict:
         "confusion": {"tp": conf["tp"], "fp": conf["fp"], "fn": conf["fn"], "tn": conf["tn"]},
         "bins": reliability_bins(scores, labels),
     }
+
+
+def _statement_gold_any_correct(tags: list[str]) -> str | None:
+    """The statement rollup that matches what a noisy-OR belief actually claims.
+
+    ``aggregate_gold`` is any-incorrect-wins: a statement is correct only if EVERY
+    curated evidence is correct. That is the right question for auditing curation
+    quality, and the wrong one for validating a belief, because the two move in
+    opposite directions as evidence accumulates. MEASURED on holdout_large_fit
+    (n=2533): under any-incorrect-wins, r(n_evidence, gold) = -0.104 while
+    r(n_evidence, INDRA belief) = +0.241 — the target falls exactly where the score
+    rises. Switching to this rule moves the first to +0.055 and drops calibrated
+    ECE on 4+-evidence statements from 0.1772 to 0.1334.
+
+    Neither rule is wrong; they answer different questions, so the export reports
+    BOTH and names each. Single-evidence statements — 70.4% of the corpus — are
+    identical under the two, which is the internal check that any divergence here
+    is a real multi-evidence effect.
+
+    This deliberately does not live in ``indra_belief.curation`` beside
+    ``aggregate_gold``. That module is the canonical curation domain, mirrored in
+    viewer/src/lib/data/curation.ts under a cross-language parity guard, and it
+    owns the CURATOR rollup (several curators, one evidence). This is a
+    STATEMENT-grain evaluation construct with no viewer twin.
+    """
+    if not tags:
+        return None
+    return CORRECT_TAG if any(is_gold_correct(t) for t in tags) else "incorrect"
 
 
 def _verdict_err_confusion(rows: list[dict]) -> dict:
@@ -781,7 +815,13 @@ def build_run_metrics(
         "gold_target_note": ("Evidence-level curator labels roll up to statement gold "
                              "with conservative any-incorrect-wins. This is an evaluation/"
                              "review proxy; mixed-evidence statements do not literally "
-                             "provide repeated observations of one shared latent truth."),
+                             "provide repeated observations of one shared latent truth. "
+                             "MEASURED consequence: that rule anti-correlates with evidence "
+                             "count (r=-0.104 on holdout_large_fit) while a noisy-OR belief "
+                             "correlates with it (r=+0.241), so a statement-grain number is "
+                             "partly reporting the mismatch. tiers.stmt.by_rollup carries "
+                             "both rules; single-evidence statements (70.4% of that corpus) "
+                             "are identical under either."),
         "statement_verdict_err": ("tiers.stmt.verdict_err (+ per stratum): error-"
                                   "detection confusion on the TIERED verdict_statement, NOT "
                                   "belief<thresholds.tier2_statement.value. positive=ERROR; "
@@ -879,6 +919,7 @@ def build_run_metrics(
         gold_rows = [_gold_for(row) for row in rows]
         tags = [g["verdict"] for g in gold_rows if g is not None]
         gv = aggregate_gold(tags)
+        gv_any = _statement_gold_any_correct(tags)
         if gv is None:
             continue
         sb = statement_belief(rows, RECALIBRATED_PRIORS)
@@ -901,6 +942,10 @@ def build_run_metrics(
             "statement_key": str(_stmt_hash),
             "hard": sb.belief, "parametric": sb.parametric_only, "soft": soft_b,
             "gold_correct": is_gold_correct(gv),
+            # Same statement under the noisy-OR-matched rollup; see
+            # _statement_gold_any_correct. Identical to gold_correct whenever the
+            # statement has one curated evidence.
+            "gold_correct_any": is_gold_correct(gv_any),
             "verdict_statement": sb.verdict_statement,   # tiered decision (I2)
             "stmt_type": stmt_type,                      # I3 strata dims ↓
             "n_distinct_sources": sb.n_distinct_sources,
@@ -941,11 +986,59 @@ def build_run_metrics(
                 "reason": ("no ship-approved calibration for the run's exact "
                            "model+prompt configuration"),
             }
+        # BOTH statement rollups, because they disagree and the disagreement is a
+        # property of the target rather than of the model. Every existing key keeps
+        # the shipped any-incorrect-wins meaning; this is purely additive.
+        alt_labels = [r["gold_correct_any"] for r in stmt_rows]
+        alt_arms: dict = {
+            "hard": _metric_block(
+                [r["hard"] for r in stmt_rows], alt_labels, tau=statement_tau
+            ),
+            "parametric": _metric_block(
+                [r["parametric"] for r in stmt_rows], alt_labels, tau=statement_tau
+            ),
+        }
+        if soft:
+            alt_arms["soft"] = _metric_block(
+                [r["soft"] for r in stmt_rows], alt_labels, tau=statement_tau
+            )
+        else:
+            alt_arms["soft"] = dict(arms["soft"])
+        n_multi = sum(1 for r in stmt_rows if r["n_evidence"] > 1)
+        n_disagree = sum(
+            1 for r in stmt_rows if r["gold_correct"] != r["gold_correct_any"]
+        )
         out["tiers"]["stmt"] = {
             "status": "available",
             "n": len(stmt_rows),
             "base_rate_correct": sum(labels) / len(labels),
             "arms": arms,
+            "by_rollup": {
+                "any_incorrect_wins": {
+                    "rule": ("statement correct iff EVERY curated evidence is "
+                             "correct; the shipped rule, and the one every other "
+                             "key in this block uses"),
+                    "semantics": "curation quality: does anything here need review",
+                    "n": len(stmt_rows),
+                    "base_rate_correct": sum(labels) / len(labels),
+                    "arms": arms,
+                },
+                "any_correct_wins": {
+                    "rule": ("statement correct iff ANY curated evidence is "
+                             "correct; matches what a noisy-OR belief claims"),
+                    "semantics": "support: is at least one extraction good",
+                    "n": len(stmt_rows),
+                    "base_rate_correct": sum(alt_labels) / len(alt_labels),
+                    "arms": alt_arms,
+                },
+                "disagreement": {
+                    "n_statements_relabelled": n_disagree,
+                    "n_multi_evidence": n_multi,
+                    "note": ("the two rules can only differ on multi-evidence "
+                             "statements, so n_statements_relabelled <= "
+                             "n_multi_evidence is an invariant, not a coincidence"),
+                },
+            },
             # Introduced in schema v2: first-class statement heuristic surface.
             # verdict_err = error-detection F1 on the tiered verdict_statement;
             # stratified = where the residual error mass concentrates (R7 reads it).
