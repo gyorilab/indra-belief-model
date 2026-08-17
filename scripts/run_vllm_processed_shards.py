@@ -261,15 +261,17 @@ def score_job(
     model_id: str,
     max_tokens: int,
     temperature: float,
-    probe_top_logprobs: int = 0,
+    probe: bool = False,
 ) -> dict[str, Any]:
     """Return the minimal row needed for resume and finalization.
 
-    ``probe_top_logprobs`` > 0 adds ONE forced-position label read per scored
-    evidence and persists its raw ``probe_delta_logit``. Off by default because
-    at corpus scale it doubles the request count; on for a gold-eval-sized run
-    it is minutes, and it is the only way a serving stack collects the data
-    needed to fit its own calibration without a second pass.
+    ``probe`` adds ONE forced-position label read per scored evidence and
+    persists its raw ``probe_delta_logit``. Off by default because at corpus
+    scale it doubles the request count; on for a gold-eval-sized run it is
+    minutes, and it is the only way a serving stack collects the data needed to
+    fit its own calibration without a second pass.
+
+    The WIDTH is deliberately not a parameter — see ``_read_probe_delta``.
     """
     base = {
         "job_id": job_id(job),
@@ -363,9 +365,9 @@ def score_job(
                 "confidence": confidence,
                 "source": "llm",
             }
-            if probe_top_logprobs:
+            if probe:
                 row["probe_delta_logit"] = _read_probe_delta(
-                    client, endpoint, model_id, job, probe_top_logprobs
+                    client, endpoint, model_id, job
                 )
             return row
         return {
@@ -389,7 +391,7 @@ def score_job(
 
 
 
-def _read_probe_delta(client, endpoint, model_id, job, top_logprobs):
+def _read_probe_delta(client, endpoint, model_id, job):
     """The forced-position label read, over this runner's own httpx client.
 
     Uses the shared request builder and parser rather than hand-rolling the
@@ -410,11 +412,18 @@ def _read_probe_delta(client, endpoint, model_id, job, top_logprobs):
     measurement, not a precondition — so every error degrades to None.
     """
     from indra_belief.probes.reader import (
+        PROBE_FIRST_TRY_TOP_LOGPROBS,
         PROBE_TOP_LOGPROBS,
         ProbeTopKError,
         build_probe_request,
         probe_reading_from_payload,
     )
+
+    # The width is NOT a caller knob. It is measured (losing-label rank median 6,
+    # max 15 over 40 records on MLX) and widens on demand, so every caller reads
+    # the same number and a stack that ranks differently is discovered by
+    # probe_widen_count() rather than papered over by a command-line guess.
+    top_logprobs = PROBE_FIRST_TRY_TOP_LOGPROBS
 
     record = {
         "subject": job.get("subject"),
@@ -523,7 +532,7 @@ def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
                         score_job,
                         job,
                         client=client,
-                        probe_top_logprobs=getattr(args, "probe_top_logprobs", 0),
+                        probe=bool(getattr(args, "probe", False)),
                         prompt=prompt,
                         endpoint=endpoint,
                         model_id=args.model_id,
@@ -593,13 +602,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shard-index", type=int)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--probe-top-logprobs", type=int, default=0, dest="probe_top_logprobs",
+    parser.add_argument("--probe", action="store_true",
                         help="read the forced-position label logits per evidence and "
-                             "persist the raw probe_delta_logit. 0 disables. 128 is the "
-                             "measured-sufficient window (losing label rank median 6, "
-                             "max 15 over 40 records; ~7 KB/call). Costs ONE extra "
+                             "persist the raw probe_delta_logit. Costs ONE extra "
                              "request per evidence — minutes at gold-eval scale, a "
-                             "doubling of request count at 60M.")
+                             "doubling of request count at 60M, which is why it is "
+                             "opt-in. The window is NOT a knob: it comes from the "
+                             "measured PROBE_FIRST_TRY_TOP_LOGPROBS and widens on "
+                             "demand, so one definition governs every caller.")
     parser.add_argument("--require-calibrated", action="store_true",
                         help="refuse the run unless this model+prompt resolves a "
                              "ship-approved calibration profile")
