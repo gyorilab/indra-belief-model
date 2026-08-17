@@ -206,18 +206,19 @@ def replace_sentence_score(
     in_call = result.get("in_call_label_margin")
     if isinstance(in_call, (int, float)) and not isinstance(in_call, bool):
         enriched["probe_delta_logit"] = float(in_call)
-        if artifact is not None:
-            try:
-                _validate_probe_profile()
-                calibrated = calibrate_probe(
-                    ProbeReading(p_raw=float("nan"), delta_logit=float(in_call)),
-                    record_id=record_id or "in-call",
-                    calibration=_calibration_at(artifact),
-                )
-                enriched["score"] = calibrated.p_hat
-                enriched["weight_of_evidence"] = calibrated.weight_of_evidence
-            except Exception as exc:
-                enriched["score_error"] = f"{type(exc).__name__}: {exc}"
+        # RAW ONLY, on purpose. The shipped isotonic was fitted on PROBE deltas
+        # and its knots span -1.70..+1.61; in-call deltas are ~3x wider
+        # (MEASURED n=80: median |13.22| against the probe's |4.34|), so every
+        # in-call reading lands off the end of the curve and saturates to 0 or 1.
+        # A calibrated number produced that way is the verdict wearing false
+        # precision — the same hazard as applying one serving stack's map to
+        # another, across ACQUISITION ROUTES instead. The in-call route needs its
+        # own isotonic; persisting the raw margin is what makes fitting one
+        # possible, and until then no score is the truthful output.
+        enriched["score_error"] = (
+            "NoInCallCalibration: raw in-call margin persisted; the shipped "
+            "isotonic was fitted on separate-probe deltas and does not transfer"
+        )
         return enriched
 
     if not extra_probe_call:
