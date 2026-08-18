@@ -488,7 +488,7 @@ def main() -> int:
         print(f"    NOTE      {len(results) - n_pass} split(s) did NOT pass. The effect "
               "is partition-sensitive; more gold is the remedy.")
     ratio = "inf" if g["ratio"] == float("inf") else f"{g['ratio']:.1f}x"
-    print(f"    trade     {'PASS' if g['favourable'] else 'FAIL'}  "
+    print(f"    trade     {'ok  ' if g['favourable'] else 'POOR'}  (diagnostic, not gated) "
           f"reliability cost {g['reliability_cost']:+.4f}, resolution gain "
           f"{g['resolution_gain']:+.4f} ({ratio})")
     if e_can > e_inc:

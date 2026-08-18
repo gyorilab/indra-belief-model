@@ -73,18 +73,29 @@ def gate_decision(ci_low: float, brier_incumbent: float, brier_candidate: float,
     scoring = brier_candidate < brier_incumbent
     reliability_cost = reliability_candidate - reliability_incumbent
     resolution_gain = resolution_candidate - resolution_incumbent
-    if reliability_cost <= 0:
-        favourable = True          # calibration improved too; nothing to trade
-        ratio = float("inf")
-    else:
-        ratio = resolution_gain / reliability_cost
-        favourable = ratio >= min_favourability
+    ratio = (float("inf") if reliability_cost <= 0
+             else resolution_gain / reliability_cost)
+    favourable = ratio >= min_favourability
     return {
         "ranking": ranking,
         "scoring": scoring,
+        # DIAGNOSTIC, NOT A GATE LEG. This was a third condition until
+        # scripts/calibration_ship_gate.py:29 was read: "Brier-resolution is
+        # reported as a diagnostic, NOT gated (noise-dominated at n~342)". The
+        # splits here are n~90, a quarter of that, and reliability/resolution are
+        # BINNED over BINS_8 -- roughly eleven rows a bin, and a RATIO of two such
+        # estimates is noisier than either. Gating on it would have made this the
+        # third gate in the repo, disagreeing with an existing one about whether
+        # the quantity is even reportable, in a module written because the repo
+        # should not have gates that disagree.
+        #
+        # It stays computed and printed because it is what EXPLAINS the ECE rise
+        # -- the trade is favourable -- and an explanation is exactly what a
+        # noisy estimate can honestly support. The decision rests on Brier, which
+        # is an unbinned mean of squared error and stable at this n.
         "favourable": favourable,
         "reliability_cost": reliability_cost,
         "resolution_gain": resolution_gain,
         "ratio": ratio,
-        "pass": bool(ranking and scoring and favourable),
+        "pass": bool(ranking and scoring),
     }

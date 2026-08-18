@@ -210,16 +210,19 @@ def test_a_favourable_calibration_trade_passes():
     assert g["ratio"] > 3.0
 
 
-def test_an_unfavourable_trade_fails_even_when_brier_improves():
-    """The reason Brier alone is not the whole gate. A net-positive average can
-    hide a large calibration regression, and a consumer thresholding on belief
-    feels reliability directly -- it does not get to enjoy the average."""
+def test_an_unfavourable_trade_is_reported_but_does_not_veto():
+    """CONTRACT CHANGE, deliberate. The trade ratio was a third gate leg until
+    scripts/calibration_ship_gate.py:29 was read: "Brier-resolution is reported
+    as a diagnostic, NOT gated (noise-dominated at n~342)". These splits are
+    n~90 and the quantity is binned over BINS_8 -- about eleven rows a bin --
+    so a RATIO of two such estimates is noisier still. It is reported, because
+    it is what explains an ECE rise, and the decision rests on Brier, which is
+    unbinned and stable here."""
     g = GATE(0.03, 0.150, 0.149,
              reliability_incumbent=0.001, reliability_candidate=0.060,
              resolution_incumbent=0.120, resolution_candidate=0.180)
-    assert g["scoring"], "Brier did improve"
-    assert not g["favourable"], "a 1.0x trade must not clear a 2.0x bar"
-    assert not g["pass"]
+    assert g["scoring"] and not g["favourable"]
+    assert g["pass"], "a noise-dominated diagnostic must not veto the decision"
 
 
 def test_the_favourability_bar_is_a_parameter_not_a_magic_number():
