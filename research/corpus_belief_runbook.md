@@ -106,7 +106,15 @@ a uniform draw from the corpus looks like. The corpus is dominated by the
 low-evidence tail, and that is the region `external_curator_gold_v2` occupies.
 
 It was built with `scripts/build_multicurator_gold.py --cap 200 --name
-external_curator_gold_v2`. The cap is a real trade and 200 is where it was set:
+external_curator_gold_v2`. Both its files are TRACKED -- the labels in
+`data/benchmark/` and, unusually, the statements JSON force-added past the
+`data/corpora/` ignore rule -- because the build inputs
+(`curation_universe_all.jsonl` and the recovered-curation corpus) are not in the
+repository, so a collaborator cannot regenerate it and stage 1 takes the
+statements JSON as its input.
+
+Validation on the other two golds runs on the authoring machine, which has their
+statements; only the fit set has to travel. The cap is a real trade and 200 is where it was set:
 the top curator contributes 20% of rows at cap 100, 24% at 200 and 32% at 400.
 Above 200 the set starts belonging to one curator.
 
