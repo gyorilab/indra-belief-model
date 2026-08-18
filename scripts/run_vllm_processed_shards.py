@@ -43,6 +43,16 @@ sys.path.insert(0, str(ROOT / "src"))
 DEFAULT_INPUT_DIR = Path("/scratch/h.yan/data/processed_grounding_shards")
 DEFAULT_OUTPUT_DIR = Path("/scratch/h.yan/data/processed_model_results")
 DEFAULT_MODEL = "vllm-local"
+# NO CoT at corpus scale. `verdict_only` is a coherent set — verdict-first
+# prompt, thinking suppressed, temperature 0 — and all three must hold together:
+# MEASURED, thinking off with the DELIBERATIVE prompt puts the verdict 56 tokens
+# deep at delta_logit +22.50, indistinguishable from full deliberation and
+# silently useless. Suppressing reasoning is therefore a property of the
+# VARIANT, never a flag to flip on the reasoning-first path.
+#
+# The reasoning-first variant remains selectable for a gold-eval-sized run where
+# its deliberation is affordable; at 60M evidences it is not.
+DEFAULT_VARIANT = "verdict_only"
 VALID_VERDICTS = {"correct", "incorrect"}
 VALID_CONFIDENCE = {"high", "medium", "low"}
 SHARD_RE = re.compile(r"grounded-(\d+)\.jsonl\.gz$")
@@ -145,12 +155,8 @@ class MonolithicPrompt:
     #
     # The class's own docstring says "reuse the repo's workflow". On this tree
     # that means delegating to those owners rather than importing their parts.
-    def __init__(self):
+    def __init__(self, variant: str = DEFAULT_VARIANT):
         from indra_belief.scorers.monolithic import scorer as mono
-        from indra_belief.scorers.monolithic._prompts_disconfirm import (
-            DISCONFIRM_SYSTEM_PROMPT,
-            render_example,
-        )
         from indra_belief.scorers.monolithic._prompts_relation import (
             _RELATION_SYSTEM,
             _extract_json,
@@ -160,10 +166,24 @@ class MonolithicPrompt:
         from indra_belief.prepared_execution import relation_mismatch_note
         from indra_belief.verdict import parse_verdict
 
+        # WAS a pinned import of DISCONFIRM_SYSTEM_PROMPT. Pinning made the
+        # runner structurally incapable of the no-CoT path: a variant is a
+        # COHERENT SET — verdict-first prompt, thinking suppressed, temperature
+        # 0 — and a runner that borrowed one member of that set and hard-coded
+        # the rest could only ever send an inconsistent request. Reading the
+        # whole set off one object is what keeps the three from drifting.
+        try:
+            self.variant = mono.VARIANTS[variant]
+        except KeyError:
+            raise SystemExit(
+                f"unknown --variant {variant!r}; registered: "
+                f"{', '.join(sorted(n for n in mono.VARIANTS if n))}"
+            ) from None
+
         self.mono = mono
-        self.system_prompt = DISCONFIRM_SYSTEM_PROMPT
+        self.system_prompt = self.variant.system_prompt
+        self.render_example = self.variant.render_example
         self.relation_system_prompt = _RELATION_SYSTEM
-        self.render_example = render_example
         self.extract_json = _extract_json
         self.normalize_nature = _norm_nature
         self.relation_user_message = _user_message
@@ -182,7 +202,15 @@ class MonolithicPrompt:
     def relation_request(
         self, job: dict[str, Any]
     ) -> tuple[str, list[dict[str, str]]] | None:
-        """Build the extra relation-nature call used only for Complex jobs."""
+        """Build the extra relation-nature call used only for Complex jobs.
+
+        Gated on the VARIANT, not just the statement type: a variant with no
+        relation resolver (``verdict_only``) must not pay for a second call it
+        has no prompt to consume, and the live scorer already skips it for
+        exactly that reason.
+        """
+        if self.variant.resolve_relation_nature is None:
+            return None
         if str(job.get("stmt_type")) != "Complex":
             return None
         subject = str(job.get("subject") or "")
@@ -339,16 +367,48 @@ def score_job(
             "error": f"{type(exc).__name__}: {exc}",
         }
 
+    variant = prompt.variant
+    # The variant's own declarations, not this runner's defaults. Reasoning is
+    # the one that used to be MISSING ENTIRELY: the body below carried model,
+    # messages, max_tokens and temperature, and nothing else — so the thinking
+    # channel was whatever the served chat template happened to default to. On
+    # gemma-4 that is ON, and at 60M evidences an unasked-for CoT is the entire
+    # bill.
+    #
+    # `reasoning_wire_keys` rather than a literal, because "no CoT" is not one
+    # key: vLLM/Ollama-served Gemma silently DROPS `reasoning_effort="none"` and
+    # honors `chat_template_kwargs.enable_thinking` instead. Sending one of the
+    # two is a silent no-op on half the substrates.
+    from indra_belief.model_client import reasoning_wire_keys
+
+    body = {
+        "model": model_id,
+        "messages": [{"role": "system", "content": system}] + messages,
+        "max_tokens": max_tokens,
+        "temperature": (
+            variant.temperature if variant.temperature is not None else temperature
+        ),
+        **reasoning_wire_keys(variant.reasoning_effort),
+    }
+    if variant.in_call_label_logprobs:
+        # Free margin: this variant emits the verdict FIRST, so the label's
+        # log-odds are readable from the call we were making anyway. MEASURED
+        # n=80: in-call AUROC 0.8734 against the second-call probe's 0.7237 —
+        # better AND without doubling the request count.
+        body["logprobs"] = True
+        body["top_logprobs"] = variant.in_call_label_logprobs
+        if body["temperature"] != 0:
+            # The same invariant ModelClient enforces. Above temperature 0 the
+            # reported argmax stream can diverge from the sampled text, so the
+            # verdict POSITION stops being trustworthy and the margin is a
+            # plausible-looking lie. A CLI --temperature must not be able to
+            # reach past the variant and break this quietly.
+            raise SystemExit(
+                f"variant {variant.name!r} reads in-call logprobs but temperature "
+                f"is {body['temperature']}; that read is only valid at 0"
+            )
     try:
-        response = client.post(
-            endpoint,
-            json={
-                "model": model_id,
-                "messages": [{"role": "system", "content": system}] + messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            },
-        )
+        response = client.post(endpoint, json=body)
         response.raise_for_status()
         payload = response.json()
         choice = payload["choices"][0]
@@ -365,7 +425,16 @@ def score_job(
                 "confidence": confidence,
                 "source": "llm",
             }
-            if probe:
+            # Free path first, exactly as the live scorer resolves it. When the
+            # variant emits the verdict first, the margin is already in THIS
+            # response; issuing `--probe`'s second request on top would pay a
+            # doubled request count for a strictly worse reading (n=80: in-call
+            # AUROC 0.8734, probe 0.7237).
+            if variant.in_call_label_logprobs:
+                from indra_belief.probes.reader import label_margin_from_payload
+
+                row["probe_delta_logit"] = label_margin_from_payload(payload)
+            elif probe:
                 row["probe_delta_logit"] = _read_probe_delta(
                     client, endpoint, model_id, job
                 )
@@ -602,6 +671,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shard-index", type=int)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument(
+        "--variant", default=DEFAULT_VARIANT,
+        help=(
+            "scoring variant; carries its prompt, reasoning channel and "
+            f"temperature as one set (default {DEFAULT_VARIANT}: no CoT, and "
+            "the label margin comes free from the scoring call)"
+        ),
+    )
     parser.add_argument("--probe", action="store_true",
                         help="read the forced-position label logits per evidence and "
                              "persist the raw probe_delta_logit. Costs ONE extra "
@@ -630,6 +707,89 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--timeout", type=float, default=None)
     return parser
+
+
+def preflight(client, endpoint: str, model_id: str, prompt) -> None:
+    """One request, before any shard is opened, to prove the server agrees.
+
+    WHY THIS IS NOT OPTIONAL POLISH
+    -------------------------------
+    The no-CoT variant reads the label margin from the scoring call, which means
+    every request carries `logprobs: true` and a 128-wide window. vLLM caps that
+    at `--max-logprobs`, whose default is far below 128 — so a server started
+    without the flag REJECTS EVERY REQUEST. Not the margin: the whole call,
+    because the verdict rides in the same response. A 60M-evidence run would
+    fail every row for a missing server flag, and the operator would find out
+    one shard in.
+
+    That is the exact failure this file's own comments say must not happen —
+    "the margin is an extra measurement, not a precondition". At the transport
+    level it IS a precondition, and the honest fix is to discover it in two
+    seconds against one request rather than degrade silently across a corpus.
+
+    Fails loudly with the remedy in the message. Never silently drops the
+    logprob request: a run that quietly stopped collecting margins would look
+    exactly like a successful one.
+    """
+    variant = prompt.variant
+    from indra_belief.model_client import reasoning_wire_keys
+
+    body = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": "Reply with the single word ok."}],
+        "max_tokens": 4,
+        "temperature": variant.temperature if variant.temperature is not None else 0.0,
+        **reasoning_wire_keys(variant.reasoning_effort),
+    }
+    if variant.in_call_label_logprobs:
+        body["logprobs"] = True
+        body["top_logprobs"] = variant.in_call_label_logprobs
+
+    try:
+        response = client.post(endpoint, json=body, timeout=120)
+    except Exception as exc:
+        raise SystemExit(
+            f"[preflight] cannot reach {endpoint}: {type(exc).__name__}: {exc}\n"
+            "  is the server up, and does --base-url point at it?"
+        ) from None
+
+    if response.status_code >= 400:
+        detail = response.text[:400]
+        hint = ""
+        if variant.in_call_label_logprobs and "logprob" in detail.lower():
+            hint = (
+                f"\n  the server refused a {variant.in_call_label_logprobs}-wide "
+                "logprob window. Restart it with\n"
+                f"      --max-logprobs {variant.in_call_label_logprobs}\n"
+                "  (vLLM's default is well below that). Every request carries this "
+                "window because\n  the verdict and its margin come from the same "
+                "call, so this rejects the whole run."
+            )
+        raise SystemExit(
+            f"[preflight] server returned {response.status_code}: {detail}{hint}"
+        )
+
+    if variant.in_call_label_logprobs:
+        from indra_belief.probes.reader import label_margin_from_payload
+
+        choices = (response.json() or {}).get("choices") or []
+        got = bool(choices) and bool((choices[0] or {}).get("logprobs"))
+        if not got:
+            raise SystemExit(
+                "[preflight] the server accepted the request but returned NO "
+                "logprobs.\n  Every row would carry a null margin while looking "
+                "perfectly healthy.\n  Check that the serving stack supports "
+                "top_logprobs on chat completions."
+            )
+        # Not asserted, only reported: a one-token 'ok' has no verdict label, so
+        # a None margin here is expected and says nothing about the real path.
+        _ = label_margin_from_payload(response.json())
+    print(
+        f"[preflight] ok — server accepts variant {variant.name!r} "
+        f"(reasoning={variant.reasoning_effort or 'default'}, "
+        f"logprobs={variant.in_call_label_logprobs or 'off'})",
+        flush=True,
+    )
 
 
 def main() -> int:
@@ -665,31 +825,36 @@ def main() -> int:
             )
     if args.timeout is None:
         args.timeout = float(model_config.get("timeout") or 900)
+    # Built HERE, before the [config] line and the banner that both read it.
+    # An unknown --variant must fail before any shard is opened, and both of
+    # those lines report properties OF this object — deferring construction is
+    # how the previous version of this function came to raise NameError on
+    # every invocation.
+    prompt = MonolithicPrompt(args.variant)
     print(
         f"[config] model={args.model} served_id={args.model_id} "
         f"max_tokens={args.max_tokens} timeout={args.timeout:g}s "
-        f"workers={args.workers} temperature={args.temperature}",
+        f"workers={args.workers} temperature={args.temperature} "
+        f"variant={args.variant} reasoning={prompt.variant.reasoning_effort or 'default'}",
         flush=True,
     )
 
-    # This runner pins DISCONFIRM_SYSTEM_PROMPT (see MonolithicPrompt). A
-    # calibration profile is keyed on (model, prompt sha), so the prompt this
+    # A calibration profile is keyed on (model, prompt sha), so the prompt this
     # path actually sends decides whether its beliefs are calibrated — and an
     # unfitted pair falls back to the hard gate SILENTLY. At 60M statements that
     # is the difference between ECE 0.045 and ECE 0.237 with nothing downstream
     # able to tell which it got.
+    #
+    # Hashed off the CONSTRUCTED PROMPT OBJECT, not a re-import of one variant's
+    # constant. While the runner pinned DISCONFIRM_SYSTEM_PROMPT the two were the
+    # same string; the moment --variant could change what is sent, a re-import
+    # would have reported the calibration status of a prompt this run never
+    # used — a banner that is confidently wrong is worse than no banner.
     import hashlib
 
     from indra_belief.calibration_constants import calibration_banner
-    # Imported HERE, not taken from module scope: this runner imports the prompt
-    # inside MonolithicPrompt.__init__ so the module stays importable without the
-    # scorer's dependency graph. Reaching for the bare name in main() raised
-    # NameError on every invocation.
-    from indra_belief.scorers.monolithic._prompts_disconfirm import (
-        DISCONFIRM_SYSTEM_PROMPT as _PINNED_PROMPT,
-    )
 
-    prompt_sha256 = hashlib.sha256(_PINNED_PROMPT.encode("utf-8")).hexdigest()
+    prompt_sha256 = hashlib.sha256(prompt.system_prompt.encode("utf-8")).hexdigest()
     calibrated, banner = calibration_banner(args.model, prompt_sha256)
     print(banner, flush=True)
     if args.require_calibrated and not calibrated:
@@ -699,12 +864,13 @@ def main() -> int:
         )
 
     shards = select_shards(Path(args.input_dir), args.shard_index)
-    prompt = MonolithicPrompt()
     limits = httpx.Limits(
         max_connections=args.workers,
         max_keepalive_connections=args.workers,
     )
     with httpx.Client(limits=limits, timeout=args.timeout) as client:
+        preflight(client, args.base_url.rstrip("/") + "/chat/completions",
+                  args.model_id, prompt)
         for shard in shards:
             code = run_shard(shard, args, client, prompt)
             if code:

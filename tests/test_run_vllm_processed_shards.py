@@ -141,6 +141,12 @@ def test_unparseable_response_keeps_diagnostic_preview():
             return Response()
 
     class Prompt:
+        # `variant` is not decoration: score_job reads the reasoning channel,
+        # temperature and logprob window off it, because those three and the
+        # prompt are one coherent set. A double that omits it is not standing in
+        # for the real object.
+        variant = runner.MonolithicPrompt(runner.DEFAULT_VARIANT).variant
+
         def request(self, _job):
             return "system", [{"role": "user", "content": "question"}]
 
@@ -222,15 +228,46 @@ def test_an_unreadable_reply_stays_absent_rather_than_becoming_a_number():
     )
 
 
-def test_processed_runner_uses_commit_first_disconfirm_prompt():
-    from indra_belief.scorers.monolithic._prompts_disconfirm import (
-        DISCONFIRM_SYSTEM_PROMPT,
-    )
+def test_batch_runner_sends_byte_IDENTICAL_prompts_to_the_live_scorer():
+    """WAS a pin on DISCONFIRM_SYSTEM_PROMPT, which conflated two things.
 
-    prompt = runner.MonolithicPrompt()
+    The invariant worth having is PARITY: whatever variant this runner is asked
+    for, it must send the same bytes the live scorer sends, because a
+    calibration profile is keyed on (model, prompt sha) and a batch path that
+    drifted by one character would silently score against a profile fitted for
+    a prompt it never sent.
 
-    assert prompt.system_prompt == DISCONFIRM_SYSTEM_PROMPT
-    assert len(prompt.examples("Activation")) == 28  # 7 pairs / 14 examples
+    Pinning one constant asserted parity only for the single variant the runner
+    was hard-wired to, and in doing so it also froze the CHOICE of variant --
+    which is what made the no-CoT path unreachable at corpus scale. Parity is
+    the real property; the choice is a flag.
+
+    HONEST ABOUT ITS OWN STRENGTH: the loop below is true BY CONSTRUCTION today,
+    because MonolithicPrompt reads `system_prompt` straight off the variant. It
+    cannot fail against the current implementation, and it is kept for the case
+    that would make it fail -- someone reintroducing a local copy of a prompt in
+    this file, which is exactly how the batch and live paths would drift apart.
+    The examples() assertion below is a genuine value check.
+    """
+    from indra_belief.scorers.monolithic import scorer as mono
+
+    for name, variant in mono.VARIANTS.items():
+        if not name:
+            continue
+        assert runner.MonolithicPrompt(name).system_prompt == variant.system_prompt, (
+            f"the batch runner's {name!r} prompt has drifted from the live one"
+        )
+
+    # The few-shot block is part of the request, so parity has to cover it too.
+    disconfirm = runner.MonolithicPrompt("disconfirm_relnature_rf")
+    assert len(disconfirm.examples("Activation")) == 28  # 7 pairs / 14 examples
+
+
+def test_the_default_variant_sends_no_chain_of_thought():
+    """The corpus-scale default. At 60M evidences an unasked-for CoT is the
+    entire bill, and the previous default was 'whatever the chat template does'
+    because the request carried no reasoning control at all."""
+    assert runner.MonolithicPrompt().variant.reasoning_effort == "none"
 
 
 def test_complex_job_runs_relation_nature_before_verdict():
@@ -281,7 +318,10 @@ def test_complex_job_runs_relation_nature_before_verdict():
             "object_grounding": {"aliases": ["Y alias"]},
         },
         client=client,
-        prompt=runner.MonolithicPrompt(),
+        # Explicitly the relnature variant: the relation-nature step is a
+        # property OF that variant, not of the runner. The default carries no
+        # relation resolver and correctly skips the call.
+        prompt=runner.MonolithicPrompt("disconfirm_relnature_rf"),
         endpoint="http://vllm/v1/chat/completions",
         model_id="served-model",
         max_tokens=1000,
