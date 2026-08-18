@@ -1118,6 +1118,38 @@ class ModelResponse:
     logprobs_status: str = "not_requested"
 
 
+def reasoning_wire_keys(effort: str | None, *, strict: bool = False) -> dict:
+    """The wire keys that express a reasoning-effort intent, for ANY transport.
+
+    Split out of :meth:`ModelClient.call` for the same reason
+    ``build_probe_request`` was split out of ``read_probe``: the corpus-scale
+    shard runner drives a bare ``httpx.Client`` and cannot adopt our transport,
+    but it must express "no CoT" the SAME way — and this is a rule no single
+    key carries.
+
+    Two mechanisms, and which one works is a property of the backend:
+
+      * ``reasoning_effort`` — the standard OpenAI extension, honored by Google
+        AI Studio and some Ollama builds;
+      * ``chat_template_kwargs.enable_thinking`` — what Ollama-served Gemma
+        actually honors. It SILENTLY DROPS ``reasoning_effort="none"``, leaving
+        thinking on at the model's default.
+
+    So "none" sends BOTH and lets whichever the backend understands win. A
+    caller that sends only one gets a silent failure on half the substrates: the
+    model deliberates anyway, and the only symptom is a bill.
+
+    ``strict`` backends (Google's OpenAI-compat) 400 on unknown extra_body
+    fields, so they get the standard key alone.
+    """
+    if not effort:
+        return {}
+    keys: dict = {"reasoning_effort": effort}
+    if effort == "none" and not strict:
+        keys["chat_template_kwargs"] = {"enable_thinking": False}
+    return keys
+
+
 class ModelClient:
     """Unified client for calling LLMs across backends.
 
@@ -2168,13 +2200,7 @@ class ModelClient:
         strict = bool(self.config.get("strict_openai_compat"))
         effort = reasoning_effort if reasoning_effort is not None \
                  else self.config.get("reasoning_effort")
-        if effort:
-            extra_body["reasoning_effort"] = effort
-            # When the caller asks for "none", that's a request to disable
-            # thinking entirely. Translate to the chat_template_kwargs
-            # mechanism Ollama honors — but only on permissive backends.
-            if effort == "none" and not strict:
-                extra_body["chat_template_kwargs"] = {"enable_thinking": False}
+        extra_body.update(reasoning_wire_keys(effort, strict=strict))
         if self.config.get("num_ctx") and not strict:
             extra_body["num_ctx"] = self.config["num_ctx"]
         if response_format is not None and not strict:

@@ -233,6 +233,30 @@ def probe_reading_from_payload(payload: Any, *, top_k: int) -> ProbeReading:
     return _reading_from_labels(*_label_logprobs(logprobs, top_k=top_k))
 
 
+def label_margin_from_payload(payload: Any) -> float | None:
+    """The in-call label margin, read from a raw scoring response.
+
+    The payload-level twin of :func:`label_margin_from_logprobs`, for the same
+    reason :func:`probe_reading_from_payload` exists: the corpus-scale shard
+    runner drives a bare ``httpx.Client`` and holds a decoded JSON dict, not a
+    ``ModelResponse``. Without this it would have to reach into
+    ``_normalize_openai_logprobs`` itself and re-derive a normalization whose
+    whole purpose is to be derived once.
+
+    Returns None — never raises — when the response carried no usable logprobs.
+    The margin is an EXTRA measurement riding along on a call made for the
+    verdict; losing it must never cost the verdict.
+    """
+    try:
+        choice = _as_choice(payload)
+        choices = getattr(choice, "choices", None)
+        if not choices:
+            return None
+        return label_margin_from_logprobs(_normalize_openai_logprobs(choices[0]))
+    except Exception:
+        return None
+
+
 def _reading_from_labels(log_p_correct: float, log_p_incorrect: float) -> ProbeReading:
     """The two label logprobs -> the reading. One definition of the arithmetic."""
     anchor = max(log_p_correct, log_p_incorrect)
