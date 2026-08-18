@@ -35,6 +35,8 @@ def _load():
 
 fit = _load()
 
+from indra_belief.calibration_gate import gate_decision as GATE  # noqa: E402
+
 
 def _write(tmp_path, rows):
     path = tmp_path / "run.jsonl"
@@ -170,23 +172,58 @@ def test_too_few_rows_refuses_to_produce_a_curve(tmp_path):
 def test_ranking_alone_does_not_pass():
     """The incumbent takes two distinct values, so AUROC over huge ties flatters
     any continuous score. Deliberation length cleared exactly this bar."""
-    ranking, scoring, overall = fit.gate_decision(0.05, 0.140, 0.150)
-    assert ranking and not scoring and not overall
+    g = GATE(0.05, 0.140, 0.150)
+    assert g["ranking"] and not g["scoring"] and not g["pass"]
 
 
 def test_scoring_alone_does_not_pass():
-    ranking, scoring, overall = fit.gate_decision(-0.01, 0.150, 0.140)
-    assert scoring and not ranking and not overall
-
-
-def test_both_halves_pass_together():
-    assert fit.gate_decision(0.03, 0.150, 0.128)[2] is True
+    g = GATE(-0.01, 0.150, 0.140)
+    assert g["scoring"] and not g["ranking"] and not g["pass"]
 
 
 def test_a_ci_touching_zero_is_not_a_pass():
     """Strictly greater. A CI whose lower bound is 0 has not excluded it."""
-    assert fit.gate_decision(0.0, 0.150, 0.128)[0] is False
+    assert GATE(0.0, 0.150, 0.128)["ranking"] is False
 
 
 def test_an_equal_brier_is_not_an_improvement():
-    assert fit.gate_decision(0.03, 0.150, 0.150)[1] is False
+    assert GATE(0.03, 0.150, 0.150)["scoring"] is False
+
+
+def test_a_candidate_that_also_improves_calibration_needs_no_trade():
+    """Nothing was traded away, so the favourability test has nothing to judge."""
+    g = GATE(0.03, 0.150, 0.128,
+             reliability_incumbent=0.008, reliability_candidate=0.002,
+             resolution_incumbent=0.120, resolution_candidate=0.140)
+    assert g["favourable"] and g["ratio"] == float("inf") and g["pass"]
+
+
+def test_a_favourable_calibration_trade_passes():
+    """The measured case: +0.0067 reliability cost buys +0.0242 resolution.
+    The ECE rule in fit_probe_belief_model.py would refuse this 3.6:1 trade,
+    because it was written against an incumbent at ECE 0.2137 where demanding
+    better calibration was free."""
+    g = GATE(0.03, 0.129, 0.108,
+             reliability_incumbent=0.0015, reliability_candidate=0.0082,
+             resolution_incumbent=0.1217, resolution_candidate=0.1459)
+    assert g["favourable"] and g["pass"]
+    assert g["ratio"] > 3.0
+
+
+def test_an_unfavourable_trade_fails_even_when_brier_improves():
+    """The reason Brier alone is not the whole gate. A net-positive average can
+    hide a large calibration regression, and a consumer thresholding on belief
+    feels reliability directly -- it does not get to enjoy the average."""
+    g = GATE(0.03, 0.150, 0.149,
+             reliability_incumbent=0.001, reliability_candidate=0.060,
+             resolution_incumbent=0.120, resolution_candidate=0.180)
+    assert g["scoring"], "Brier did improve"
+    assert not g["favourable"], "a 1.0x trade must not clear a 2.0x bar"
+    assert not g["pass"]
+
+
+def test_the_favourability_bar_is_a_parameter_not_a_magic_number():
+    args = dict(reliability_incumbent=0.001, reliability_candidate=0.011,
+                resolution_incumbent=0.100, resolution_candidate=0.130)
+    assert GATE(0.03, 0.150, 0.128, **args, min_favourability=3.0)["favourable"]
+    assert not GATE(0.03, 0.150, 0.128, **args, min_favourability=5.0)["favourable"]

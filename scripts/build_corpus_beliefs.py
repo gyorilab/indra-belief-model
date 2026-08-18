@@ -50,6 +50,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 
 def _load_runner():
@@ -155,14 +156,27 @@ def beliefs_for_shard(runner, input_path: Path, results_path: Path, *,
             stats["n_null_margin"] += 1
         by_stmt.setdefault(stmt_hash, []).append(row)
 
-    out: dict[str, float] = {}
+    # The PROJECTION is export_belief_table's, not a second copy of it. That
+    # function already encodes the two rules this table must not get wrong --
+    # an unscored statement is omitted rather than defaulted (Statement.from_json
+    # defaults a missing belief to 1.0, so a placeholder publishes "certainly
+    # true" for something never read), and a hash carrying two different beliefs
+    # is REPORTED rather than resolved by last-writer-wins. Applied per shard so
+    # the streaming property survives.
+    from export_belief_table import build_table
+
+    records = []
     for stmt_hash, rows in by_stmt.items():
         rows = apply_weights(rows, calibration, stats)
         result = statement_belief(rows, priors, soft=soft)
-        out[stmt_hash] = float(result.belief)
+        records.append({"indra_matches_hash": stmt_hash, "belief": result.belief})
         stats["weighting"][result.weighting] = (
             stats["weighting"].get(result.weighting, 0) + 1
         )
+    out, diagnostics = build_table(records)
+    for key in ("n_unscored_omitted", "n_without_matches_hash",
+                "n_hash_collisions_with_differing_belief"):
+        stats[key] = stats.get(key, 0) + diagnostics[key]
     stats["n_statements"] += len(out)
     stats["n_evidence"] += sum(len(v) for v in by_stmt.values())
     return out

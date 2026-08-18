@@ -61,6 +61,42 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def corpus_json_to_tsv(corpus_path: Path, out_path: Path) -> int:
+    """Write a JSON statement list out in this script's own input format.
+
+    An INPUT ADAPTER, which is why it lives here and not in a script of its own:
+    its only purpose is to produce the `statement_hash<TAB>statement_json` rows
+    that `iter_processed_rows` immediately reads back. A separate executable for
+    that is a file, an argparse block and a docstring standing between two
+    functions in the same module.
+
+    Keyed on the statement's own ``matches_hash``, so shards prepared from a
+    labelled corpus key exactly as shards prepared from the production dump --
+    which is what lets a calibration be fitted on the production path rather
+    than a parallel one.
+    """
+    corpus = json.loads(corpus_path.read_text())
+    if not isinstance(corpus, list):
+        raise SystemExit(f"{corpus_path}: expected a JSON list of statements")
+    written = 0
+    opener = gzip.open if out_path.suffix == ".gz" else open
+    with opener(out_path, "wt", encoding="utf-8", newline="") as fh:
+        for statement in corpus:
+            if not isinstance(statement, dict):
+                continue
+            matches_hash = statement.get("matches_hash")
+            if matches_hash in (None, ""):
+                continue
+            # separators= keeps the payload free of the raw tab or newline that
+            # would split its own row.
+            payload = json.dumps(statement, sort_keys=True, separators=(",", ":"))
+            fh.write(f"{matches_hash}\t{payload}\n")
+            written += 1
+    if not written:
+        raise SystemExit(f"{corpus_path}: no statement carried a matches_hash")
+    return written
+
+
 def iter_processed_rows(
     path: Path,
 ) -> Iterable[tuple[int, int, str]]:
@@ -448,6 +484,12 @@ def prepare_statement_jobs(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", default=str(DEFAULT_INPUT))
+    parser.add_argument(
+        "--from-corpus-json", default=None,
+        help="a JSON list of INDRA statements (data/corpora/*_statements.json); "
+             "converted to this script's TSV input first. Lets a labelled corpus "
+             "be prepared by the SAME builder the production dump goes through",
+    )
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument(
         "--cache",
@@ -491,6 +533,12 @@ def main() -> int:
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
 
+    if args.from_corpus_json:
+        generated = Path(args.output_dir) / "corpus_statements.tsv.gz"
+        generated.parent.mkdir(parents=True, exist_ok=True)
+        count = corpus_json_to_tsv(Path(args.from_corpus_json), generated)
+        print(f"  converted {count:,} statements -> {generated}", flush=True)
+        args.input = str(generated)
     input_path = Path(args.input).resolve()
     output_dir = Path(args.output_dir).resolve()
     cache_path = (

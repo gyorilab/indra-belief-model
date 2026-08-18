@@ -294,6 +294,12 @@ def main() -> int:
             "better_resolution": bool(better_res),
             "verdict": verdict,
         },
+        # This script's rule is kept as the historical record of a decision
+        # already taken. The reconciled definition -- why "lower ECE" is the
+        # right demand against a badly-calibrated incumbent and the wrong one
+        # against a base-rate lookup -- now lives in
+        # `indra_belief.calibration_gate`, which is what a new candidate should
+        # be judged by.
         "prior_gate_note": (
             "the earlier NO-GO used 'ci95_low(delta AUROC) > 0', a SUPERIORITY test on ranking; "
             "this asks non-inferiority on ranking plus superiority on calibration and resolution"

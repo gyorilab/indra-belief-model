@@ -216,29 +216,6 @@ def belief_profile(rows: list[dict]) -> dict:
     }
 
 
-def gate_decision(ci_low: float, brier_incumbent: float,
-                  brier_candidate: float) -> tuple[bool, bool, bool]:
-    """(ranking, scoring, overall). Both halves are required.
-
-    Two gates because either alone has a known failure mode on this codebase.
-
-    RANKING alone passes noise dressed as signal: the incumbent takes exactly
-    two distinct values, so its AUROC is computed over enormous ties and any
-    continuous score is structurally flattered. Deliberation length cleared a
-    ranking bar like this and delivered no held-out gain.
-
-    SCORING alone is insensitive to the ordering improvements a belief consumer
-    actually uses for thresholding and triage.
-
-    Brier rather than ECE for the scoring half, deliberately: a sharper score
-    can raise ECE while being strictly more informative, and ECE would veto it.
-    ECE is reported as a NOTE instead, because a belief consumer does feel it.
-    """
-    ranking = ci_low > 0.0
-    scoring = brier_candidate < brier_incumbent
-    return ranking, scoring, (ranking and scoring)
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -262,6 +239,7 @@ def main() -> int:
                          "shipped a signal that a different partition dissolved")
     args = ap.parse_args()
 
+    from indra_belief.calibration_gate import gate_decision
     from indra_belief.metrics import auroc, brier_murphy, ece
     from indra_belief.probe_combiner import fit_combiner
     from indra_belief.scorers.monolithic import scorer as mono
@@ -353,12 +331,15 @@ def main() -> int:
             return 1.0 / (1.0 + np.exp(-(x + profile["prior_logodds"])))
         p_inc, p_can = probs(incumbent), probs(candidate)
         labels = held_y.tolist()
+        bi = brier_murphy(p_inc, held_y)
+        bc = brier_murphy(p_can, held_y)
         return {
             "seed": seed, "n": n,
+            "rel_inc": bi["reliability"], "rel_can": bc["reliability"],
+            "res_inc": bi["resolution"], "res_can": bc["resolution"],
             "auroc_inc": auroc(incumbent, held_y), "auroc_can": auroc(candidate, held_y),
             "ci_low": lo,
-            "brier_inc": brier_murphy(p_inc, held_y)["brier"],
-            "brier_can": brier_murphy(p_can, held_y)["brier"],
+            "brier_inc": bi["brier"], "brier_can": bc["brier"],
             "ece_inc": ece(list(zip(p_inc.tolist(), labels))),
             "ece_can": ece(list(zip(p_can.tolist(), labels))),
             "combiner": combiner,
@@ -380,7 +361,9 @@ def main() -> int:
     med = lambda k: float(np.median([r[k] for r in results]))  # noqa: E731
     worst_lo = min(r["ci_low"] for r in results)
     n_pass = sum(1 for r in results
-                 if gate_decision(r["ci_low"], r["brier_inc"], r["brier_can"])[2])
+                 if gate_decision(r["ci_low"], r["brier_inc"], r["brier_can"],
+                                  r["rel_inc"], r["rel_can"],
+                                  r["res_inc"], r["res_can"])["pass"])
     print(f"\n    median CI low {med('ci_low'):+.4f}   WORST {worst_lo:+.4f}")
     print(f"    median Brier  {med('brier_inc'):.4f} -> {med('brier_can'):.4f}")
     print(f"    median ECE    {med('ece_inc'):.4f} -> {med('ece_can'):.4f}")
@@ -389,8 +372,9 @@ def main() -> int:
     # Gated on the MEDIAN, with the worst split reported beside it. Gating on the
     # best would be split-shopping; gating on the worst would let one unlucky
     # partition veto a real effect.
-    discriminates, scores_better, verdict_go = gate_decision(
-        med("ci_low"), med("brier_inc"), med("brier_can"))
+    g = gate_decision(med("ci_low"), med("brier_inc"), med("brier_can"),
+                      med("rel_inc"), med("rel_can"), med("res_inc"), med("res_can"))
+    discriminates, scores_better, verdict_go = g["ranking"], g["scoring"], g["pass"]
     combiner = results[0]["combiner"]
     b_inc, b_can = med("brier_inc"), med("brier_can")
     e_inc, e_can = med("ece_inc"), med("ece_can")
@@ -404,10 +388,15 @@ def main() -> int:
     if n_pass < len(results):
         print(f"    NOTE      {len(results) - n_pass} split(s) did NOT pass. The effect "
               "is partition-sensitive; more gold is the remedy.")
+    ratio = "inf" if g["ratio"] == float("inf") else f"{g['ratio']:.1f}x"
+    print(f"    trade     {'PASS' if g['favourable'] else 'FAIL'}  "
+          f"reliability cost {g['reliability_cost']:+.4f}, resolution gain "
+          f"{g['resolution_gain']:+.4f} ({ratio})")
     if e_can > e_inc:
-        print(f"    NOTE      calibration DEGRADES ({e_inc:.4f} -> {e_can:.4f}); the "
-              "candidate is sharper but less well calibrated, and a belief "
-              "consumer feels ECE directly.")
+        print(f"    NOTE      ECE rises {e_inc:.4f} -> {e_can:.4f}. That is the "
+              "reliability cost above, priced against the resolution gain rather "
+              "than vetoed -- see gate_decision for why the ECE rule in "
+              "fit_probe_belief_model.py does not transfer to this incumbent.")
     if not verdict_go:
         print("    On this codebase's history, a signal that ranks better without "
               "scoring better is exactly how deliberation length looked before it "

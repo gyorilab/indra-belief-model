@@ -42,32 +42,62 @@ def _load(name, path):
     return module
 
 
-emit = _load("_emit_tsv", "scripts/emit_statement_tsv.py")
+builder = _load("_builder_tsv", "scripts/build_processed_grounding_shards.py")
 fit = _load("_fit_prod", "scripts/fit_incall_calibration.py")
 
 
 # ── the TSV that feeds the production builder ─────────────────────────────────
 
-def test_the_statement_hash_is_the_matches_hash():
-    """Shards prepared here must key exactly as shards from the real dump do."""
-    rows, _ = emit.statement_rows([{"matches_hash": "123", "type": "Activation",
-                                    "evidence": [{"text": "x"}]}])
-    assert rows[0][0] == "123"
+def _convert(tmp_path, corpus):
+    """Round-trip a corpus through the builder's own adapter and reader.
+
+    Deliberately asserts on what `iter_processed_rows` reads back rather than on
+    the bytes written: the adapter exists only to feed that reader, so the
+    contract between them is the thing worth pinning.
+    """
+    corpus_path = tmp_path / "corpus.json"
+    corpus_path.write_text(json.dumps(corpus))
+    out = tmp_path / "converted.tsv.gz"
+    written = builder.corpus_json_to_tsv(corpus_path, out)
+    return written, list(builder.iter_processed_rows(out))
 
 
-def test_a_statement_without_a_matches_hash_is_skipped_and_counted():
-    rows, skipped = emit.statement_rows([{"type": "Activation", "evidence": [{}]}])
-    assert rows == [] and skipped["no_matches_hash"] == 1
+def test_the_statement_hash_is_the_matches_hash(tmp_path):
+    """Shards prepared from a labelled corpus must key exactly as shards
+    prepared from the production dump, or the calibration is fitted against
+    identities the corpus run does not use."""
+    written, rows = _convert(tmp_path, [
+        {"matches_hash": "123", "type": "Activation", "evidence": [{"text": "x"}]}])
+    assert written == 1
+    _, stmt_hash, _ = rows[0]
+    assert stmt_hash == 123
 
 
-def test_the_emitted_json_cannot_split_its_own_row():
-    """A raw tab or newline inside the payload would silently corrupt the TSV."""
-    rows, _ = emit.statement_rows([{
+def test_a_statement_without_a_matches_hash_is_skipped(tmp_path):
+    written, rows = _convert(tmp_path, [
+        {"type": "Activation", "evidence": [{"text": "x"}]},
+        {"matches_hash": "7", "type": "Activation", "evidence": [{"text": "y"}]},
+    ])
+    assert written == 1 and len(rows) == 1
+
+
+def test_a_corpus_with_no_usable_statement_refuses(tmp_path):
+    corpus_path = tmp_path / "c.json"
+    corpus_path.write_text(json.dumps([{"type": "Activation"}]))
+    with pytest.raises(SystemExit, match="matches_hash"):
+        builder.corpus_json_to_tsv(corpus_path, tmp_path / "o.tsv.gz")
+
+
+def test_evidence_text_containing_tabs_survives_the_round_trip(tmp_path):
+    """A raw tab or newline in the payload would split its own TSV row, and the
+    reader would reject the line as having the wrong column count."""
+    _, rows = _convert(tmp_path, [{
         "matches_hash": "1", "type": "Activation",
         "evidence": [{"text": "a\tb\nc"}],
     }])
-    payload = rows[0][1]
-    assert "\t" not in payload and "\n" not in payload
+    assert len(rows) == 1
+    _, _, payload = rows[0]
+    assert json.loads(payload)["evidence"][0]["text"] == "a\tb\nc"
 
 
 # ── fitting from what the production path actually wrote ──────────────────────
