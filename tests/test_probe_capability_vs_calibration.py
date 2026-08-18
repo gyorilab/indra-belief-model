@@ -121,3 +121,61 @@ def test_the_registry_is_keyed_on_the_served_id_not_just_the_name():
     impostor = _Client(C.CALIBRATION_MODEL, "some-other/quantization", 1024)
     assert C.sentence_calibration_path_for(impostor) is None
     assert not C.supports_sentence_calibration(impostor)
+
+
+# ── an artifact must be SCORABLE, not merely loadable ─────────────────────────
+#
+# The loader was widened to accept either route's probe id; the SCORING call was
+# not widened with it and kept passing the direct probe's id as a constant. So a
+# freshly fitted in-call artifact loaded cleanly and then raised "X column order
+# does not match probe_ids" on every row it was asked to score. The corpus
+# bridge's bare `except` turned that into a counter, and 1930 tests passed --
+# because the only round-trip test stopped at load.
+
+def test_an_in_call_artifact_can_be_scored_not_just_loaded(tmp_path):
+    """The regression. Load is half a round trip; use is the other half."""
+    import json
+
+    import numpy as np
+
+    from indra_belief.probe_combiner import fit_combiner
+    from indra_belief.probes.calibration import _calibration_at, calibrate_probe
+    from indra_belief.probes.reader import IN_CALL_PROBE_ID, ProbeReading
+
+    rng = np.random.default_rng(0)
+    margins = np.concatenate([rng.normal(6, 3, 60), rng.normal(-6, 3, 60)])
+    labels = np.array([True] * 60 + [False] * 60)
+    combiner = fit_combiner(
+        margins.reshape(-1, 1), labels,
+        probe_ids=[IN_CALL_PROBE_ID],
+        record_ids=[f"fit-{i}" for i in range(len(margins))],
+    )
+    path = tmp_path / "incall.json"
+    path.write_text(json.dumps(combiner.to_dict()))
+
+    loaded = _calibration_at(path)
+    assert loaded.probe_ids == (IN_CALL_PROBE_ID,)
+
+    reading = calibrate_probe(
+        ProbeReading(p_raw=float("nan"), delta_logit=8.0),
+        record_id="never-seen", calibration=loaded,
+    )
+    assert 0.0 <= reading.p_hat <= 1.0
+    assert isinstance(reading.weight_of_evidence, float)
+
+
+def test_the_shipped_direct_artifact_still_scores():
+    """The other half of the widening: accepting a second id must not break the
+    one that was already there."""
+    from indra_belief.probes.calibration import (
+        DEFAULT_CALIBRATION_PATH, _calibration_at, calibrate_probe,
+    )
+    from indra_belief.probes.reader import DIRECT_PROBE_ID, ProbeReading
+
+    cal = _calibration_at(DEFAULT_CALIBRATION_PATH)
+    assert cal.probe_ids == (DIRECT_PROBE_ID,)
+    reading = calibrate_probe(
+        ProbeReading(p_raw=float("nan"), delta_logit=1.0),
+        record_id="never-seen", calibration=cal,
+    )
+    assert 0.0 <= reading.p_hat <= 1.0

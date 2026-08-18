@@ -125,8 +125,16 @@ def apply_weights(rows: list[dict], calibration, stats: dict) -> list[dict]:
                 )
                 row = {**row, "weight_of_evidence": reading.weight_of_evidence}
                 stats["n_weighted"] += 1
-            except Exception:
+            except Exception as exc:
                 stats["n_weight_failed"] += 1
+                # The REASON, once. A bare counter hid a total failure behind a
+                # number: an in-call artifact loaded fine and then raised "X
+                # column order does not match probe_ids" on every single row,
+                # and the only symptom was n_weight_failed climbing. One
+                # recorded reason turns "nothing weighted" from a mystery into
+                # a diagnosis.
+                stats.setdefault("first_weight_error",
+                                 f"{type(exc).__name__}: {exc}")
         out.append(row)
     return out
 

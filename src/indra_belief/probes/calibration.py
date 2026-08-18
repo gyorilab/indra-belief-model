@@ -345,7 +345,13 @@ def calibrated_probabilities(
     return model.score(
         values.reshape(-1, 1),
         record_ids=record_ids,
-        probe_ids=CALIBRATED_PROBE_IDS,
+        # The ARTIFACT'S own ids, not the direct probe's. Passing a constant
+        # here meant an in-call artifact loaded fine and then died at score
+        # time -- "X column order does not match probe_ids" -- for every row.
+        # The loader was widened to accept either route's id without this being
+        # widened with it, so the feature was reachable and non-functional, and
+        # `apply_weights`' bare except turned that into a silent counter.
+        probe_ids=model.probe_ids,
     )
 
 
