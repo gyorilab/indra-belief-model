@@ -271,6 +271,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "disconfirm_relnature",
             "disconfirm_relnature_rf",
             "disconfirm_relnature_rf_noconf",
+            "verdict_only",
         ),
         default="baseline",
         help="baseline is the closest current-code path to historical v12; "
@@ -556,6 +557,13 @@ def main() -> int:
                 ),
                 "score": last_result.get("score"),
                 "confidence": last_result.get("confidence"),
+                # The RAW in-call margin. This row list is a whitelist, so a
+                # field absent here is DROPPED -- and a gold run whose margins
+                # were dropped cannot fit the isotonic that is the entire reason
+                # to do a gold run on a new serving stack. Persisted even when
+                # None, so "the reader could not produce one" is distinguishable
+                # from "nobody asked".
+                "probe_delta_logit": last_result.get("probe_delta_logit"),
                 "tier": last_result.get("tier"),
                 "grounding_status": last_result.get("grounding_status"),
                 "provenance_triggered": last_result.get("provenance_triggered"),
@@ -574,6 +582,7 @@ def main() -> int:
             "prediction_correct": None,
             "score": None,
             "confidence": None,
+            "probe_delta_logit": None,
             "tier": "row_error",
             "grounding_status": None,
             "provenance_triggered": None,
