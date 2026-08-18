@@ -33,7 +33,12 @@ from indra_belief.probe_combiner import (
     to_logit,
 )
 from indra_belief.probes.battery import probe_digest
-from indra_belief.probes.reader import DIRECT_PROBE_ID, ProbeReading, read_probe
+from indra_belief.probes.reader import (
+    DIRECT_PROBE_ID,
+    IN_CALL_PROBE_ID,
+    ProbeReading,
+    read_probe,
+)
 
 
 CALIBRATION_FILENAME = "sentence_probe_calibration.json"
@@ -50,7 +55,13 @@ DEFAULT_CALIBRATION_PATH = (
     / "probe_battery"
     / CALIBRATION_FILENAME
 )
+# A calibration artifact carries exactly ONE feature, but it may be either
+# route's reading of it. Kept as a set of ACCEPTED single-id tuples rather than
+# widened to "any id": the check exists to refuse an artifact fitted on some
+# other feature entirely, and dropping it would let a two-probe combiner load
+# into a one-probe call site.
 CALIBRATED_PROBE_IDS = (DIRECT_PROBE_ID,)
+ACCEPTED_PROBE_IDS = ((DIRECT_PROBE_ID,), (IN_CALL_PROBE_ID,))
 
 
 def _validate_probe_profile() -> None:
@@ -266,10 +277,10 @@ def load_calibration(
     with artifact_path.open(encoding="utf-8") as handle:
         payload = json.load(handle)
     calibration = FrozenCombiner.from_dict(payload)
-    if calibration.probe_ids != CALIBRATED_PROBE_IDS:
+    if calibration.probe_ids not in ACCEPTED_PROBE_IDS:
         raise ValueError(
-            "sentence probe calibration must contain exactly "
-            f"{CALIBRATED_PROBE_IDS!r}, got {calibration.probe_ids!r}"
+            "sentence probe calibration must contain exactly one of "
+            f"{ACCEPTED_PROBE_IDS!r}, got {calibration.probe_ids!r}"
         )
     return calibration
 
@@ -299,10 +310,10 @@ def _calibration_or_default(
     resolved = _default_calibration() if calibration is None else calibration
     if not isinstance(resolved, FrozenCombiner):
         raise TypeError("calibration must be a FrozenCombiner")
-    if resolved.probe_ids != CALIBRATED_PROBE_IDS:
+    if resolved.probe_ids not in ACCEPTED_PROBE_IDS:
         raise ValueError(
-            "sentence probe calibration must contain exactly "
-            f"{CALIBRATED_PROBE_IDS!r}, got {resolved.probe_ids!r}"
+            "sentence probe calibration must contain exactly one of "
+            f"{ACCEPTED_PROBE_IDS!r}, got {resolved.probe_ids!r}"
         )
     return resolved
 

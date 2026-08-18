@@ -215,14 +215,58 @@ def test_the_manifest_names_the_configuration_that_produced_the_numbers(shards, 
     )
 
 
-def test_a_missing_results_shard_is_counted_not_silently_skipped(shards, tmp_path):
-    """Silence here would publish a partial table that looks complete."""
+def test_no_readable_results_is_an_error_not_an_empty_table(shards, tmp_path):
+    """CONTRACT CORRECTED. This test previously asserted the opposite -- exit 0
+    with an empty table -- which encoded a silent failure as the requirement.
+
+    The realistic trigger is not a deleted file: output names carry the scoring
+    run's --limit (verdicts-NNNNNN.limit-K.json.gz), so a bridge run that is not
+    told the same --limit misses EVERY shard. That produced a well-formed empty
+    table, a confident manifest, and exit 0 -- a configuration error wearing a
+    success.
+    """
     ind, outd = shards
     (outd / "verdicts-000000.json.gz").unlink()
     out = tmp_path / "beliefs.json"
     proc = _run((ind, outd), out)
-    assert proc.returncode == 0
-    manifest = json.loads(out.with_suffix(".manifest.json").read_text())
-    assert manifest["n_missing_results"] == 1
-    assert manifest["n_statements"] == 0
-    assert json.loads(out.read_text()) == {}
+    assert proc.returncode != 0, "an empty table was published as success"
+    assert "no shard results" in (proc.stdout + proc.stderr)
+    assert not out.exists(), "a refused run still wrote a table"
+
+
+def test_a_limited_scoring_run_is_joinable(shards, tmp_path):
+    """The naming convention that made every lookup miss."""
+    ind, outd = shards
+    (outd / "verdicts-000000.json.gz").rename(outd / "verdicts-000000.limit-2.json.gz")
+    out = tmp_path / "beliefs.json"
+    assert _run((ind, outd), out, "--limit", "2").returncode == 0
+    assert json.loads(out.read_text())
+
+
+def test_a_statement_spanning_two_shards_is_refused_not_merged(shards, tmp_path):
+    """dict.update() would replace a whole-statement belief with one computed
+    from a fraction of its evidence, silently. The invariant holds in today's
+    writer; this script cannot enforce it, so it checks it."""
+    ind, outd = shards
+    import gzip as _gz
+    with _gz.open(ind / "grounded-000001.jsonl.gz", "wt") as fh:
+        fh.write(json.dumps(JOBS[0]) + "\n")          # stmt_hash 100 again
+    with _gz.open(outd / "verdicts-000001.json.gz", "wt") as fh:
+        json.dump({"100": {"1": {"verdict": "correct"}}}, fh)
+    proc = _run((ind, outd), tmp_path / "beliefs.json")
+    assert proc.returncode != 0
+    assert "more than one shard" in (proc.stdout + proc.stderr)
+
+
+def test_a_registered_isotonic_that_weighted_nothing_is_refused(shards, tmp_path):
+    """A table published under a calibrated manifest whose curve touched no row
+    misdescribes every belief in it."""
+    ind, outd = shards
+    with __import__("gzip").open(outd / "verdicts-000000.json.gz", "wt") as fh:
+        json.dump({k: {kk: {"verdict": vv["verdict"]}      # strip every margin
+                       for kk, vv in v.items()}
+                   for k, v in VERDICTS.items()}, fh)
+    proc = _run((ind, outd), tmp_path / "beliefs.json",
+                "--served-model-id", _served_id())
+    assert proc.returncode != 0
+    assert "NOT ONE row was weighted" in (proc.stdout + proc.stderr)

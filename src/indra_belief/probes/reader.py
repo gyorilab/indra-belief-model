@@ -30,6 +30,13 @@ from indra_belief.probes.battery import LABELS, probe_by_id, render
 
 
 DIRECT_PROBE_ID = "pol.verdict_direct"
+# The SAME quantity -- the verdict label's log-odds -- obtained from the scoring
+# call itself rather than from a second forced-position request. It gets its own
+# id because the two routes are NOT interchangeable: measured n=80, the in-call
+# margin runs ~3x wider (median |13.22| against |4.34|), so an artifact fitted on
+# one and applied to the other saturates. The id is what makes that visible in
+# the artifact instead of inferable from where the file happened to come from.
+IN_CALL_PROBE_ID = "pol.verdict_incall"
 
 # The window a probe-capable serving entry must be ABLE to return. vLLM defaults
 # to 20 and stock mlx_lm.server hard-codes 11, so both need raising: vLLM with

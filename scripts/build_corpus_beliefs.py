@@ -147,6 +147,12 @@ def beliefs_for_shard(runner, input_path: Path, results_path: Path, *,
         if row is None:
             stats["n_unscored"] += 1
             continue
+        # A scored row carrying no margin is the signature of a tokenizer whose
+        # label token does not match what the reader scans for (a leading space
+        # or a trailing quote both yield None, silently). On a new serving stack
+        # that can be EVERY row while verdicts land perfectly.
+        if row.get("probe_delta_logit") is None:
+            stats["n_null_margin"] += 1
         by_stmt.setdefault(stmt_hash, []).append(row)
 
     out: dict[str, float] = {}
@@ -175,6 +181,10 @@ def main() -> int:
     ap.add_argument("--served-model-id", default=None,
                     help="override the served id used to resolve the isotonic")
     ap.add_argument("--shard-index", type=int, default=None)
+    ap.add_argument("--limit", type=int, default=None,
+                    help="the --limit the SCORING run used; output filenames carry "
+                         "it (verdicts-NNNNNN.limit-K.json.gz), so omitting it here "
+                         "makes every lookup miss and yields an empty table")
     ap.add_argument("--out", required=True)
     ap.add_argument("--require-calibrated", action="store_true",
                     help="refuse to write an uncalibrated belief table")
@@ -234,19 +244,53 @@ def main() -> int:
 
     stats = {"n_statements": 0, "n_evidence": 0, "n_unscored": 0, "n_weighted": 0,
              "n_weight_failed": 0, "n_shards": 0, "n_missing_results": 0,
-             "weighting": {}}
+             "n_null_margin": 0, "weighting": {}}
     table: dict[str, float] = {}
     for shard in shards:
         index = int(runner.SHARD_RE.search(shard.name).group(1))
-        results_path, _ = runner.output_paths(results_dir, index, None)
+        results_path, _ = runner.output_paths(results_dir, index, args.limit)
         if not results_path.exists():
             stats["n_missing_results"] += 1
             continue
-        table.update(beliefs_for_shard(
+        shard_table = beliefs_for_shard(
             runner, shard, results_path, soft=soft, calibration=calibration,
             priors=RECALIBRATED_PRIORS, stats=stats,
-        ))
+        )
+        # The streaming join rests on "a statement never spans shards" -- true of
+        # today's writer, which commits the open shard before writing an
+        # oversized statement's jobs. It is a CROSS-FILE invariant this script
+        # cannot enforce and dict.update() would violate in silence, replacing a
+        # whole-statement belief with one computed from a fraction of its
+        # evidence. Checked, not assumed.
+        collided = set(shard_table) & set(table)
+        if collided:
+            raise SystemExit(
+                f"{len(collided)} stmt_hash values appear in more than one shard "
+                f"(first: {sorted(collided)[0]}). Merging would silently discard "
+                "the earlier shard's evidence for those statements."
+            )
+        table.update(shard_table)
         stats["n_shards"] += 1
+
+    # A run that found no shard results at all is a configuration error wearing
+    # a successful exit code -- most often a --limit the scoring run used and
+    # this one was not told about. An empty table is never a legitimate answer.
+    if stats["n_shards"] == 0:
+        raise SystemExit(
+            f"no shard results were read ({stats['n_missing_results']} input "
+            f"shards had no matching output in {results_dir}). If the scoring run "
+            "used --limit, pass the same --limit here; the filenames carry it."
+        )
+
+    # An isotonic that was registered but never actually applied produces a table
+    # indistinguishable from a calibrated one, with a manifest naming the curve.
+    if calibration is not None and stats["n_weighted"] == 0:
+        raise SystemExit(
+            f"an isotonic is registered but NOT ONE row was weighted "
+            f"({stats['n_weight_failed']} failed, {stats['n_null_margin']} carried "
+            "no margin). Every belief here is verdict-weighted; publishing it "
+            "under a calibrated manifest would misdescribe the whole table."
+        )
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

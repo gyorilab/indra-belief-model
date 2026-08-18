@@ -781,9 +781,41 @@ def preflight(client, endpoint: str, model_id: str, prompt) -> None:
                 "perfectly healthy.\n  Check that the serving stack supports "
                 "top_logprobs on chat completions."
             )
-        # Not asserted, only reported: a one-token 'ok' has no verdict label, so
-        # a None margin here is expected and says nothing about the real path.
-        _ = label_margin_from_payload(response.json())
+        # A 'logprobs came back' check is NOT enough, and this used to stop
+        # there. The reader locates the margin by the EMITTED TOKEN matching a
+        # label, so a tokenizer that emits " correct" with a leading space, or
+        # "correct\"" with the quote attached, returns None -- silently, per row,
+        # forever. Verdicts still land, the run looks healthy, and 60M margins
+        # are null. MEASURED: both variants return None today.
+        #
+        # So the preflight issues the REAL probe request, the one the scoring
+        # call's read is parsed the same way as, and requires an actual number.
+        from indra_belief.probes.reader import (
+            build_probe_request, probe_reading_from_payload,
+        )
+
+        width = variant.in_call_label_logprobs
+        probe_body = build_probe_request(
+            {"subject": "A", "object": "B", "stmt_type": "Activation",
+             "evidence_text": "A activates B."},
+            model_id=model_id, top_logprobs=width, inline_extra_body=True,
+        )
+        try:
+            probe_response = client.post(endpoint, json=probe_body, timeout=120)
+            probe_response.raise_for_status()
+            margin = probe_reading_from_payload(
+                probe_response.json(), top_k=width).delta_logit
+        except Exception as exc:
+            raise SystemExit(
+                f"[preflight] the server answers, but no label margin could be "
+                f"read from it: {type(exc).__name__}: {exc}\n"
+                "  This is what a tokenizer mismatch looks like. Verdicts would "
+                "still land and every margin would be null,\n"
+                "  which is indistinguishable from a healthy run until the "
+                "calibration fit has nothing to fit on."
+            ) from None
+        print(f"[preflight] label margin readable on this stack "
+              f"(delta_logit {margin:+.3f})", flush=True)
     print(
         f"[preflight] ok — server accepts variant {variant.name!r} "
         f"(reasoning={variant.reasoning_effort or 'default'}, "
