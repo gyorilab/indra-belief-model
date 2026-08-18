@@ -395,7 +395,19 @@ def prepare_statement_jobs(
         user_message = None
         lookup_context = ""
         if needs_llm:
-            user_message = record.format_user_message()
+            # `record.execution_body().render()`, not the removed
+            # `format_user_message()`. a10df62 ("one semantic kernel for the live
+            # and batch scoring paths") split that method in two -- the record
+            # owns the PARTS, `ExecutionBody.render` owns the JOIN -- precisely so
+            # the live and batch paths cannot drift. This builder was not moved
+            # onto it and kept calling the deleted name, so every LLM-bound job
+            # raised AttributeError from that commit onward.
+            #
+            # It went unnoticed because no test called `prepare_statement_jobs`,
+            # and because prepared shards already on disk were built BEFORE the
+            # refactor and still scored fine -- the break only surfaces when
+            # someone regenerates them.
+            user_message = record.execution_body().render()
             if flagged:
                 lookup_context = _lookup_context(record, cache)
                 if lookup_context:
