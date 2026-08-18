@@ -52,6 +52,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -98,6 +99,75 @@ def load_rows(path: Path) -> list[dict]:
                 "verdict": verdict,
                 "margin": float(margin),
             })
+    return rows, skipped
+
+
+def load_rows_from_shards(input_dir: Path, results_dir: Path, labels_path: Path,
+                         limit: int | None = None) -> tuple[list[dict], dict]:
+    """Rows read from what the PRODUCTION path actually produced.
+
+    The alternative -- a gold-eval jsonl -- is fitted on a curated population
+    read by a different script. That leaves POPULATION skew untouched even now
+    that prompt skew is zero, and population skew is not a detail:
+    ``fit_prevalence`` is baked into the artifact and anchors every weight
+    (weight = logit(p_hat) - logit(fit_prevalence)). A curve fitted at
+    prevalence 0.513 and applied to a corpus at 0.70 displaces every weight by
+    +0.88 log-odds, and the isotonic's knots sit where the FIT population's
+    margins fell, not where the corpus's do.
+
+    Joining on ``source_hash``: it is the evidence identity the shard job, the
+    scored cell and the curation all carry, so no positional assumption is
+    needed. A label with no scored row and a scored row with no label are both
+    counted, never silently paired.
+    """
+    import gzip as _gzip
+
+    labels: dict[str, bool] = {}
+    with labels_path.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            gold = row.get("gold_correct")
+            if gold is None and row.get("gold") in {"correct", "incorrect"}:
+                gold = row["gold"] == "correct"
+            source_hash = row.get("source_hash")
+            if gold is None or source_hash in (None, ""):
+                continue
+            labels[str(source_hash)] = bool(gold)
+
+    rows: list[dict] = []
+    skipped = {"no_gold": 0, "no_margin": 0, "no_verdict": 0, "unscored": 0}
+    for shard in sorted(Path(input_dir).glob("grounded-*.jsonl.gz")):
+        index = int(re.search(r"grounded-(\d+)", shard.name).group(1))
+        results = Path(results_dir) / f"verdicts-{index:06d}.json.gz"
+        if not results.exists():
+            continue
+        with _gzip.open(results, "rt", encoding="utf-8") as fh:
+            verdicts = json.load(fh)
+        with _gzip.open(shard, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                job = json.loads(line)
+                source_hash = str(job.get("source_hash"))
+                if source_hash not in labels:
+                    skipped["no_gold"] += 1
+                    continue
+                cell = (verdicts.get(str(job.get("stmt_hash"))) or {}).get(source_hash)
+                if not cell:
+                    skipped["unscored"] += 1
+                    continue
+                if cell.get("verdict") not in {"correct", "incorrect"}:
+                    skipped["no_verdict"] += 1
+                    continue
+                margin = cell.get("probe_delta_logit")
+                if not isinstance(margin, (int, float)) or isinstance(margin, bool):
+                    skipped["no_margin"] += 1
+                    continue
+                rows.append({"record_id": source_hash, "gold": labels[source_hash],
+                             "verdict": cell["verdict"], "margin": float(margin)})
+                if limit and len(rows) >= limit:
+                    return rows, skipped
     return rows, skipped
 
 
@@ -172,7 +242,14 @@ def gate_decision(ci_low: float, brier_incumbent: float,
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--run", required=True, help="gold-eval jsonl with probe_delta_logit")
+    ap.add_argument("--run", help="gold-eval jsonl with probe_delta_logit")
+    # The production-path alternative. Same builder, same runner, same prompt and
+    # transport as the 60M run, and fitted on the population it will score.
+    ap.add_argument("--from-shards", action="store_true",
+                    help="fit from scored SHARDS instead of a gold-eval jsonl")
+    ap.add_argument("--input-dir", help="prepared shards (with --from-shards)")
+    ap.add_argument("--results-dir", help="scored shards (with --from-shards)")
+    ap.add_argument("--gold", help="labels jsonl, joined on source_hash")
     ap.add_argument("--model", required=True)
     ap.add_argument("--served-model-id", required=True)
     ap.add_argument("--variant", default="verdict_only")
@@ -189,7 +266,20 @@ def main() -> int:
     from indra_belief.probe_combiner import fit_combiner
     from indra_belief.scorers.monolithic import scorer as mono
 
-    rows, skipped = load_rows(Path(args.run))
+    if args.from_shards:
+        missing = [f for f in ("input_dir", "results_dir", "gold")
+                   if not getattr(args, f)]
+        if missing:
+            raise SystemExit(f"--from-shards needs --{', --'.join(m.replace('_','-') for m in missing)}")
+        rows, skipped = load_rows_from_shards(
+            Path(args.input_dir), Path(args.results_dir), Path(args.gold))
+        source = f"shards {args.results_dir}"
+    elif args.run:
+        rows, skipped = load_rows(Path(args.run))
+        source = f"gold-eval run {args.run}"
+    else:
+        raise SystemExit("pass --run, or --from-shards with --input-dir/--results-dir/--gold")
+    print(f"  fitting on: {source}")
     if len(rows) < 100:
         raise SystemExit(
             f"only {len(rows)} usable rows (skipped {skipped}); a curve fitted on "
