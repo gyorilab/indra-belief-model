@@ -34,7 +34,7 @@ _FIXED_BEDROCK_RESPONSES_ENDPOINT = (
 
 # Model registry — name → (base_url, model_id, notes)
 LOCAL_MODELS: dict[str, dict] = {
-    "vllm-local": {
+    "vllm-gemma-4-26b": {
         "base_url": "http://127.0.0.1:8000/v1",
         "model_id": "google/gemma-4-26B-A4B-it",
         "reasoning_in_content": False,
@@ -60,7 +60,7 @@ LOCAL_MODELS: dict[str, dict] = {
         # indra_belief.probes.calibration._SENTENCE_CALIBRATIONS.
         "max_top_logprobs": 1024,
     },
-    "ollama-local": {
+    "ollama-gemma-3-27b": {
         "base_url": "http://localhost:11434/v1",
         "model_id": "gemma3:27b",
         "reasoning_in_content": False,
@@ -683,6 +683,21 @@ LOCAL_MODELS: dict[str, dict] = {
 # working. NOTE: cost + call-log key on each entry's `model_id`, NOT this name,
 # so aliasing never affects pricing.
 _MODEL_ALIASES: dict[str, str] = {
+    # WHY THESE TWO WERE RENAMED. A registry key names the SERVING ARCHITECTURE
+    # AND THE MODEL -- bedrock-gemma-4-26b, remote-medpsy-4b, local-gemma-4-31b
+    # -- for 29 of 31 entries. `vllm-local` and `ollama-local` named only the
+    # server, and that is not cosmetic: the belief profile registry
+    # (`calibration_constants._FITTED_CONFIGS`) is keyed on
+    # (registry name, prompt sha) with NO served-model id, so the NAME is the
+    # only thing tying a fitted profile to the weights it was fitted on. Serve a
+    # different model on the same vLLM and a profile registered under a
+    # server-shaped name follows it silently.
+    #
+    # The isotonic registry does carry the served id, so it is guarded; the
+    # profile registry is not, which is exactly where a weights-agnostic name
+    # must not appear.
+    "vllm-local": "vllm-gemma-4-26b",
+    "ollama-local": "ollama-gemma-3-27b",
     "qwen-thinker": "local-qwen3.5-vl-122b-a10b",
     "minimax-local": "local-minimax-m2.7",
     "gemma-moe": "local-gemma-4-26b",

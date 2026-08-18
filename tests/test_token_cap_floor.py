@@ -68,8 +68,22 @@ def test_no_registry_entry_disappears_silently():
         "model, update this number. If you did not, an entry was deleted — check "
         "for an edit that matched the wrong anchor."
     )
-    for required in ("local-gemma-4-26b", "local-gemma-4-31b", "vllm-local"):
+    for required in ("local-gemma-4-26b", "local-gemma-4-31b", "vllm-gemma-4-26b"):
         assert required in LOCAL_MODELS, f"{required} vanished from the registry"
+
+    # A RENAME must stay reachable under the old name. `vllm-local` was renamed
+    # to `vllm-gemma-4-26b` because the belief profile registry is keyed on the
+    # registry name with no served-model id, so a name that identifies only the
+    # server lets a fitted profile follow that server onto different weights.
+    # The correction must not break a collaborator's existing command line, and
+    # every prior rename in this registry was alias-preserving.
+    from indra_belief.model_client import canonical_model_name
+
+    for old_name, canonical in (("vllm-local", "vllm-gemma-4-26b"),
+                                ("ollama-local", "ollama-gemma-3-27b")):
+        assert canonical_model_name(old_name) == canonical, (
+            f"{old_name} no longer resolves; a rename dropped its alias"
+        )
 
 
 @pytest.mark.parametrize("name,cap", _CAPPED, ids=[n for n, _ in _CAPPED])

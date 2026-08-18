@@ -43,7 +43,7 @@ nothing.
 USAGE
     python scripts/fit_incall_calibration.py \
         --run data/results/vllm_verdict_only_gold.jsonl \
-        --model vllm-local --served-model-id google/gemma-4-26B-A4B-it \
+        --model vllm-gemma-4-26b --served-model-id google/gemma-4-26B-A4B-it \
         --out data/probe_battery/incall_calibration_vllm.json
 """
 from __future__ import annotations

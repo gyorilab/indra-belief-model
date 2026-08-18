@@ -197,7 +197,7 @@ def main() -> int:
                     help="prepared grounding shards (grounded-*.jsonl.gz)")
     ap.add_argument("--results-dir", required=True,
                     help="scored shards from run_vllm_processed_shards.py")
-    ap.add_argument("--model", default="vllm-local")
+    ap.add_argument("--model", default="vllm-gemma-4-26b")
     ap.add_argument("--variant", default=None,
                     help="scoring variant the run used; defaults to the runner's")
     ap.add_argument("--served-model-id", default=None,

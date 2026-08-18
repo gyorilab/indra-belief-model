@@ -42,7 +42,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 DEFAULT_INPUT_DIR = Path("/scratch/h.yan/data/processed_grounding_shards")
 DEFAULT_OUTPUT_DIR = Path("/scratch/h.yan/data/processed_model_results")
-DEFAULT_MODEL = "vllm-local"
+DEFAULT_MODEL = "vllm-gemma-4-26b"
 # NO CoT at corpus scale. `verdict_only` is a coherent set — verdict-first
 # prompt, thinking suppressed, temperature 0 — and all three must hold together:
 # MEASURED, thinking off with the DELIBERATIVE prompt puts the verdict 56 tokens
@@ -882,8 +882,15 @@ def main() -> int:
     except ImportError as exc:
         raise SystemExit("httpx is required: python -m pip install httpx") from exc
 
-    from indra_belief.model_client import LOCAL_MODELS
+    from indra_belief.model_client import LOCAL_MODELS, canonical_model_name
 
+    # CANONICALISE FIRST. The registry resolves aliases and this lookup did not,
+    # so a renamed entry -- `vllm-local` -> `vllm-gemma-4-26b` -- would reject a
+    # collaborator's existing command line with "unknown model registry entry"
+    # while the alias it was renamed under resolved perfectly everywhere else.
+    # The calibration profile is keyed on the CANONICAL name too, so resolving
+    # here is what makes an aliased run and a canonical run the same run.
+    args.model = canonical_model_name(args.model)
     if args.model not in LOCAL_MODELS:
         raise SystemExit(f"unknown model registry entry: {args.model}")
     model_config = LOCAL_MODELS[args.model]

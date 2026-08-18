@@ -3,7 +3,7 @@
 > **Status: pipeline complete and rehearsed end to end 2026-08-18; the
 > production calibration is NOT yet fitted.** Every stage below has been run
 > against real production statements on a local MLX gemma-4-26b. No profile
-> exists for `vllm-local`, so a corpus run today produces valid verdicts and
+> exists for `vllm-gemma-4-26b`, so a corpus run today produces valid verdicts and
 > HARD-GATE beliefs. Fitting that profile is stage 3, and it is the one stage
 > that must run on the target hardware.
 
@@ -89,7 +89,7 @@ restart, and the gzip result is written to a temp file then atomically renamed.
 PYTHONPATH=src python scripts/fit_incall_calibration.py --from-shards \
     --input-dir gold_shards --results-dir gold_results \
     --gold data/benchmark/eval_curation_v1.jsonl \
-    --model vllm-local --served-model-id google/gemma-4-26B-A4B-it \
+    --model vllm-gemma-4-26b --served-model-id google/gemma-4-26B-A4B-it \
     --out incall_vllm.json
 ```
 
@@ -139,7 +139,7 @@ A FAIL is a result. Send it.
 ```bash
 PYTHONPATH=src python scripts/build_corpus_beliefs.py \
     --input-dir shards --results-dir results \
-    --model vllm-local --out beliefs.json
+    --model vllm-gemma-4-26b --out beliefs.json
 ```
 
 Add `--served-model-id google/gemma-4-26B-A4B-it` once the isotonic is
@@ -173,7 +173,7 @@ Each of these once produced a well-formed artifact and a zero exit code.
 
 - **No test covers the shipping configuration.** Every test of the logit path
   uses the local MLX reader, the only one with both artifacts registered. The
-  first real exercise of `vllm-local` + `verdict_only` is the run itself.
+  first real exercise of `vllm-gemma-4-26b` + `verdict_only` is the run itself.
 - **Gold rows inside the corpus keep verdict weights.** The combiner refuses to
   score a record it was fitted on. Correct, counted, and negligible against 60M.
 - **The labelled sets are curator-selected**, so `fit_prevalence` is the curated

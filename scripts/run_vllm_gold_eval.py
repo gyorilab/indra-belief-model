@@ -21,19 +21,19 @@ Small smoke test::
 
     PYTHONPATH=src python scripts/run_vllm_gold_eval.py \
       --gold data/benchmark/eval_curation_v1.jsonl \
-      --model vllm-local --variant baseline --workers 8 --limit 20
+      --model vllm-gemma-4-26b --variant baseline --workers 8 --limit 20
 
 Resume the same output (the default behavior)::
 
     PYTHONPATH=src python scripts/run_vllm_gold_eval.py \
       --gold data/benchmark/eval_curation_v1.jsonl \
-      --model vllm-local --variant baseline --workers 16
+      --model vllm-gemma-4-26b --variant baseline --workers 16
 
 Run the legacy large holdout::
 
     PYTHONPATH=src python scripts/run_vllm_gold_eval.py \
       --gold data/benchmark/holdout_large.jsonl \
-      --model vllm-local --variant baseline --workers 16 \
+      --model vllm-gemma-4-26b --variant baseline --workers 16 \
       --output data/results/vllm_baseline_holdout_large.jsonl
 """
 from __future__ import annotations
@@ -252,7 +252,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         help="Full INDRA benchmark corpus used to recover native objects/db_refs.",
     )
-    parser.add_argument("--model", default="vllm-local")
+    parser.add_argument("--model", default="vllm-gemma-4-26b")
     parser.add_argument(
         "--base-url",
         default=None,
@@ -341,7 +341,14 @@ def main() -> int:
     )
 
     from indra_belief.data.corpus import CorpusIndex
-    from indra_belief.model_client import LOCAL_MODELS, ModelClient
+    from indra_belief.model_client import (
+        LOCAL_MODELS, ModelClient, canonical_model_name,
+    )
+
+    # Resolved before the lookup, so a renamed entry stays reachable under its
+    # old name and an aliased run is byte-identical to a canonical one -- the
+    # calibration profile is keyed on the canonical name.
+    args.model = canonical_model_name(args.model)
     from indra_belief.scorers.monolithic import scorer as mono
 
     if args.model not in LOCAL_MODELS:
