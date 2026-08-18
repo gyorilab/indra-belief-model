@@ -216,6 +216,7 @@ def load_rows_from_shards(input_dir: Path, results_dir: Path, labels_path: Path,
                 seen_pairs.add(key)
                 rows.append({"record_id": f"{stmt_hash}:{source_hash}",
                              "gold": labels[key],
+                             "source_api": job.get("source_api"),
                              "verdict": cell["verdict"], "margin": float(margin)})
                 if limit and len(rows) >= limit:
                     return rows, skipped
@@ -340,6 +341,12 @@ def main() -> int:
     # different partition dissolved (deliberation length; 15 of 16 probes), and
     # in both cases the in-sample picture looked fine. So the gate reads the
     # DISTRIBUTION over splits, not a single lucky one, and reports the worst.
+    # Only available from the shard path; a gold-eval jsonl carries no
+    # source_api, and an absent mapping means the floor is simply not applied
+    # rather than applied wrongly with a default.
+    source_api_of = {r["record_id"]: r.get("source_api") for r in rows
+                     if r.get("source_api")}
+
     def evaluate(seed: int):
         fit_rows, held_rows = split(rows, args.holdout_frac, seed)
         if len(held_rows) < 30 or len({r["gold"] for r in held_rows}) < 2:
@@ -371,6 +378,25 @@ def main() -> int:
         eps = 1e-6
         candidate = np.log(np.clip(p_hat, eps, 1 - eps)
                            / np.clip(1 - p_hat, eps, 1 - eps)) - math.log(base / (1 - base))
+        # FLOORED, because production floors. `probe_weight` applies
+        # max(weight, source_logodds) to a confirming reading so a generic
+        # reader cannot drag a well-curated source below its own track record
+        # (evidence_weights.py:106). Scoring the un-floored weight is the same
+        # error as scoring the additive composition: a gate must evaluate the
+        # arithmetic that runs.
+        #
+        # MEASURED on this gold set the floor binds on 0 of 74 held-out rows, so
+        # it changes nothing here -- but the corpus source mix is not the gold
+        # source mix, and a gate that is right by accident is not right.
+        if source_api_of:
+            from indra_belief.evidence_weights import probe_weight, source_logodds_for
+            from indra_belief.noise_model import RECALIBRATED_PRIORS
+
+            candidate = np.asarray([
+                probe_weight(float(w), source_logodds_for(
+                    source_api_of.get(r["record_id"]), RECALIBRATED_PRIORS))
+                for w, r in zip(candidate, held_rows)
+            ])
 
         # Paired bootstrap: the two scores are read off the SAME rows, so an
         # unpaired interval would be far too wide.
@@ -433,7 +459,22 @@ def main() -> int:
     g = gate_decision(med("ci_low"), med("brier_inc"), med("brier_can"),
                       med("rel_inc"), med("rel_can"), med("res_inc"), med("res_can"))
     discriminates, scores_better, verdict_go = g["ranking"], g["scoring"], g["pass"]
-    combiner = results[0]["combiner"]
+    # THE SHIPPED CURVE IS REFITTED ON ALL ROWS. Previously this shipped
+    # `results[0]["combiner"]` -- seed 0's fit split -- while the decision was
+    # made from the median over every split, so the artifact that went out was
+    # not the artifact that was gated, and it was fitted on 70% of the data for
+    # no reason. The reseeds establish that the RELATIONSHIP generalises; once
+    # that is established the best estimate of it uses everything.
+    #
+    # The cost is that every fitted row is in-sample, so the combiner will
+    # refuse to score them later. That is correct and it is small: the fit set
+    # is the gold subset, and against 60M corpus rows only those are refused.
+    combiner = fit_combiner(
+        np.asarray([[r["margin"]] for r in rows], dtype=float),
+        np.asarray([r["gold"] for r in rows], dtype=bool),
+        probe_ids=[PROBE_ID],
+        record_ids=[r["record_id"] for r in rows],
+    )
     b_inc, b_can = med("brier_inc"), med("brier_can")
     e_inc, e_can = med("ece_inc"), med("ece_can")
 

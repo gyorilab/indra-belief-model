@@ -810,34 +810,54 @@ def preflight(client, endpoint: str, model_id: str, prompt) -> None:
         # forever. Verdicts still land, the run looks healthy, and 60M margins
         # are null. MEASURED: both variants return None today.
         #
-        # So the preflight issues the REAL probe request, the one the scoring
-        # call's read is parsed the same way as, and requires an actual number.
-        from indra_belief.probes.reader import (
-            build_probe_request, probe_reading_from_payload,
-        )
-
-        width = variant.in_call_label_logprobs
-        probe_body = build_probe_request(
-            {"subject": "A", "object": "B", "stmt_type": "Activation",
-             "evidence_text": "A activates B."},
-            model_id=model_id, top_logprobs=width, inline_extra_body=True,
-        )
+        # So the preflight issues a REAL SCORING REQUEST and parses it with the
+        # function the runner uses, `label_margin_from_payload`.
+        #
+        # An earlier version of this check issued `build_probe_request` instead
+        # and claimed it was "parsed the same way". It is not, and the
+        # difference is exactly the hazard: the probe route forces the label to
+        # generated position 0 with a prefill and looks it up among that
+        # position's alternatives, so it CANNOT exhibit the emitted-token
+        # mismatch. The in-call route scans for the first position whose EMITTED
+        # token is a label, which is what a leading space or an attached quote
+        # breaks. The check validated the one route that could not fail and left
+        # the one that does unprotected.
+        job = {
+            "stmt_type": "Activation",
+            "user_message": "CLAIM: A [Activation] B\nEVIDENCE: A activates B.",
+        }
         try:
-            probe_response = client.post(endpoint, json=probe_body, timeout=120)
+            system, messages = prompt.request(job)
+            probe_body = {
+                "model": model_id,
+                "messages": [{"role": "system", "content": system}] + messages,
+                "max_tokens": 64,
+                "temperature": body["temperature"],
+                "logprobs": True,
+                "top_logprobs": variant.in_call_label_logprobs,
+                **reasoning_wire_keys(variant.reasoning_effort),
+            }
+            probe_response = client.post(endpoint, json=probe_body, timeout=180)
             probe_response.raise_for_status()
-            margin = probe_reading_from_payload(
-                probe_response.json(), top_k=width).delta_logit
+            margin = label_margin_from_payload(probe_response.json())
         except Exception as exc:
             raise SystemExit(
-                f"[preflight] the server answers, but no label margin could be "
-                f"read from it: {type(exc).__name__}: {exc}\n"
-                "  This is what a tokenizer mismatch looks like. Verdicts would "
-                "still land and every margin would be null,\n"
-                "  which is indistinguishable from a healthy run until the "
-                "calibration fit has nothing to fit on."
+                f"[preflight] a real scoring request failed: "
+                f"{type(exc).__name__}: {exc}"
             ) from None
-        print(f"[preflight] label margin readable on this stack "
-              f"(delta_logit {margin:+.3f})", flush=True)
+        if margin is None:
+            raise SystemExit(
+                "[preflight] a real scoring call returned logprobs, but NO label "
+                "margin could be read from it.\n  That is what a tokenizer "
+                "mismatch looks like: the reader locates the margin by the\n"
+                "  EMITTED token matching a label, and a leading space or an "
+                "attached quote yields None.\n  Verdicts would still land, every "
+                "margin would be null, and the run would look healthy\n  until "
+                "the calibration fit had nothing to fit on."
+            )
+        print(f"[preflight] in-call label margin readable on this stack "
+              f"(delta_logit {margin:+.3f}) — the same read the run uses",
+              flush=True)
     print(
         f"[preflight] ok — server accepts variant {variant.name!r} "
         f"(reasoning={variant.reasoning_effort or 'default'}, "
