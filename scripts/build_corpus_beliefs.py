@@ -270,8 +270,8 @@ def main() -> int:
     table: dict[str, float] = {}
     for shard in shards:
         index = int(runner.SHARD_RE.search(shard.name).group(1))
-        results_path, _ = runner.output_paths(results_dir, index, args.limit)
-        if not results_path.exists():
+        results_path = runner.resolve_results_path(results_dir, index, args.limit)
+        if results_path is None:
             stats["n_missing_results"] += 1
             continue
         shard_table = beliefs_for_shard(

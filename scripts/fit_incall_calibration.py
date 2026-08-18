@@ -122,7 +122,30 @@ def load_rows_from_shards(input_dir: Path, results_dir: Path, labels_path: Path,
     """
     import gzip as _gzip
 
-    labels: dict[str, bool] = {}
+    def _runner():
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "_shard_runner_for_fit", ROOT / "scripts/run_vllm_processed_shards.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    # KEYED ON THE PAIR, not the evidence. One Evidence can support several
+    # statements, so source_hash alone is not unique -- MEASURED on
+    # eval_curation_v1: 1606 rows, 1604 distinct source_hash, and one of the two
+    # duplicates carries DISAGREEING gold labels. A dict keyed on source_hash
+    # resolves that curator disagreement by file order, silently, which is the
+    # same defect shape as the paired-by-file-order bug in the v2 gold.
+    #
+    # The label is a judgement about a CLAIM against an EVIDENCE, so the pair is
+    # the unit, and a pair whose labels conflict is dropped rather than decided
+    # by whichever line came last.
+    rows: list[dict] = []
+    skipped = {"no_gold": 0, "no_margin": 0, "no_verdict": 0, "unscored": 0,
+               "no_results_file": 0, "conflicting_labels": 0, "duplicate_pair": 0}
+    seen_pairs: set[tuple[str, str]] = set()
+    labels: dict[tuple[str, str], bool] = {}
+    conflicting: set[tuple[str, str]] = set()
     with labels_path.open() as fh:
         for line in fh:
             line = line.strip()
@@ -133,16 +156,26 @@ def load_rows_from_shards(input_dir: Path, results_dir: Path, labels_path: Path,
             if gold is None and row.get("gold") in {"correct", "incorrect"}:
                 gold = row["gold"] == "correct"
             source_hash = row.get("source_hash")
-            if gold is None or source_hash in (None, ""):
+            stmt_hash = row.get("matches_hash", row.get("stmt_hash"))
+            if gold is None or source_hash in (None, "") or stmt_hash in (None, ""):
                 continue
-            labels[str(source_hash)] = bool(gold)
+            key = (str(stmt_hash), str(source_hash))
+            if key in labels and labels[key] != bool(gold):
+                conflicting.add(key)
+            labels[key] = bool(gold)
+    for key in conflicting:
+        labels.pop(key, None)
+    skipped["conflicting_labels"] = len(conflicting)
 
-    rows: list[dict] = []
-    skipped = {"no_gold": 0, "no_margin": 0, "no_verdict": 0, "unscored": 0}
     for shard in sorted(Path(input_dir).glob("grounded-*.jsonl.gz")):
         index = int(re.search(r"grounded-(\d+)", shard.name).group(1))
-        results = Path(results_dir) / f"verdicts-{index:06d}.json.gz"
-        if not results.exists():
+        # Resolved, not reconstructed: output names carry the scoring run's
+        # --limit, and rebuilding the unlimited name misses every shard and
+        # reports "0 usable rows" as though the data were bad rather than
+        # unfound.
+        results = _runner().resolve_results_path(Path(results_dir), index)
+        if results is None:
+            skipped["no_results_file"] += 1
             continue
         with _gzip.open(results, "rt", encoding="utf-8") as fh:
             verdicts = json.load(fh)
@@ -150,10 +183,12 @@ def load_rows_from_shards(input_dir: Path, results_dir: Path, labels_path: Path,
             for line in fh:
                 job = json.loads(line)
                 source_hash = str(job.get("source_hash"))
-                if source_hash not in labels:
+                stmt_hash = str(job.get("stmt_hash"))
+                key = (stmt_hash, source_hash)
+                if key not in labels:
                     skipped["no_gold"] += 1
                     continue
-                cell = (verdicts.get(str(job.get("stmt_hash"))) or {}).get(source_hash)
+                cell = (verdicts.get(stmt_hash) or {}).get(source_hash)
                 if not cell:
                     skipped["unscored"] += 1
                     continue
@@ -164,7 +199,23 @@ def load_rows_from_shards(input_dir: Path, results_dir: Path, labels_path: Path,
                 if not isinstance(margin, (int, float)) or isinstance(margin, bool):
                     skipped["no_margin"] += 1
                     continue
-                rows.append({"record_id": source_hash, "gold": labels[source_hash],
+                # The record id is the PAIR too. The combiner requires unique
+                # ids and refuses duplicates outright, so a bare source_hash
+                # crashes the fit the moment one evidence supports two
+                # statements -- which it did, on the first full-corpus run.
+                # One READING per pair. The combiner requires unique record ids
+                # and refuses duplicates outright, and a pair fitted twice would
+                # weigh that evidence double in the curve. The corpus legitimately
+                # repeats a pair (eval_curation_v1: 1606 entries, 1604 distinct
+                # pairs), and the scoring path is deterministic -- verified
+                # 290/290 identical margins across two runs -- so the second copy
+                # carries no new information.
+                if key in seen_pairs:
+                    skipped["duplicate_pair"] += 1
+                    continue
+                seen_pairs.add(key)
+                rows.append({"record_id": f"{stmt_hash}:{source_hash}",
+                             "gold": labels[key],
                              "verdict": cell["verdict"], "margin": float(margin)})
                 if limit and len(rows) >= limit:
                     return rows, skipped
@@ -259,6 +310,13 @@ def main() -> int:
         raise SystemExit("pass --run, or --from-shards with --input-dir/--results-dir/--gold")
     print(f"  fitting on: {source}")
     if len(rows) < 100:
+        if skipped.get("no_results_file"):
+            raise SystemExit(
+                f"no scored output was found for {skipped['no_results_file']} "
+                "shard(s). Either the scoring run has not been done, or this "
+                "directory holds two generations of the same shard and the "
+                "ambiguity was refused rather than guessed."
+            )
         raise SystemExit(
             f"only {len(rows)} usable rows (skipped {skipped}); a curve fitted on "
             "this little would be noise wearing a calibration's clothes"

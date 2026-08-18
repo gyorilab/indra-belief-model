@@ -127,11 +127,13 @@ def shards(tmp_path):
             # s4 absent entirely: scored nothing
         }, fh)
     labels = tmp_path / "gold.jsonl"
+    # Keyed on the PAIR. One Evidence can support several statements, so
+    # source_hash alone is not a key -- see the conflicting-label test below.
     labels.write_text("".join(json.dumps(r) + "\n" for r in [
-        {"source_hash": "s1", "gold": "correct"},
-        {"source_hash": "s2", "gold": "incorrect"},
-        {"source_hash": "s3", "gold": "incorrect"},
-        {"source_hash": "s4", "gold": "correct"},
+        {"matches_hash": "10", "source_hash": "s1", "gold": "correct"},
+        {"matches_hash": "10", "source_hash": "s2", "gold": "incorrect"},
+        {"matches_hash": "20", "source_hash": "s3", "gold": "incorrect"},
+        {"matches_hash": "30", "source_hash": "s4", "gold": "correct"},
     ]))
     return ind, outd, labels
 
@@ -140,14 +142,14 @@ def test_rows_join_on_source_hash_not_position(shards):
     ind, outd, labels = shards
     rows, _ = fit.load_rows_from_shards(ind, outd, labels)
     by_id = {r["record_id"]: r for r in rows}
-    assert by_id["s1"]["margin"] == 8.0 and by_id["s1"]["gold"] is True
-    assert by_id["s3"]["margin"] == 2.0 and by_id["s3"]["gold"] is False
+    assert by_id["10:s1"]["margin"] == 8.0 and by_id["10:s1"]["gold"] is True
+    assert by_id["20:s3"]["margin"] == 2.0 and by_id["20:s3"]["gold"] is False
 
 
 def test_a_scored_row_without_a_margin_is_counted_not_imputed(shards):
     ind, outd, labels = shards
     rows, skipped = fit.load_rows_from_shards(ind, outd, labels)
-    assert "s2" not in {r["record_id"] for r in rows}
+    assert "10:s2" not in {r["record_id"] for r in rows}
     assert skipped["no_margin"] == 1
 
 
@@ -163,7 +165,7 @@ def test_an_unscored_evidence_is_counted_separately_from_a_missing_label(shards)
 def test_a_label_with_no_scored_row_never_becomes_a_row(shards):
     ind, outd, labels = shards
     rows, _ = fit.load_rows_from_shards(ind, outd, labels)
-    assert "s4" not in {r["record_id"] for r in rows}
+    assert "30:s4" not in {r["record_id"] for r in rows}
 
 
 def test_gold_is_read_from_either_label_spelling(tmp_path, shards):
@@ -171,6 +173,69 @@ def test_gold_is_read_from_either_label_spelling(tmp_path, shards):
     tree; a loader that understood only one would silently fit on a subset."""
     ind, outd, _ = shards
     labels = tmp_path / "alt.jsonl"
-    labels.write_text(json.dumps({"source_hash": "s1", "gold_correct": True}) + "\n")
+    labels.write_text(json.dumps(
+        {"matches_hash": "10", "source_hash": "s1", "gold_correct": True}) + "\n")
     rows, _ = fit.load_rows_from_shards(ind, outd, labels)
-    assert [r["record_id"] for r in rows] == ["s1"] and rows[0]["gold"] is True
+    assert [r["record_id"] for r in rows] == ["10:s1"] and rows[0]["gold"] is True
+
+
+# ── the join key is the PAIR, and that is not a detail ────────────────────────
+#
+# MEASURED on eval_curation_v1: 1606 gold rows, 1604 distinct source_hash, and
+# ONE of the two duplicates carries disagreeing labels. A dict keyed on
+# source_hash resolves that curator disagreement by file order -- the same shape
+# as the paired-by-file-order defect found in the v2 gold. The combiner also
+# refuses duplicate record ids outright, so the bare key crashed the fit the
+# first time a full corpus was run through it.
+
+def test_the_same_evidence_under_two_statements_stays_two_rows(tmp_path):
+    ind, outd = tmp_path / "in", tmp_path / "out"
+    ind.mkdir(); outd.mkdir()
+    with gzip.open(ind / "grounded-000000.jsonl.gz", "wt") as fh:
+        for stmt in ("10", "20"):
+            fh.write(json.dumps({
+                "job_id": f"{stmt}:0", "input_row_index": 0, "stmt_hash": stmt,
+                "source_hash": "shared", "source_api": "reach",
+                "needs_llm": True, "tier1_result": None}) + "\n")
+    with gzip.open(outd / "verdicts-000000.json.gz", "wt") as fh:
+        json.dump({"10": {"shared": {"verdict": "correct", "probe_delta_logit": 5.0}},
+                   "20": {"shared": {"verdict": "incorrect", "probe_delta_logit": -5.0}}}, fh)
+    labels = tmp_path / "g.jsonl"
+    labels.write_text("".join(json.dumps(r) + "\n" for r in [
+        {"matches_hash": "10", "source_hash": "shared", "gold": "correct"},
+        {"matches_hash": "20", "source_hash": "shared", "gold": "incorrect"},
+    ]))
+    rows, _ = fit.load_rows_from_shards(ind, outd, labels)
+    assert {r["record_id"] for r in rows} == {"10:shared", "20:shared"}, (
+        "one evidence supporting two statements collapsed to a single reading"
+    )
+    assert len({r["record_id"] for r in rows}) == len(rows), "ids must be unique"
+
+
+def test_a_pair_whose_labels_conflict_is_dropped_not_decided_by_file_order(shards, tmp_path):
+    ind, outd, _ = shards
+    labels = tmp_path / "conflict.jsonl"
+    labels.write_text("".join(json.dumps(r) + "\n" for r in [
+        {"matches_hash": "10", "source_hash": "s1", "gold": "correct"},
+        {"matches_hash": "10", "source_hash": "s1", "gold": "incorrect"},
+    ]))
+    rows, skipped = fit.load_rows_from_shards(ind, outd, labels)
+    assert rows == [], "an unresolved curator disagreement was silently resolved"
+    assert skipped["conflicting_labels"] == 1
+
+
+def test_a_pair_repeated_in_the_corpus_is_read_once(shards, tmp_path):
+    """The scoring path is deterministic (verified 290/290 identical margins
+    across two runs), so a repeated pair carries no new information and would
+    only weigh that evidence double in the fitted curve."""
+    ind, outd, labels = shards
+    with gzip.open(ind / "grounded-000001.jsonl.gz", "wt") as fh:
+        fh.write(json.dumps({
+            "job_id": "0:0", "input_row_index": 0, "stmt_hash": "10",
+            "source_hash": "s1", "source_api": "reach",
+            "needs_llm": True, "tier1_result": None}) + "\n")
+    with gzip.open(outd / "verdicts-000001.json.gz", "wt") as fh:
+        json.dump({"10": {"s1": {"verdict": "correct", "probe_delta_logit": 8.0}}}, fh)
+    rows, skipped = fit.load_rows_from_shards(ind, outd, labels)
+    assert [r["record_id"] for r in rows].count("10:s1") == 1
+    assert skipped["duplicate_pair"] == 1

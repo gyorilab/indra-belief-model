@@ -86,6 +86,28 @@ def valid_result(row: dict[str, Any] | None) -> bool:
     )
 
 
+def resolve_results_path(output_dir: Path, shard_index: int,
+                        limit: int | None = None) -> Path | None:
+    """Find the scored file for a shard, whatever --limit the run used.
+
+    The canonical resolver, because reconstructing this name from a remembered
+    --limit has now failed twice in two different consumers. Output names carry
+    the limit (`verdicts-000000.limit-400.json.gz`), so a reader that rebuilds
+    the unlimited name misses EVERY shard -- and both times the symptom was a
+    clean exit over an empty result rather than an error.
+
+    Exact match first; failing that, exactly one candidate for this shard index
+    is accepted and anything ambiguous is refused by returning None, so a
+    directory holding two generations of the same shard cannot be joined
+    silently against the wrong one.
+    """
+    exact, _ = output_paths(output_dir, shard_index, limit)
+    if exact.exists():
+        return exact
+    candidates = sorted(output_dir.glob(f"verdicts-{shard_index:06d}*.json.gz"))
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def output_paths(
     output_dir: Path,
     shard_index: int,
