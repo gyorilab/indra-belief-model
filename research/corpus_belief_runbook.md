@@ -51,7 +51,7 @@ From the production dump, or from a labelled corpus for stage 3:
 
 ```bash
 PYTHONPATH=src python scripts/build_processed_grounding_shards.py \
-    --from-corpus-json data/corpora/eval_curation_v1_statements.json \
+    --from-corpus-json data/corpora/external_curator_gold_v2_statements.json \
     --output-dir gold_shards
 ```
 
@@ -85,10 +85,44 @@ restart, and the gzip result is written to a temp file then atomically renamed.
 
 ## 3. Calibrate — the stage that must run on the target stack
 
+### Which dataset
+
+**Fit on `external_curator_gold_v2`** (n=1084, 542/542, 27 curators, built
+2026-08-18). **Validate on `external_curator_gold_v1`** (n=578) and
+`eval_curation_v1` (n=1606); all three are mutually disjoint under BOTH the
+pa_hash and matches_hash identities.
+
+The choice is about POPULATION, and the belief distribution of the underlying
+statements is the reason:
+
+| set | median INDRA belief | below 0.65 | at exactly 1.0 |
+|---|---|---|---|
+| `eval_curation_v1` | 0.9996 | 5.7% | 13.1% |
+| `external_curator_gold_v2` | 0.5932 | 59.0% | 0.0% |
+
+Neither set is thresholded on belief — `eval_curation_v1` reaches down to 0.3195
+— but it is overwhelmingly statements INDRA already believes, which is not what
+a uniform draw from the corpus looks like. The corpus is dominated by the
+low-evidence tail, and that is the region `external_curator_gold_v2` occupies.
+
+It was built with `scripts/build_multicurator_gold.py --cap 200 --name
+external_curator_gold_v2`. The cap is a real trade and 200 is where it was set:
+the top curator contributes 20% of rows at cap 100, 24% at 200 and 32% at 400.
+Above 200 the set starts belonging to one curator.
+
+KNOWN LIMIT: every labelled set we hold is balanced 1:1 by construction, so
+`fit_prevalence` will be about 0.5 whichever is used, and the corpus base rate
+is not 0.5. That displaces every weight uniformly. It is correctable after the
+fact -- from the corpus verdict rate and the fitted sensitivity and
+false-positive rate -- and no dataset choice fixes it, because the two
+corpus-representative samples we hold are unlabelled.
+
+
+
 ```bash
 PYTHONPATH=src python scripts/fit_incall_calibration.py --from-shards \
     --input-dir gold_shards --results-dir gold_results \
-    --gold data/benchmark/eval_curation_v1.jsonl \
+    --gold data/benchmark/external_curator_gold_v2.jsonl \
     --model vllm-gemma-4-26b --served-model-id google/gemma-4-26B-A4B-it \
     --out incall_vllm.json
 ```
