@@ -5,6 +5,12 @@ Written 2026-08-07. Ben Gyori named two domains where bulk statements exist —
 query statements. This document sizes all three against the actual INDRA stack, states
 what we already have, and names what has to be decided before anything is built.
 
+> **Since written:** the corpus-scale path this document sizes now exists end to
+> end — prepare, score, calibrate, believe — and its operating procedure is
+> `research/corpus_belief_runbook.md`. That runbook supersedes this document on
+> HOW to run the bulk path; this one remains the argument for WHY, and for the
+> realtime question it is still the only treatment of.
+
 **How to read the evidence.** Every claim is marked:
 
 * **[M]** measured here, with the command or artifact that produced it.

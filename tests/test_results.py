@@ -24,6 +24,15 @@ from indra_belief.results import (
     split_preview,
     write_run_export,
 )
+from indra_belief.probes.calibration import (
+    CALIBRATION_FILENAME,
+    CALIBRATION_MODEL,
+    CALIBRATION_MODEL_ID,
+    CALIBRATION_PROBE_DIGEST,
+    DEFAULT_CALIBRATION_PATH,
+    SENTENCE_SCORE_CONTRACT_VERSION,
+    SENTENCE_SCORE_KIND,
+)
 
 
 def test_bucket_partition_precedence():
@@ -56,6 +65,25 @@ def test_split_preview_validates_against_text_len():
 def _write_run(tmp_path, rows):
     p = tmp_path / "run.jsonl"
     p.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    p.with_suffix(".meta.json").write_text(json.dumps({
+        "sentence_score": {
+            "status": "enabled",
+            "contract_version": SENTENCE_SCORE_CONTRACT_VERSION,
+            "grain": "sentence",
+            "kind": SENTENCE_SCORE_KIND,
+            "calibration_model": CALIBRATION_MODEL,
+            "calibration_model_id": CALIBRATION_MODEL_ID,
+            "probe_id": "pol.verdict_direct",
+            "probe_digest": CALIBRATION_PROBE_DIGEST,
+            "calibration_artifact": CALIBRATION_FILENAME,
+            "calibration_artifact_sha256": hashlib.sha256(
+                DEFAULT_CALIBRATION_PATH.read_bytes()
+            ).hexdigest(),
+            "raw_field": "score",
+            "export_field": "our_score",
+            "unavailable_value": None,
+        }
+    }))
     return p
 
 

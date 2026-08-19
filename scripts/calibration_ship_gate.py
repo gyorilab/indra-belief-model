@@ -191,9 +191,19 @@ def statements_for_run(run_path: str | Path, gold_path: str | Path) -> tuple[lis
     grouped by the run's ``stmt_hash`` (the production grain), and statement gold
     uses the shared conservative any-incorrect-wins rollup.
     """
-    run_rows_by_position: dict[tuple[int, int], dict] = {}
-    for row in c0.load_jsonl(ROOT / run_path):
-        run_rows_by_position[(row.get("stmt_i"), row.get("evidence_i"))] = row
+    # Two runners persist different row identities. The monolithic runner writes
+    # (stmt_i, evidence_i); run_vllm_gold_eval.py writes a flat `row_index`. Keying
+    # only on the former collapsed EVERY row of such a run onto (None, None) — the
+    # file read as a single row and the fit died on an empty confusion cell rather
+    # than reporting an unreadable input.
+    run_rows_by_position: dict[tuple, dict] = {}
+    for position, row in enumerate(c0.load_jsonl(ROOT / run_path)):
+        stmt_i, evidence_i = row.get("stmt_i"), row.get("evidence_i")
+        if stmt_i is None and evidence_i is None:
+            key = ("row_index", row.get("row_index", position))
+        else:
+            key = (stmt_i, evidence_i)
+        run_rows_by_position[key] = row
     run_rows = list(run_rows_by_position.values())
     gold_rows = c0.load_jsonl(ROOT / gold_path)
     gold_map = load_gold_map(str(ROOT / gold_path))
@@ -214,6 +224,14 @@ def statements_for_run(run_path: str | Path, gold_path: str | Path) -> tuple[lis
     n_joined = n_unmatched = n_ambiguous = n_exact = n_source_fallback = 0
     for scored in run_rows:
         stmt_key, mh = _run_statement_key(scored.get("stmt_hash"))
+        if mh is None:
+            # Same statement identity, different encoding: the monolithic runner
+            # persists it as `stmt_hash` (16-char hex), run_vllm_gold_eval.py as
+            # `matches_hash` (already the unsigned integer). Without this every
+            # row grouped under "" — one statement for the whole run.
+            mh = _ukey(scored.get("matches_hash"))
+            if mh is not None:
+                stmt_key = str(mh)
         sh = _ukey(scored.get("source_hash"))
         exact_candidates = by_pair.get((mh, sh), [])
         candidates = exact_candidates or by_source.get(sh, [])

@@ -165,11 +165,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import indra  # noqa: E402
 from indra_belief.noise_model import (  # noqa: E402
-    INDRA_PRIORS,
     RECALIBRATED_PRIORS,
     compute_edge_reliability_from_counts,
+)
+from indra_belief.indra_priors import (  # noqa: E402
+    INDRA_DEFAULT_PRIOR_RESOURCE,
+    INDRA_DEFAULT_PRIORS,
+    INDRA_DEFAULT_PRIORS_SHA256,
+    with_benchmark_recalibration,
 )
 from indra_belief.statement_belief import statement_belief  # noqa: E402
 
@@ -209,32 +213,20 @@ METRIC_SOURCE = "rank-sum AUROC with mid-ranks for ties (verified against sklear
 POSITIVE_CLASS = "gold-correct"
 NOISY_OR_FORMULA = "belief = 1 - PROD_s (syst_s + rand_s^{n_s})"
 
-# INDRA's OWN shipped prior resource. Read from the installed package rather than
-# transcribed, so the library-default arm is the library's actual default and the
-# description "at the priors INDRA bundles" is literally true. `noise_model`'s
-# INDRA_PRIORS is a byte-frozen 18-source transcription with a (0.30, 0.10)
-# fallback; it is kept for the gate arm (whose digest is frozen against it) and
-# is NOT used to score the full-corpus incumbent variant, which now reads the
-# resource itself.
-INDRA_PRIOR_RESOURCE = Path(indra.__file__).resolve().parent / "resources" / "default_belief_probs.json"
-
-
-def _shipped_indra_priors() -> tuple[dict[str, tuple[float, float]], str]:
-    """{source: (rand, syst)} exactly as `indra` ships it, plus the file digest."""
-    raw = INDRA_PRIOR_RESOURCE.read_bytes()
-    probs = json.loads(raw)
-    priors = {s: (float(probs["rand"][s]), float(probs["syst"][s])) for s in probs["syst"]}
-    return priors, hashlib.sha256(raw).hexdigest()
-
-
-SHIPPED_INDRA_PRIORS, SHIPPED_INDRA_PRIORS_SHA256 = _shipped_indra_priors()
+# INDRA's own installed resource is loaded once by the shared package module.
+# Recalibration overrides only measured sources; everything else retains the
+# corresponding installed default rather than the generic unknown-source prior.
+RECALIBRATED_WITH_INDRA_DEFAULTS = with_benchmark_recalibration(RECALIBRATED_PRIORS)
 
 # The hard floor of SimpleScorer at those priors. Each source contributes a
 # factor of at least syst_s + rand_s^1 to P(incorrect), so belief can never
 # exceed 1 - min_s(syst_s + rand_s) ... and can never fall BELOW
 # 1 - max_s(syst_s + rand_s), which is the number that matters here: it is the
 # score of a statement with exactly one evidence from the least reliable source.
-_WORST_SOURCE = max(SHIPPED_INDRA_PRIORS.items(), key=lambda kv: kv[1][0] + kv[1][1])
+_WORST_SOURCE = max(
+    INDRA_DEFAULT_PRIORS.complete_priors.items(),
+    key=lambda kv: kv[1][0] + kv[1][1],
+)
 SIMPLE_SCORER_FLOOR = 1.0 - (_WORST_SOURCE[1][0] + _WORST_SOURCE[1][1])
 SIMPLE_SCORER_FLOOR_SOURCE = _WORST_SOURCE[0]
 
@@ -262,7 +254,7 @@ INCUMBENT_FAMILIES = [
             "the 2023 paper calls the unfitted noisy-OR"
         ),
         "ships_in": "indra.belief.SimpleScorer + indra/resources/default_belief_probs.json",
-        "resource_sha256": SHIPPED_INDRA_PRIORS_SHA256,
+        "resource_sha256": INDRA_DEFAULT_PRIORS_SHA256,
     },
     {
         "key": FAMILY_SERVED,
@@ -343,16 +335,6 @@ CURATION_PANELS = [
         "model": "remote-gemma-4-26b",
         "n_curators": 2,
         "curator_note": "curated by two of the 2023 paper’s own authors",
-        # The shipped head-to-head scores the SAME 913 statements with
-        # `noise_model.INDRA_PRIORS` — an 18-source transcription of INDRA's
-        # priors with a (0.30, 0.10) fallback. That module is byte-frozen under
-        # the reader bundle's implementation digest and must not change, so this
-        # artifact reads INDRA's own resource instead and records the difference
-        # rather than hiding it.
-        "recomputed_cross_check": {
-            "sibling": "data/results/belief_headtohead_gemma.json",
-            "sibling_key": "belief_discrimination.belief_indra.all.auroc",
-        },
         "out_of_sample": False,
         "in_sample_note": (
             "This corpus is what our SOFT calibration profile was fitted on. The "
@@ -918,15 +900,12 @@ def load_curation_panel(spec: dict) -> dict:
     counts_by_key = source_counts_by_statement(spec["run"], spec["gold"])
 
     y, gate, matched, served, recomputed, shipped_gate = [], [], [], [], [], []
-    # The same recomputation under the byte-frozen 18-source prior table, kept
-    # only to price the difference against the shipped head-to-head. Never drawn.
-    frozen_table: list[float | None] = []
     reads: list[int] = []
     corpus_evidence: list[int | None] = []
     n_undefined = 0
     for stmt in statements:
-        indra_belief = statement_belief(stmt["ev"], INDRA_PRIORS)
-        recal = statement_belief(stmt["ev"], RECALIBRATED_PRIORS)
+        indra_belief = statement_belief(stmt["ev"], INDRA_DEFAULT_PRIORS)
+        recal = statement_belief(stmt["ev"], RECALIBRATED_WITH_INDRA_DEFAULTS)
         if (
             indra_belief.belief is None
             or indra_belief.parametric_only is None
@@ -944,23 +923,13 @@ def load_curation_panel(spec: dict) -> dict:
         counts = counts_by_key.get(stmt["statement_key"])
         corpus_evidence.append(sum(int(v) for v in counts.values()) if counts else None)
         recomputed.append(
-            float(compute_edge_reliability_from_counts(counts, SHIPPED_INDRA_PRIORS))
-            if counts else None
-        )
-        frozen_table.append(
-            float(compute_edge_reliability_from_counts(counts, INDRA_PRIORS))
+            float(compute_edge_reliability_from_counts(counts, INDRA_DEFAULT_PRIORS))
             if counts else None
         )
 
     y = np.array(y, dtype=int)
     gate = np.array(gate, dtype=float)
     matched = np.array(matched, dtype=float)
-
-    n_priors_differ = sum(
-        1
-        for a, b in zip(recomputed, frozen_table)
-        if a is not None and b is not None and abs(a - b) > 1e-12
-    )
 
     variants = []
     if all(v is not None for v in recomputed):
@@ -977,35 +946,9 @@ def load_curation_panel(spec: dict) -> dict:
                 "INDRA source counts — the statement's FULL database evidence, not "
                 "just the curated rows. Priors read verbatim from "
                 f"indra/resources/default_belief_probs.json (sha256 "
-                f"{SHIPPED_INDRA_PRIORS_SHA256[:12]})."
+                f"{INDRA_DEFAULT_PRIORS_SHA256[:12]})."
             ),
         }
-        cross = spec.get("recomputed_cross_check")
-        if cross is not None:
-            sibling = json.loads(Path(ROOT / cross["sibling"]).read_text())
-            sibling_auroc = float(
-                sibling["belief_discrimination"]["belief_indra"]["all"]["auroc"]
-            )
-            sibling_n = int(sibling["belief_discrimination"]["belief_indra"]["all"]["n"])
-            variant["cross_check"] = {
-                "sibling": cross["sibling"],
-                "sibling_key": cross["sibling_key"],
-                "sibling_auroc": sibling_auroc,
-                "sibling_n": sibling_n,
-                "n_statements_scored_differently": n_priors_differ,
-                "why_it_differs": (
-                    "The sibling scores these same statements with "
-                    "src/indra_belief/noise_model.py's INDRA_PRIORS — an 18-source "
-                    "transcription of INDRA's priors with a (0.30, 0.10) fallback "
-                    "for everything else. That module is byte-frozen under the "
-                    "reader bundle's implementation digest and must not change, so "
-                    "this artifact reads indra/resources/default_belief_probs.json "
-                    "itself instead: 20+ sources, and rlimsp, hprd, tas and "
-                    f"drugbank differ. {n_priors_differ} of the panel's statements "
-                    "score differently. The drawn value is the STRONGER of the two, "
-                    "which is the direction the strongest-incumbent rule requires."
-                ),
-            }
         variants.append(variant)
     if all(v is not None for v in served):
         variants.append({
@@ -1374,7 +1317,7 @@ def build_served_identity(panels: list[dict], raw_panels: list[dict]) -> dict:
         # The canonical package path, never the local site-packages path: the
         # digest identifies the bytes, and the bytes are the library's, not ours.
         "floor_source": "indra/resources/default_belief_probs.json",
-        "floor_source_sha256": SHIPPED_INDRA_PRIORS_SHA256,
+        "floor_source_sha256": INDRA_DEFAULT_PRIORS_SHA256,
         "per_panel": per_panel,
         "n_served_below_floor": total_below,
         "n_panels_with_served_below_floor": sum(1 for p in per_panel if p["n_below_floor"] > 0),
@@ -1533,7 +1476,8 @@ def main() -> None:
         "generated_by": "scripts/compute_deployed_baseline_replication.py",
         "n_boot": N_BOOT,
         "seed": SEED,
-        "indra_default_prior_resource_sha256": SHIPPED_INDRA_PRIORS_SHA256,
+        "indra_default_prior_resource": INDRA_DEFAULT_PRIOR_RESOURCE,
+        "indra_default_prior_resource_sha256": INDRA_DEFAULT_PRIORS_SHA256,
         "inputs": {
             p["key"]: {
                 "gold": p["provenance"]["gold"],

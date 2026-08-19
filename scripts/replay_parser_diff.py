@@ -256,7 +256,9 @@ def _new(text: str) -> tuple:
     parsed = parse_verdict(text)
     if parsed is None:
         return None, None, None
-    return parsed.label, parsed.confidence, parsed.score
+    # The unified parser deliberately has no score projection. Keep the third
+    # coordinate explicit so this historical diff can show that retirement.
+    return parsed.label, parsed.confidence, None
 
 
 READERS = (("old_live", _retired_live), ("old_live_baseline", _retired_live_baseline),

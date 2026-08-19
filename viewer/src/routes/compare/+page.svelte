@@ -50,17 +50,6 @@
 	function vsym(v: string): string {
 		return v === 'correct' ? '✓' : v === 'incorrect' ? '✗' : '·';
 	}
-	// verdict×confidence → the canonical belief-score grid (mirrors the scorer's
-	// VERDICT_SCORE_GRID), so a cohort row's A/B can ride the shared belief ruler.
-	const SCORE_GRID: Record<string, Record<string, number>> = {
-		correct: { high: 0.95, medium: 0.8, low: 0.65 },
-		incorrect: { low: 0.35, medium: 0.2, high: 0.05 }
-	};
-	function gridScore(verdict: string | null, confidence: string | null): number | null {
-		if (verdict !== 'correct' && verdict !== 'incorrect') return null;
-		const c = (confidence ?? '').toLowerCase();
-		return SCORE_GRID[verdict][c] ?? (verdict === 'correct' ? 0.8 : 0.2);
-	}
 
 	// ── URL state helpers ───────────────────────────────────────────
 	function nav(updates: Record<string, string | null>) {
@@ -935,8 +924,8 @@
 										<td class="c-belief">
 											<BeliefRuler
 												compact
-												a={gridScore(r.a_verdict, r.a_confidence)}
-												b={gridScore(r.b_verdict, r.b_confidence)}
+												a={r.a_score}
+												b={r.b_score}
 												prior={r.rasmachine_belief}
 											/>
 										</td>

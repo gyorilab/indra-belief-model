@@ -74,7 +74,7 @@
 		};
 		our_score: number | null;
 		indra_score: number | null;
-		/** The statement's per-evidence rows (monolithic single-call rows). */
+		/** The statement's per-evidence rows. */
 		evidences?: BeliefEvidence[];
 		why_this_one?: string;
 		mode?: 'full' | 'compact';
@@ -162,12 +162,6 @@
 		return `Reading the evidence scores this ${our_score.toFixed(2)} (${ourP}) · ${comparison}.`;
 	});
 
-	/**
-	 * The seven verdict-confidence buckets the scorer can emit. Showing them as
-	 * ladder ticks on the score axis surfaces that the score is categorical.
-	 */
-	const SCORE_BUCKETS = [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95];
-
 	/** Score-axis geometry: viewBox 0..320 wide, ticks land at x = margin + score * track. */
 	const AXIS_W = 320;
 	const AXIS_MARGIN = 14;
@@ -197,8 +191,7 @@
 	// Level 1: the spectrum (all evidences as dots on the same doubt↔trust ruler).
 	// Level 2: the reason tally (bucket distribution — the categorical "why").
 	// Level 3: open an evidence → sentence + verdict/confidence + reasoning + tier.
-	// (Monolithic has NO probes and NO per-probe LLM calls — the rationale IS the
-	//  single `reasoning` field.)
+	// The rationale remains the primary scorer's single `reasoning` field.
 	const hasSpectrum = $derived(
 		mode === 'full' && evidences.some((e) => e.our_score != null)
 	);
@@ -290,9 +283,8 @@
 		</div>
 
 		{#if hasSpectrum}
-			<!-- Merged ruler: one 0→1 scale carrying the per-evidence distribution
-			     (dots above), the reading mean (caret), the INDRA prior (hollow), and
-			     the 7 verdict×confidence buckets. The mean reads as the dots' centroid. -->
+			<!-- Merged ruler: one continuous 0→1 probability scale carrying the
+			     per-sentence distribution, its reading mean, and the INDRA prior. -->
 			<div
 				class="ruler"
 				role="img"
@@ -302,10 +294,6 @@
 					<line x1={AXIS_MARGIN} y1={specAxisY} x2={AXIS_W - AXIS_MARGIN} y2={specAxisY} stroke="var(--ink)" stroke-width="1" />
 					<line x1={AXIS_MARGIN} y1={specAxisY - 4} x2={AXIS_MARGIN} y2={specAxisY + 4} stroke="var(--ink-faint)" />
 					<line x1={AXIS_W - AXIS_MARGIN} y1={specAxisY - 4} x2={AXIS_W - AXIS_MARGIN} y2={specAxisY + 4} stroke="var(--ink-faint)" />
-					<!-- 7 verdict-bucket ticks (categorical rungs the prod scorer can hit) -->
-					{#each SCORE_BUCKETS as b}
-						<line x1={tickX(b)} y1={specAxisY - 3} x2={tickX(b)} y2={specAxisY + 3} stroke="var(--ink-faint)" stroke-width="0.6" opacity="0.65" />
-					{/each}
 					<!-- the reading mean: dashed guide from the cluster down to a caret -->
 					{#if our_score != null}
 						<line x1={tickX(our_score)} y1={DOT_BASE_Y - 6} x2={tickX(our_score)} y2={specAxisY} stroke="var(--accent)" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.55" />
@@ -327,7 +315,7 @@
 							r="4"
 							role="button"
 							tabindex="0"
-							aria-label={`evidence ${shortHash(d.e.evidence_hash)}, score ${d.e.our_score?.toFixed(2)}, ${verdictDisplay(d.e.verdict)} — open`}
+							aria-label={`evidence ${shortHash(d.e.evidence_hash)}, calibrated probability ${d.e.our_score?.toFixed(2)}, ${verdictDisplay(d.e.verdict)} — open`}
 							onclick={() => toggleEv(d.e.evidence_hash)}
 							onkeydown={(e) => {
 								if (e.key === 'Enter' || e.key === ' ') {
@@ -348,7 +336,7 @@
 					<span>trust</span>
 				</div>
 				<p class="ruler-note">
-					each ● is one evidence on the same 0–1 scale; the reading score snaps to 7 verdict×confidence buckets, while the INDRA prior — the belief INDRA already stores, from which sources reported the statement and how reliable each source is — is continuous
+					each ● is one evidence's calibrated probability; ▲ is their mean, while the INDRA prior — the belief INDRA already stores, from which sources reported the statement and how reliable each source is — is continuous
 				</p>
 			</div>
 		{:else if our_score != null || indra_score != null}
@@ -361,10 +349,6 @@
 					<!-- endpoint tick marks -->
 					<line x1={AXIS_MARGIN} y1="24" x2={AXIS_MARGIN} y2="32" stroke="var(--ink-faint)" stroke-width="1"/>
 					<line x1={AXIS_W - AXIS_MARGIN} y1="24" x2={AXIS_W - AXIS_MARGIN} y2="32" stroke="var(--ink-faint)" stroke-width="1"/>
-					<!-- 7 verdict-bucket ticks (categorical rungs the prod scorer can hit) -->
-					{#each SCORE_BUCKETS as b}
-						<line x1={tickX(b)} y1="26" x2={tickX(b)} y2="30" stroke="var(--ink-faint)" stroke-width="0.6" opacity="0.7"/>
-					{/each}
 					<!-- 0 / 1 scale anchors: hidden when a tick value already says the same thing -->
 					{#if !anyNearZero}
 						<text x={AXIS_MARGIN} y="56" text-anchor="middle" class="b-axis-endlabel">0</text>
@@ -388,7 +372,7 @@
 					{/if}
 				</svg>
 				<p class="b-axis-footnote">
-					the reading score snaps to one of 7 categorical buckets (verdict × confidence); the INDRA prior — the belief INDRA already stores, from which sources reported the statement and how reliable each source is — is continuous
+					the reading is the mean calibrated sentence probability; the INDRA prior — the belief INDRA already stores, from which sources reported the statement and how reliable each source is — is continuous
 				</p>
 			</div>
 		{/if}
@@ -412,7 +396,7 @@
 						<li class="ev" class:ev-open={open}>
 							<button class="ev-row" aria-expanded={open} onclick={() => toggleEv(e.evidence_hash)}>
 								<span class="ev-swatch tone-{verdictTone(e.verdict)}"></span>
-								<span class="ev-score">{e.our_score?.toFixed(2) ?? '—'}</span>
+								<span class="ev-score" title="calibrated sentence probability">{e.our_score?.toFixed(2) ?? '—'}</span>
 								<span class="ev-verdict">{verdictDisplay(e.verdict)}{e.confidence ? ` · ${e.confidence}` : ''}</span>
 								<span class="ev-reason">{bucketLabel(e.bucket)}</span>
 								<span class="ev-src">[{e.source_api ?? 'no source'}]</span>

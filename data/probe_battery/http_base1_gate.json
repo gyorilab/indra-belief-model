@@ -1,0 +1,22 @@
+{
+ "kind": "probe_http_refit_gate",
+ "probe_id": "pol.verdict_direct",
+ "incumbent": {
+  "fit": "/Users/noot/Documents/indra-belief-model/data/results/eval_curation_v1_gemma.jsonl",
+  "test": "/Users/noot/Documents/indra-belief-model/data/results/holdout_cc_gemma.jsonl"
+ },
+ "n_fit": 600,
+ "n_test": 475,
+ "auroc_incumbent": 0.748178,
+ "auroc_candidate": 0.798773,
+ "delta_auroc": 0.050596,
+ "delta_auroc_ci95": [
+  0.027645,
+  0.073452
+ ],
+ "published_inprocess_delta": 0.045872,
+ "gate": {
+  "rule": "held-out paired ci95_low(delta AUROC) > 0",
+  "passed": true
+ }
+}

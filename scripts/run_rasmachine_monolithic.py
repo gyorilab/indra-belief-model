@@ -22,7 +22,7 @@ import sys
 import tempfile
 import time
 import uuid
-from typing import Any, Iterable
+from typing import Any, Iterable, NamedTuple
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +35,18 @@ from indra_belief.model_client import (  # noqa: E402
     ModelClient,
     canonical_model_name,
 )
+from indra_belief.probes.calibration import (  # noqa: E402
+    CALIBRATION_FILENAME,
+    CALIBRATION_MODEL,
+    CALIBRATION_MODEL_ID,
+    CALIBRATION_PROBE_DIGEST,
+    DEFAULT_CALIBRATION_PATH,
+    SENTENCE_SCORE_CONTRACT_VERSION,
+    SENTENCE_SCORE_KIND,
+    replace_sentence_score,
+    supports_sentence_calibration,
+)
+from indra_belief.probes.reader import DIRECT_PROBE_ID  # noqa: E402
 from indra_belief.scorers.monolithic import scorer as monolithic_scorer  # noqa: E402
 
 
@@ -63,13 +75,29 @@ def _score_one(stmt: Any, evidence: Any, client: ModelClient, max_tokens: int | 
     if _ARCH == "panel":
         from indra_belief.scorers.panel import score_via_panel
 
-        return score_via_panel(stmt, evidence, client)
-    if _ARCH == "decomposed":
+        result = score_via_panel(stmt, evidence, client)
+    elif _ARCH == "decomposed":
         from indra_belief.scorers.probes.orchestrator import score_via_probes
 
-        return score_via_probes(stmt, evidence, client)
-    return monolithic_scorer.score_statement(
-        stmt, evidence, client, max_tokens=max_tokens
+        result = score_via_probes(stmt, evidence, client)
+    else:
+        # The canonical monolithic boundary already applies the sentence
+        # calibration. Do not issue the forced-verdict probe twice here.
+        return monolithic_scorer.score_statement(
+            stmt, evidence, client, max_tokens=max_tokens
+        )
+
+    statement = _statement_metadata(stmt)
+    return replace_sentence_score(
+        result,
+        {
+            "subject": statement["subject"],
+            "object": statement["object"],
+            "stmt_type": statement["stmt_type"],
+            "evidence_text": str(getattr(evidence, "text", None) or ""),
+        },
+        client,
+        record_id=_sentence_probe_record_id("", 0, 0, evidence),
     )
 
 
@@ -146,15 +174,141 @@ def _statement_metadata(stmt: Any) -> dict[str, Any]:
     }
 
 
+def _sentence_probe_available(client: Any) -> bool:
+    """Whether this client exactly matches the fitted sentence profile."""
+
+    return supports_sentence_calibration(client)
+
+
+def _sentence_score_contract(enabled: bool) -> dict[str, Any]:
+    """Describe the one numeric sentence field and its exact fitted profile."""
+
+    return {
+        "status": "enabled" if enabled else "unavailable",
+        "contract_version": SENTENCE_SCORE_CONTRACT_VERSION,
+        "grain": "sentence",
+        "kind": SENTENCE_SCORE_KIND,
+        "calibration_model": CALIBRATION_MODEL,
+        "calibration_model_id": CALIBRATION_MODEL_ID,
+        "probe_id": DIRECT_PROBE_ID,
+        "probe_digest": CALIBRATION_PROBE_DIGEST,
+        "calibration_artifact": CALIBRATION_FILENAME,
+        "calibration_artifact_sha256": hashlib.sha256(
+            DEFAULT_CALIBRATION_PATH.read_bytes()
+        ).hexdigest(),
+        "raw_field": "score",
+        "export_field": "our_score",
+        "unavailable_value": None,
+    }
+
+
+def _require_compatible_resume_score_contract(
+    previous_meta: dict[str, Any],
+    current_contract: dict[str, Any],
+    completed_rows: int,
+) -> None:
+    """Refuse to mix historical grid rows with calibrated rows on resume."""
+
+    if completed_rows == 0:
+        return
+    previous = previous_meta.get("sentence_score")
+    if not isinstance(previous, dict) or any(
+        previous.get(key) != value for key, value in current_contract.items()
+    ):
+        raise ValueError(
+            "cannot resume a populated run without the identical calibrated "
+            "sentence-score contract; choose a fresh output and regenerate"
+        )
+
+
+def _sentence_probe_record_id(
+    run_id: str,
+    stmt_i: int,
+    evidence_i: int,
+    evidence: Any,
+) -> str:
+    """Return the calibration-domain identity for this evidence sentence.
+
+    The fitted combiner records its training evidence as ``f{source_hash}``.
+    Serving must use that same identity domain: choosing a fresh run-scoped ID
+    would make a fitted sentence look out-of-sample and silently defeat the
+    combiner's leakage guard.  The positional arguments remain in the public
+    helper signature because callers use it while constructing a run row; they
+    deliberately do not participate in calibration identity.
+    """
+
+    del run_id, stmt_i, evidence_i
+    return f"f{evidence.get_source_hash()}"
+
+
+def _truncated_calls(call_log: Iterable[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Calls the server cut off at the token cap, in call order.
+
+    A row is truncated if ANY of its calls hit the cap — a Complex statement
+    makes several (``monolithic``, ``monolithic_tool_context``,
+    ``relation_nature``) and a cap hit in an early one corrupts everything
+    downstream of it. This deliberately differs from ``results.py``'s
+    ``reasoning_quality.generation_length_capped``, which reads the LAST call's
+    finish reason only: that field feeds shipped exports and the viewer and is
+    not re-defined here. This helper lives in the runner (not in
+    ``scorers/_shared.py``, whose bytes are hashed into the published
+    implementation digest).
+    """
+
+    return [
+        call
+        for call in (call_log or [])
+        if isinstance(call, dict) and call.get("finish_reason") == "length"
+    ]
+
+
+class ResumeState(NamedTuple):
+    """What a resumed invocation inherits from an existing output file.
+
+    A NamedTuple rather than a wider bare tuple: the last two fields are
+    same-typed ints that differ only by DENOMINATOR, which is precisely the
+    shape that swaps silently at a call site.
+    """
+
+    done: set[tuple[int, int]]
+    verdicts: Counter
+    row_errors: int
+    parser_nulls: int
+    retryable_errors: int
+    truncated_total: int
+    truncated_terminal: int
+
+
 def _load_done_keys(
     output_path: Path,
     retry_parser_nulls: bool = True,
     retry_row_errors: bool = True,
-) -> tuple[set[tuple[int, int]], Counter, int, int, int]:
-    """Return terminal keys and resume counters from the latest row per key."""
+) -> ResumeState:
+    """Return terminal keys and resume counters from the latest row per key.
+
+    Truncation is tallied twice because two consumers want two different
+    denominators, and one counter cannot serve both:
+
+    * ``truncated_total`` — every latest-per-key row in the file that hit the
+      cap, whether or not this invocation will retry it.  This is the file-level
+      total ``meta["truncated_rows_before_start"]`` reports, so a resumed
+      multi-hour run states the truncations in the whole output rather than only
+      those seen since the last invocation.
+    * ``truncated_terminal`` — only rows this invocation will NOT rewrite (they
+      survived both retry ``continue``s).  This is the correct SEED for the live
+      ``truncated_rows`` counter, which then adds one per row written.  Seeding
+      that counter from the total instead double-counts every retried truncation:
+      it is carried over AND written again, so the finished run reports a bigger
+      number than a fresh read of the file it just wrote.
+
+    The one edge case, stated rather than hidden: an invocation killed mid-flight
+    leaves rows it retried but had not yet rewritten out of its final
+    ``truncated_rows``.  That self-heals on the next resume, which re-reads the
+    file rather than trusting the previous meta.
+    """
 
     if not output_path.exists():
-        return set(), Counter(), 0, 0, 0
+        return ResumeState(set(), Counter(), 0, 0, 0, 0, 0)
     latest: dict[tuple[int, int], dict[str, Any]] = {}
     with output_path.open(encoding="utf-8", errors="strict") as stream:
         for line in stream:
@@ -167,10 +321,13 @@ def _load_done_keys(
     done: set[tuple[int, int]] = set()
     verdicts: Counter = Counter()
     row_errors = parser_nulls = retryable_errors = 0
+    truncated_total = truncated_terminal = 0
     for key, row in latest.items():
         is_error = row.get("row_status") == "error"
         is_parser_null = row.get("verdict") is None and not is_error
+        row_truncated = bool(row.get("truncated") or _truncated_calls(row.get("call_log")))
         row_errors += int(is_error)
+        truncated_total += int(row_truncated)
         if is_error and retry_row_errors:
             retryable_errors += 1
             continue
@@ -179,7 +336,16 @@ def _load_done_keys(
             continue
         done.add(key)
         verdicts[row.get("verdict") or "None"] += 1
-    return done, verdicts, row_errors, parser_nulls, retryable_errors
+        truncated_terminal += int(row_truncated)
+    return ResumeState(
+        done,
+        verdicts,
+        row_errors,
+        parser_nulls,
+        retryable_errors,
+        truncated_total,
+        truncated_terminal,
+    )
 
 
 def _load_or_create_run_id(meta_path: Path, requested: str | None) -> str:
@@ -282,12 +448,38 @@ def _scored_row(
     result: dict[str, Any],
     latency_s: float,
 ) -> dict[str, Any]:
+    """Build a row, withholding categorical output from a truncated read.
+
+    A read cut off at the token cap never reached its concluding line, so any
+    verdict recovered from it comes from mid-chain-of-thought text rather than
+    from the model's stated answer. That is not a reader measurement, so
+    verdict/confidence are withheld and the recovered value is kept under
+    ``truncated_verdict`` as an audit trail. The independent calibrated
+    sentence probe is not truncated with that answer, so its score remains
+    usable. Statement belief still sees no categorical reader signal.
+
+    Resume caveat, measured not assumed: ``_load_done_keys`` sees a verdict-None
+    non-error row and retries it, but at ``temperature 0.0`` a cap hit is
+    deterministic for a given row. Both truncated rows in the T1 validation
+    sample truncated again on retry at the same 4096 out_tokens and recovered the
+    same verdict, so retrying costs ~134 s per stuck row per invocation and
+    resolves nothing. Pass ``--no-retry-parser-nulls`` when resuming a long run
+    to stop re-paying for rows that cannot finish under the current cap.
+    """
+
+    truncated = _truncated_calls(result.get("call_log"))
+    first = truncated[0] if truncated else {}
     return {
         **_base_row(run_id, stmt_i, evidence_i, evidence, statement, latency_s),
         "row_status": "scored",
-        "verdict": result.get("verdict"),
+        "verdict": None if truncated else result.get("verdict"),
         "score": result.get("score"),
-        "confidence": result.get("confidence"),
+        "score_error": result.get("score_error"),
+        "confidence": None if truncated else result.get("confidence"),
+        "truncated": bool(truncated),
+        "truncated_verdict": result.get("verdict") if truncated else None,
+        "truncated_call_kind": first.get("kind") if truncated else None,
+        "truncated_out_tokens": first.get("out_tokens") if truncated else None,
         "tier": result.get("tier"),
         "grounding_status": result.get("grounding_status"),
         "provenance_triggered": result.get("provenance_triggered"),
@@ -313,6 +505,7 @@ def _error_row(
         "row_status": "error",
         "verdict": None,
         "score": None,
+        "score_error": None,
         "confidence": None,
         "tier": "row_error",
         "grounding_status": None,
@@ -433,11 +626,19 @@ def _run(args: argparse.Namespace) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path = output_path.with_suffix(".meta.json")
     progress_path = output_path.with_suffix(".progress.ndjson")
+    previous_meta: dict[str, Any] = {}
+    if args.resume and meta_path.exists():
+        try:
+            loaded_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(loaded_meta, dict):
+                previous_meta = loaded_meta
+        except (OSError, json.JSONDecodeError):
+            pass
     run_id = _load_or_create_run_id(meta_path, args.run_id) if args.resume else (
         args.run_id or uuid.uuid4().hex
     )
     if args.resume:
-        done, verdicts, existing_errors, parser_nulls, retryable_errors = _load_done_keys(
+        state = _load_done_keys(
             output_path,
             retry_parser_nulls=args.retry_parser_nulls,
             retry_row_errors=args.retry_row_errors,
@@ -445,14 +646,9 @@ def _run(args: argparse.Namespace) -> int:
         _ensure_append_boundary(output_path)
         output_mode = "a"
     else:
-        done, verdicts, existing_errors, parser_nulls, retryable_errors = (
-            set(),
-            Counter(),
-            0,
-            0,
-            0,
-        )
+        state = ResumeState(set(), Counter(), 0, 0, 0, 0, 0)
         output_mode = "w"
+    done, verdicts = state.done, state.verdicts
 
     statement_json = json.loads(input_path.read_text(encoding="utf-8"))
     stmts = list(stmts_from_json(statement_json))
@@ -463,6 +659,11 @@ def _run(args: argparse.Namespace) -> int:
     if args.workers > 1:
         _prewarm_grounding(stmts)
     client = _unmetered_client(args.model)
+    sentence_probe_available = _sentence_probe_available(client)
+    sentence_score_contract = _sentence_score_contract(sentence_probe_available)
+    _require_compatible_resume_score_contract(
+        previous_meta, sentence_score_contract, len(done)
+    )
     meta: dict[str, Any] = {
         "run_id": run_id,
         "status": "running",
@@ -474,9 +675,11 @@ def _run(args: argparse.Namespace) -> int:
         "total_evidences": total,
         "completed_before_start": len(done),
         "pending_at_start": pending,
-        "retryable_parser_nulls": parser_nulls,
-        "retryable_row_errors": retryable_errors,
+        "retryable_parser_nulls": state.parser_nulls,
+        "retryable_row_errors": state.retryable_errors,
+        "truncated_rows_before_start": state.truncated_total,
         "workers": args.workers,
+        "sentence_score": sentence_score_contract,
     }
     _write_meta(meta_path, meta)
 
@@ -525,7 +728,12 @@ def _run(args: argparse.Namespace) -> int:
             )
 
     completed = 0
-    recorded_errors = existing_errors
+    recorded_errors = state.row_errors
+    # Seeded from the TERMINAL carry-over only — rows this invocation will not
+    # rewrite. Every retried truncation is re-counted below as it is written, so
+    # seeding from the file-level total (meta["truncated_rows_before_start"])
+    # would count it twice.
+    truncated_rows = state.truncated_terminal
     fatal: tuple[int, int, BaseException] | None = None
     started = time.monotonic()
     with output_path.open(output_mode, encoding="utf-8") as output, progress_path.open(
@@ -566,6 +774,7 @@ def _run(args: argparse.Namespace) -> int:
                     done.add((stmt_i, evidence_i))
                     completed += 1
                     verdicts[row.get("verdict") or "None"] += 1
+                    truncated_rows += int(bool(row.get("truncated")))
                     if completed == 1 or completed % args.progress_every == 0:
                         elapsed = time.monotonic() - started
                         rate = completed / elapsed if elapsed else 0.0
@@ -581,6 +790,7 @@ def _run(args: argparse.Namespace) -> int:
                             latest={"stmt_i": stmt_i, "evidence_i": evidence_i},
                             verdicts=dict(verdicts),
                             recorded_row_errors=recorded_errors,
+                            truncated_rows=truncated_rows,
                         )
                 fill()
         finally:
@@ -599,6 +809,7 @@ def _run(args: argparse.Namespace) -> int:
                 error=preview,
                 completed_this_invocation=completed,
                 recorded_row_errors=recorded_errors,
+                truncated_rows=truncated_rows,
             )
             _progress(progress, "failed", **meta)
             _write_meta(meta_path, meta)
@@ -613,6 +824,7 @@ def _run(args: argparse.Namespace) -> int:
             duration_this_invocation_s=round(elapsed, 3),
             verdicts=dict(verdicts),
             recorded_row_errors=recorded_errors,
+            truncated_rows=truncated_rows,
         )
         _progress(progress, status, **meta)
         _write_meta(meta_path, meta)

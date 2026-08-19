@@ -155,3 +155,88 @@ def test_atomic_shard_is_only_published_on_commit(tmp_path):
     assert not writer.tmp_path.exists()
     with gzip.open(writer.final_path, "rt") as fh:
         assert json.loads(fh.readline()) == {"job_id": "10:0"}
+
+
+# ── the job the whole corpus path is built on ─────────────────────────────────
+#
+# Everything above tests the machinery AROUND job preparation -- streaming,
+# filtering, the cache, atomic publication -- and nothing called
+# `prepare_statement_jobs` itself. So when a10df62 ("one semantic kernel for the
+# live and batch scoring paths") replaced `ScoringRecord.format_user_message`
+# with `execution_body()` + `ExecutionBody.render()` and did not move this
+# builder onto it, the builder raised AttributeError for EVERY LLM-bound job and
+# the suite stayed green.
+#
+# It stayed hidden because prepared shards already on disk were built before the
+# refactor and still scored fine; the break only surfaces when someone
+# regenerates them -- which is exactly what fitting a new serving stack's
+# calibration requires.
+
+import pytest  # noqa: E402
+
+indra_statements = pytest.importorskip("indra.statements")
+
+
+def _statement():
+    Activation = indra_statements.Activation
+    Agent = indra_statements.Agent
+    Evidence = indra_statements.Evidence
+    stmt = Activation(Agent("IL18", db_refs={"HGNC": "5986"}),
+                      Agent("RAF1", db_refs={"HGNC": "9829"}))
+    evidence = Evidence(source_api="reach", pmid="1",
+                        text="IL-18 activates Raf-1 in NK cells.")
+    stmt.evidence = [evidence]
+    return stmt, evidence
+
+
+def _jobs(tmp_path):
+    stmt, evidence = _statement()
+    cache = pipeline.GroundingCache(tmp_path / "cache.sqlite", "test-sha")
+    out = pipeline.prepare_statement_jobs(
+        statement=stmt, stmt_hash=1, input_row_index=0,
+        cache=cache, selected_evidence=[(0, evidence)],
+    )
+    return (out[0] if isinstance(out, tuple) else out), stmt, evidence
+
+
+def test_prepare_statement_jobs_actually_builds_a_job(tmp_path):
+    """The regression. This is the call the corpus path cannot run without."""
+    jobs, _, _ = _jobs(tmp_path)
+    assert jobs, "no job was produced for an LLM-bound statement"
+    assert jobs[0].get("user_message"), (
+        "the job carries no user_message; the shard runner raises "
+        "'LLM job has no user_message' on every row built this way"
+    )
+
+
+def test_the_batch_user_message_is_byte_identical_to_the_live_one(tmp_path):
+    """The invariant a10df62 existed to create, asserted where it broke.
+
+    The record owns the PARTS and `ExecutionBody.render` owns the JOIN precisely
+    so the live and batch paths cannot drift. Nothing checked that the batch
+    builder used it -- and it did not. A drift here is not cosmetic: a
+    calibration profile is keyed on the prompt, so a batch path sending even one
+    byte more would be scored against a profile fitted for a prompt it never
+    sent.
+    """
+    from indra_belief.data.scoring_record import ScoringRecord
+
+    jobs, stmt, evidence = _jobs(tmp_path)
+    record = ScoringRecord(statement=stmt, evidence=evidence)
+    record.resolve_entities()
+    assert jobs[0]["user_message"] == record.execution_body().render(), (
+        "the batch builder's user message has drifted from the live render"
+    )
+
+
+def test_the_builder_uses_the_shared_join_not_a_local_copy():
+    """Structural, so a reintroduced local join fails even if it happens to
+    produce the same bytes today."""
+    source = SCRIPT.read_text()
+    assert "execution_body()" in source
+    # A CALL, not a mention: the comment at the call site names the deleted
+    # method to explain the history, and a bare substring check flagged that
+    # explanation as the defect it was documenting.
+    assert ".format_user_message(" not in source, (
+        "the builder is calling the deleted method again"
+    )

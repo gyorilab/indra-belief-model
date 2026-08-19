@@ -271,8 +271,18 @@ def _repeated_hash_gold() -> list[dict]:
 
 def _paired_score_rows() -> list[dict]:
     return [
-        {"record_id": "1:99", "candidate_score": 0.2, "candidate_seconds": 0.2},
-        {"record_id": "0:99", "candidate_score": 0.9, "candidate_seconds": 0.1},
+        {
+            "record_id": "1:99",
+            "candidate_score": 0.2,
+            "incumbent_score": 0.35,
+            "candidate_seconds": 0.2,
+        },
+        {
+            "record_id": "0:99",
+            "candidate_score": 0.9,
+            "incumbent_score": 0.95,
+            "candidate_seconds": 0.1,
+        },
     ]
 
 
@@ -321,7 +331,7 @@ def test_pairing_refuses_missing_extra_and_duplicate_ids(tmp_path):
         epb.load_pairs(scores_path, gold_path)
 
 
-def test_pairing_refuses_off_grid_incumbent(tmp_path):
+def test_pairing_requires_a_persisted_incumbent_score(tmp_path):
     gold_path = tmp_path / "gold.jsonl"
     scores_path = tmp_path / "scores.jsonl"
     _write_jsonl(
@@ -336,7 +346,7 @@ def test_pairing_refuses_off_grid_incumbent(tmp_path):
         ],
     )
     _write_jsonl(scores_path, [{"record_id": "0:7", "candidate_score": 0.5}])
-    with pytest.raises(ValueError, match="grid_score returned None"):
+    with pytest.raises(ValueError, match="incumbent_score is required"):
         epb.load_pairs(scores_path, gold_path)
 
 
@@ -515,6 +525,7 @@ def test_incumbent_timing_absent_when_call_log_carries_no_duration(tmp_path):
         {
             "record_id": f"{i}:{row['source_hash']}",
             "candidate_score": [0.9, 0.1, 0.8][i],
+            "incumbent_score": [0.91, 0.09, 0.73][i],
             "candidate_seconds": 0.1,
         }
         for i, row in enumerate(gold_rows)
@@ -550,6 +561,7 @@ def test_pair_mode_reproduce_authenticates_scores_and_gold(tmp_path, capsys):
         {
             "record_id": f"{i}:{row['source_hash']}",
             "candidate_score": (i + 1) / 13,
+            "incumbent_score": 0.8 if i % 2 == 0 else 0.2,
             "candidate_seconds": 0.1,
         }
         for i, row in enumerate(gold_rows)
@@ -664,8 +676,8 @@ def test_module_documents_measured_contract_and_has_no_numeric_doc_anchors():
     assert "test_auprc_is_order_invariant" in source
     assert "test_auprc_matches_sklearn_average_precision" in source
     assert "This node deliberately does not edit those two scripts" in source
-    assert "SIX distinct values" in source
-    assert "0.05x63" in source and "0.95x168" in source
+    assert "reads the persisted incumbent measurement only" in source
+    assert "never recreates a" in source
     assert re.search(r"[a-z_]+\.py:[0-9]+", source) is None
 
     tree = ast.parse(source)
@@ -683,7 +695,7 @@ def test_evaluator_has_no_decorative_probe_combiner_import():
 
 
 @pytest.mark.skipif(not REAL_GOLD.exists(), reason="gitignored holdout_cc file is absent")
-def test_real_holdout_smoke_uses_six_grid_cells_and_artifact_cost(tmp_path):
+def test_real_holdout_smoke_uses_persisted_scores_and_artifact_cost(tmp_path):
     gold_rows = [
         json.loads(line)
         for line in REAL_GOLD.read_text(encoding="utf-8").splitlines()
@@ -696,6 +708,7 @@ def test_real_holdout_smoke_uses_six_grid_cells_and_artifact_cost(tmp_path):
             {
                 "record_id": f"{i}:{row['source_hash']}",
                 "candidate_score": 0.5,
+                "incumbent_score": row["score"],
             }
             for i, row in enumerate(gold_rows)
         ],
@@ -713,7 +726,7 @@ def test_real_holdout_smoke_uses_six_grid_cells_and_artifact_cost(tmp_path):
         seconds_per_record=incumbent_s,
     )
     assert block["n"] == 500
-    assert block["distinct_scores"] == 6
+    assert block["distinct_scores"] == len({row["score"] for row in gold_rows})
     assert block["seconds_per_record"] == pytest.approx(expected_seconds, abs=1e-12)
 
 

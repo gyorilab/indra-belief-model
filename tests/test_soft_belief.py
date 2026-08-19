@@ -164,7 +164,8 @@ def test_calibration_resolver():
     bp = calibration_for(
         "bedrock-gemma-4-26b", prompt_sha256=REASONING_FIRST_PROMPT_SHA256
     )
-    assert bp["confusion"] == {"cc": 662, "ci": 81, "ic": 139, "ii": 722}
+    # Refitted 2026-08-15 onto holdout_large_fit; see calibration_constants._CONFUSION.
+    assert bp["confusion"] == {"cc": 1995, "ci": 336, "ic": 467, "ii": 1505}
     assert bp["confusion"] != gp["confusion"]
     assert calibration_for(
         "bedrock-gemma-4-26b", prompt_sha256=BASELINE_PROMPT_SHA256

@@ -37,9 +37,14 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.metrics import confusion_pr, ece  # noqa: E402
 from indra_belief.noise_model import (  # noqa: E402
-    INDRA_PRIORS,
     RECALIBRATED_PRIORS,
     compute_edge_reliability_from_counts,
+)
+from indra_belief.indra_priors import (  # noqa: E402
+    INDRA_DEFAULT_PRIOR_RESOURCE,
+    INDRA_DEFAULT_PRIORS,
+    INDRA_DEFAULT_PRIORS_SHA256,
+    with_benchmark_recalibration,
 )
 from indra_belief.statement_belief import statement_belief  # noqa: E402
 from indra_belief.calibration_constants import (  # noqa: E402
@@ -50,6 +55,11 @@ from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
 from indra_belief.results import GoldMap, load_gold_map  # noqa: E402
 
 _HASH_MASK = (1 << 64) - 1
+
+# The benchmark only overrides sources it measured. All other sources retain
+# the installed INDRA default instead of collapsing to noise_model's generic
+# unknown-source fallback.
+RECALIBRATED_WITH_INDRA_DEFAULTS = with_benchmark_recalibration(RECALIBRATED_PRIORS)
 
 
 def ukey(x):
@@ -215,7 +225,7 @@ def main() -> None:
         statement_gold = aggregate_gold(s["tags"])
         if statement_gold is None:
             continue
-        sb = statement_belief(s["rows"], RECALIBRATED_PRIORS)
+        sb = statement_belief(s["rows"], RECALIBRATED_WITH_INDRA_DEFAULTS)
         n_no_text += sb.n_no_text
         n_parse_fail += sb.n_parse_fail
         n_null_source += sb.n_null_source
@@ -229,7 +239,7 @@ def main() -> None:
             continue
         gold_correct = is_gold_correct(statement_gold)
         belief_soft = (statement_belief(
-            s["rows"], RECALIBRATED_PRIORS, soft=calib
+            s["rows"], RECALIBRATED_WITH_INDRA_DEFAULTS, soft=calib
         ).belief if calib else None)
         sc = s["source_counts"] or {}
         stmts.append({
@@ -238,8 +248,12 @@ def main() -> None:
             "gold_correct": gold_correct,
             "belief_llm": sb.belief,
             "belief_llm_soft": belief_soft,
-            "belief_recal": compute_edge_reliability_from_counts(sc, RECALIBRATED_PRIORS) if sc else None,
-            "belief_indra": compute_edge_reliability_from_counts(sc, INDRA_PRIORS) if sc else None,
+            "belief_recal": compute_edge_reliability_from_counts(
+                sc, RECALIBRATED_WITH_INDRA_DEFAULTS
+            ) if sc else None,
+            "belief_indra": compute_edge_reliability_from_counts(
+                sc, INDRA_DEFAULT_PRIORS
+            ) if sc else None,
             "belief_stored": s["belief_stored"],
             "verdict_statement": sb.verdict_statement,
         })
@@ -280,6 +294,14 @@ def main() -> None:
         "input_sha256": {
             "gold": hashlib.sha256(Path(args.gold).read_bytes()).hexdigest(),
             "run": hashlib.sha256(Path(args.run).read_bytes()).hexdigest(),
+            "indra_default_priors": INDRA_DEFAULT_PRIORS_SHA256,
+        },
+        "indra_default_priors": {
+            "resource": INDRA_DEFAULT_PRIOR_RESOURCE,
+            "sha256": INDRA_DEFAULT_PRIORS_SHA256,
+            "n_declared_sources": len(INDRA_DEFAULT_PRIORS.declared_sources),
+            "n_complete_sources": len(INDRA_DEFAULT_PRIORS),
+            "incomplete_sources": sorted(INDRA_DEFAULT_PRIORS.incomplete_sources),
         },
         "reader_configuration": reader_configuration,
         "calibration": calib,
@@ -295,6 +317,10 @@ def main() -> None:
             "calibrated_score": (
                 "hybrid log-odds: confusion-derived reader log-LRs plus a separately "
                 "fitted source-reliability floor on confirmations; not a pure posterior"
+            ),
+            "default_priors": (
+                "read at import from indra/resources/default_belief_probs.json; "
+                "recalibrated sources override that complete installed table"
             ),
             "readability": (
                 "indra_belief.statement_belief production de-dup/no_text semantics; "

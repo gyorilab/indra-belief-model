@@ -14,10 +14,6 @@ from __future__ import annotations
 
 from indra_belief.scorers.panel.types import CONFIDENCE_RANK, Objection
 
-# verdict x confidence -> score on the shared 0.05-0.95 grid (the same table
-# `indra_belief.verdict.grid_score` reads for the monolithic path)
-from indra_belief.scorers._shared import VERDICT_SCORE_GRID as _SCORE
-
 
 def adjudicate(objections: list[Objection | None], min_confidence: str = "medium") -> dict:
     """Combine detector objections into a binary verdict. NEVER abstains."""
@@ -30,7 +26,7 @@ def adjudicate(objections: list[Objection | None], min_confidence: str = "medium
         return {
             "verdict": "incorrect",
             "confidence": top.confidence,
-            "score": _SCORE[("incorrect", top.confidence)],
+            "score": None,
             "reasons": [o.defect for o in committed],
             "rationale": top.rationale or f"{top.kind}: {top.defect}",
             "objections": committed,
@@ -42,7 +38,7 @@ def adjudicate(objections: list[Objection | None], min_confidence: str = "medium
     return {
         "verdict": "correct",
         "confidence": conf,
-        "score": _SCORE[("correct", conf)],
+        "score": None,
         "reasons": [],
         "rationale": ("no committed objection (weak signals: "
                       + ", ".join(o.defect for o in found) + ")") if found

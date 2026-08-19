@@ -8,15 +8,15 @@ The lead leg — **error-detection F1 with bootstrap CIs** — plus the consolid
 
 | reader | n | ECE hard→cal | AUROC hard→cal | errF1 hard→cal | ΔerrF1 [95% CI] | E4 | **G2** |
 |---|---|---|---|---|---|---|---|
-| bedrock-gemma-4-26b | 464 | 0.237→0.061 ✓ | 0.794→0.814 ✓ | 0.801→0.800 | -0.001 [-0.015, 0.014] ✓ | ✓ | **PASS** |
+| bedrock-gemma-4-26b | 464 | 0.237→0.045 ✓ | 0.794→0.813 ✓ | 0.801→0.803 | 0.002 [-0.013, 0.018] ✓ | ✓ | **PASS** |
 
 ## bedrock-gemma-4-26b — external_curator_gold_v1 (n=464, base 0.504 correct / 0.496 error, undefined 5, unmatched rows 0, ambiguous rows 0)
 
-Train: `data/benchmark/eval_curation_v1.jsonl` + `data/results/eval_curation_v1_gemma_rf_bedrock.jsonl`.  
+Train: `data/benchmark/holdout_large_fit.jsonl` + `data/results/holdout_large_bedrock-gemma-4-26b_fit.jsonl`.
 Test: `data/benchmark/external_curator_gold_v1.jsonl` + `data/results/external_curator_v1_bedrock-gemma.jsonl`.  
 Join: per-row exact (matches_hash, source_hash) first; truth-safe source fallback; statement grain = run `stmt_hash`; statement gold = any-incorrect-wins.
 
-**G2: PASS** — ECE 0.237→0.061 (✓); AUROC 0.794→0.814 (✓); err-F1 0.801→0.800, Δ -0.001 [95% CI -0.015, 0.014] vs −0.154 margin (✓); E4 byte-identity ✓.
+**G2: PASS** — ECE 0.237→0.045 (✓); AUROC 0.794→0.813 (✓); err-F1 0.801→0.803, Δ 0.002 [95% CI -0.013, 0.018] vs −0.154 margin (✓); E4 byte-identity ✓.
 
 ### Calibration + discrimination (3-arm; ECE/AUROC are the C1.2 legs)
 
@@ -24,17 +24,17 @@ Join: per-row exact (matches_hash, source_hash) first; truth-safe source fallbac
 |---|---|---|---|---|---|
 | hard | 0.237 | 0.794 | 0.740 | 0.223 | 0.093 |
 | parametric | 0.100 | 0.471 | 0.489 | 0.278 | 0.001 |
-| clean | 0.061 | 0.814 | 0.762 | 0.159 | 0.095 |
+| clean | 0.045 | 0.813 | 0.762 | 0.157 | 0.096 |
 
-### Error-detection F1 (LEAD leg) — frozen train-selected thresholds (hard τ*=0.3, hybrid τ*=0.65; training n=913), 2000 bootstrap resamples (seed 0)
+### Error-detection F1 (LEAD leg) — frozen train-selected thresholds (hard τ*=0.3, hybrid τ*=0.7; training n=2533), 2000 bootstrap resamples (seed 0)
 
 | arm | err-F1 | 95% CI |
 |---|---|---|
 | hard | 0.801 | [0.757, 0.837] |
-| calibrated (hybrid log-odds) | 0.800 | [0.757, 0.838] |
-| **Δ (calibrated−hard)** | -0.001 | [-0.015, 0.014] |
+| calibrated (hybrid log-odds) | 0.803 | [0.759, 0.839] |
+| **Δ (calibrated−hard)** | 0.002 | [-0.013, 0.018] |
 
-Non-inferiority: lower 95% bound -0.015 ≥ −0.154 (pre-specified margin) → **PASS**.
+Non-inferiority: lower 95% bound -0.013 ≥ −0.154 (pre-specified margin) → **PASS**.
 
 τ-sensitivity (err-F1 hard / soft):
 
@@ -42,5 +42,4 @@ Non-inferiority: lower 95% bound -0.015 ≥ −0.154 (pre-specified margin) → 
 |---|---|---|
 | 0.4 | 0.801 | 0.803 |
 | 0.5 | 0.680 | 0.803 |
-| 0.6 | 0.680 | 0.807 |
-
+| 0.6 | 0.680 | 0.800 |

@@ -141,7 +141,13 @@ _VARIANTS = (
     "", "disconfirm", "disconfirm_relnature", "disconfirm_relnature_rf",
     "verdict_only", "typo_xyz",
 )
-_BASELINE_EQUIVALENT = ("", "verdict_only", "typo_xyz")
+# "verdict_only" was here until it became a REGISTERED variant with its own
+# prompt and renderer. Until then MONO_VARIANT=verdict_only silently produced the
+# baseline — which is why the shipped data/comparison_verdict_only run is named
+# for a profile that, at the time, did not exist. It is now real and no longer
+# baseline-equivalent; "typo_xyz" still exercises the unrecognised-value
+# fallback.
+_BASELINE_EQUIVALENT = ("", "typo_xyz")
 # scorer.py:78-79 imports resolve_relation_nature for these two only; scorer.py:90
 # returns "" for every other profile without touching the client.
 _RELNATURE_VARIANTS = ("disconfirm_relnature", "disconfirm_relnature_rf")
@@ -802,14 +808,18 @@ def test_profile_matrix(capture, expected):
 
 
 def test_unrecognised_variant_selects_the_baseline_prompt(capture):
-    """The VARIANTS registry holds only ("", "disconfirm", "disconfirm_relnature",
-    "disconfirm_relnature_rf"); every other value falls back to the baseline. So
-    "verdict_only" — the profile the shipped data/comparison_verdict_only run is
-    named for — and a nonsense value like "typo_xyz" both produce the BASELINE
-    prompt. C0-profile-identity made that fallback LOG (variant_from_env warns on
-    an unrecognized non-empty value, and tests/test_monolithic_variant_profile.py
-    pins the warning); the prompt identity below is deliberately unchanged, which
-    is why none of these digests moved."""
+    """Every value outside the VARIANTS registry falls back to the baseline.
+
+    A nonsense value like "typo_xyz" produces the BASELINE prompt.
+    C0-profile-identity made that fallback LOG (variant_from_env warns on an
+    unrecognized non-empty value, and tests/test_monolithic_variant_profile.py
+    pins the warning).
+
+    "verdict_only" used to be in this set — the shipped
+    data/comparison_verdict_only run is named for a profile that was NOT
+    registered, so MONO_VARIANT=verdict_only quietly produced the baseline. It is
+    now a real variant with its own prompt and renderer, so it is asserted to be
+    DIFFERENT from the baseline below rather than equivalent to it."""
     profiles = capture.data["profiles"]
     requests = capture.data["live_requests"]
 
@@ -834,6 +844,9 @@ def test_unrecognised_variant_selects_the_baseline_prompt(capture):
     assert profiles["disconfirm"]["system_sha256"] != baseline["system_sha256"]
     assert profiles["disconfirm_relnature_rf"]["system_sha256"] != \
         profiles["disconfirm"]["system_sha256"]
+    # verdict_only is no longer a silent alias for the baseline.
+    assert profiles["verdict_only"]["system_sha256"] != baseline["system_sha256"]
+    assert profiles["verdict_only"]["renderer_module"] == "_prompts_verdict_only"
 
 
 # --------------------------------------------------------------------------
@@ -916,14 +929,55 @@ def test_observed_route_agrees_with_the_substrate(expected):
 def test_main_call_kwargs_are_frozen(expected):
     """The non-prompt half of the call. ``max_tokens`` is the value score() was
     given, proving it is threaded through (scorer.py:359-365, :460-466);
-    ``temperature`` pins the 0.1 both call sites hard-code."""
+    ``temperature`` pins the 0.1 both call sites hard-code.
+
+    ``verdict_only`` additionally asks for a top-logprob window, because its
+    output contract puts the verdict label FIRST and the label's margin is
+    therefore readable from this response — no second probe request. Every other
+    variant's kwargs are byte-unchanged, which is the property worth pinning: a
+    logprob request must not leak onto calls that cannot use it."""
     for variant in _VARIANTS:
         for name, entry in expected["live_requests"][variant].items():
-            assert entry["main_call_kwargs"] == {
+            # Both main-call routes (plain and tool) go through the same
+            # _call_kwargs helper, so both carry the request.
+            wants_logprobs = variant == "verdict_only"
+            want = {
                 "kind": entry["main_call_kwargs"]["kind"],
                 "max_tokens": _MAX_TOKENS,
                 "temperature": 0.1,
-            }, (variant, name)
+            }
+            if wants_logprobs:
+                want["top_logprobs"] = 128
+                # Reasoning must be OFF too. The prompt puts the verdict first,
+                # but with the thinking channel open the model spends its budget
+                # reasoning and can emit no answer at all — the first live check
+                # returned empty content and no margin. Prompt shape and
+                # transport have to agree.
+                want["reasoning_effort"] = "none"
+                # ...and so does SAMPLING, the third leg. ModelClient refuses
+                # top_logprobs above temperature 0 (model_client.py) because the
+                # reported argmax stream diverges from the sampled text there,
+                # which makes the located verdict POSITION untrustworthy. This
+                # golden froze 0.1 alongside top_logprobs for a while and stayed
+                # green the whole time — see the structural check below.
+                want["temperature"] = 0.0
+            assert entry["main_call_kwargs"] == want, (variant, name)
+            # THE RULE, not the value. A shape-only golden pins what the request
+            # looks like and never asks whether it can RUN, so this file happily
+            # froze temperature=0.1 beside top_logprobs=128 — a combination the
+            # client rejects on sight. Every scoring call under that profile
+            # raised ValueError, and 1868 tests stayed green because not one of
+            # them executed the request they had all agreed on. Only a live
+            # model surfaced it. Asserted as an invariant so the next variant
+            # that asks for logprobs cannot reintroduce it.
+            kwargs = entry["main_call_kwargs"]
+            if kwargs.get("top_logprobs") is not None:
+                assert kwargs.get("temperature") == 0.0, (
+                    f"{variant}/{name} requests top_logprobs at temperature "
+                    f"{kwargs.get('temperature')!r}; above 0 the reported argmax "
+                    "stream can diverge from the sampled text and the verdict "
+                    "position stops being trustworthy, so ModelClient refuses it"
+                )
             # score() stamps the client's call log onto the result; the fake's is
             # empty, so a request golden carries no transport detail.
             assert entry["call_log"] == []
@@ -1074,16 +1128,36 @@ def test_batch_note_path_is_digest_unchecked(capture, expected):
 
 @requires_vo_substrate
 def test_verdict_only_substrate_requests(capture, expected):
-    """data/comparison_verdict_only's prompt components are emitted by
-    scripts/build_verdict_only_replay.py:177, not by the live scorer: its plain
-    main system is 5781a5842d (3671 chars) and no MONO_VARIANT value produces
-    it, because "verdict_only" silently resolves to the baseline c6845ab46c
-    (3411 chars). Pinned so K1 cannot break that third assembler."""
+    """data/comparison_verdict_only's prompt components come from
+    scripts/build_verdict_only_replay.py:177 — a THIRD prompt assembler beside
+    the live scorer and the batch replay.
+
+    Its relationship to the live scorer has changed twice, and the CURRENT state
+    is deliberate divergence:
+
+      * originally unreachable — "verdict_only" was not in VARIANTS, so
+        MONO_VARIANT=verdict_only silently resolved to the baseline c6845ab46c
+        and nothing live could produce the substrate's 5781a5842d;
+      * briefly identical — registering the variant made the live scorer emit
+        that exact prompt;
+      * now DIFFERENT — the variant dropped verbalized confidence, because it is
+        a coarse three-level guess at what the label margin measures
+        continuously (MEASURED n=80: within-verdict AUROC 0.7814 for the margin
+        against ~+0.001 for the field, which is 100% "high" on some arms).
+        Carrying it into the prompt a profile gets fitted on is how a dead field
+        becomes permanent.
+
+    So the substrate is now a FROZEN ARTIFACT of the older prompt. The assertion
+    is inequality plus an explicit reason, not an accident nobody noticed."""
     assert capture.data["verdict_only_batch_requests"] == \
         expected["verdict_only_batch_requests"]
     vo = expected["verdict_only_batch_requests"]
-    baseline = expected["profiles"]["verdict_only"]["system_sha256"]
-    assert vo["0:0"]["system_sha256"] != baseline
+    live = expected["profiles"]["verdict_only"]["system_sha256"]
+    assert vo["0:0"]["system_sha256"] != live, (
+        "the substrate and the live variant match again — either the variant "
+        "regained the confidence field or the substrate was rebuilt. Both are "
+        "real changes; neither should happen silently."
+    )
     for key in _VO_PINNED:
         assert vo[key]["prompt_sha256"] == vo[key]["stored_main_prompt_base_sha256"]
 
@@ -1115,14 +1189,23 @@ def test_divergence_a_no_text_live_only_keys(expected):
     shared value differs. K1-prepared-execution owns the reconciliation."""
     entry = expected["deterministic_results"]["2:41"]
     assert entry["route"] == "no_text"
-    assert entry["live_only_keys"] == ["selected_example_ids", "selected_examples"]
+    # `weight_of_evidence` joined this set when the scoring boundary began
+    # persisting the probe's additive weight beside its probability. It is
+    # live-only for the same reason `score_error` is: batch replay rebuilds a
+    # result from a recorded row and never re-reads the model.
+    assert entry["live_only_keys"] == [
+        "probe_delta_logit", "score_error", "selected_example_ids",
+        "selected_examples", "weight_of_evidence",
+    ]
     assert entry["batch_only_keys"] == []
     assert entry["value_differences"] == {}
     assert entry["live"]["selected_example_ids"] == []
     assert entry["live"]["selected_examples"] == []
     # deterministic_mismatch has no divergence at all.
     mismatch = expected["deterministic_results"]["2:31"]
-    assert mismatch["live_only_keys"] == mismatch["batch_only_keys"] == []
+    assert mismatch["live_only_keys"] == [
+        "probe_delta_logit", "score_error", "weight_of_evidence"]
+    assert mismatch["batch_only_keys"] == []
     assert mismatch["value_differences"] == {}
 
 
@@ -1139,7 +1222,9 @@ def test_divergence_b_pseudogene_raw_text_prefix(expected):
     sides. K2-one-parser owns the reconciliation."""
     entry = expected["deterministic_results"]["909:0"]
     assert entry["route"] == "deterministic_pseudogene"
-    assert entry["live_only_keys"] == entry["batch_only_keys"] == []
+    assert entry["live_only_keys"] == [
+        "probe_delta_logit", "score_error", "weight_of_evidence"]
+    assert entry["batch_only_keys"] == []
     assert sorted(entry["value_differences"]) == ["raw_text"]
     live = entry["value_differences"]["raw_text"]["live"]
     batch = entry["value_differences"]["raw_text"]["batch"]

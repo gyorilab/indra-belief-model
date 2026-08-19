@@ -2,8 +2,9 @@
 
 For each configuration-matched validation pair, this script:
 
-* fits the reader profile and selects hard/calibrated error-F1 thresholds on
-  ``eval_curation_v1`` only;
+* fits each reader profile on ITS OWN shipped fit corpus -- which is not the
+  same corpus for every arm -- and selects hard/calibrated error-F1 thresholds
+  there;
 * joins the test run at production statement grain with any-incorrect-wins gold;
 * reports the visible raw INDRA count -> calibrated ECE/AUROC comparison; and
 * delegates the formal four-leg gate, including paired bootstrap CIs, to
@@ -53,7 +54,13 @@ PLAN = [
         "gold": "external", "reader": "gemma-26B Bedrock",
         # The external run uses the reasoning-first Bedrock configuration, whose
         # separately measured profile must not borrow the remote/Ollama fit.
-        "train_run": "data/results/eval_curation_v1_gemma_rf_bedrock.jsonl",
+        # REFIT 2026-08-17 (8bebc9a): the shipped gemma_bedrock_rf profile is
+        # fitted on holdout_large_fit, not eval_curation_v1. This script kept
+        # refitting on the old corpus and therefore kept printing the RETIRED
+        # .129->.061 / .688->.814 that the deck cited it for -- a provenance
+        # script certifying numbers production no longer uses.
+        "train_gold": "data/benchmark/holdout_large_fit.jsonl",
+        "train_run": "data/results/holdout_large_bedrock-gemma-4-26b_fit.jsonl",
         "test_gold": "data/benchmark/external_curator_gold_v1.jsonl",
         "test_run": "data/results/external_curator_v1_bedrock-gemma.jsonl",
     },
@@ -84,9 +91,10 @@ def main() -> None:
     fitted = {}
     for item in PLAN:
         train_run = item["train_run"]
+        train_gold = item.get("train_gold", TRAIN_GOLD)
         validate_configuration_pair(train_run, item["test_run"])
         if train_run not in fitted:
-            train_statements, _ = statements_for_run(train_run, TRAIN_GOLD)
+            train_statements, _ = statements_for_run(train_run, train_gold)
             profile = c1.fit_reader_profile(train_statements)
             fitted[train_run] = (profile, training_thresholds(train_statements, profile))
 

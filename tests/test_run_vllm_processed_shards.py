@@ -126,34 +126,39 @@ def test_finalize_keeps_multiple_evidences_for_one_statement(tmp_path):
     }
 
 
-def test_finalize_keeps_exhausted_error(tmp_path):
+def test_finalize_keeps_logit_and_exhausted_error(tmp_path):
     shard = tmp_path / "grounded-000000.jsonl.gz"
     write_jobs(
         shard,
-        [{"job_id": "1:0", "stmt_hash": 101, "source_hash": 11}],
+        [
+            {"job_id": "1:0", "stmt_hash": 101, "source_hash": 11},
+            {"job_id": "2:0", "stmt_hash": 202, "source_hash": 22},
+        ],
     )
     latest = {
         "1:0": {
+            "verdict": "correct",
+            "confidence": "high",
+            "probe_delta_logit": 4.25,
+        },
+        "2:0": {
             "verdict": None,
             "confidence": None,
             "error": "unparseable model response",
             "attempts": 4,
             "response_preview": "bad reply",
-        }
+        },
     }
 
     payload = runner.finalize(shard, latest, None)
 
-    assert payload == {
-        "101": {
-            "11": {
-                "verdict": "error",
-                "confidence": None,
-                "error": "unparseable model response",
-                "attempts": 4,
-                "response_preview": "bad reply",
-            }
-        }
+    assert payload["101"]["11"]["probe_delta_logit"] == 4.25
+    assert payload["202"]["22"] == {
+        "verdict": "error",
+        "confidence": None,
+        "error": "unparseable model response",
+        "attempts": 4,
+        "response_preview": "bad reply",
     }
 
 
@@ -202,6 +207,12 @@ def test_unparseable_response_keeps_diagnostic_preview():
             return Response()
 
     class Prompt:
+        # `variant` is not decoration: score_job reads the reasoning channel,
+        # temperature and logprob window off it, because those three and the
+        # prompt are one coherent set. A double that omits it is not standing in
+        # for the real object.
+        variant = runner.MonolithicPrompt(runner.DEFAULT_VARIANT).variant
+
         def request(self, _job):
             return "system", [{"role": "user", "content": "question"}]
 
@@ -274,8 +285,8 @@ def test_the_runner_reads_that_reply_through_the_same_parser():
 def test_an_unreadable_reply_stays_absent_rather_than_becoming_a_number():
     """(None, None), never a fabricated score.
 
-    `grid_score` returns None off-grid so an absent measurement stays absent;
-    this runner must not be the path that reintroduces a default.
+    An unreadable categorical answer stays absent; this runner must not be the
+    path that reintroduces a default measurement.
     """
     assert runner.MonolithicPrompt().parse("I cannot decide from this text.", "") == (
         None,
@@ -283,15 +294,46 @@ def test_an_unreadable_reply_stays_absent_rather_than_becoming_a_number():
     )
 
 
-def test_processed_runner_uses_commit_first_disconfirm_prompt():
-    from indra_belief.scorers.monolithic._prompts_disconfirm import (
-        DISCONFIRM_SYSTEM_PROMPT,
-    )
+def test_batch_runner_sends_byte_IDENTICAL_prompts_to_the_live_scorer():
+    """WAS a pin on DISCONFIRM_SYSTEM_PROMPT, which conflated two things.
 
-    prompt = runner.MonolithicPrompt()
+    The invariant worth having is PARITY: whatever variant this runner is asked
+    for, it must send the same bytes the live scorer sends, because a
+    calibration profile is keyed on (model, prompt sha) and a batch path that
+    drifted by one character would silently score against a profile fitted for
+    a prompt it never sent.
 
-    assert prompt.system_prompt == DISCONFIRM_SYSTEM_PROMPT
-    assert len(prompt.examples("Activation")) == 28  # 7 pairs / 14 examples
+    Pinning one constant asserted parity only for the single variant the runner
+    was hard-wired to, and in doing so it also froze the CHOICE of variant --
+    which is what made the no-CoT path unreachable at corpus scale. Parity is
+    the real property; the choice is a flag.
+
+    HONEST ABOUT ITS OWN STRENGTH: the loop below is true BY CONSTRUCTION today,
+    because MonolithicPrompt reads `system_prompt` straight off the variant. It
+    cannot fail against the current implementation, and it is kept for the case
+    that would make it fail -- someone reintroducing a local copy of a prompt in
+    this file, which is exactly how the batch and live paths would drift apart.
+    The examples() assertion below is a genuine value check.
+    """
+    from indra_belief.scorers.monolithic import scorer as mono
+
+    for name, variant in mono.VARIANTS.items():
+        if not name:
+            continue
+        assert runner.MonolithicPrompt(name).system_prompt == variant.system_prompt, (
+            f"the batch runner's {name!r} prompt has drifted from the live one"
+        )
+
+    # The few-shot block is part of the request, so parity has to cover it too.
+    disconfirm = runner.MonolithicPrompt("disconfirm_relnature_rf")
+    assert len(disconfirm.examples("Activation")) == 28  # 7 pairs / 14 examples
+
+
+def test_the_default_variant_sends_no_chain_of_thought():
+    """The corpus-scale default. At 60M evidences an unasked-for CoT is the
+    entire bill, and the previous default was 'whatever the chat template does'
+    because the request carried no reasoning control at all."""
+    assert runner.MonolithicPrompt().variant.reasoning_effort == "none"
 
 
 def test_complex_job_runs_relation_nature_before_verdict():
@@ -342,7 +384,10 @@ def test_complex_job_runs_relation_nature_before_verdict():
             "object_grounding": {"aliases": ["Y alias"]},
         },
         client=client,
-        prompt=runner.MonolithicPrompt(),
+        # Explicitly the relnature variant: the relation-nature step is a
+        # property OF that variant, not of the runner. The default carries no
+        # relation resolver and correctly skips the call.
+        prompt=runner.MonolithicPrompt("disconfirm_relnature_rf"),
         endpoint="http://vllm/v1/chat/completions",
         model_id="served-model",
         max_tokens=1000,
@@ -357,16 +402,83 @@ def test_complex_job_runs_relation_nature_before_verdict():
     assert "Relation nature (resolved)" in client.calls[1]["messages"][-1]["content"]
 
 
-def test_offline_client_batches_llm_chat_calls(monkeypatch):
+def test_main_reaches_shard_discovery_without_a_name_error(tmp_path, monkeypatch, capsys):
+    """The corpus runner's entry point must actually import and run.
+
+    REGRESSION. `main()` computed the pinned prompt's sha for the calibration
+    banner using the bare name `DISCONFIRM_SYSTEM_PROMPT` — which this module
+    imports INSIDE `MonolithicPrompt.__init__`, deliberately, so it stays
+    importable without the scorer's dependency graph. The name was never in
+    module scope, so every invocation died with NameError before touching a
+    shard. Nothing caught it: the suite exercises this file's helpers, never its
+    entry point.
+
+    This drives main() far enough to prove the banner path executes, then lets
+    it exit on an empty input directory. It asserts the failure mode, not a
+    successful run — no server is involved.
+    """
+    import sys
+
+    empty = tmp_path / "shards"
+    empty.mkdir()
+    monkeypatch.setattr(sys, "argv", [
+        "run_vllm_processed_shards.py",
+        "--input-dir", str(empty),
+        "--output-dir", str(tmp_path / "out"),
+        "--model", "vllm-local",
+    ])
+    import pytest as _pytest
+
+    # An empty input directory is a SystemExit, not a return code. What is being
+    # asserted is WHERE it dies: past the banner, at shard discovery.
+    with _pytest.raises(SystemExit) as excinfo:
+        runner.main()
+    out = capsys.readouterr().out
+    assert "calibration:" in out, (
+        "the calibration banner did not print — main() failed before reaching it"
+    )
+    assert "no shards found" in str(excinfo.value), (
+        f"expected to reach shard discovery, died earlier with: {excinfo.value}"
+    )
+
+
+def test_require_calibrated_refuses_an_unfitted_prompt(tmp_path, monkeypatch):
+    """The pinned prompt has no fitted profile, so this must refuse rather than
+    quietly publish hard-gate beliefs at corpus scale."""
+    import sys
+
+    import pytest as _pytest
+
+    empty = tmp_path / "shards"
+    empty.mkdir()
+    monkeypatch.setattr(sys, "argv", [
+        "run_vllm_processed_shards.py",
+        "--input-dir", str(empty),
+        "--output-dir", str(tmp_path / "out"),
+        "--model", "vllm-local",
+        "--require-calibrated",
+    ])
+    with _pytest.raises(SystemExit) as excinfo:
+        runner.main()
+    assert "no ship-approved profile" in str(excinfo.value)
+
+
+def test_offline_client_preserves_requested_logprobs(monkeypatch):
     instances = []
 
     class SamplingParams:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
 
+    class Logprob:
+        def __init__(self, token, value):
+            self.decoded_token = token
+            self.logprob = value
+
     class Completion:
-        text = "verdict correct\nconfidence high"
-        token_ids = [1, 2, 3]
+        text = "correct\nhigh"
+        token_ids = [1]
+        logprobs = [{1: Logprob("correct", -0.1), 2: Logprob("incorrect", -2.1)}]
         finish_reason = "stop"
 
     class Output:
@@ -376,13 +488,14 @@ def test_offline_client_batches_llm_chat_calls(monkeypatch):
     class LLM:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
-            self.batch_lengths = []
+            self.params = []
             instances.append(self)
 
-        def chat(self, conversations, sampling_params, use_tqdm):
-            self.batch_lengths.append(len(conversations))
-            assert len(sampling_params) == len(conversations)
+        def chat(self, conversations, sampling_params, use_tqdm, **kwargs):
+            self.params.extend(sampling_params)
+            assert len(conversations) == 2
             assert use_tqdm is False
+            assert kwargs == {"chat_template_kwargs": {"enable_thinking": False}}
             return [Output() for _ in conversations]
 
     monkeypatch.setitem(
@@ -393,7 +506,10 @@ def test_offline_client_batches_llm_chat_calls(monkeypatch):
     request = {
         "messages": [{"role": "user", "content": "question"}],
         "max_tokens": 100,
-        "temperature": 0.1,
+        "temperature": 0,
+        "logprobs": True,
+        "top_logprobs": 128,
+        "chat_template_kwargs": {"enable_thinking": False},
     }
 
     with runner.OfflineVllmClient(
@@ -404,13 +520,10 @@ def test_offline_client_batches_llm_chat_calls(monkeypatch):
                 pool.map(lambda _i: client.post("", json=request), range(2))
             )
 
-    assert instances[0].kwargs == {
-        "model": "model/path",
-        "enable_prefix_caching": True,
-        "gpu_memory_utilization": 0.8,
-    }
-    assert instances[0].batch_lengths == [2]
-    assert responses[0].json()["usage"] == {
-        "prompt_tokens": 2,
-        "completion_tokens": 3,
+    assert instances[0].params[0].kwargs["logprobs"] == 128
+    content = responses[0].json()["choices"][0]["logprobs"]["content"]
+    assert content[0]["token"] == "correct"
+    assert {row["token"] for row in content[0]["top_logprobs"]} == {
+        "correct",
+        "incorrect",
     }

@@ -13,6 +13,7 @@
 <nav class="site-nav" aria-label="site sections">
 	<ul class="sections">
 		<li><a href="/" class:active={isActive('/')}>overview</a></li>
+		<li><a href="/belief" class:active={isActive('/belief')}>belief</a></li>
 		<li><a href="/statements" class:active={isActive('/statements')}>statements</a></li>
 		<li><a href="/runs" class:active={isActive('/runs')}>runs</a></li>
 		<li><a href="/compare" class:active={isActive('/compare')}>compare</a></li>

@@ -196,12 +196,9 @@ DUPLICATE_SITES = [
     #
     # RETIRED by K2-one-parser, four rows — "structured verdict parse",
     # "phrase-level verdict fallback", "(verdict, confidence) -> score grid" and
-    # "score on unparseable output". `indra_belief.verdict` is the one reader and
-    # the one map; the score grid itself stays in `scorers/_shared.py` (its bytes
-    # feed a published implementation_digest) and is imported, not copied. The
-    # last of the four was not merely duplicated but CONTRADICTORY — live wrote
-    # 0.5, batch wrote None — and it resolved to None: an absent measurement
-    # stays absent.
+    # "score on unparseable output". `indra_belief.verdict` is the one categorical
+    # reader. The obsolete score grid has since been deleted; calibrated sentence
+    # measurement is independent, and any unavailable measurement stays None.
     #
     # RETIRED by X1-twins, two rows — "relation-nature note" and "no-text
     # default-accept". The retired relation anchors named the two

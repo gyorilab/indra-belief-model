@@ -375,6 +375,32 @@ def oriented_p(p_raw: float, orientation: str) -> float:
     raise ValueError(f"unknown probe orientation: {orientation}")
 
 
+def probe_digest(probe_id: str) -> str:
+    """Return the content identity of one probe and its closed label space.
+
+    A fitted single-probe calibrator must not be invalidated by edits to an
+    unrelated battery member, but it must move when any byte that determines
+    this probe's request or label interpretation moves.
+    """
+
+    probe = probe_by_id(probe_id)
+    return canonical_sha256(
+        {
+            "labels": LABELS,
+            "label_token_ids": LABEL_TOKEN_IDS,
+            "probe": (
+                probe.id,
+                probe.family,
+                probe.system,
+                probe.user_template,
+                probe.prefill_suffix,
+                probe.orientation,
+                probe.targets,
+            ),
+        }
+    )
+
+
 def battery_digest() -> str:
     """Return the battery's order-sensitive content digest.
 

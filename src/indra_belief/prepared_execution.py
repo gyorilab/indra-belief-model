@@ -221,6 +221,12 @@ class PreparedCall:
     temperature: float = 0.1
     response_format: Mapping[str, Any] | None = None
     reasoning_effort: str | None = None
+    # Width of the top-logprob window to request on THIS call. Set only by a
+    # variant whose output contract puts the verdict label FIRST, so the label's
+    # margin can be read from the scoring response instead of a second probe
+    # request. Not part of request identity: prompt_sha256 hashes system +
+    # messages, so asking for logprobs does not make this a different prompt.
+    top_logprobs: int | None = None
 
     def prompt_sha256(self) -> str:
         """This call's canonical request digest, recomputed from the call."""
@@ -233,6 +239,8 @@ class PreparedCall:
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
         }
+        if self.top_logprobs is not None:
+            kwargs["top_logprobs"] = self.top_logprobs
         if self.response_format is not None:
             kwargs["response_format"] = dict(self.response_format)
         if self.reasoning_effort is not None:

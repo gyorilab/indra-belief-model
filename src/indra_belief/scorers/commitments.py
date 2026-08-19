@@ -168,10 +168,9 @@ class Adjudication:
 
     `rationale` is INFORMATIONAL ONLY — decision logic must not depend on it.
 
-    `score` is the continuous [0,1] belief from the log-odds combiner.
-    When None, the score is derived from (verdict, confidence) via the
-    legacy `_VERDICT_SCORE` lookup — that path is reserved for tests
-    and back-compat callers.
+    `score` is the continuous [0,1] belief from the log-odds combiner. When it
+    is unavailable it stays None; categorical verdict/confidence never invent a
+    replacement probability.
     """
     verdict: Verdict
     confidence: Confidence
@@ -186,14 +185,6 @@ class Adjudication:
             _reject("reason", r, _VALID_REASON)
 
 
-# Legacy lookup for callers that construct Adjudication without an
-# explicit score (mostly tests). The log-odds adjudicator sets
-# Adjudication.score directly and `adjudication_to_score` returns it.
-from indra_belief.scorers._shared import VERDICT_SCORE_GRID as _VERDICT_SCORE
-
-
-def adjudication_to_score(a: Adjudication) -> float:
-    """Map an Adjudication to the [0, 1] belief score used downstream."""
-    if a.score is not None:
-        return a.score
-    return _VERDICT_SCORE[(a.verdict, a.confidence)]
+def adjudication_to_score(a: Adjudication) -> float | None:
+    """Return the measured combiner score, preserving explicit absence."""
+    return a.score

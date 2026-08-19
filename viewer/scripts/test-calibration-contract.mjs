@@ -9,6 +9,7 @@ import {
 	commonCalibrationArm,
 	metricsContractFingerprint,
 	readerConfigurationIdentity,
+	sentenceProbabilityOrNull,
 	selectCalibrationPredecessor
 } from '../src/lib/data/calibration.ts';
 import { compareRunRecency } from '../src/lib/data/runs.ts';
@@ -35,8 +36,13 @@ const SHA = {
 	goldFit: 'c'.repeat(64),
 	goldValidation: 'd'.repeat(64),
 	evalA: 'e'.repeat(64),
-	evalB: 'f'.repeat(64)
+	evalB: 'f'.repeat(64),
+	sentenceCalibration: '130be54bdab2638175f6cceb4de2a57a663ab01fd206df1ea024e8b578da2b46'
 };
+const SENTENCE_MODEL_ID = 'mlx-community/gemma-4-26b-a4b-it-8bit';
+const SENTENCE_PROBE_ID = 'pol.verdict_direct';
+const SENTENCE_PROBE_DIGEST =
+	'2aa7729f9b4f5e897c6e99baf25956c710c1a36f4f49dfd7f89b4fc747d641ed';
 
 function provenance(overrides = {}) {
 	return {
@@ -49,6 +55,52 @@ function provenance(overrides = {}) {
 
 function arm(ece = 0.1, brier = 0.2) {
 	return { ece, brier };
+}
+
+function thresholdContract({ sentenceValue = 0.5, statementValue = 0.5 } = {}) {
+	return {
+		tier1_sentence: {
+			value: sentenceValue,
+			score: 'calibrated sentence P(correct)',
+			rule: 'predict correct iff score >= value',
+			derivation: 'equal-cost probability decision boundary; not tuned on held-out labels',
+			calibration_profile: {
+				model: 'local-gemma-4-26b',
+				model_id: SENTENCE_MODEL_ID,
+				probe_id: SENTENCE_PROBE_ID,
+				probe_digest: SENTENCE_PROBE_DIGEST,
+				artifact: 'sentence_probe_calibration.json',
+				artifact_sha256: SHA.sentenceCalibration
+			}
+		},
+		tier2_statement: {
+			value: statementValue,
+			score: 'statement belief',
+			rule: 'predict error iff belief < value'
+		}
+	};
+}
+
+function sentenceScoreContract(overrides = {}) {
+	return {
+		status: 'available',
+		source_status: 'enabled',
+		contract_version: 1,
+		grain: 'sentence',
+		kind: 'calibrated_probability_correct',
+		calibration_model: 'local-gemma-4-26b',
+		calibration_model_id: SENTENCE_MODEL_ID,
+		probe_id: SENTENCE_PROBE_ID,
+		probe_digest: SENTENCE_PROBE_DIGEST,
+		calibration_artifact: 'sentence_probe_calibration.json',
+		calibration_artifact_sha256: SHA.sentenceCalibration,
+		raw_field: 'score',
+		export_field: 'our_score',
+		unavailable_value: null,
+		rows_available: 0,
+		rows_unavailable: 0,
+		...overrides
+	};
 }
 
 function configId(model = 'reader', prompt = '1'.repeat(64)) {
@@ -110,6 +162,8 @@ function run({
 	profileId = `${model}@fit`,
 	profileStatus = 'available',
 	profileOverrides = {},
+	includeSentenceScore = true,
+	sentenceScoreOverrides = {},
 	prov = provenance(),
 	exportDir = `/exports/${id}`
 } = {}) {
@@ -135,6 +189,9 @@ function run({
 		started_at: null,
 		finished_at: finished,
 		provenance: prov,
+		...(includeSentenceScore
+			? { sentence_score: sentenceScoreContract(sentenceScoreOverrides) }
+			: {}),
 		soft_calibration: {
 			status: profileStatus,
 			model,
@@ -168,7 +225,7 @@ function metrics({
 		provenance: prov,
 		metrics_basis: {
 			bins: 'BINS_8',
-			tau: 0.5,
+			thresholds: thresholdContract(),
 			join: 'exact pair',
 			soft_calibration:
 				profileStatus === 'available'
@@ -245,10 +302,118 @@ eq(commonCalibrationArm(v2, v3, 'stmt'), null, 'v2 soft never mixes with v3 hybr
 eq(commonCalibrationArm(v2, v2, 'stmt'), 'hard', 'two v2 contracts share hard arm');
 ok(calibrationArmLabel(v2, 'soft').includes('legacy soft survival'), 'v2 soft is visibly legacy');
 ok(calibrationArmLabel(v3, 'soft').includes('hybrid log-odds'), 'v3 soft is labelled hybrid');
+eq('tau' in v3.metrics_basis, false, 'ambiguous shared tau is absent');
+eq(
+	v3.metrics_basis.thresholds.tier1_sentence.rule,
+	'predict correct iff score >= value',
+	'Tier-1 uses the calibrated probability boundary including equality'
+);
+eq(
+	v3.metrics_basis.thresholds.tier2_statement.rule,
+	'predict error iff belief < value',
+	'Tier-2 retains the statement-belief error boundary'
+);
+eq(sentenceProbabilityOrNull(0), 0, 'zero is a valid calibrated probability');
+eq(sentenceProbabilityOrNull(1), 1, 'one is a valid calibrated probability');
+for (const [value, label] of [
+	[true, 'boolean'],
+	[Number.NaN, 'NaN'],
+	[Number.POSITIVE_INFINITY, 'infinity'],
+	[-0.01, 'negative'],
+	[1.01, 'above one'],
+	['0.5', 'numeric string']
+]) {
+	eq(sentenceProbabilityOrNull(value), null, `${label} score becomes explicit null`);
+}
 
 // End-to-end schema/run/model/profile/provenance consistency.
 const base = pair();
 eq(calibrationArtifactConsistency(base.r, base.m).valid, true, 'v8/v3 artifact seam valid');
+const missingSentenceScore = pair({ runOverrides: { includeSentenceScore: false } });
+const missingSentenceResult = calibrationArtifactConsistency(
+	missingSentenceScore.r,
+	missingSentenceScore.m
+);
+eq(missingSentenceResult.valid, false, 'pre-W1 v8 export without score provenance rejected');
+ok(
+	missingSentenceResult.reasons.some((reason) => reason.includes('sentence-score contract is missing')),
+	'missing sentence-score provenance reason exposed'
+);
+for (const [label, sentenceScoreOverrides] of [
+	['score kind', { kind: 'categorical_verdict_grid' }],
+	['calibration model id', { calibration_model_id: 'mlx-community/other-model' }],
+	['probe id', { probe_id: 'pol.other_probe' }],
+	['probe digest', { probe_digest: SHA.evalA }],
+	['score artifact', { calibration_artifact_sha256: SHA.evalB }]
+]) {
+	const tampered = pair({ runOverrides: { sentenceScoreOverrides } });
+	eq(
+		calibrationArtifactConsistency(tampered.r, tampered.m).valid,
+		false,
+		`${label} mismatch rejected`
+	);
+}
+for (const [label, field, value] of [
+	['metrics model id', 'model_id', 'mlx-community/other-model'],
+	['metrics probe id', 'probe_id', 'pol.other_probe'],
+	['metrics probe digest', 'probe_digest', SHA.evalA]
+]) {
+	const tampered = structuredClone(base);
+	tampered.m.metrics_basis.thresholds.tier1_sentence.calibration_profile[field] = value;
+	eq(
+		calibrationArtifactConsistency(tampered.r, tampered.m).valid,
+		false,
+		`${label} mismatch rejected`
+	);
+}
+const jointlyTamperedArtifact = pair({
+	runOverrides: {
+		sentenceScoreOverrides: { calibration_artifact_sha256: SHA.evalB }
+	},
+	metricsOverrides: {
+		basis: {
+			thresholds: {
+				...thresholdContract(),
+				tier1_sentence: {
+					...thresholdContract().tier1_sentence,
+					calibration_profile: {
+						...thresholdContract().tier1_sentence.calibration_profile,
+						artifact_sha256: SHA.evalB
+					}
+				}
+			}
+		}
+	}
+});
+eq(
+	calibrationArtifactConsistency(jointlyTamperedArtifact.r, jointlyTamperedArtifact.m).valid,
+	false,
+	'export and metrics cannot agree on an unshipped sentence calibration artifact'
+);
+const unavailableSentenceScore = pair({
+	runOverrides: {
+		sentenceScoreOverrides: {
+			status: 'unavailable',
+			source_status: 'unavailable',
+			rows_available: 0
+		}
+	},
+	metricsOverrides: {
+		evArms: { score: { status: 'unavailable', reason: 'sentence scores unavailable' } }
+	}
+});
+eq(
+	calibrationArtifactConsistency(unavailableSentenceScore.r, unavailableSentenceScore.m).valid,
+	true,
+	'explicitly unavailable sentence score remains an honest named-empty'
+);
+const unavailableWithArm = structuredClone(unavailableSentenceScore);
+unavailableWithArm.m.tiers.ev.arms.score = arm(0.1);
+eq(
+	calibrationArtifactConsistency(unavailableWithArm.r, unavailableWithArm.m).valid,
+	false,
+	'unavailable sentence-score provenance cannot back a realized Tier-1 arm'
+);
 const legacyRun = run({ exportSchema: 7, profileStatus: 'unavailable' });
 const legacyMetrics = metrics({ schema: 2 });
 eq(calibrationArtifactConsistency(legacyRun, legacyMetrics).valid, true, 'v7/v2 seam valid');
@@ -420,6 +585,22 @@ eq(
 	false,
 	'different metrics basis rejected'
 );
+for (const [label, thresholds] of [
+	['Tier-1 probability threshold', thresholdContract({ sentenceValue: 0.6 })],
+	['Tier-2 belief threshold', thresholdContract({ statementValue: 0.6 })]
+]) {
+	const changedThreshold = pair({
+		id: 'run-b',
+		model: 'reader-b',
+		profileId: 'profile-b',
+		metricsOverrides: { basis: { thresholds } }
+	});
+	eq(
+		calibrationCompatibility(a.r, changedThreshold.r, a.m, changedThreshold.m).compatible,
+		false,
+		`${label} mismatch rejected`
+	);
+}
 
 // Predecessors are stricter than arbitrary A/B: exact config and, for soft, exact profile.
 const current = pair({ id: 'current', model: 'reader', profileId: 'profile' });

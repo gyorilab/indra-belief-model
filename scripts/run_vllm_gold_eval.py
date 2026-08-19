@@ -21,19 +21,19 @@ Small smoke test::
 
     PYTHONPATH=src python scripts/run_vllm_gold_eval.py \
       --gold data/benchmark/eval_curation_v1.jsonl \
-      --model vllm-local --variant baseline --workers 8 --limit 20
+      --model vllm-gemma-4-26b --variant baseline --workers 8 --limit 20
 
 Resume the same output (the default behavior)::
 
     PYTHONPATH=src python scripts/run_vllm_gold_eval.py \
       --gold data/benchmark/eval_curation_v1.jsonl \
-      --model vllm-local --variant baseline --workers 16
+      --model vllm-gemma-4-26b --variant baseline --workers 16
 
 Run the legacy large holdout::
 
     PYTHONPATH=src python scripts/run_vllm_gold_eval.py \
       --gold data/benchmark/holdout_large.jsonl \
-      --model vllm-local --variant baseline --workers 16 \
+      --model vllm-gemma-4-26b --variant baseline --workers 16 \
       --output data/results/vllm_baseline_holdout_large.jsonl
 """
 from __future__ import annotations
@@ -252,7 +252,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         help="Full INDRA benchmark corpus used to recover native objects/db_refs.",
     )
-    parser.add_argument("--model", default="vllm-local")
+    parser.add_argument("--model", default="vllm-gemma-4-26b")
     parser.add_argument(
         "--base-url",
         default=None,
@@ -270,11 +270,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "disconfirm",
             "disconfirm_relnature",
             "disconfirm_relnature_rf",
+            "disconfirm_relnature_rf_noconf",
+            "verdict_only",
         ),
         default="baseline",
         help="baseline is the closest current-code path to historical v12; "
         "disconfirm_relnature_rf is the current production default.",
     )
+    parser.add_argument("--require-calibrated", action="store_true",
+                        help="refuse the run unless this model+prompt resolves a "
+                             "ship-approved calibration profile")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--max-tokens", type=int, default=None)
     parser.add_argument("--limit", type=int, default=None)
@@ -336,7 +341,14 @@ def main() -> int:
     )
 
     from indra_belief.data.corpus import CorpusIndex
-    from indra_belief.model_client import LOCAL_MODELS, ModelClient
+    from indra_belief.model_client import (
+        LOCAL_MODELS, ModelClient, canonical_model_name,
+    )
+
+    # Resolved before the lookup, so a renamed entry stays reachable under its
+    # old name and an aliased run is byte-identical to a canonical one -- the
+    # calibration profile is keyed on the canonical name.
+    args.model = canonical_model_name(args.model)
     from indra_belief.scorers.monolithic import scorer as mono
 
     if args.model not in LOCAL_MODELS:
@@ -359,9 +371,27 @@ def main() -> int:
     if args.limit is not None:
         gold_rows = gold_rows[: args.limit]
     input_sha256 = _sha256(gold_path)
+    # The prompt is per-VARIANT, so the fingerprint must be read from the variant
+    # actually selected. `mono.ACTIVE_SYSTEM_PROMPT` was a single module-level
+    # global; it no longer exists, and once variants landed it could not have been
+    # right anyway — every variant would have recorded the same sha. The registry
+    # keyed by `--variant` is the same one the scorer dispatches on.
     prompt_sha256 = hashlib.sha256(
-        mono.ACTIVE_SYSTEM_PROMPT.encode("utf-8")
+        mono.VARIANTS[args.variant].system_prompt.encode("utf-8")
     ).hexdigest()
+
+    # Say out loud whether this run will be calibrated. An unfitted (model,
+    # prompt) pair silently falls back to the hard gate, and at corpus scale
+    # that produces ECE 0.237 numbers indistinguishable from ECE 0.045 ones.
+    from indra_belief.calibration_constants import calibration_banner
+
+    calibrated, banner = calibration_banner(args.model, prompt_sha256)
+    print(banner, flush=True)
+    if args.require_calibrated and not calibrated:
+        raise SystemExit(
+            "refusing to run: --require-calibrated was passed and this "
+            "model+prompt pair has no ship-approved profile"
+        )
 
     expected_identity = {
         "gold_path": str(gold_path),
@@ -534,6 +564,13 @@ def main() -> int:
                 ),
                 "score": last_result.get("score"),
                 "confidence": last_result.get("confidence"),
+                # The RAW in-call margin. This row list is a whitelist, so a
+                # field absent here is DROPPED -- and a gold run whose margins
+                # were dropped cannot fit the isotonic that is the entire reason
+                # to do a gold run on a new serving stack. Persisted even when
+                # None, so "the reader could not produce one" is distinguishable
+                # from "nobody asked".
+                "probe_delta_logit": last_result.get("probe_delta_logit"),
                 "tier": last_result.get("tier"),
                 "grounding_status": last_result.get("grounding_status"),
                 "provenance_triggered": last_result.get("provenance_triggered"),
@@ -552,6 +589,7 @@ def main() -> int:
             "prediction_correct": None,
             "score": None,
             "confidence": None,
+            "probe_delta_logit": None,
             "tier": "row_error",
             "grounding_status": None,
             "provenance_triggered": None,

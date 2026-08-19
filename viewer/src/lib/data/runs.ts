@@ -55,6 +55,7 @@ function toRunMeta(dir: string, m: Record<string, unknown>): RunMeta {
 		gold_coverage,
 		model_meta: (m.model_meta as RunMeta['model_meta']) ?? null,
 		provenance: (m.provenance as RunMeta['provenance']) ?? null,
+		sentence_score: (m.sentence_score as RunMeta['sentence_score']) ?? null,
 		soft_calibration: (m.soft_calibration as RunMeta['soft_calibration']) ?? undefined,
 		...readSourceMeta(sourceRun)
 	};

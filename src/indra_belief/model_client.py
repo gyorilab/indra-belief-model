@@ -34,26 +34,53 @@ _FIXED_BEDROCK_RESPONSES_ENDPOINT = (
 
 # Model registry — name → (base_url, model_id, notes)
 LOCAL_MODELS: dict[str, dict] = {
-    "vllm-local": {
+    "vllm-gemma-4-26b": {
         "base_url": "http://127.0.0.1:8000/v1",
         "model_id": "google/gemma-4-26B-A4B-it",
         "reasoning_in_content": False,
-        "max_tokens": 1000,
-        "timeout": 120,
+        # 1000/120 raised to 8192/900 on 2026-08-12. MEASURED on 60 monolithic
+        # calls with the production reasoning-first prompt: output tokens p50
+        # 574, p90 1507, max 4353 — so a 1000 cap truncates 16.7% of calls
+        # (Wilson [0.093, 0.280]) while 8192 truncates 0/60 ([0.000, 0.060]).
+        # A truncated read costs the full wall clock and yields no verdict, and
+        # on this path it is NOT withheld, so it can contribute a mid-thought
+        # verdict. The served id must match `--served-model-name` byte-for-byte
+        # or reader_configuration_for_run nulls the prompt and calibration can
+        # never resolve.
+        "max_tokens": 8192,
+        "timeout": 900,
+        # A CLAIM ABOUT HOW THE SERVER IS LAUNCHED, not a property of vLLM.
+        # vLLM's `--max-logprobs` defaults to 20 and the direct probe's losing
+        # label was measured at rank 42/83/168, so the server must be started
+        # with `--max-logprobs 1024` for the probe to read. If it is not, vLLM
+        # rejects the oversized `top_logprobs` and the failure surfaces per row
+        # in `score_error` — loudly, rather than as quietly wrong numbers.
+        # Declaring it makes this client probe-READABLE; it does not make it
+        # calibrated. That needs a fitted artifact registered in
+        # indra_belief.probes.calibration._SENTENCE_CALIBRATIONS.
+        "max_top_logprobs": 1024,
     },
-    "ollama-local": {
+    "ollama-gemma-3-27b": {
         "base_url": "http://localhost:11434/v1",
         "model_id": "gemma3:27b",
         "reasoning_in_content": False,
-        "max_tokens": 1000,
-        "timeout": 120,
+        # 1000/120 raised to 8192/900 on 2026-08-12, same measurement as
+        # vllm-local. gemma3:27b is not a reasoning model, so its own output is
+        # shorter — but the cap is a CEILING, not a reservation, and the old
+        # value silently truncated any reasoning-first prompt sent here.
+        "max_tokens": 8192,
+        "timeout": 900,
     },
     "local-qwen3.5-vl-122b-a10b": {
         "base_url": "http://localhost:8082/v1",
         "model_id": "dealignai/Qwen3.5-VL-122B-A10B-4bit-MLX-CRACK",
         "reasoning_in_content": True,  # CoT is emitted in content
         "typical_tokens": 2500,
-        "max_tokens": 8000,
+        # 8000 -> 8192 on 2026-08-12. 8000 sat just under the measured floor —
+        # the near-miss a round number invites. This reader emits its CoT in
+        # `content` and has the largest `typical_tokens` in the registry, so it
+        # is the entry least able to afford a tight ceiling.
+        "max_tokens": 8192,
         "timeout": 180,
     },
     # Minimax-M2.7 (JANGTQ-CRACK quant) served via vmlx-engine on a local
@@ -79,27 +106,46 @@ LOCAL_MODELS: dict[str, dict] = {
         "model_id": "mlx-community/gemma-4-26b-a4b-it-8bit",
         "reasoning_in_content": False,  # separate reasoning field (mlx spelling)
         "typical_tokens": 400,
-        # Measured on an M5 Max at ~32 tok/s for the 8-bit MoE: the reasoning-
+        # Measured on an M5 Max at 20.9-29.3 tok/s, mean 25.2, over the 16
+        # --workers 1 monolithic calls for the 8-bit MoE: the reasoning-
         # first prompt spends 700-1500 tokens deliberating before the JSON, so
         # the old 1000/60s pair truncated mid-thought and then timed out. A
         # truncated reply is not a cheap failure here — it costs the full wall
         # clock and yields no verdict.
-        "max_tokens": 4096,
+        #
+        # Raised 4096 -> 8192 on 2026-08-12 by operator decision, to cut the
+        # measured cap-hit rate before the calibration fit run. At 4096 the rate
+        # was 2/88 sampled rows (pooled, Wilson [0.0063, 0.0791]) while the
+        # largest UNTRUNCATED call observed was 3695 tokens — 90.2% of that cap,
+        # i.e. the tail was pressed right against it. 8192 leaves 2.2x headroom
+        # over the observed maximum. The rate at this cap is re-measured rather
+        # than assumed: a cap hit still costs full wall clock, so the surcharge
+        # per hit roughly doubles even as hits become rarer.
+        "max_tokens": 8192,
         "timeout": 900,
         "supports_logprobs": True,
-        # mlx_lm.server validates top_logprobs with max_val=11 and rejects
-        # anything larger with a 400 (server.py:1245 `self._validate(
-        # "top_logprobs", int, min_val=0, max_val=11, whitelist=[-1])`).
-        # This is NOT the usual OpenAI/vLLM cap of 20 — do not raise it.
-        "max_top_logprobs": 11,
+        # RAISED 11 -> 1024 on 2026-08-13, and this DEPENDS ON A LOCAL PATCH to
+        # the serving venv. Stock mlx_lm.server hard-codes
+        # `_validate("top_logprobs", int, min_val=0, max_val=11, whitelist=[-1])`
+        # at server.py:1245, and 11 is nowhere near enough at a forced verdict
+        # position: measured, the LOSING label sits at rank 42 / 83 / 168 across
+        # four cases, because JSON formatting tokens ({", ", ```) crowd it out.
+        # At k=11 three of four cases yielded no usable p_raw; at k=1024, 0 of
+        # 1,075 records dropped. `scripts/serve_mlx.sh` documents the patch.
+        # If the venv is rebuilt or mlx-lm upgraded, the cap silently returns to
+        # 11 and p_raw degrades to nan on most rows rather than erroring.
+        "max_top_logprobs": 1024,
     },
     "local-gemma-4-31b": {
         "base_url": "http://localhost:8084/v1",
         "model_id": "mlx-community/gemma-4-31b-it-8bit",
         "reasoning_in_content": False,
         "typical_tokens": 400,
-        "max_tokens": 1000,
-        "timeout": 60,
+        # This entry carried the literal "1000/60s pair" that the 26b comment
+        # above records as catastrophic — truncating mid-thought and then timing
+        # out. Raised to 8192/900 on 2026-08-12 to match its 26b sibling.
+        "max_tokens": 8192,
+        "timeout": 900,
     },
     "remote-gemma-4-26b": {
         "base_url": "http://100.97.101.59:11434/v1",
@@ -176,7 +222,11 @@ LOCAL_MODELS: dict[str, dict] = {
         "torch_dtype": "bfloat16",
         "device": "mps",
         "typical_tokens": 800,
-        "max_tokens": 4096,
+        # 4096 -> 8192 on 2026-08-12. `enable_thinking` is True here, so this
+        # reader deliberates before answering and its output distribution is
+        # unmeasured; a ceiling costs nothing when it is not reached, while a
+        # truncated read costs the full wall clock and yields no verdict.
+        "max_tokens": 8192,
         "timeout": 300,
         "persona": (
             "You are a biomedical text-mining adjudicator. You judge whether "
@@ -633,6 +683,21 @@ LOCAL_MODELS: dict[str, dict] = {
 # working. NOTE: cost + call-log key on each entry's `model_id`, NOT this name,
 # so aliasing never affects pricing.
 _MODEL_ALIASES: dict[str, str] = {
+    # WHY THESE TWO WERE RENAMED. A registry key names the SERVING ARCHITECTURE
+    # AND THE MODEL -- bedrock-gemma-4-26b, remote-medpsy-4b, local-gemma-4-31b
+    # -- for 29 of 31 entries. `vllm-local` and `ollama-local` named only the
+    # server, and that is not cosmetic: the belief profile registry
+    # (`calibration_constants._FITTED_CONFIGS`) is keyed on
+    # (registry name, prompt sha) with NO served-model id, so the NAME is the
+    # only thing tying a fitted profile to the weights it was fitted on. Serve a
+    # different model on the same vLLM and a profile registered under a
+    # server-shaped name follows it silently.
+    #
+    # The isotonic registry does carry the served id, so it is guarded; the
+    # profile registry is not, which is exactly where a weights-agnostic name
+    # must not appear.
+    "vllm-local": "vllm-gemma-4-26b",
+    "ollama-local": "ollama-gemma-3-27b",
     "qwen-thinker": "local-qwen3.5-vl-122b-a10b",
     "minimax-local": "local-minimax-m2.7",
     "gemma-moe": "local-gemma-4-26b",
@@ -1066,6 +1131,38 @@ class ModelResponse:
     #   "ok"            — logprobs is a non-empty list.
     logprobs: list[dict] | None = None
     logprobs_status: str = "not_requested"
+
+
+def reasoning_wire_keys(effort: str | None, *, strict: bool = False) -> dict:
+    """The wire keys that express a reasoning-effort intent, for ANY transport.
+
+    Split out of :meth:`ModelClient.call` for the same reason
+    ``build_probe_request`` was split out of ``read_probe``: the corpus-scale
+    shard runner drives a bare ``httpx.Client`` and cannot adopt our transport,
+    but it must express "no CoT" the SAME way — and this is a rule no single
+    key carries.
+
+    Two mechanisms, and which one works is a property of the backend:
+
+      * ``reasoning_effort`` — the standard OpenAI extension, honored by Google
+        AI Studio and some Ollama builds;
+      * ``chat_template_kwargs.enable_thinking`` — what Ollama-served Gemma
+        actually honors. It SILENTLY DROPS ``reasoning_effort="none"``, leaving
+        thinking on at the model's default.
+
+    So "none" sends BOTH and lets whichever the backend understands win. A
+    caller that sends only one gets a silent failure on half the substrates: the
+    model deliberates anyway, and the only symptom is a bill.
+
+    ``strict`` backends (Google's OpenAI-compat) 400 on unknown extra_body
+    fields, so they get the standard key alone.
+    """
+    if not effort:
+        return {}
+    keys: dict = {"reasoning_effort": effort}
+    if effort == "none" and not strict:
+        keys["chat_template_kwargs"] = {"enable_thinking": False}
+    return keys
 
 
 class ModelClient:
@@ -2118,13 +2215,7 @@ class ModelClient:
         strict = bool(self.config.get("strict_openai_compat"))
         effort = reasoning_effort if reasoning_effort is not None \
                  else self.config.get("reasoning_effort")
-        if effort:
-            extra_body["reasoning_effort"] = effort
-            # When the caller asks for "none", that's a request to disable
-            # thinking entirely. Translate to the chat_template_kwargs
-            # mechanism Ollama honors — but only on permissive backends.
-            if effort == "none" and not strict:
-                extra_body["chat_template_kwargs"] = {"enable_thinking": False}
+        extra_body.update(reasoning_wire_keys(effort, strict=strict))
         if self.config.get("num_ctx") and not strict:
             extra_body["num_ctx"] = self.config["num_ctx"]
         if response_format is not None and not strict:

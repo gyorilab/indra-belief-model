@@ -174,3 +174,47 @@ def render_example_reasonfirst(ex: dict) -> tuple[str, str]:
         ensure_ascii=True,
     )
     return user, assistant
+
+
+# --- W2b: the reasoning-first prompt with verbalized confidence removed -------
+#
+# MEASURED: the confidence field adds ~+0.001 AUROC over the bare verdict and is
+# 100% "high" on some arms. It is dead weight in the belief math, surviving only
+# as a de-dup tiebreaker.
+#
+# This is a NEW variant, not an edit of the shipped prompt. The calibration
+# profile is keyed on (model, sha256(system_prompt)), so mutating
+# REASONFIRST_SYSTEM_PROMPT in place would silently orphan the fitted profile
+# and drop production to an uncalibrated path. Adding a variant gives the
+# no-confidence prompt its own key, leaves the shipped one byte-identical, and
+# makes adopting it a separate, reversible decision.
+#
+# Both artifacts are DERIVED from the originals rather than copied, so they
+# cannot drift; the asserts fail loudly at import if the source shape changes.
+_CONFIDENCE_CLAUSE = ', "confidence": "high" | "medium" | "low"'
+assert _CONFIDENCE_CLAUSE in REASONFIRST_SYSTEM_PROMPT, (
+    "the reasoning-first prompt no longer contains the confidence clause verbatim; "
+    "re-derive REASONFIRST_NOCONF_SYSTEM_PROMPT against its current wording"
+)
+REASONFIRST_NOCONF_SYSTEM_PROMPT = REASONFIRST_SYSTEM_PROMPT.replace(
+    _CONFIDENCE_CLAUSE, ""
+)
+
+_EXAMPLE_CONFIDENCE_HINT = ', "confidence": ...'
+
+
+def render_example_reasonfirst_noconf(ex: dict) -> tuple[str, str]:
+    """`render_example_reasonfirst` with the confidence field dropped.
+
+    Few-shots teach the output shape, so leaving `"confidence"` in the examples
+    while removing it from the instruction would ask for one format and
+    demonstrate another.
+    """
+    user, assistant = render_example_reasonfirst(ex)
+    assert _EXAMPLE_CONFIDENCE_HINT in user, (
+        "the reasoning-first example hint changed shape; re-derive the noconf renderer"
+    )
+    user = user.replace(_EXAMPLE_CONFIDENCE_HINT, "")
+    payload = json.loads(assistant)
+    payload.pop("confidence", None)
+    return user, json.dumps(payload, ensure_ascii=True)

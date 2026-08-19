@@ -71,7 +71,7 @@ class InvalidModelOutput(ValueError): pass
 # One message for both the persisted error row and the raise, so the ALERT
 # detail's message_sha256 is stable across the two sites.
 _INVALID_OUTPUT_MESSAGE = (
-    "provider response is not an on-grid (verdict, confidence) pair"
+    "provider response is not a closed-set (verdict, confidence) pair"
 )
 
 
@@ -90,7 +90,7 @@ _INVALID_OUTPUT_MESSAGE = (
 # off the durable rows; a source in that set has already spent its budget and
 # cannot be re-attempted at all. `attempt_failed`/`InvalidModelOutput` is the
 # live case measured at 0.057%-0.097% of rows on 2026-07-31: the model returned
-# something off-grid for THIS evidence after its per-source retries, which says
+# an invalid closed-set pair for THIS evidence after its per-source retries, which says
 # nothing about the next row.
 _QUARANTINE_KINDS = frozenset({
     "nonretryable_failure_on_resume",
@@ -117,7 +117,7 @@ QUARANTINE_IDENTITY_LIMIT = 50
 # What it CAN buy is knowing WHICH REGIME you are in before you stop. Pre-S2 the
 # arm halted on the first bad row and the operator learned "one row is bad".
 # That single row cannot distinguish a wrong `provider_model_id` — where every
-# source will fail — from the 0.057% sporadic off-grid output that four
+# source will fail — from the 0.057% sporadic invalid output that four
 # production arms actually carry.
 #
 # So: after the first quarantine, keep going only far enough to answer that, and
@@ -480,24 +480,12 @@ def _recover(prepared: PreparedRun) -> None:
                 response = SimpleNamespace(content=calls[-1]["content"], raw_text=calls[-1]["raw_text"])
                 parsed = parse_response(response)
                 route = str(source["route"])
-                # The SAME validity gate as the live path below, deliberately
-                # written the same way. Recovery used to check the verdict only,
-                # so durable evidence parsing to an on-grid verdict with an
-                # off-grid confidence — {"verdict": "correct", "confidence":
-                # "certain"} — built a result with score=None, was written as
-                # attempt_status="completed", and then failed `validate_row`
-                # ("scored verdict/confidence is invalid") BEFORE
-                # commit_deferred_attempt_outcome below. The deferred attempt
-                # never committed, so every later prepare_run re-entered this
-                # identical path: narrow, permanent, and only escapable by hand.
-                #
-                # The gate is now the PARSER's, not a second reading of its
-                # output: a `Verdict` exists only for an on-grid (verdict,
-                # confidence) pair, so `parsed is None` IS the disjunction the
-                # three clauses used to spell out, and there is no longer a way
-                # to build a result the grid cannot score.
+                # The parser is the validity gate for both closed-set fields.
+                # Replay cannot perform the independently calibrated sentence
+                # probe through a guarded provider client, so score absence is
+                # explicit rather than reconstructed from the categorical reply.
                 result = None if parsed is None else {
-                    "score": parsed.score, "verdict": parsed.label,
+                    "score": None, "verdict": parsed.label,
                     "confidence": parsed.confidence,
                     "tier": "llm_tool_use" if route == "tool" else "llm_comprehension",
                     "grounding_status": "flagged" if route == "tool" else "all_match",
@@ -682,21 +670,12 @@ def _attempt(prepared: PreparedRun, client: Any, source: Mapping[str, Any]) -> t
                 raise
             else:
                 receipt = prepared.action_guard.ensure_attempt_started()
-                # The single validity gate. It covers BOTH closed-set fields and
-                # the resulting score, because confidence selects the score cell
-                # (0.95/0.80/0.65 or 0.05/0.20/0.35) just as much as the verdict
-                # picks its sign. Previously only the verdict was checked, so a
-                # well-formed verdict with an out-of-vocabulary confidence — e.g.
-                # {"verdict": "correct", "confidence": "certain"} — fell through
-                # to a fabricated 0.5 and was written as row_status="scored",
-                # indistinguishable from a real measurement. Anything off-grid is
-                # now retried like any other unparseable output and, once the
-                # per-source budget is spent, recorded as an ERROR rather than
-                # assigned a number the model never produced.
+                # The single validity gate covers both closed-set categorical
+                # fields. `score=None` is valid here: the calibrated probe is
+                # unavailable through the guarded comparison transport.
                 invalid = (
                     result.get("verdict") not in VALID_VERDICTS
                     or result.get("confidence") not in VALID_CONFIDENCES
-                    or result.get("score") is None
                 )
                 candidate = (
                     error_row(

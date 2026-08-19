@@ -1129,7 +1129,7 @@
         "grounding_status": "MISMATCH",
         "provenance_triggered": false,
         "raw_text": "Grounding mismatch: \"protein\" independently grounds to protein (CHEBI:CHEBI:36080), NOT SORBS1",
-        "score": 0.05,
+        "score": null,
         "tier": "deterministic_mismatch",
         "tokens": 0,
         "verdict": "incorrect"
@@ -1139,14 +1139,21 @@
         "call_log": [],
         "confidence": "high",
         "grounding_status": "MISMATCH",
+        "probe_delta_logit": null,
         "provenance_triggered": false,
         "raw_text": "Grounding mismatch: \"protein\" independently grounds to protein (CHEBI:CHEBI:36080), NOT SORBS1",
-        "score": 0.05,
+        "score": null,
+        "score_error": null,
         "tier": "deterministic_mismatch",
         "tokens": 0,
-        "verdict": "incorrect"
+        "verdict": "incorrect",
+        "weight_of_evidence": null
       },
-      "live_only_keys": [],
+      "live_only_keys": [
+        "probe_delta_logit",
+        "score_error",
+        "weight_of_evidence"
+      ],
       "route": "deterministic_mismatch",
       "value_differences": {}
     },
@@ -1157,7 +1164,7 @@
         "grounding_status": "skipped",
         "provenance_triggered": false,
         "raw_text": "No evidence sentence — accepted by default (database-sourced).",
-        "score": 0.95,
+        "score": null,
         "tier": "no_text",
         "tokens": 0,
         "verdict": "correct"
@@ -1167,18 +1174,24 @@
         "call_log": [],
         "confidence": "high",
         "grounding_status": "skipped",
+        "probe_delta_logit": null,
         "provenance_triggered": false,
         "raw_text": "No evidence sentence — accepted by default (database-sourced).",
-        "score": 0.95,
+        "score": null,
+        "score_error": null,
         "selected_example_ids": [],
         "selected_examples": [],
         "tier": "no_text",
         "tokens": 0,
-        "verdict": "correct"
+        "verdict": "correct",
+        "weight_of_evidence": null
       },
       "live_only_keys": [
+        "probe_delta_logit",
+        "score_error",
         "selected_example_ids",
-        "selected_examples"
+        "selected_examples",
+        "weight_of_evidence"
       ],
       "route": "no_text",
       "value_differences": {}
@@ -1190,7 +1203,7 @@
         "grounding_status": "MISMATCH",
         "provenance_triggered": false,
         "raw_text": "Pseudogene mapping: \"HSP\" independently grounds to N-(3-carboxypropanoyl)-N-hydroxyputrescine (CHEBI:CHEBI:50430), NOT HSP90B2P",
-        "score": 0.05,
+        "score": null,
         "tier": "deterministic_pseudogene",
         "tokens": 0,
         "verdict": "incorrect"
@@ -1200,14 +1213,21 @@
         "call_log": [],
         "confidence": "high",
         "grounding_status": "MISMATCH",
+        "probe_delta_logit": null,
         "provenance_triggered": false,
         "raw_text": "Grounding mismatch: \"HSP\" independently grounds to N-(3-carboxypropanoyl)-N-hydroxyputrescine (CHEBI:CHEBI:50430), NOT HSP90B2P",
-        "score": 0.05,
+        "score": null,
+        "score_error": null,
         "tier": "deterministic_pseudogene",
         "tokens": 0,
-        "verdict": "incorrect"
+        "verdict": "incorrect",
+        "weight_of_evidence": null
       },
-      "live_only_keys": [],
+      "live_only_keys": [
+        "probe_delta_logit",
+        "score_error",
+        "weight_of_evidence"
+      ],
       "route": "deterministic_pseudogene",
       "value_differences": {
         "raw_text": {
@@ -2269,7 +2289,9 @@
         "main_call_kwargs": {
           "kind": "monolithic",
           "max_tokens": 4096,
-          "temperature": 0.1
+          "reasoning_effort": "none",
+          "temperature": 0.0,
+          "top_logprobs": 128
         },
         "message_roles": [
           "user",
@@ -2303,10 +2325,10 @@
           "user"
         ],
         "messages_len": 29,
-        "prompt_sha256": "e4705f8991f4f82b5c1819112f266391d7ce9f4d1f34ba4c3439ca220dfa50e1",
+        "prompt_sha256": "0f0168fcfc944c877a25af8d358b04766c9ba84440f54e8f086bbb5c5ab67fc6",
         "relation_calls": [],
-        "system_len": 3411,
-        "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517",
+        "system_len": 3628,
+        "system_sha256": "cd14d9e74d2ea599f343df86a9df9ccf07b87885c8f43a1d0d6a70165e525da5",
         "tier": "llm_comprehension"
       },
       "plain@8:0": {
@@ -2315,7 +2337,9 @@
         "main_call_kwargs": {
           "kind": "monolithic",
           "max_tokens": 4096,
-          "temperature": 0.1
+          "reasoning_effort": "none",
+          "temperature": 0.0,
+          "top_logprobs": 128
         },
         "message_roles": [
           "user",
@@ -2349,10 +2373,10 @@
           "user"
         ],
         "messages_len": 29,
-        "prompt_sha256": "bf0857fc07abd4c44f969d9bf35416ca758a4986c1c84da41029fe177991f514",
+        "prompt_sha256": "e2b708a246b26ba879f9076a6d84fdf66050b18cf5223510cf08b3846f8f57aa",
         "relation_calls": [],
-        "system_len": 3411,
-        "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517",
+        "system_len": 3628,
+        "system_sha256": "cd14d9e74d2ea599f343df86a9df9ccf07b87885c8f43a1d0d6a70165e525da5",
         "tier": "llm_comprehension"
       },
       "tool@2:0": {
@@ -2361,7 +2385,9 @@
         "main_call_kwargs": {
           "kind": "monolithic_tool_context",
           "max_tokens": 4096,
-          "temperature": 0.1
+          "reasoning_effort": "none",
+          "temperature": 0.0,
+          "top_logprobs": 128
         },
         "message_roles": [
           "user",
@@ -2395,10 +2421,10 @@
           "user"
         ],
         "messages_len": 29,
-        "prompt_sha256": "c19b59d679cd77d624fd10b3a10d1398b5a568e31d8940d3f682b94a93c31db5",
+        "prompt_sha256": "5f7b51fc51fd76dac42c59d2ececf29749848f3a0520b94c840e85d2eff1ee01",
         "relation_calls": [],
-        "system_len": 4514,
-        "system_sha256": "b1dbde6e47b7c56cce9ac9cfa98f1addeb89308fab755c50a452920747f1670f",
+        "system_len": 4731,
+        "system_sha256": "72bb075c7a041343b8dad28acde18bd781b3876323f508c4c8bb0ff7d8c1793d",
         "tier": "llm_tool_use"
       }
     }
@@ -2458,11 +2484,11 @@
       "lookup_guidance_len": 1103,
       "lookup_guidance_sha256": "7d8559569ae50f0d0be25856420fe39567585997eff11f0f6d621a3bca156df4",
       "renderer": "render_example",
-      "renderer_module": "_prompts",
+      "renderer_module": "_prompts_verdict_only",
       "resolved_variant": "verdict_only",
-      "structured": false,
-      "system_len": 3411,
-      "system_sha256": "c6845ab46c0b083c9b70edc0922aef03e04698a63abb6a1d28c434acdd401517"
+      "structured": true,
+      "system_len": 3628,
+      "system_sha256": "cd14d9e74d2ea599f343df86a9df9ccf07b87885c8f43a1d0d6a70165e525da5"
     }
   },
   "record_fields": {

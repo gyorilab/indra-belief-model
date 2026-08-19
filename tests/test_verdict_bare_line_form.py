@@ -8,11 +8,11 @@ because our side had DELETED that parser. The patterns are carried here instead;
 these tests are the evidence the branch did not carry.
 
 WHY IT MATTERS RATHER THAN BEING A COSMETIC MISS. An unparsed reply is not
-benign in this codebase: `grid_score` returns None off-grid, the runner turns
-that into InvalidModelOutput, retries, and eventually writes an ERROR row. A
-whole reply shape that never parses is holes and spend, and it is the shape a
-LOCAL instruction model served over vLLM emits — one field per line, no
-punctuation — where the Bedrock models this parser was tuned against emit JSON.
+benign in this codebase: the runner turns it into InvalidModelOutput, retries,
+and eventually writes an ERROR row. A whole reply shape that never parses is
+holes and spend, and it is the shape a LOCAL instruction model served over
+vLLM emits — one field per line, no punctuation — where the Bedrock models this
+parser was tuned against emit JSON.
 """
 from __future__ import annotations
 

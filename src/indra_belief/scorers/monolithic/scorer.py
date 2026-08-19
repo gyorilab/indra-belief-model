@@ -60,11 +60,17 @@ from indra_belief.scorers.monolithic._prompts import (
 from indra_belief.scorers.monolithic._prompts_disconfirm import (
     DISCONFIRM_SYSTEM_PROMPT,
     REASONFIRST_SYSTEM_PROMPT,
+    REASONFIRST_NOCONF_SYSTEM_PROMPT,
     render_example as _render_example_disconfirm,
     render_example_reasonfirst as _render_example_reasonfirst,
+    render_example_reasonfirst_noconf as _render_example_reasonfirst_noconf,
+)
+from indra_belief.scorers.monolithic._prompts_verdict_only import (
+    VERDICT_ONLY_SYSTEM_PROMPT,
+    render_example as _render_example_verdict_only,
 )
 from indra_belief.scorers.monolithic._prompts_relation import resolve_relation_nature
-from indra_belief.verdict import NO_TEXT_RESULT, grid_score, parse_response
+from indra_belief.verdict import NO_TEXT_RESULT, parse_response
 
 # --- Scoring variants ---
 # A variant is the whole scoring profile — prompt, few-shot renderer, and the
@@ -93,6 +99,27 @@ class ScoringVariant:
     render_example: Callable[[dict], tuple[str, str]]
     structured: bool = False
     resolve_relation_nature: Callable[..., str] | None = None
+    # Width of the top-logprob window to request on this variant's SCORING call.
+    # Set only where the output contract puts the verdict label FIRST, so its
+    # margin is readable from the response we were making anyway. A prompt that
+    # deliberates in its answer fields lands the label ~56 tokens deep and reads
+    # +22.50 — saturated, and a scan would still return a number that looks fine.
+    in_call_label_logprobs: int | None = None
+    # Transport-level reasoning suppression. "none" is translated by ModelClient
+    # into chat_template_kwargs {"enable_thinking": False} on permissive
+    # backends. REQUIRED alongside an in-call label read: registering a
+    # verdict-first PROMPT is not enough, because with the thinking channel open
+    # the model spends its budget reasoning and may emit no answer at all — the
+    # first live check of this variant returned empty content and no margin.
+    reasoning_effort: str | None = None
+    # Sampling temperature for this variant's scoring call, overriding the 0.1
+    # both call sites otherwise hard-code. REQUIRED with an in-call label read:
+    # ModelClient refuses top_logprobs above temperature 0, because the reported
+    # argmax token stream diverges from the sampled text there and the verdict
+    # POSITION stops being trustworthy. So an in-call variant needs all three to
+    # agree — verdict-first prompt, no reasoning channel, temperature 0 — and
+    # missing any one of them fails loudly rather than returning a bad number.
+    temperature: float | None = None
 
 
 VARIANTS: dict[str, ScoringVariant] = {
@@ -126,6 +153,32 @@ VARIANTS: dict[str, ScoringVariant] = {
             name="disconfirm_relnature_rf",
             system_prompt=REASONFIRST_SYSTEM_PROMPT,
             render_example=_render_example_reasonfirst,
+            structured=True,
+            resolve_relation_nature=resolve_relation_nature,
+        ),
+        # W2b: the default with verbalized confidence removed. Its prompt hashes
+        # differently, so it carries its OWN calibration profile and cannot
+        # borrow the default's — see REASONFIRST_NOCONF_SYSTEM_PROMPT. Not the
+        # default until its profile is fitted and gated.
+        # Verdict FIRST, no reasoning channel, no intermediate fields — so the
+        # label's margin comes out of the scoring call itself. MEASURED n=80 on
+        # MLX against the second-call probe: AUROC 0.8734 vs 0.7237, and
+        # within-verdict 0.7814 vs 0.6856. The free read is also the better one.
+        # It trades deliberation, previously measured at -0.0689 err-F1 on the
+        # 26B, which is the open question this variant exists to settle.
+        ScoringVariant(
+            name="verdict_only",
+            system_prompt=VERDICT_ONLY_SYSTEM_PROMPT,
+            render_example=_render_example_verdict_only,
+            structured=True,
+            in_call_label_logprobs=128,
+            reasoning_effort="none",
+            temperature=0.0,
+        ),
+        ScoringVariant(
+            name="disconfirm_relnature_rf_noconf",
+            system_prompt=REASONFIRST_NOCONF_SYSTEM_PROMPT,
+            render_example=_render_example_reasonfirst_noconf,
             structured=True,
             resolve_relation_nature=resolve_relation_nature,
         ),
@@ -428,6 +481,48 @@ def _stamp_committed_justification(response, *,
     }
 
 
+def _call_kwargs(execution, note, variant) -> dict:
+    """The scoring call's kwargs, asking for label logprobs where they are free.
+
+    A variant whose output contract emits the verdict FIRST can have its label
+    margin read from this response — no second probe request. Only such variants
+    set ``in_call_label_logprobs``; for every other variant the kwargs are byte
+    unchanged, so the plain path still passes exactly what it always passed.
+    """
+    kwargs = execution.calls(note)[-1].client_kwargs()
+    resolved = variant or DEFAULT_VARIANT
+    width = getattr(resolved, "in_call_label_logprobs", None)
+    if width:
+        kwargs["top_logprobs"] = width
+    effort = getattr(resolved, "reasoning_effort", None)
+    if effort:
+        kwargs["reasoning_effort"] = effort
+    temperature = getattr(resolved, "temperature", None)
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    return kwargs
+
+
+def _in_call_margin(response, variant) -> float | None:
+    """The label's log-odds from THIS response, for variants that can supply it.
+
+    Only variants whose output contract emits the verdict first set
+    ``in_call_label_logprobs``; for everything else the scan would find the
+    label ~56 tokens deep behind deliberative answer fields, where it reads
+    +22.50 — saturated, and a number that looks fine. So this returns None
+    unless the variant declared the read, rather than trying opportunistically.
+    """
+    resolved = variant or DEFAULT_VARIANT
+    if not getattr(resolved, "in_call_label_logprobs", None):
+        return None
+    from indra_belief.probes.reader import label_margin_from_logprobs
+
+    try:
+        return label_margin_from_logprobs(getattr(response, "logprobs", None))
+    except Exception:
+        return None
+
+
 def _score_single(
     client: ModelClient,
     record: ScoringRecord,
@@ -435,6 +530,7 @@ def _score_single(
     temperature: float = 0.1,
     *,
     variant: ScoringVariant | None = None,
+    margin_out: dict | None = None,
 ) -> dict:
     """Single LLM call for Tier 2 (+ optional relation-nature note). Returns result dict."""
     variant = variant or DEFAULT_VARIANT
@@ -442,10 +538,17 @@ def _score_single(
     note = _relation_note(client, record, variant=variant)
     execution = _prepare(record, examples, route="plain", max_tokens=max_tokens,
                          temperature=temperature, variant=variant)
-    response = client.call(**execution.calls(note)[-1].client_kwargs())
+    response = client.call(**_call_kwargs(execution, note, variant))
     parsed = parse_response(response)
     _stamp_committed_justification(response, variant=variant)
     selected_examples = _example_trace_rows(examples)
+    # Side channel, NOT a new key in the returned dict. The variant-behaviour
+    # golden captures these two functions' RETURN SHAPE and is a pre-refactor
+    # capture with no regeneration path, so widening it would mean hand-editing
+    # a fixture whose whole value is that it predates the change. The margin is
+    # probe output; it belongs in the fields replace_sentence_score writes.
+    if margin_out is not None:
+        margin_out["in_call_label_margin"] = _in_call_margin(response, variant)
     return {
         "verdict": None if parsed is None else parsed.label,
         "confidence": None if parsed is None else parsed.confidence,
@@ -501,6 +604,7 @@ def _score_with_tools(
     max_tokens: int | None,
     *,
     variant: ScoringVariant | None = None,
+    margin_out: dict | None = None,
 ) -> dict:
     """Tier 2 with pre-computed entity lookups. For records where grounding
     is flagged or entity symbols are short/ambiguous, gilda lookups are
@@ -514,10 +618,17 @@ def _score_with_tools(
     note = _relation_note(client, record, variant=variant)
     execution = _prepare(record, examples, route="tool", lookups=lookups,
                          max_tokens=max_tokens, variant=variant)
-    response = client.call(**execution.calls(note)[-1].client_kwargs())
+    response = client.call(**_call_kwargs(execution, note, variant))
     parsed = parse_response(response)
     _stamp_committed_justification(response, variant=variant)
     selected_examples = _example_trace_rows(examples)
+    # Side channel, NOT a new key in the returned dict. The variant-behaviour
+    # golden captures these two functions' RETURN SHAPE and is a pre-refactor
+    # capture with no regeneration path, so widening it would mean hand-editing
+    # a fixture whose whole value is that it predates the change. The margin is
+    # probe output; it belongs in the fields replace_sentence_score writes.
+    if margin_out is not None:
+        margin_out["in_call_label_margin"] = _in_call_margin(response, variant)
     return {
         "verdict": None if parsed is None else parsed.label,
         "confidence": None if parsed is None else parsed.confidence,
@@ -528,14 +639,15 @@ def _score_with_tools(
     }
 
 
-def score(
+def _score_categorical(
     client: ModelClient,
     record: ScoringRecord,
     max_tokens: int | None = None,
     *,
     variant: ScoringVariant | None = None,
+    margin_out: dict | None = None,
 ) -> dict:
-    """Score a single extraction with a single deterministic LLM call.
+    """Produce categorical audit output for one extraction.
 
     Two-tier:
       Tier 1: deterministic grounding auto-reject (mismatch/pseudogene).
@@ -561,10 +673,8 @@ def score(
     # grounding + the asserted relation) is planned and will replace this branch.
     if not (record.evidence_text or "").strip():
         return {
-            # ("correct", "high") is an on-grid pair, so this is always 0.95 —
-            # a real cell, not the neutral value the parse-failure path used to
-            # fabricate. The shared core derives it through `grid_score`, which
-            # can only return None off-grid.
+            # There is no sentence to probe, so calibrated score availability is
+            # explicitly absent even though the categorical default is correct.
             **NO_TEXT_RESULT,
             "selected_example_ids": [],
             "selected_examples": [],
@@ -596,14 +706,16 @@ def score(
 
     # --- Tier 2: single LLM call (deterministic, temp=0.1) ---
     if needs_tool_use:
-        result = _score_with_tools(client, record, max_tokens, variant=variant)
+        result = _score_with_tools(client, record, max_tokens, variant=variant,
+                                   margin_out=margin_out)
         verdict = result["verdict"]
         confidence = result["confidence"]
         total_tokens = result["tokens"]
         raw = result["raw_text"]
         tier = "llm_tool_use"
     else:
-        result = _score_single(client, record, max_tokens, variant=variant)
+        result = _score_single(client, record, max_tokens, variant=variant,
+                               margin_out=margin_out)
         verdict = result["verdict"]
         confidence = result["confidence"]
         total_tokens = result["tokens"]
@@ -612,9 +724,9 @@ def score(
     call_log = _pop()
 
     return {
-        # None when the model's reply named no scorable verdict. That absence is
-        # the result — it is not a 0.5, and no caller may make it one.
-        "score": grid_score(verdict, confidence),
+        # The public score() boundary replaces this placeholder with the
+        # calibrated direct-probe probability when it is available.
+        "score": None,
         "verdict": verdict,
         "confidence": confidence,
         "raw_text": raw,
@@ -626,6 +738,53 @@ def score(
         "selected_examples": result.get("selected_examples", []),
         "call_log": call_log,
     }
+
+
+def score(
+    client: ModelClient,
+    record: ScoringRecord,
+    max_tokens: int | None = None,
+    *,
+    variant: ScoringVariant | None = None,
+    extra_probe_call: bool = False,
+) -> dict:
+    """Score one extraction and emit one calibrated sentence probability.
+
+    The categorical verdict remains an audit output.  The numeric ``score`` is
+    replaced at this canonical boundary by the persisted direct-probe
+    calibration; an unsupported client, empty sentence, fitted-row leakage
+    guard, or probe failure yields ``None`` rather than a categorical midpoint.
+    """
+
+    # Collected out-of-band so the two inner functions keep the exact return
+    # shape the variant-behaviour golden froze.
+    margin: dict = {}
+    categorical = _score_categorical(
+        client,
+        record,
+        max_tokens=max_tokens,
+        variant=variant,
+        margin_out=margin,
+    )
+    from indra_belief.probes.calibration import replace_sentence_score
+
+    try:
+        record_id = f"f{record.source_hash}"
+    except Exception:
+        record_id = None
+
+    return replace_sentence_score(
+        {**categorical, **{k: v for k, v in margin.items() if v is not None}},
+        {
+            "subject": record.subject,
+            "object": record.object,
+            "stmt_type": record.stmt_type,
+            "evidence_text": record.evidence_text,
+        },
+        client,
+        record_id=record_id,
+        extra_probe_call=extra_probe_call,
+    )
 
 
 def score_statement(
@@ -657,11 +816,10 @@ def score_statement(
 
     Returns:
         A dict with keys:
-            score            float on the six-cell grid; 0.95=correct/high …
-                             0.05=incorrect/high. **None** when the verdict
-                             cannot be parsed — an absent measurement stays
-                             absent, and 0.5 is not a value this scorer can
-                             produce.
+            score            calibrated sentence probability when a serving
+                             boundary can perform the fitted direct-probe read;
+                             otherwise **None**. This categorical call never
+                             derives a number from verdict/confidence.
             verdict          "correct" | "incorrect" | None (parse failure)
             confidence       "high" | "medium" | "low" | None
             tier             which scoring path produced the verdict

@@ -21,7 +21,7 @@ from indra_belief.comparison.contracts import (
     load_run_plan,
 )
 from indra_belief.comparison.replay import prompt_sha256, source_key
-from indra_belief.verdict import grid_score, parse_verdict
+from indra_belief.verdict import parse_verdict
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -802,6 +802,7 @@ def test_fifth_transport_attempt_can_complete_with_exponential_backoff(
     assert [row["row_status"] for row in rows] == [
         "error", "error", "error", "error", "scored"
     ]
+    assert rows[-1]["score"] is None
 
 
 def test_invalid_outputs_remain_capped_after_transport_limit_amendment(
@@ -884,7 +885,7 @@ def _resume_error_row(source, *, action, model, ordinal, error_type):
 
 def _resume_scored_row(
     source, *, action, model, provider_model_id, ordinal,
-    verdict="correct", call_id=None,
+    verdict="correct", score=None, call_id=None,
 ):
     attempt = _attempt_projection_for(
         source, action=action, model=model, ordinal=ordinal, status="completed"
@@ -909,7 +910,7 @@ def _resume_scored_row(
         result={
             "verdict": verdict,
             "confidence": "high",
-            "score": grid_score(verdict, "high"),
+            "score": score,
             "tier": "llm_comprehension",
             "grounding_status": "all_match",
             "provenance_triggered": False,
@@ -920,6 +921,64 @@ def _resume_scored_row(
         attempt=attempt,
         latency_s=0.0,
     )
+
+
+@pytest.mark.parametrize("historical_score", [0, 0.137, 1])
+def test_resume_accepts_historical_probability_scores(
+    tmp_path: Path, historical_score: float,
+) -> None:
+    """Frozen rows retain any finite numeric probability in the unit interval."""
+    path = _write_fixture(tmp_path)
+    plan = load_run_plan(path)
+    action, stage, index = _resume_scope(plan)
+    row = _resume_scored_row(
+        index.executions[0],
+        action=action,
+        model=stage.model,
+        provider_model_id=stage.provider_model_id,
+        ordinal=1,
+        score=historical_score,
+    )
+    _write_rows(action, [row])
+
+    resume = replay.load_resume(
+        action.output,
+        index=index,
+        action=action,
+        model=stage.model,
+        provider_model_id=stage.provider_model_id,
+    )
+    assert resume.rows[0]["score"] == historical_score
+
+
+@pytest.mark.parametrize("invalid_score", [-0.001, 1.001, True, "0.5"])
+def test_resume_rejects_non_probability_historical_scores(
+    tmp_path: Path, invalid_score: Any,
+) -> None:
+    path = _write_fixture(tmp_path)
+    plan = load_run_plan(path)
+    action, stage, index = _resume_scope(plan)
+    row = _resume_scored_row(
+        index.executions[0],
+        action=action,
+        model=stage.model,
+        provider_model_id=stage.provider_model_id,
+        ordinal=1,
+        score=invalid_score,
+    )
+    _write_rows(action, [row])
+
+    with pytest.raises(
+        replay.ReplayError,
+        match="score is neither null nor a probability",
+    ):
+        replay.load_resume(
+            action.output,
+            index=index,
+            action=action,
+            model=stage.model,
+            provider_model_id=stage.provider_model_id,
+        )
 
 
 def _write_rows(action, rows) -> None:
@@ -1514,7 +1573,8 @@ def test_two_clients_for_one_model_do_not_share_mutable_config() -> None:
     # Read the registry rather than pinning a literal: what this test guards is
     # that the ratchet does not leak between clients, not the entry's timeout.
     # (The literal was 60 until the MLX serving work raised it — a 60s cap
-    # cannot fit a thinking model generating ~500 tokens at ~32 tok/s locally.)
+    # cannot fit a thinking model generating ~500 tokens at the measured local
+    # rate of 20.9-29.3 tok/s, mean 25.2.)
     assert original > 5, "the ratchet needs room to shrink for this test to mean anything"
     try:
         a = ModelClient("local-gemma-4-26b")
@@ -2418,32 +2478,16 @@ def test_wal_recovery_projects_invalid_provider_evidence_as_retryable_error(
         recovered.close()
 
 
-def test_wal_recovery_of_an_offgrid_confidence_does_not_wedge_the_action(
+def test_wal_recovery_of_an_unknown_confidence_does_not_wedge_the_action(
     tmp_path: Path,
 ) -> None:
-    """Recovery gates on the SCORE, not on the verdict alone.
+    """Recovery uses the parser's closed enums, independent of score presence.
 
-    A WAL-recovered attempt whose durable provider evidence parses to
-    ("correct", "certain") has an on-grid verdict and an off-grid confidence, so
-    it has no score.  Gating on the verdict alone built that row with
-    score=None and attempt_status="completed"; `validate_row` then rejected it
-    inside `_recover`, BEFORE the deferred attempt was committed.  Nothing was
-    written, so the next `prepare_run` re-entered the identical path and raised
-    again — narrow, permanent, and only escapable by hand.  The recovered row
-    must instead be the same retryable InvalidModelOutput error the live path
-    writes for the same evidence.
-
-    K2-one-parser MOVED ONE VALUE HERE, and only this one: `score_execution` used
-    to hand back ("correct", "certain") with score=None, and the runner's gate
-    then refused it.  There is now no window in which that pair exists as a
-    result at all — `indra_belief.verdict` builds a Verdict only for a pair the
-    grid can score, so the reading itself refuses it and the result is
-    (None, None, None).  Every OTHER assertion below is unchanged and still
-    passes: the recovered row is still a retryable InvalidModelOutput at
-    ordinal 1, the action is still not settled, and the escape is still not a
-    one-shot.  The property this test exists for is preserved; what moved is the
-    intermediate the property used to be reached through, and it moved from a
-    promoted-then-rejected pair to an absence.
+    Durable provider evidence containing ("correct", "certain") has an unknown
+    confidence, so the parser refuses the pair. Recovery must commit the same
+    retryable InvalidModelOutput row as the live path. A missing calibrated
+    probability is otherwise valid for a parsed replay row and must never be
+    fabricated from its categorical verdict and confidence.
     """
     path = _write_fixture(tmp_path, max_attempts=5, distinct_claims=True)
     plan = load_run_plan(path)
