@@ -52,12 +52,16 @@ From the production dump, or from a labelled corpus for stage 3:
 ```bash
 PYTHONPATH=src python scripts/build_processed_grounding_shards.py \
     --from-corpus-json data/corpora/external_curator_gold_v2_statements.json \
+    --all-evidence \
     --output-dir gold_shards
 ```
 
 `--from-corpus-json` converts a JSON statement list into this script's own
 `statement_hash<TAB>statement_json` input, keyed on `matches_hash` so shards
 prepared from a labelled corpus key exactly as shards from the real dump.
+The v2 file contains 748 statement objects but 1,084 labelled
+statement/evidence pairs, so calibration preparation uses `--all-evidence`;
+production preparation retains its historical first-evidence default.
 
 The batch user message is byte-identical to the live scorer's — the record owns
 the parts via `ScoringRecord.execution_body` and `ExecutionBody.render` owns the
