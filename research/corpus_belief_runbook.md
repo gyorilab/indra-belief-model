@@ -237,9 +237,25 @@ Each of these once produced a well-formed artifact and a zero exit code.
 
 ## Known limits
 
-- **No test covers the shipping configuration.** Every test of the logit path
-  uses the local MLX reader, the only one with both artifacts registered. The
-  first real exercise of `vllm-gemma-4-26b` + `verdict_only` is the run itself.
+- **No test covers the shipping configuration.** `vllm-gemma-4-26b` +
+  `verdict_only` now has a belief profile, and a test asserts that pair gates
+  green — but that checks the REGISTRY, not the reader. Every test of the logit
+  path still runs against the local MLX reader, the only one with both artifacts
+  registered. The first real exercise of the vLLM reader is the run itself.
+- **The vLLM isotonic is not registered yet.** `incall_vllm.json` is fitted and
+  gated but lives on cluster scratch, so the row in `_INCALL_CALIBRATIONS` is
+  deliberately withheld until the file is committed beside it. Stage 4 with
+  `--require-calibrated` therefore refuses — correctly, and by its own message
+  rather than a `FileNotFoundError`. Scoring is unaffected: it gates on the
+  profile alone, which IS registered.
+- **The vLLM profile is the weakest-cited row in the table.** Its counts and
+  gold digest are pinned, but its fit ran on `/scratch` with no `--report`
+  artifact, so the Brier and ECE in its note cannot be re-derived by anyone
+  else. Re-fit with `--report` to close it.
+- **The offline backend fails a whole batch on one bad job.** `--backend
+  offline` batches through `llm.chat()`, which is all-or-nothing, and retries
+  re-batch with the same offender. The corpus path uses `--backend server`,
+  where each job is its own request and the coupling does not exist.
 - **Gold rows inside the corpus keep verdict weights.** The combiner refuses to
   score a record it was fitted on. Correct, counted, and negligible against 60M.
 - **The labelled sets are curator-selected**, so `fit_prevalence` is the curated

@@ -346,6 +346,21 @@ class OfflineVllmClient:
                         )
                     )
             except BaseException as exc:
+                # ONE BAD JOB FAILS THE WHOLE BATCH. llm.chat() is all-or-
+                # nothing, so a single unprocessable conversation (an
+                # over-length prompt is the likely one) fails every future
+                # beside it -- batch_size defaults to --workers, so that is 96.
+                # score_job_with_retries then retries each of them, re-batching
+                # with the same offender, so the cost is multiplied by --retries
+                # rather than isolated. It reads as "the model is broken" rather
+                # than "one row is too long".
+                #
+                # The fix is to re-run a failed batch one conversation at a time
+                # so only the actual offender fails; it is not applied here
+                # because no machine in this repo can exercise the offline
+                # backend, and an untested change to a batching thread is worse
+                # than a named hazard. The corpus run uses --backend server,
+                # which has no such coupling: every job is its own request.
                 for future in futures:
                     future.set_exception(exc)
 
