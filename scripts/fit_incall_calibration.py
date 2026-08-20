@@ -74,7 +74,9 @@ def load_rows(path: Path) -> list[dict]:
     the reader could not produce is not a margin of zero, and treating it as one
     would drag the fitted curve toward the middle.
     """
-    rows, skipped = [], {"no_gold": 0, "no_margin": 0, "no_verdict": 0}
+    rows, skipped = [], {"no_gold": 0, "no_margin": 0, "no_verdict": 0,
+                         "duplicate_pair": 0}
+    seen_pairs: set[str] = set()
     with path.open() as fh:
         for line in fh:
             line = line.strip()
@@ -93,9 +95,31 @@ def load_rows(path: Path) -> list[dict]:
             if not isinstance(margin, (int, float)) or isinstance(margin, bool):
                 skipped["no_margin"] += 1
                 continue
+            # IDENTITY IS THE (statement, evidence) PAIR, not the evidence.
+            # source_hash alone collides: the same evidence sentence attaches to
+            # different statements, and on external_curator_gold_v2 that is 1056
+            # distinct source_hash against 1079 distinct pairs. Passing the
+            # colliding form to fit_combiner raises "record_ids contains
+            # duplicates" and no fit happens at all. The --from-shards path below
+            # already keys on the pair; this path did not, so the two inputs to
+            # one script disagreed about what a record IS.
+            stmt_hash = row.get("matches_hash")
+            source_hash = row.get("source_hash")
+            if stmt_hash is not None and source_hash is not None:
+                record_id = f"{stmt_hash}:{source_hash}"
+            else:
+                record_id = str(source_hash or row.get("row_index"))
+            # Same dedup rule as the shard path, for the same reason: scoring is
+            # deterministic, so a repeated pair carries no new information and
+            # would only weight that pair twice in the fit.
+            if record_id in seen_pairs:
+                skipped["duplicate_pair"] += 1
+                continue
+            seen_pairs.add(record_id)
             rows.append({
-                "record_id": str(row.get("source_hash") or row.get("row_index")),
+                "record_id": record_id,
                 "gold": bool(gold),
+                "source_api": row.get("source_api"),
                 "verdict": verdict,
                 "margin": float(margin),
             })
@@ -283,6 +307,13 @@ def main() -> int:
     ap.add_argument("--served-model-id", required=True)
     ap.add_argument("--variant", default="verdict_only")
     ap.add_argument("--out", required=True, help="isotonic artifact path")
+    ap.add_argument("--report", default=None,
+                    help="ALSO write the held-out comparison (every split, the "
+                         "medians, and the gate) to this path. The isotonic "
+                         "artifact carries none of that, so without this flag "
+                         "the numbers that decide the gate exist only in this "
+                         "process's stdout -- which is how they ended up quoted "
+                         "from a terminal scrollback with nothing to cite.")
     ap.add_argument("--holdout-frac", type=float, default=0.3)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--reseeds", type=int, default=10,
@@ -501,15 +532,101 @@ def main() -> int:
               "scoring better is exactly how deliberation length looked before it "
               "delivered no held-out gain.")
 
+    prompt_sha = hashlib.sha256(
+        mono.VARIANTS[args.variant].system_prompt.encode("utf-8")).hexdigest()
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(combiner.to_dict(), indent=2, sort_keys=True) + "\n")
 
-    prompt_sha = hashlib.sha256(
-        mono.VARIANTS[args.variant].system_prompt.encode("utf-8")).hexdigest()
+    if args.report:
+        report = {
+            "artifact_kind": "incall_calibration_holdout_report",
+            "schema_version": 1,
+            "question": ("Does the in-call delta_logit beat the verdict weight "
+                         "it would replace, held out and reseeded?"),
+            "model": args.model,
+            "served_model_id": args.served_model_id,
+            "variant": args.variant,
+            "prompt_sha256": prompt_sha,
+            "belief_profile": {
+                "note": ("The OTHER half of this fit, and ship step 2. These are "
+                         "the verdict log-LRs a reader profile would carry; "
+                         "belief cannot be computed from a margin without them. "
+                         "They were printed and not persisted until this field "
+                         "existed, which is the same defect --report was added "
+                         "to close."),
+                "counts": profile["counts"],
+                "sensitivity": profile["sensitivity"],
+                "false_positive_rate": profile["false_positive_rate"],
+                "log_lr_confirm": profile["log_lr_confirm"],
+                "log_lr_reject": profile["log_lr_reject"],
+                "prior_logodds": profile.get("prior_logodds", 0.0),
+            },
+            "isotonic_artifact": out.name,
+            "isotonic_sha256": hashlib.sha256(out.read_bytes()).hexdigest(),
+            # BOTH input paths, not just args.run. --from-shards is the path a
+            # production fit actually takes (gold-eval and shards disagree on
+            # 10% of IDENTICAL evidences, so a stack fits on the one it will be
+            # read through), and on that path args.run is None -- leaving the
+            # one field that names what was fitted empty on every fit that
+            # matters, in the artifact added to stop exactly that.
+            "run": str(args.run or args.results_dir or ""),
+            "n_rows_fitted": len(rows),
+            "reseeds": {
+                "requested": args.reseeds,
+                "evaluable": len(results),
+                "holdout_frac": args.holdout_frac,
+                "base_seed": args.seed,
+                "note": ("One split is one lottery draw. The gate is taken on "
+                         "the MEDIAN across splits, with the worst reported "
+                         "beside it -- gating on the best would be "
+                         "split-shopping, on the worst would let one unlucky "
+                         "partition veto a real effect."),
+            },
+            "splits": [
+                {k: v for k, v in r.items() if k != "combiner"} for r in results
+            ],
+            "median": {
+                "auroc_incumbent": med("auroc_inc"),
+                "auroc_candidate": med("auroc_can"),
+                "auroc_delta": med("auroc_can") - med("auroc_inc"),
+                "ci_low": med("ci_low"),
+                "worst_ci_low": worst_lo,
+                "brier_incumbent": b_inc,
+                "brier_candidate": b_can,
+                "ece_incumbent": e_inc,
+                "ece_candidate": e_can,
+            },
+            "splits_passing_both_halves": n_pass,
+            "gate": {
+                "pass": bool(verdict_go),
+                "ranking": bool(discriminates),
+                "scoring": bool(scores_better),
+                "reliability_cost": g["reliability_cost"],
+                "resolution_gain": g["resolution_gain"],
+                "favourable_trade": bool(g["favourable"]),
+            },
+            "not_registered": (
+                "This report records a MEASUREMENT, not a deployment. The "
+                "isotonic is not registered by this script: logits reach belief "
+                "only once a human adds the _INCALL_CALIBRATIONS row printed "
+                "below. Any claim that this is 'in production' must check that "
+                "registry, not this file."),
+            "generated_by": "scripts/fit_incall_calibration.py",
+        }
+        rp = Path(args.report)
+        rp.parent.mkdir(parents=True, exist_ok=True)
+        rp.write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
+        print(f"  wrote {rp} (held-out comparison, {len(results)} splits)")
+
     print(f"\n  wrote {out}")
     print("\n  ---- registry edits, for a human to make ----")
-    print(f"  1. probes/calibration.py  _SENTENCE_CALIBRATIONS:")
+    # _INCALL_CALIBRATIONS, not _SENTENCE_CALIBRATIONS. This script fits IN-CALL
+    # margins and nothing else, so naming the probe-route table here hands the
+    # next person a curve fitted on the wrong quantity -- which lands silently,
+    # because the two tables have the same shape and the loader accepts either
+    # route's artifact.
+    print(f"  1. probes/calibration.py  _INCALL_CALIBRATIONS:")
     print(f'       ("{args.model}", "{args.served_model_id}"): "{out.name}",')
     print(f"  2. calibration_constants.py  a profile for "
           f"({args.model}, prompt {prompt_sha[:12]}) with counts "
