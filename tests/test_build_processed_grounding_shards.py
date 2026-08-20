@@ -71,6 +71,28 @@ def test_empty_evidence_and_empty_text_are_filtered_separately():
     assert counts == {}
 
 
+def test_all_evidence_keeps_each_text_bearing_evidence():
+    class Evidence:
+        def __init__(self, text):
+            self.text = text
+
+    class Statement:
+        def __init__(self, evidence):
+            self.evidence = evidence
+
+    first = Evidence("first sentence")
+    missing = Evidence(None)
+    third = Evidence("third sentence")
+
+    selected, counts = pipeline.text_evidence_items(
+        Statement([first, missing, third]),
+        all_evidence=True,
+    )
+
+    assert selected == [(0, first), (2, third)]
+    assert counts == {"evidences_without_text": 1}
+
+
 def test_entity_inputs_use_agent_text_db_refs(monkeypatch):
     statements_module = types.ModuleType("indra.statements")
 

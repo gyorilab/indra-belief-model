@@ -179,3 +179,52 @@ def test_the_shipped_direct_artifact_still_scores():
         record_id="never-seen", calibration=cal,
     )
     assert 0.0 <= reading.p_hat <= 1.0
+
+
+def test_every_registered_calibration_names_a_file_that_is_actually_shipped():
+    """A registry row whose artifact never got committed.
+
+    This is not hypothetical. A row was added for a vLLM stack pointing at
+    `incall_vllm.json`, a file that existed only on the fitting machine's
+    scratch. Nothing failed at import. `supports_sentence_calibration` simply
+    began answering True for a client with no curve, and the corpus belief build
+    died on FileNotFoundError several stages later, instead of on its own
+    "--require-calibrated needs BOTH" refusal.
+
+    The fit script prints its registry edit for a human to paste, and the
+    artifact is a separate `cp` -- so the two steps can always be done half. This
+    is the check that makes the half-done state loud, at the seam where the
+    registry stops being self-describing.
+    """
+    missing = []
+    for table_name, table in (
+        ("_SENTENCE_CALIBRATIONS", C._SENTENCE_CALIBRATIONS),
+        ("_INCALL_CALIBRATIONS", C._INCALL_CALIBRATIONS),
+    ):
+        for key, filename in table.items():
+            path = C.DEFAULT_CALIBRATION_PATH.parent / filename
+            if not path.exists():
+                missing.append(f"{table_name}{key} -> {filename}")
+    assert not missing, (
+        "registered calibrations whose artifact is not in the repo:\n  "
+        + "\n  ".join(missing)
+        + "\nShip the artifact in the same commit as the row, or drop the row."
+    )
+
+
+def test_the_two_routes_never_share_an_artifact():
+    """One file cannot be both curves.
+
+    The tables have the same shape and the loader accepts either route's
+    `probe_ids`, so a row copied from one to the other type-checks, loads, and
+    silently saturates every reading -- probe knots span -1.70..+1.61 while
+    in-call margins run ~3x wider. Nothing downstream can tell.
+    """
+    shared = set(C._SENTENCE_CALIBRATIONS.values()) & set(
+        C._INCALL_CALIBRATIONS.values()
+    )
+    assert not shared, (
+        f"artifact(s) registered on BOTH acquisition routes: {sorted(shared)}. "
+        "A curve is fitted on one quantity; serving it as the other saturates "
+        "rather than errors."
+    )

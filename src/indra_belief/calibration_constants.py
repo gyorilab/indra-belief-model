@@ -54,7 +54,9 @@ FIT_GOLD_SHA256 = "8e266acefd191e25a92f88febcb6f6d7f1b3be8c8d8f45a18012f76d9930f
 HOLDOUT_GOLD_SHA256 = "aa022aa0d2543f7031a686ec661a3bc3f59dec7cb9cc12f049ff0068653ecb49"
 EXTERNAL_GOLD_SHA256 = "52cde61f8f3e3dac01ad13f09c9d6db623eea888ffd617410d1c88de6527c80f"
 HOLDOUT_LARGE_FIT_GOLD_SHA256 = "f042ba6769995667f48e5a12b145b64e231aac063104c690ad21bb22aeb0c019"
-
+EXTERNAL_CURATOR_GOLD_V2_SHA256 = (
+    "45eab0b5b42a2d364962d0cf3c09a7832f9a95c19044df86fefc861a76e502fd"
+)
 # Reader configuration -> confusion matrix (verdict × curator gold) tallied after
 # exact-pair multi-curator aggregation and duplicate-pair removal. These four
 # counts are the reader calibration. The fit corpus is PER PROFILE: most are
@@ -110,6 +112,14 @@ _CONFUSION: dict[str, dict[str, int]] = {
     # contract cannot produce at all (its verdict lands ~56 tokens deep and
     # reads saturated).
     "local_gemma_mlx_verdict_only": {"cc": 452, "ci": 143, "ic": 84, "ii": 362},
+    # The SAME prompt and the SAME gold on the vLLM stack, fitted separately
+    # because a profile describes a reader, and a reader is weights AND the
+    # substrate serving them. The two land close -- accuracy 0.803 here against
+    # MLX's 0.782, on 1047 pairs against 1041 -- which is a check on both, not a
+    # licence to share one: nothing in the code would have told us if they had
+    # diverged, and the same weights read two ways already disagree in sign on
+    # 10% of margins.
+    "vllm_gemma_verdict_only": {"cc": 466, "ci": 133, "ic": 73, "ii": 375},
 }
 
 _PROFILE_META = {
@@ -199,11 +209,13 @@ _PROFILE_META = {
         "reader_model": "local-gemma-4-26b",
         "prompt_sha256": VERDICT_ONLY_PROMPT_SHA256,
         "fit_gold": "data/benchmark/external_curator_gold_v2.jsonl",
+        "fit_gold_sha256": EXTERNAL_CURATOR_GOLD_V2_SHA256,
         "fit_run": "data/results/external_curator_v2_local-gemma-4-26b_verdict_only.jsonl",
         "deployment_status": "enabled",
         "validation": {
             "result": "pass",
             "gold": "data/benchmark/external_curator_gold_v2.jsonl",
+            "gold_sha256": EXTERNAL_CURATOR_GOLD_V2_SHA256,
             "run": "data/results/external_curator_v2_local-gemma-4-26b_verdict_only.jsonl",
             "gate": "held-out, 10 reseeded splits",
             "note": ("Gates the IN-CALL MARGIN against the verdict weight it "
@@ -218,6 +230,42 @@ _PROFILE_META = {
                      "incall_calibration_local_mlx_report.json"),
         },
     },
+    "vllm_gemma_verdict_only": {
+        "profile_id": "vllm-gemma-4-26b@prompt-cd14d9e74d2e@external_curator_gold_v2",
+        "reader_model": "vllm-gemma-4-26b",
+        "prompt_sha256": VERDICT_ONLY_PROMPT_SHA256,
+        "fit_gold": "data/benchmark/external_curator_gold_v2.jsonl",
+        "fit_gold_sha256": EXTERNAL_CURATOR_GOLD_V2_SHA256,
+        # UNRESOLVABLE, and named that way on purpose. This fit ran on cluster
+        # scratch, which is neither tracked nor durable, so no one else can
+        # re-derive the counts above or check them against a run. The counts and
+        # the gold digest ARE pinned here, which is what makes the profile usable
+        # -- but "usable" is not "auditable", and the difference should be legible
+        # to whoever reads this next rather than hidden behind a path that merely
+        # looks like the tracked ones beside it.
+        "fit_run": "/scratch/h.yan/data/gold_results (NOT TRACKED)",
+        "deployment_status": "enabled",
+        "validation": {
+            "result": "pass",
+            "gold": "data/benchmark/external_curator_gold_v2.jsonl",
+            "gold_sha256": EXTERNAL_CURATOR_GOLD_V2_SHA256,
+            "run": "/scratch/h.yan/data/gold_results (NOT TRACKED)",
+            "gate": "held-out, 10 reseeded splits: ranking PASS; scoring PASS",
+            "note": ("Same gate as the MLX profile above, on the vLLM stack via "
+                     "--from-shards -- the acquisition path this reader is "
+                     "actually read through. Median Brier 0.1546 -> 0.1316, "
+                     "resolution gain 0.0250 against reliability cost 0.0031. "
+                     "COST: ECE rises 0.0204 -> 0.0415, the same trade the MLX "
+                     "fit makes and priced the same way. "
+                     "Accuracy 0.803 on 1047 pairs, against the DELIBERATED "
+                     "reader's 0.851: deliberation is given up here to buy a "
+                     "margin the deliberated contract cannot emit at all. "
+                     "NO REPORT ARTIFACT -- these numbers came from stdout on a "
+                     "machine we do not have. Re-fit with --report and replace "
+                     "this note; until then it is the weakest-cited profile in "
+                     "this table."),
+        },
+    },
 }
 
 _FITTED_CONFIGS = {
@@ -227,6 +275,7 @@ _FITTED_CONFIGS = {
     ("remote-medpsy-4b", BASELINE_PROMPT_SHA256): "medpsy_remote",
     ("local-gemma-4-26b", REASONING_FIRST_PROMPT_SHA256): "local_gemma_mlx",
     ("local-gemma-4-26b", VERDICT_ONLY_PROMPT_SHA256): "local_gemma_mlx_verdict_only",
+    ("vllm-gemma-4-26b", VERDICT_ONLY_PROMPT_SHA256): "vllm_gemma_verdict_only",
 }
 
 

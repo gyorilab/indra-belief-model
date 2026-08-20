@@ -4,6 +4,9 @@ from __future__ import annotations
 import gzip
 import importlib.util
 import json
+import sys
+import types
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -21,20 +24,49 @@ def write_jobs(path: Path, jobs: list[dict]) -> None:
 
 
 def test_limited_output_has_separate_name(tmp_path):
-    final, partial = runner.output_paths(tmp_path, 12, 200)
+    final = runner.output_path(tmp_path, 12, 200)
     assert final.name == "verdicts-000012.limit-200.json.gz"
-    assert partial.name == ".verdicts-000012.limit-200.partial.jsonl"
 
 
-def test_partial_resume_uses_latest_valid_attempt_and_ignores_truncation(tmp_path):
-    path = tmp_path / "partial.jsonl"
-    path.write_text(
-        '{"job_id":"1:0","verdict":null}\n'
-        '{"job_id":"1:0","verdict":"correct","confidence":"high"}\n'
-        '{"job_id":'
+def test_iter_jobs_filters_hashes_before_applying_limit(tmp_path):
+    shard = tmp_path / "grounded-000000.jsonl.gz"
+    write_jobs(
+        shard,
+        [
+            {"job_id": "1:0", "stmt_hash": 101, "source_hash": 11},
+            {"job_id": "2:0", "stmt_hash": 202, "source_hash": 22},
+            {"job_id": "3:0", "stmt_hash": 303, "source_hash": 33},
+        ],
     )
-    latest = runner.load_partial(path)
-    assert latest["1:0"]["verdict"] == "correct"
+
+    jobs = list(runner.iter_jobs(shard, limit=1, stmt_hashes={202, 303}))
+
+    assert [job["stmt_hash"] for job in jobs] == [202]
+
+
+def test_failed_job_is_retried_three_times_after_initial_attempt(monkeypatch):
+    attempts = []
+
+    def fake_score(job, **_kwargs):
+        attempts.append(job["job_id"])
+        if len(attempts) < 4:
+            return {
+                "job_id": job["job_id"],
+                "verdict": None,
+                "confidence": None,
+                "error": "temporary",
+            }
+        return {
+            "job_id": job["job_id"],
+            "verdict": "correct",
+            "confidence": "high",
+        }
+
+    monkeypatch.setattr(runner, "score_job", fake_score)
+    row = runner.score_job_with_retries({"job_id": "1:0"}, retries=3)
+
+    assert len(attempts) == 4
+    assert row["verdict"] == "correct"
 
 
 def test_atomic_final_is_requested_dictionary(tmp_path):
@@ -61,14 +93,13 @@ def test_finalize_builds_hash_dictionary(tmp_path):
         "1:0": {"verdict": "correct", "confidence": "high"},
         "2:0": {"verdict": "incorrect", "confidence": "medium"},
     }
-    payload, missing = runner.finalize(shard, latest, None)
+    payload = runner.finalize(shard, latest, None)
     assert payload == {
         "101": {"11": {"verdict": "correct", "confidence": "high"}},
         "-202": {
             "22": {"verdict": "incorrect", "confidence": "medium"}
         },
     }
-    assert missing == []
 
 
 def test_finalize_keeps_multiple_evidences_for_one_statement(tmp_path):
@@ -85,7 +116,7 @@ def test_finalize_keeps_multiple_evidences_for_one_statement(tmp_path):
         "2:0": {"verdict": "correct", "confidence": "high"},
     }
 
-    payload, missing = runner.finalize(shard, latest, None)
+    payload = runner.finalize(shard, latest, None)
 
     assert payload == {
         "101": {
@@ -93,7 +124,42 @@ def test_finalize_keeps_multiple_evidences_for_one_statement(tmp_path):
             "22": {"verdict": "correct", "confidence": "high"},
         }
     }
-    assert missing == []
+
+
+def test_finalize_keeps_logit_and_exhausted_error(tmp_path):
+    shard = tmp_path / "grounded-000000.jsonl.gz"
+    write_jobs(
+        shard,
+        [
+            {"job_id": "1:0", "stmt_hash": 101, "source_hash": 11},
+            {"job_id": "2:0", "stmt_hash": 202, "source_hash": 22},
+        ],
+    )
+    latest = {
+        "1:0": {
+            "verdict": "correct",
+            "confidence": "high",
+            "probe_delta_logit": 4.25,
+        },
+        "2:0": {
+            "verdict": None,
+            "confidence": None,
+            "error": "unparseable model response",
+            "attempts": 4,
+            "response_preview": "bad reply",
+        },
+    }
+
+    payload = runner.finalize(shard, latest, None)
+
+    assert payload["101"]["11"]["probe_delta_logit"] == 4.25
+    assert payload["202"]["22"] == {
+        "verdict": "error",
+        "confidence": None,
+        "error": "unparseable model response",
+        "attempts": 4,
+        "response_preview": "bad reply",
+    }
 
 
 def test_tier1_does_not_call_model():
@@ -377,8 +443,59 @@ def test_main_reaches_shard_discovery_without_a_name_error(tmp_path, monkeypatch
 
 
 def test_require_calibrated_refuses_an_unfitted_prompt(tmp_path, monkeypatch):
-    """The pinned prompt has no fitted profile, so this must refuse rather than
-    quietly publish hard-gate beliefs at corpus scale."""
+    """An unfitted (model, prompt) must refuse rather than quietly publish
+    hard-gate beliefs at corpus scale.
+
+    The subject used to be the runner's DEFAULT variant, on the reasoning that
+    nothing was fitted for this stack yet. Fitting `verdict_only` for it made
+    the assertion unreachable -- the test still ran, still passed once the
+    message was updated, and guarded nothing. So the unfitted pair is now
+    chosen explicitly AND its premise is asserted: if someone fits this one too,
+    this fails as a stale premise instead of quietly going hollow.
+
+    `disconfirm_relnature_rf` is the deliberated contract. It is fitted on
+    Bedrock and on MLX but not here, and not by oversight: its verdict lands
+    ~56 tokens deep, so it cannot emit the in-call margin the corpus path reads.
+    """
+    import hashlib
+    import sys
+
+    import pytest as _pytest
+
+    from indra_belief.calibration_constants import calibration_for
+    from indra_belief.scorers.monolithic import scorer as mono
+
+    unfitted_variant = "disconfirm_relnature_rf"
+    sha = hashlib.sha256(
+        mono.VARIANTS[unfitted_variant].system_prompt.encode("utf-8")
+    ).hexdigest()
+    assert calibration_for("vllm-gemma-4-26b", prompt_sha256=sha) is None, (
+        f"premise is stale: {unfitted_variant} is now fitted for "
+        "vllm-gemma-4-26b, so this test no longer exercises the refusal. "
+        "Pick a pair that is genuinely unfitted, or delete the test knowingly."
+    )
+
+    empty = tmp_path / "shards"
+    empty.mkdir()
+    monkeypatch.setattr(sys, "argv", [
+        "run_vllm_processed_shards.py",
+        "--input-dir", str(empty),
+        "--output-dir", str(tmp_path / "out"),
+        "--model", "vllm-local",
+        "--variant", unfitted_variant,
+        "--require-calibrated",
+    ])
+    with _pytest.raises(SystemExit) as excinfo:
+        runner.main()
+    assert "no ship-approved profile" in str(excinfo.value)
+
+
+def test_the_shipped_default_variant_is_fitted_for_the_corpus_stack(tmp_path, monkeypatch):
+    """The other half: the pair the 60M run actually uses must PASS the gate.
+
+    Without this, the refusal test above could be satisfied by a runner that
+    refuses everything.
+    """
     import sys
 
     import pytest as _pytest
@@ -394,4 +511,73 @@ def test_require_calibrated_refuses_an_unfitted_prompt(tmp_path, monkeypatch):
     ])
     with _pytest.raises(SystemExit) as excinfo:
         runner.main()
-    assert "no ship-approved profile" in str(excinfo.value)
+    assert "no shards found" in str(excinfo.value), (
+        "the corpus stack's own (model, prompt) pair no longer resolves a "
+        f"ship-approved profile; died with: {excinfo.value}"
+    )
+
+
+def test_offline_client_preserves_requested_logprobs(monkeypatch):
+    instances = []
+
+    class SamplingParams:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class Logprob:
+        def __init__(self, token, value):
+            self.decoded_token = token
+            self.logprob = value
+
+    class Completion:
+        text = "correct\nhigh"
+        token_ids = [1]
+        logprobs = [{1: Logprob("correct", -0.1), 2: Logprob("incorrect", -2.1)}]
+        finish_reason = "stop"
+
+    class Output:
+        outputs = [Completion()]
+        prompt_token_ids = [10, 11]
+
+    class LLM:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.params = []
+            instances.append(self)
+
+        def chat(self, conversations, sampling_params, use_tqdm, **kwargs):
+            self.params.extend(sampling_params)
+            assert len(conversations) == 2
+            assert use_tqdm is False
+            assert kwargs == {"chat_template_kwargs": {"enable_thinking": False}}
+            return [Output() for _ in conversations]
+
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm",
+        types.SimpleNamespace(LLM=LLM, SamplingParams=SamplingParams),
+    )
+    request = {
+        "messages": [{"role": "user", "content": "question"}],
+        "max_tokens": 100,
+        "temperature": 0,
+        "logprobs": True,
+        "top_logprobs": 128,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+
+    with runner.OfflineVllmClient(
+        "model/path", batch_size=2, gpu_memory_utilization=0.8
+    ) as client:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(
+                pool.map(lambda _i: client.post("", json=request), range(2))
+            )
+
+    assert instances[0].params[0].kwargs["logprobs"] == 128
+    content = responses[0].json()["choices"][0]["logprobs"]["content"]
+    assert content[0]["token"] == "correct"
+    assert {row["token"] for row in content[0]["top_logprobs"]} == {
+        "correct",
+        "incorrect",
+    }

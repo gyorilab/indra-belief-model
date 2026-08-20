@@ -5,10 +5,11 @@ LLM. The input is the gzip TSV emitted by ``export_assembly.py``:
 
     statement_hash<TAB>statement_json
 
-The file is read one row at a time. Statements with no evidence, or whose
-first evidence object has no text, are skipped. Every remaining statement's
-first evidence is grounded once, checked by deterministic Tier 1, rendered
-into the monolithic user message, and written to an atomic gzip JSONL shard.
+The file is read one row at a time. Production preparation uses the first
+evidence, preserving the historical corpus contract. ``--all-evidence`` is
+available for labelled corpora whose gold rows identify individual evidences.
+Selected evidences are grounded, checked by deterministic Tier 1, rendered
+into monolithic user messages, and written to atomic gzip JSONL shards.
 
 Defaults are tailored to the intended HPC layout:
 
@@ -122,13 +123,25 @@ def iter_processed_rows(
 
 def text_evidence_items(
     statement,
+    *,
+    all_evidence: bool = False,
 ) -> tuple[list[tuple[int, Any]], Counter[str]]:
-    """Return the statement's first evidence when it has non-empty text."""
+    """Return text-bearing evidence, or only the first evidence by default."""
     counts: Counter[str] = Counter()
     evidences = statement.evidence or []
     if not evidences:
         counts["statements_without_evidence"] = 1
         return [], counts
+
+    if all_evidence:
+        selected: list[tuple[int, Any]] = []
+        for evidence_index, evidence in enumerate(evidences):
+            text = evidence.text
+            if not isinstance(text, str) or not text.strip():
+                counts["evidences_without_text"] += 1
+                continue
+            selected.append((evidence_index, evidence))
+        return selected, counts
 
     evidence = evidences[0]
     text = evidence.text
@@ -499,6 +512,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shard-size", type=int, default=50_000)
     parser.add_argument("--compresslevel", type=int, default=6)
     parser.add_argument(
+        "--all-evidence",
+        action="store_true",
+        help="prepare every text-bearing evidence; intended for evidence-level "
+             "gold corpora (production keeps the first-evidence default)",
+    )
+    parser.add_argument(
         "--resume",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -533,20 +552,36 @@ def main() -> int:
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
 
-    if args.from_corpus_json:
-        generated = Path(args.output_dir) / "corpus_statements.tsv.gz"
-        generated.parent.mkdir(parents=True, exist_ok=True)
-        count = corpus_json_to_tsv(Path(args.from_corpus_json), generated)
-        print(f"  converted {count:,} statements -> {generated}", flush=True)
-        args.input = str(generated)
-    input_path = Path(args.input).resolve()
     output_dir = Path(args.output_dir).resolve()
+    manifest_path = output_dir / "manifest.json"
+    source_identity: dict[str, Any] = {}
+    if args.from_corpus_json:
+        corpus_path = Path(args.from_corpus_json).resolve()
+        if not corpus_path.exists():
+            raise SystemExit(f"corpus JSON does not exist: {corpus_path}")
+        generated = output_dir / "corpus_statements.tsv.gz"
+        generated.parent.mkdir(parents=True, exist_ok=True)
+        # A resume must read the exact converted file recorded by its manifest.
+        # Rewriting deterministic content still changes mtime and made every
+        # second invocation fail identity validation before reading row zero.
+        if args.resume and manifest_path.exists() and generated.exists():
+            print(f"  reusing converted corpus -> {generated}", flush=True)
+        else:
+            count = corpus_json_to_tsv(corpus_path, generated)
+            print(f"  converted {count:,} statements -> {generated}", flush=True)
+        args.input = str(generated)
+        source_identity = {
+            "source_corpus": str(corpus_path),
+            "source_corpus_sha256": hashlib.sha256(
+                corpus_path.read_bytes()
+            ).hexdigest(),
+        }
+    input_path = Path(args.input).resolve()
     cache_path = (
         Path(args.cache).resolve()
         if args.cache
         else output_dir / "gilda_cache.sqlite3"
     )
-    manifest_path = output_dir / "manifest.json"
 
     if not input_path.exists():
         raise SystemExit(f"input does not exist: {input_path}")
@@ -561,6 +596,8 @@ def main() -> int:
         "preparation_code_sha256": _code_fingerprint(),
         "shard_size": args.shard_size,
         "compresslevel": args.compresslevel,
+        "all_evidence": bool(args.all_evidence),
+        **source_identity,
     }
 
     if manifest_path.exists():
@@ -670,7 +707,10 @@ def main() -> int:
                 stmt = stmt_from_json(clean_json_loads(stmt_json_str))
                 if stmt is None:
                     raise ValueError("INDRA could not deserialize statement JSON")
-                selected, filter_counts = text_evidence_items(stmt)
+                selected, filter_counts = text_evidence_items(
+                    stmt,
+                    all_evidence=args.all_evidence,
+                )
                 row_counts.update(filter_counts)
                 if selected:
                     row_jobs = prepare_statement_jobs(

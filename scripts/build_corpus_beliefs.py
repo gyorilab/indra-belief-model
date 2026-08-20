@@ -57,7 +57,7 @@ def _load_runner():
     """Reuse the runner's own job reader and path rules.
 
     Imported rather than reimplemented: the join is on job identity, and a local
-    copy of `iter_jobs`/`output_paths` would be one edit away from joining
+    copy of `iter_jobs`/`resolve_results_path` would be one edit away from joining
     against a shape the runner no longer writes.
     """
     spec = importlib.util.spec_from_file_location(

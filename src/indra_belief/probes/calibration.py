@@ -109,6 +109,14 @@ _SENTENCE_CALIBRATIONS: dict[tuple[str, str], str] = {
 INCALL_CALIBRATION_FILENAME = "incall_calibration_local_mlx.json"
 _INCALL_CALIBRATIONS: dict[tuple[str, str], str] = {
     (CALIBRATION_MODEL, CALIBRATION_MODEL_ID): INCALL_CALIBRATION_FILENAME,
+    # WITHHELD, deliberately: ("vllm-gemma-4-26b", "google/gemma-4-26B-A4B-it")
+    # is fitted and gated, but its artifact (incall_vllm.json) is still only on
+    # /scratch. Registering a row whose file no other checkout has does not fail
+    # loudly -- `supports_sentence_calibration` starts answering True and stage 6
+    # dies on FileNotFoundError instead of its own refusal message. Withholding
+    # it keeps the refusal honest: the belief profile below IS registered, so the
+    # corpus scoring run gates green, and only the belief BUILD is blocked -- by
+    # the one thing actually missing. Add the row in the same commit as the file.
 }
 
 

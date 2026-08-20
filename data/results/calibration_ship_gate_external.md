@@ -12,7 +12,7 @@ The lead leg — **error-detection F1 with bootstrap CIs** — plus the consolid
 
 ## bedrock-gemma-4-26b — external_curator_gold_v1 (n=464, base 0.504 correct / 0.496 error, undefined 5, unmatched rows 0, ambiguous rows 0)
 
-Train: `data/benchmark/holdout_large_fit.jsonl` + `data/results/holdout_large_bedrock-gemma-4-26b_fit.jsonl`.  
+Train: `data/benchmark/holdout_large_fit.jsonl` + `data/results/holdout_large_bedrock-gemma-4-26b_fit.jsonl`.
 Test: `data/benchmark/external_curator_gold_v1.jsonl` + `data/results/external_curator_v1_bedrock-gemma.jsonl`.  
 Join: per-row exact (matches_hash, source_hash) first; truth-safe source fallback; statement grain = run `stmt_hash`; statement gold = any-incorrect-wins.
 
@@ -43,4 +43,3 @@ Non-inferiority: lower 95% bound -0.013 ≥ −0.154 (pre-specified margin) → 
 | 0.4 | 0.801 | 0.803 |
 | 0.5 | 0.680 | 0.803 |
 | 0.6 | 0.680 | 0.800 |
-

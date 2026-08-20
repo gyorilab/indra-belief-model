@@ -1,10 +1,11 @@
-"""Run prepared grounding shards through a running vLLM server.
+"""Run prepared grounding shards through vLLM server or offline inference.
 
 The script keeps only two pieces of recovery machinery:
 
-* completed jobs are appended to ``.partial.jsonl`` and skipped after restart;
+* each failed job is retried before being finalized with ``verdict="error"``;
 * the final gzip JSON dictionary is written to a temporary file and atomically
-  renamed, so interruption cannot publish a half-written result.
+  renamed, so interruption restarts only the unfinished shard and cannot
+  publish a half-written result.
 
 Examples
 --------
@@ -21,16 +22,24 @@ Run one complete shard::
 Run all shards; completed output shards are skipped::
 
     PYTHONPATH=src python scripts/run_vllm_processed_shards.py --workers 64
+
+Load vLLM directly instead of using an HTTP server::
+
+    PYTHONPATH=src python scripts/run_vllm_processed_shards.py \
+      --backend offline --shard-index 800 --workers 96
 """
 from __future__ import annotations
 
 import argparse
 import concurrent.futures as cf
+import csv
 import gzip
 import json
-import os
+import pickle
+import queue
 import re
 import sys
+import threading
 import time
 from functools import lru_cache
 from pathlib import Path
@@ -42,6 +51,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 DEFAULT_INPUT_DIR = Path("/scratch/h.yan/data/processed_grounding_shards")
 DEFAULT_OUTPUT_DIR = Path("/scratch/h.yan/data/processed_model_results")
+DEFAULT_GENE_OUTPUT_DIR = Path("/scratch/h.yan/data/processed_model_results_gene")
 DEFAULT_MODEL = "vllm-gemma-4-26b"
 # NO CoT at corpus scale. `verdict_only` is a coherent set — verdict-first
 # prompt, thinking suppressed, temperature 0 — and all three must hold together:
@@ -58,7 +68,58 @@ VALID_CONFIDENCE = {"high", "medium", "low"}
 SHARD_RE = re.compile(r"grounded-(\d+)\.jsonl\.gz$")
 
 
-def iter_jobs(path: Path, limit: int | None = None) -> Iterable[dict[str, Any]]:
+def build_gene_stmt_hash_set() -> set[int]:
+    """Save the hashes of all processed gene-only statements."""
+    from indra.statements import stmt_from_json
+    from indra.tools import assemble_corpus as ac
+    from indra_db.readonly_dumping.locations import processed_stmts_fpath
+    from indra_db.readonly_dumping.util import clean_json_loads
+    from tqdm import tqdm
+
+    batch_size = 100_000
+    output_path = Path(processed_stmts_fpath).with_name("gene_stmt_hashes.pkl")
+    gene_stmt_hashes: set[int] = set()
+    batch_stmts: list[Any] = []
+    batch_hashes: list[int] = []
+
+    def filter_batch() -> None:
+        filtered = ac.filter_genes_only(batch_stmts, specific_only=True)
+        filtered_ids = {id(stmt) for stmt in filtered}
+        gene_stmt_hashes.update(
+            stmt_hash
+            for stmt_hash, stmt in zip(batch_hashes, batch_stmts)
+            if id(stmt) in filtered_ids
+        )
+        batch_stmts.clear()
+        batch_hashes.clear()
+
+    csv.field_size_limit(sys.maxsize)
+    with gzip.open(processed_stmts_fpath, "rt") as fh:
+        reader = csv.reader(fh, delimiter="\t")
+        for stmt_hash, stmt_json in tqdm(
+            reader, total=48_769_436, unit="stmt", unit_scale=True
+        ):
+            stmt = stmt_from_json(clean_json_loads(stmt_json))
+            batch_hashes.append(int(stmt_hash))
+            batch_stmts.append(stmt)
+            if len(batch_stmts) >= batch_size:
+                filter_batch()
+
+    if batch_stmts:
+        filter_batch()
+    with output_path.open("wb") as fh:
+        pickle.dump(gene_stmt_hashes, fh, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print(f"gene statement hashes: {len(gene_stmt_hashes):,}")
+    print(f"output: {output_path}")
+    return gene_stmt_hashes
+
+
+def iter_jobs(
+    path: Path,
+    limit: int | None = None,
+    stmt_hashes: set[int] | None = None,
+) -> Iterable[dict[str, Any]]:
     """Stream jobs from one gzip JSONL shard."""
     with gzip.open(path, "rt", encoding="utf-8") as fh:
         count = 0
@@ -66,9 +127,12 @@ def iter_jobs(path: Path, limit: int | None = None) -> Iterable[dict[str, Any]]:
             if not line.strip():
                 continue
             try:
-                yield json.loads(line)
+                job = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{line_number}: invalid JSON: {exc}") from exc
+            if stmt_hashes is not None and int(job["stmt_hash"]) not in stmt_hashes:
+                continue
+            yield job
             count += 1
             if limit is not None and count >= limit:
                 return
@@ -101,51 +165,22 @@ def resolve_results_path(output_dir: Path, shard_index: int,
     directory holding two generations of the same shard cannot be joined
     silently against the wrong one.
     """
-    exact, _ = output_paths(output_dir, shard_index, limit)
+    exact = output_path(output_dir, shard_index, limit)
     if exact.exists():
         return exact
     candidates = sorted(output_dir.glob(f"verdicts-{shard_index:06d}*.json.gz"))
     return candidates[0] if len(candidates) == 1 else None
 
 
-def output_paths(
+def output_path(
     output_dir: Path,
     shard_index: int,
     limit: int | None,
-) -> tuple[Path, Path]:
+) -> Path:
     tag = f"{shard_index:06d}"
     if limit is not None:
         tag += f".limit-{limit}"
-    final_path = output_dir / f"verdicts-{tag}.json.gz"
-    partial_path = output_dir / f".verdicts-{tag}.partial.jsonl"
-    return final_path, partial_path
-
-
-def load_partial(path: Path) -> dict[str, dict[str, Any]]:
-    """Load the latest attempt for each job, ignoring a truncated last line."""
-    latest: dict[str, dict[str, Any]] = {}
-    if not path.exists():
-        return latest
-    with path.open() as fh:
-        for line in fh:
-            try:
-                row = json.loads(line)
-                latest[str(row["job_id"])] = row
-            except (json.JSONDecodeError, KeyError, TypeError):
-                continue
-    return latest
-
-
-def ensure_append_boundary(path: Path) -> None:
-    """Separate a crash-truncated JSON fragment from newly appended rows."""
-    if not path.exists() or path.stat().st_size == 0:
-        return
-    with path.open("rb") as fh:
-        fh.seek(-1, os.SEEK_END)
-        ends_with_newline = fh.read(1) == b"\n"
-    if not ends_with_newline:
-        with path.open("ab") as fh:
-            fh.write(b"\n")
+    return output_dir / f"verdicts-{tag}.json.gz"
 
 
 def write_final_atomic(path: Path, payload: dict[str, Any]) -> None:
@@ -156,6 +191,173 @@ def write_final_atomic(path: Path, payload: dict[str, Any]) -> None:
         json.dump(payload, fh, ensure_ascii=False, separators=(",", ":"))
         fh.write("\n")
     temporary.replace(path)
+
+
+class _OfflineResponse:
+    """Small response adapter matching the httpx methods used below."""
+
+    status_code = 200
+    text = ""
+
+    def __init__(self, payload: dict[str, Any]):
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, Any]:
+        return self.payload
+
+
+class OfflineVllmClient:
+    """Batch concurrent post calls through one long-lived vllm.LLM."""
+
+    def __init__(
+        self,
+        model_id: str,
+        *,
+        batch_size: int,
+        gpu_memory_utilization: float,
+    ):
+        try:
+            from vllm import LLM, SamplingParams
+        except ImportError as exc:
+            raise SystemExit(
+                "offline backend requires vLLM: python -m pip install vllm"
+            ) from exc
+
+        self.sampling_params_cls = SamplingParams
+        self.batch_size = batch_size
+        self.requests: queue.Queue = queue.Queue()
+        self.llm = LLM(
+            model=model_id,
+            enable_prefix_caching=True,
+            gpu_memory_utilization=gpu_memory_utilization,
+        )
+        self.worker = threading.Thread(target=self._run, daemon=True)
+        self.worker.start()
+
+    def post(
+        self,
+        _endpoint: str,
+        *,
+        json: dict[str, Any],
+        timeout: float | None = None,
+    ) -> _OfflineResponse:
+        del timeout
+        future: cf.Future = cf.Future()
+        self.requests.put((json, future))
+        return future.result()
+
+    @staticmethod
+    def _openai_logprobs(completion) -> dict[str, Any] | None:
+        """Translate vLLM offline token logprobs to the OpenAI response shape."""
+        steps = getattr(completion, "logprobs", None)
+        if not steps:
+            return None
+        content: list[dict[str, Any]] = []
+        for token_id, alternatives in zip(completion.token_ids, steps):
+            emitted = alternatives.get(token_id)
+            if emitted is None:
+                continue
+            content.append(
+                {
+                    "token": str(getattr(emitted, "decoded_token", "") or ""),
+                    "logprob": float(emitted.logprob),
+                    "top_logprobs": [
+                        {
+                            "token": str(
+                                getattr(candidate, "decoded_token", "") or ""
+                            ),
+                            "logprob": float(candidate.logprob),
+                        }
+                        for candidate in alternatives.values()
+                    ],
+                }
+            )
+        return {"content": content}
+
+    def _run(self) -> None:
+        while True:
+            first = self.requests.get()
+            if first is None:
+                return
+            batch = [first]
+            deadline = time.monotonic() + 0.002
+            while len(batch) < self.batch_size:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    item = self.requests.get(timeout=remaining)
+                except queue.Empty:
+                    break
+                if item is None:
+                    self.requests.put(None)
+                    break
+                batch.append(item)
+
+            payloads = [item[0] for item in batch]
+            futures = [item[1] for item in batch]
+            conversations = [payload["messages"] for payload in payloads]
+            params = [
+                self.sampling_params_cls(
+                    temperature=float(payload.get("temperature", 0.1)),
+                    max_tokens=int(payload.get("max_tokens", 1000)),
+                    logprobs=(
+                        int(payload["top_logprobs"])
+                        if payload.get("logprobs")
+                        else None
+                    ),
+                )
+                for payload in payloads
+            ]
+            chat_kwargs: dict[str, Any] = {}
+            template_kwargs = payloads[0].get("chat_template_kwargs")
+            if isinstance(template_kwargs, dict):
+                chat_kwargs["chat_template_kwargs"] = template_kwargs
+            try:
+                outputs = self.llm.chat(
+                    conversations,
+                    sampling_params=params,
+                    use_tqdm=False,
+                    **chat_kwargs,
+                )
+                for output, future in zip(outputs, futures):
+                    completion = output.outputs[0]
+                    choice = {
+                        "message": {"content": completion.text},
+                        "finish_reason": completion.finish_reason,
+                    }
+                    logprobs = self._openai_logprobs(completion)
+                    if logprobs is not None:
+                        choice["logprobs"] = logprobs
+                    future.set_result(
+                        _OfflineResponse(
+                            {
+                                "choices": [choice],
+                                "usage": {
+                                    "prompt_tokens": len(
+                                        output.prompt_token_ids or []
+                                    ),
+                                    "completion_tokens": len(completion.token_ids),
+                                },
+                            }
+                        )
+                    )
+            except BaseException as exc:
+                for future in futures:
+                    future.set_exception(exc)
+
+    def close(self) -> None:
+        self.requests.put(None)
+        self.worker.join()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        self.close()
 
 
 class MonolithicPrompt:
@@ -550,53 +752,83 @@ def _read_probe_delta(client, endpoint, model_id, job):
         return None
 
 
+def score_job_with_retries(
+    job: dict[str, Any],
+    *,
+    retries: int,
+    **score_kwargs: Any,
+) -> dict[str, Any]:
+    """Score one job, retrying failures up to the requested additional times."""
+    attempts = retries + 1 if job.get("needs_llm", True) else 1
+    row: dict[str, Any] | None = None
+    for _attempt in range(1, attempts + 1):
+        row = score_job(job, **score_kwargs)
+        if valid_result(row):
+            return row
+    assert row is not None
+    row["attempts"] = attempts
+    return row
+
+
 def finalize(
     input_path: Path,
     latest: dict[str, dict[str, Any]],
     limit: int | None,
-) -> tuple[dict[str, dict[str, dict[str, str]]], list[str]]:
-    """Build ``{stmt_hash: {source_hash: {verdict, confidence}}}``."""
-    payload: dict[str, dict[str, dict[str, str]]] = {}
-    missing: list[str] = []
-    for job in iter_jobs(input_path, limit):
+    stmt_hashes: set[int] | None = None,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Build the hash dictionary, retaining exhausted failures as errors."""
+    payload: dict[str, dict[str, dict[str, Any]]] = {}
+    for job in iter_jobs(input_path, limit, stmt_hashes):
         result = latest.get(job_id(job))
-        if not valid_result(result):
-            missing.append(job_id(job))
-            continue
+        if result is None:
+            raise RuntimeError(f"job produced no result: {job_id(job)}")
         stmt_hash = str(job["stmt_hash"])
         source_hash = str(job["source_hash"])
-        cell = {
-            "verdict": str(result["verdict"]),
-            "confidence": str(result["confidence"]),
-        }
-        # Raw, uncalibrated, stack-specific — carried only when measured so its
-        # absence stays distinguishable from a zero.
-        if result.get("probe_delta_logit") is not None:
-            cell["probe_delta_logit"] = float(result["probe_delta_logit"])
+        if valid_result(result):
+            cell: dict[str, Any] = {
+                "verdict": str(result["verdict"]),
+                "confidence": str(result["confidence"]),
+            }
+            if result.get("probe_delta_logit") is not None:
+                cell["probe_delta_logit"] = float(result["probe_delta_logit"])
+        else:
+            cell = {
+                "verdict": "error",
+                "confidence": None,
+                "error": str(result.get("error") or "unknown error"),
+                "attempts": int(result.get("attempts") or 1),
+            }
+            for key in ("finish_reason", "completion_tokens", "response_preview"):
+                if key in result:
+                    cell[key] = result[key]
         payload.setdefault(stmt_hash, {})[source_hash] = cell
-    return payload, missing
+    return payload
 
 
-def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
+def run_shard(
+    input_path: Path,
+    args,
+    client,
+    prompt: MonolithicPrompt,
+    stmt_hashes: set[int] | None = None,
+) -> int:
     from tqdm import tqdm
 
     match = SHARD_RE.search(input_path.name)
     assert match
     shard_index = int(match.group(1))
     output_dir = Path(args.output_dir)
-    final_path, partial_path = output_paths(output_dir, shard_index, args.limit)
+    final_path = output_path(output_dir, shard_index, args.limit)
 
     if final_path.exists():
         print(f"skip completed shard {shard_index}: {final_path}")
         return 0
 
-    total = sum(1 for _ in iter_jobs(input_path, args.limit))
-    latest = load_partial(partial_path)
-    done = {key for key, row in latest.items() if valid_result(row)}
+    total = sum(1 for _ in iter_jobs(input_path, args.limit, stmt_hashes))
+    latest: dict[str, dict[str, Any]] = {}
     output_dir.mkdir(parents=True, exist_ok=True)
-    ensure_append_boundary(partial_path)
 
-    pending = (job for job in iter_jobs(input_path, args.limit) if job_id(job) not in done)
+    pending = iter_jobs(input_path, args.limit, stmt_hashes)
     started = time.perf_counter()
     errors = 0
     llm = 0
@@ -604,71 +836,62 @@ def run_shard(input_path: Path, args, client, prompt: MonolithicPrompt) -> int:
     endpoint = args.base_url.rstrip("/") + "/chat/completions"
 
     print(
-        f"shard={shard_index} jobs={total:,} resumed={len(done):,} "
-        f"workers={args.workers}"
+        f"shard={shard_index} jobs={total:,} workers={args.workers} "
+        f"retries={args.retries}"
     )
-    progress = tqdm(total=total, initial=len(done), desc="Scoring", unit="job")
+    progress = tqdm(total=total, desc="Scoring", unit="job")
 
-    with partial_path.open("a", buffering=1) as partial_fh:
-        with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
-            inflight: set[cf.Future] = set()
+    with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
+        inflight: set[cf.Future] = set()
 
-            def submit_one() -> bool:
-                try:
-                    job = next(pending)
-                except StopIteration:
-                    return False
-                inflight.add(
-                    pool.submit(
-                        score_job,
-                        job,
-                        client=client,
-                        probe=bool(getattr(args, "probe", False)),
-                        prompt=prompt,
-                        endpoint=endpoint,
-                        model_id=args.model_id,
-                        max_tokens=args.max_tokens,
-                        temperature=args.temperature,
-                    )
+        def submit_one() -> bool:
+            try:
+                job = next(pending)
+            except StopIteration:
+                return False
+            inflight.add(
+                pool.submit(
+                    score_job_with_retries,
+                    job,
+                    retries=args.retries,
+                    client=client,
+                    probe=bool(getattr(args, "probe", False)),
+                    prompt=prompt,
+                    endpoint=endpoint,
+                    model_id=args.model_id,
+                    max_tokens=args.max_tokens,
+                    temperature=args.temperature,
                 )
-                return True
+            )
+            return True
 
-            for _ in range(args.workers * 2):
-                if not submit_one():
-                    break
+        for _ in range(args.workers * 2):
+            if not submit_one():
+                break
 
-            while inflight:
-                finished, _ = cf.wait(inflight, return_when=cf.FIRST_COMPLETED)
-                for future in finished:
-                    inflight.remove(future)
-                    row = future.result()
-                    partial_fh.write(json.dumps(row) + "\n")
-                    partial_fh.flush()
-                    latest[str(row["job_id"])] = row
-                    errors += int(not valid_result(row))
-                    llm += int(row.get("source") == "llm")
-                    tier1 += int(row.get("source") == "tier1")
-                    progress.update(1)
-                    progress.set_postfix(llm=llm, tier1=tier1, errors=errors)
-                    submit_one()
+        while inflight:
+            finished, _ = cf.wait(inflight, return_when=cf.FIRST_COMPLETED)
+            for future in finished:
+                inflight.remove(future)
+                row = future.result()
+                latest[str(row["job_id"])] = row
+                errors += int(not valid_result(row))
+                llm += int(row.get("source") == "llm")
+                tier1 += int(row.get("source") == "tier1")
+                progress.update(1)
+                progress.set_postfix(llm=llm, tier1=tier1, errors=errors)
+                submit_one()
 
     progress.close()
     elapsed = time.perf_counter() - started
-    payload, missing = finalize(input_path, latest, args.limit)
-    if missing:
-        print(
-            f"shard {shard_index} has {len(missing):,} failed jobs; "
-            "rerun the same command to retry them"
-        )
-        return 2
-
+    payload = finalize(input_path, latest, args.limit, stmt_hashes)
     write_final_atomic(final_path, payload)
-    partial_path.unlink(missing_ok=True)
     evidence_results = sum(len(by_source) for by_source in payload.values())
     print(
         f"completed shard {shard_index}: {evidence_results:,} evidence results "
         f"for {len(payload):,} statements in {elapsed / 60:.2f} minutes "
-        f"({evidence_results / max(elapsed, 1e-9):.2f} jobs/s)"
+        f"({evidence_results / max(elapsed, 1e-9):.2f} jobs/s), "
+        f"errors={errors:,}"
     )
     print(f"output={final_path}")
     return 0
@@ -689,9 +912,23 @@ def select_shards(input_dir: Path, shard_index: int | None) -> list[Path]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-dir", default=str(DEFAULT_INPUT_DIR))
-    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument(
+        "--output-dir",
+        help="Defaults to processed_model_results, or processed_model_results_gene "
+        "when --gene-stmt-hashes is used.",
+    )
+    parser.add_argument(
+        "--gene-stmt-hashes",
+        help="Pickle file containing the set of statement hashes to process.",
+    )
     parser.add_argument("--shard-index", type=int)
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--backend",
+        choices=("server", "offline"),
+        default="server",
+        help="Use the existing HTTP server or load vLLM in this process.",
+    )
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument(
         "--variant", default=DEFAULT_VARIANT,
@@ -715,9 +952,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", help="Override the model registry URL.")
     parser.add_argument(
         "--served-model-id",
-        help="Override the model name accepted by the vLLM server.",
+        help="Override the registry model ID (server name or offline model path).",
     )
     parser.add_argument("--workers", type=int, default=64)
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=3,
+        help="Additional attempts after a failed LLM result (default: 3).",
+    )
     # max-tokens and timeout DEFAULT TO THE REGISTRY, matching
     # scripts/run_rasmachine_monolithic.py. They used to be hardcoded here at
     # 1000/180, which silently overrode the registry entry for every run: a
@@ -728,6 +971,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-tokens", type=int, default=None)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--timeout", type=float, default=None)
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.9,
+        help="vLLM offline backend GPU-memory fraction (default: 0.9).",
+    )
     return parser
 
 
@@ -868,19 +1117,16 @@ def preflight(client, endpoint: str, model_id: str, prompt) -> None:
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.workers < 1:
-        raise SystemExit("workers must be positive")
+    if args.workers < 1 or args.retries < 0:
+        raise SystemExit("workers must be positive and retries nonnegative")
     if args.max_tokens is not None and args.max_tokens < 1:
         raise SystemExit("max-tokens must be positive")
     if args.timeout is not None and args.timeout <= 0:
         raise SystemExit("timeout must be positive")
     if args.limit is not None and (args.limit < 1 or args.shard_index is None):
         raise SystemExit("--limit must be positive and used with --shard-index")
-
-    try:
-        import httpx
-    except ImportError as exc:
-        raise SystemExit("httpx is required: python -m pip install httpx") from exc
+    if not 0 < args.gpu_memory_utilization <= 1:
+        raise SystemExit("--gpu-memory-utilization must be in (0, 1]")
 
     from indra_belief.model_client import LOCAL_MODELS, canonical_model_name
 
@@ -906,6 +1152,21 @@ def main() -> int:
             )
     if args.timeout is None:
         args.timeout = float(model_config.get("timeout") or 900)
+
+    stmt_hashes: set[int] | None = None
+    if args.gene_stmt_hashes:
+        gene_hash_path = Path(args.gene_stmt_hashes)
+        with gene_hash_path.open("rb") as fh:
+            loaded_hashes = pickle.load(fh)
+        if not isinstance(loaded_hashes, set):
+            raise SystemExit(f"gene hash pickle must contain a set: {gene_hash_path}")
+        stmt_hashes = {int(value) for value in loaded_hashes}
+        print(f"gene_stmt_hashes={gene_hash_path} hashes={len(stmt_hashes):,}")
+
+    if args.output_dir is None:
+        args.output_dir = str(
+            DEFAULT_GENE_OUTPUT_DIR if stmt_hashes is not None else DEFAULT_OUTPUT_DIR
+        )
     # Built HERE, before the [config] line and the banner that both read it.
     # An unknown --variant must fail before any shard is opened, and both of
     # those lines report properties OF this object — deferring construction is
@@ -945,15 +1206,30 @@ def main() -> int:
         )
 
     shards = select_shards(Path(args.input_dir), args.shard_index)
-    limits = httpx.Limits(
-        max_connections=args.workers,
-        max_keepalive_connections=args.workers,
-    )
-    with httpx.Client(limits=limits, timeout=args.timeout) as client:
+    if args.backend == "offline":
+        client_context = OfflineVllmClient(
+            args.model_id,
+            batch_size=args.workers,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+        )
+    else:
+        try:
+            import httpx
+        except ImportError as exc:
+            raise SystemExit(
+                "server backend requires httpx: python -m pip install httpx"
+            ) from exc
+        limits = httpx.Limits(
+            max_connections=args.workers,
+            max_keepalive_connections=args.workers,
+        )
+        client_context = httpx.Client(limits=limits, timeout=args.timeout)
+
+    with client_context as client:
         preflight(client, args.base_url.rstrip("/") + "/chat/completions",
                   args.model_id, prompt)
         for shard in shards:
-            code = run_shard(shard, args, client, prompt)
+            code = run_shard(shard, args, client, prompt, stmt_hashes)
             if code:
                 return code
     return 0

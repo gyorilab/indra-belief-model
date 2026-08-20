@@ -52,12 +52,16 @@ From the production dump, or from a labelled corpus for stage 3:
 ```bash
 PYTHONPATH=src python scripts/build_processed_grounding_shards.py \
     --from-corpus-json data/corpora/external_curator_gold_v2_statements.json \
+    --all-evidence \
     --output-dir gold_shards
 ```
 
 `--from-corpus-json` converts a JSON statement list into this script's own
 `statement_hash<TAB>statement_json` input, keyed on `matches_hash` so shards
 prepared from a labelled corpus key exactly as shards from the real dump.
+The v2 file contains 748 statement objects but 1,084 labelled
+statement/evidence pairs, so calibration preparation uses `--all-evidence`;
+production preparation retains its historical first-evidence default.
 
 The batch user message is byte-identical to the live scorer's — the record owns
 the parts via `ScoringRecord.execution_body` and `ExecutionBody.render` owns the
@@ -80,8 +84,11 @@ Do NOT pass `--probe`. It buys a second request per evidence for a strictly
 worse reading — MEASURED n=80, in-call AUROC 0.8734 against the probe's 0.7237 —
 and is suppressed automatically when the free margin is available.
 
-Interruption is safe: finished jobs append to a partial file and are skipped on
-restart, and the gzip result is written to a temp file then atomically renamed.
+Interruption is safe at shard granularity: completed result shards are skipped
+on restart, an interrupted shard is rerun, and the gzip result is written to a
+temp file then atomically renamed. Each failed job is retried three additional
+times; an exhausted failure is retained with verdict "error" so one bad row
+does not block publication of the shard.
 
 ## 3. Calibrate — the stage that must run on the target stack
 
@@ -132,8 +139,19 @@ PYTHONPATH=src python scripts/fit_incall_calibration.py --from-shards \
     --input-dir gold_shards --results-dir gold_results \
     --gold data/benchmark/external_curator_gold_v2.jsonl \
     --model vllm-gemma-4-26b --served-model-id google/gemma-4-26B-A4B-it \
-    --out incall_vllm.json
+    --out incall_vllm.json --report incall_vllm_report.json
 ```
+
+Pass `--report`. The isotonic carries the curve and nothing about how the curve
+was gated — not the splits, not the medians, not the verdict — so without it
+those numbers exist only in this process's stdout, and a profile ends up quoting
+a Brier with nothing to cite. The report also persists the belief profile's
+log-LRs, which are the other half of the fit.
+
+Both artifacts belong in `data/probe_battery/`, **committed in the same commit as
+the registry row**. A row pointing at a file that stayed on the fitting machine
+does not fail loudly: `supports_sentence_calibration` starts answering True and
+stage 4 dies on `FileNotFoundError` rather than its own refusal.
 
 ### Why this cannot be inherited
 
@@ -153,10 +171,16 @@ FIT population's margins fell.
 
 ### It produces TWO artifacts and you need both
 
-| artifact | keyed on | without it |
-|---|---|---|
-| belief profile | (model, prompt sha256) | every belief is hard gate — ECE 0.237 against 0.045 |
-| in-call isotonic | (model, served_model_id) | margins are carried but unused; every row keeps its verdict weight |
+| artifact | registered in | keyed on | without it |
+|---|---|---|---|
+| belief profile | `calibration_constants._FITTED_CONFIGS` | (model, prompt sha256) | every belief is hard gate — ECE 0.237 against 0.045 |
+| in-call isotonic | `probes/calibration._INCALL_CALIBRATIONS` | (model, served_model_id) | margins are carried but unused; every row keeps its verdict weight |
+
+`_INCALL_CALIBRATIONS`, **not** `_SENTENCE_CALIBRATIONS` beside it. That one holds
+separate-probe curves. The two tables have the same shape and the loader accepts
+either route's artifact, so a row in the wrong table type-checks, loads, and
+saturates every reading to 0 or 1 — probe knots span -1.70..+1.61 while in-call
+margins run about 3x wider. Nothing downstream can tell.
 
 Registering only the isotonic yields beliefs byte-identical to the hard gate.
 The script registers NEITHER — it prints the two edits, because each is a ship
