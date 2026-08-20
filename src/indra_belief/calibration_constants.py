@@ -45,6 +45,10 @@ from .model_client import LOCAL_MODELS, canonical_model_name
 # fit-run call logs.  The full digest is pinned; prefixes are display-only.
 BASELINE_PROMPT_SHA256 = "b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581"
 REASONING_FIRST_PROMPT_SHA256 = "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364"
+# The verdict-first, reasoning-off contract. It is a DIFFERENT prompt from the
+# reasoning-first one above, so it needs its own profile: the reader's
+# confusion changes when you take deliberation away.
+VERDICT_ONLY_PROMPT_SHA256 = "cd14d9e74d2ea599f343df86a9df9ccf07b87885c8f43a1d0d6a70165e525da5"
 REASONING_FIRST_NOCONF_PROMPT_SHA256 = "bad4cb2d9f894a8bcf5dee689e558372eb92b20f43dd3b3015b0a6865613167e"
 FIT_GOLD_SHA256 = "8e266acefd191e25a92f88febcb6f6d7f1b3be8c8d8f45a18012f76d9930f600"
 HOLDOUT_GOLD_SHA256 = "aa022aa0d2543f7031a686ec661a3bc3f59dec7cb9cc12f049ff0068653ecb49"
@@ -100,6 +104,12 @@ _CONFUSION: dict[str, dict[str, int]] = {
     # other (delta err-F1 -0.0082, 95% CI [-0.0259, +0.0092], 95.4% verdict
     # agreement over 560 shared pairs).
     "local_gemma_mlx": {"cc": 651, "ci": 91, "ic": 148, "ii": 710},
+    # verdict_only on the same weights and stack: one token, no deliberation.
+    # Accuracy is lower than the deliberated profile above and that is expected
+    # -- this profile exists to weight IN-CALL MARGINS, which the deliberated
+    # contract cannot produce at all (its verdict lands ~56 tokens deep and
+    # reads saturated).
+    "local_gemma_mlx_verdict_only": {"cc": 452, "ci": 143, "ic": 84, "ii": 362},
 }
 
 _PROFILE_META = {
@@ -184,6 +194,30 @@ _PROFILE_META = {
                      "no mid-thought verdict reached these counts."),
         },
     },
+    "local_gemma_mlx_verdict_only": {
+        "profile_id": "local-gemma-4-26b@prompt-cd14d9e74d2e@external_curator_gold_v2",
+        "reader_model": "local-gemma-4-26b",
+        "prompt_sha256": VERDICT_ONLY_PROMPT_SHA256,
+        "fit_gold": "data/benchmark/external_curator_gold_v2.jsonl",
+        "fit_run": "data/results/external_curator_v2_local-gemma-4-26b_verdict_only.jsonl",
+        "deployment_status": "enabled",
+        "validation": {
+            "result": "pass",
+            "gold": "data/benchmark/external_curator_gold_v2.jsonl",
+            "run": "data/results/external_curator_v2_local-gemma-4-26b_verdict_only.jsonl",
+            "gate": "held-out, 10 reseeded splits",
+            "note": ("Gates the IN-CALL MARGIN against the verdict weight it "
+                     "replaces, not a prompt against a prompt. Median over 10 "
+                     "reseeded 70/30 splits: AUROC 0.7843 -> "
+                     "0.8715, Brier 0.1680 -> "
+                     "0.1455, worst split CI low "
+                     "+0.0445, 10/10 splits pass both halves. "
+                     "COST: ECE rises 0.0228 -> 0.0438 "
+                     "-- sharper, less well calibrated; more gold is the remedy. "
+                     "Full report: data/probe_battery/"
+                     "incall_calibration_local_mlx_report.json"),
+        },
+    },
 }
 
 _FITTED_CONFIGS = {
@@ -192,6 +226,7 @@ _FITTED_CONFIGS = {
     ("bedrock-gemma-4-26b", REASONING_FIRST_NOCONF_PROMPT_SHA256): "gemma_bedrock_rf_noconf",
     ("remote-medpsy-4b", BASELINE_PROMPT_SHA256): "medpsy_remote",
     ("local-gemma-4-26b", REASONING_FIRST_PROMPT_SHA256): "local_gemma_mlx",
+    ("local-gemma-4-26b", VERDICT_ONLY_PROMPT_SHA256): "local_gemma_mlx_verdict_only",
 }
 
 

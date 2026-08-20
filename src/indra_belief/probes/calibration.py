@@ -94,6 +94,23 @@ _SENTENCE_CALIBRATIONS: dict[tuple[str, str], str] = {
     (CALIBRATION_MODEL, CALIBRATION_MODEL_ID): CALIBRATION_FILENAME,
 }
 
+# The SAME serving identity, on the OTHER acquisition route. Kept in a separate
+# table rather than as a second value on the row above, because the two curves
+# are not interchangeable and a single-valued key cannot say which route it
+# means: probe deltas are fitted over knots spanning -1.70..+1.61, in-call
+# deltas are ~3x wider, and swapping one for the other saturates every reading
+# to 0 or 1 without erroring. The artifacts carry their route in `probe_ids`
+# (`pol.verdict_direct` vs `pol.verdict_incall`), and the loader validates it.
+#
+# To add a substrate: score a gold run on it with a verdict-first variant so
+# every row carries `probe_delta_logit`, fit with
+# `scripts/fit_incall_calibration.py --report`, confirm the report's gate PASSes,
+# and add one row here plus a belief profile in calibration_constants.py.
+INCALL_CALIBRATION_FILENAME = "incall_calibration_local_mlx.json"
+_INCALL_CALIBRATIONS: dict[tuple[str, str], str] = {
+    (CALIBRATION_MODEL, CALIBRATION_MODEL_ID): INCALL_CALIBRATION_FILENAME,
+}
+
 
 def probe_reading_supported(client) -> bool:
     """Whether ``client`` can produce a ``delta_logit`` at all.
@@ -125,6 +142,24 @@ def sentence_calibration_path_for(client) -> Path | None:
         return None
     key = (getattr(client, "model_name", None), config.get("model_id"))
     filename = _SENTENCE_CALIBRATIONS.get(key)  # type: ignore[arg-type]
+    if filename is None:
+        return None
+    return DEFAULT_CALIBRATION_PATH.parent / filename
+
+
+def incall_calibration_path_for(client) -> Path | None:
+    """The fitted IN-CALL artifact for this client's serving identity, or None.
+
+    Separate lookup from :func:`sentence_calibration_path_for` on purpose: a
+    client can have one route calibrated and not the other, and conflating them
+    is how a probe-fitted curve would come to be applied to an in-call margin.
+    """
+
+    config = getattr(client, "config", None)
+    if not isinstance(config, Mapping):
+        return None
+    key = (getattr(client, "model_name", None), config.get("model_id"))
+    filename = _INCALL_CALIBRATIONS.get(key)  # type: ignore[arg-type]
     if filename is None:
         return None
     return DEFAULT_CALIBRATION_PATH.parent / filename
@@ -217,6 +252,22 @@ def replace_sentence_score(
     in_call = result.get("in_call_label_margin")
     if isinstance(in_call, (int, float)) and not isinstance(in_call, bool):
         enriched["probe_delta_logit"] = float(in_call)
+        incall_artifact = incall_calibration_path_for(client)
+        if incall_artifact is not None:
+            # An isotonic fitted on THIS stack's in-call margins. The raw margin
+            # is still persisted above, unchanged, so a later recalibration
+            # never has to re-read the corpus.
+            try:
+                calibrated = calibrate_probe(
+                    ProbeReading(p_raw=float("nan"), delta_logit=float(in_call)),
+                    record_id=record_id or "in_call",
+                    calibration=_calibration_at(incall_artifact),
+                )
+                enriched["score"] = calibrated.p_hat
+                enriched["weight_of_evidence"] = calibrated.weight_of_evidence
+            except Exception as exc:
+                enriched["score_error"] = f"{type(exc).__name__}: {exc}"
+            return enriched
         # RAW ONLY, on purpose. The shipped isotonic was fitted on PROBE deltas
         # and its knots span -1.70..+1.61; in-call deltas are ~3x wider
         # (MEASURED n=80: median |13.22| against the probe's |4.34|), so every
