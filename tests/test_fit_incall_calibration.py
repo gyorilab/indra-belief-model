@@ -230,3 +230,46 @@ def test_the_favourability_bar_is_a_parameter_not_a_magic_number():
                 resolution_incumbent=0.100, resolution_candidate=0.130)
     assert GATE(0.03, 0.150, 0.128, **args, min_favourability=3.0)["favourable"]
     assert not GATE(0.03, 0.150, 0.128, **args, min_favourability=5.0)["favourable"]
+
+
+def test_a_limited_scoring_run_is_still_fittable(tmp_path):
+    """The one caller that genuinely does not know the scoring run's --limit.
+
+    Output names carry it (`verdicts-000000.limit-2.json.gz`), and the resolver
+    now defaults to the EXACT match because rebuilding the unlimited name has
+    twice made a consumer miss every shard and call it "0 usable rows". A FIT is
+    the exception: it is handed whatever gold-matched rows exist and has no
+    coverage claim to make, so it asks for the leniency at its own call site.
+    Without `allow_limited=True` here the fit reports the data as bad rather
+    than unfound.
+    """
+    import gzip as _gzip
+
+    ind, outd = tmp_path / "in", tmp_path / "out"
+    ind.mkdir()
+    outd.mkdir()
+    jobs = [
+        {"job_id": "0:0", "stmt_hash": 100, "source_hash": 1, "source_api": "reach"},
+        {"job_id": "0:1", "stmt_hash": 100, "source_hash": 2, "source_api": "reach"},
+    ]
+    with _gzip.open(ind / "grounded-000000.jsonl.gz", "wt") as fh:
+        for job in jobs:
+            fh.write(json.dumps(job) + "\n")
+    # The name a `--limit 2` scoring run wrote, which is the only file on disk.
+    with _gzip.open(outd / "verdicts-000000.limit-2.json.gz", "wt") as fh:
+        json.dump({"100": {"1": {"verdict": "correct", "probe_delta_logit": 4.0},
+                           "2": {"verdict": "incorrect",
+                                 "probe_delta_logit": -3.0}}}, fh)
+    labels = tmp_path / "gold.jsonl"
+    labels.write_text(
+        json.dumps({"stmt_hash": 100, "source_hash": 1, "gold_correct": True}) + "\n"
+        + json.dumps({"stmt_hash": 100, "source_hash": 2, "gold_correct": False})
+        + "\n"
+    )
+
+    rows, skipped = fit.load_rows_from_shards(ind, outd, labels)
+
+    assert skipped["no_results_file"] == 0, (
+        "the fit rebuilt the unlimited name and reported the gold as unusable"
+    )
+    assert sorted(row["margin"] for row in rows) == [-3.0, 4.0]
