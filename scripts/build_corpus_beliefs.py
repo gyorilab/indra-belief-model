@@ -139,6 +139,29 @@ def apply_weights(rows: list[dict], calibration, stats: dict) -> list[dict]:
     return out
 
 
+def check_margin_route(calibration, margin_route: str, variant_name: str,
+                       path) -> None:
+    """Refuse an isotonic filed under the OTHER route's registry.
+
+    `_calibration_at` accepts either route's artifact by design, so the route can
+    only be checked where it is known -- here. The two are not interchangeable:
+    probe knots span -1.70..+1.61 while in-call margins run ~3x wider (median
+    |13.22|), so reading an in-call margin through the probe curve returns
+    0.0000/1.0000 for every row -- weighted, counted, never an error.
+
+    Lived below the print it protects, inside main(), where no test could reach
+    it: neutering it to `if False:` left the whole bridge suite green.
+    """
+    if calibration is None:
+        return
+    if tuple(calibration.probe_ids) != (margin_route,):
+        raise SystemExit(
+            f"{path.name} was fitted on {calibration.probe_ids!r} but variant "
+            f"{variant_name!r} produces {margin_route!r} margins. Applying it "
+            "would saturate every reading to 0 or 1 without erroring."
+        )
+
+
 def beliefs_for_shard(runner, input_path: Path, results_path: Path, *,
                       soft, calibration, priors, stats: dict) -> dict[str, float]:
     """Reduce one shard pair to {stmt_hash: belief}."""
@@ -155,6 +178,17 @@ def beliefs_for_shard(runner, input_path: Path, results_path: Path, *,
         row = evidence_rows(job, cell)
         if row is None:
             stats["n_unscored"] += 1
+            # SPLIT, because the two have different causes and different
+            # remedies. A missing cell is a join problem -- the wrong results
+            # directory, the wrong generation. An "error" cell is a scored shard
+            # that FAILED on this evidence, and every one of them lowers its
+            # statement's belief by removing a read, so a run whose error count
+            # is not tiny is publishing depressed numbers rather than absent
+            # ones. Only the split makes that visible in the manifest.
+            if cell and cell.get("verdict") == "error":
+                stats["n_error_cell"] += 1
+            else:
+                stats["n_missing_cell"] += 1
             continue
         # A scored row carrying no margin is the signature of a tokenizer whose
         # label token does not match what the reader scans for (a leading space
@@ -205,12 +239,42 @@ def main() -> int:
     ap.add_argument("--shard-index", type=int, default=None)
     ap.add_argument("--limit", type=int, default=None,
                     help="the --limit the SCORING run used; output filenames carry "
-                         "it (verdicts-NNNNNN.limit-K.json.gz), so omitting it here "
-                         "makes every lookup miss and yields an empty table")
+                         "it (verdicts-NNNNNN.limit-K.json.gz) and the join is "
+                         "against that exact generation, so omitting it here "
+                         "misses every shard and the run refuses")
     ap.add_argument("--out", required=True)
     ap.add_argument("--require-calibrated", action="store_true",
                     help="refuse to write an uncalibrated belief table")
+    ap.add_argument("--stmt-hash-filter", default=None,
+                    help="the stmt_hash_filter digest the SCORING run recorded, "
+                         "if it was filtered (--gene-stmt-hashes). Omitted "
+                         "asserts an unfiltered run. CHECKABLE ONLY AGAINST A "
+                         "SIDECAR: a results directory whose shards recorded one "
+                         "is refused until this names the same digest, because "
+                         "every evidence outside the filter would otherwise land "
+                         "in n_missing_cell under a manifest that never says the "
+                         "table covers a subset. Shards scored before the runner "
+                         "wrote sidecars cannot be checked at all; they join with "
+                         "the assertion unverified and are counted in the "
+                         "manifest's n_shards_without_provenance")
+    ap.add_argument("--min-shard-coverage", type=float, default=0.99,
+                    help="refuse to write a table that joined fewer than this "
+                         "fraction of the input shards (default: 0.99). INDRA's "
+                         "Statement.from_json defaults a missing belief to 1.0, "
+                         "so a table covering 1%% of the corpus does not read as "
+                         "1%% covered downstream -- it reads as 99%% certainly "
+                         "true. Lower it deliberately to build over a partial "
+                         "scoring run")
     args = ap.parse_args()
+
+    # CANONICALISE THE SAME WAY THE RUNNER DOES. `run_vllm_processed_shards.main`
+    # canonicalises before writing the sidecar, so scoring and believing through
+    # the same live alias -- `--model vllm-local`, kept deliberately in
+    # `model_client._MODEL_ALIASES` -- recorded "vllm-gemma-4-26b" and asserted
+    # "vllm-local", and a correct join exited with the provenance refusal below.
+    from indra_belief.model_client import canonical_model_name
+
+    args.model = canonical_model_name(args.model)
 
     runner = _load_runner()
     variant_name = args.variant or runner.DEFAULT_VARIANT
@@ -218,12 +282,14 @@ def main() -> int:
     from indra_belief.calibration_constants import calibration_banner, calibration_for
     from indra_belief.noise_model import RECALIBRATED_PRIORS
     from indra_belief.probes.calibration import (
-        _calibration_at, sentence_calibration_path_for,
+        _calibration_at, incall_calibration_path_for, sentence_calibration_path_for,
     )
+    from indra_belief.probes.reader import DIRECT_PROBE_ID, IN_CALL_PROBE_ID
     from indra_belief.scorers.monolithic import scorer as mono
 
+    variant = mono.VARIANTS[variant_name]
     prompt_sha256 = hashlib.sha256(
-        mono.VARIANTS[variant_name].system_prompt.encode("utf-8")
+        variant.system_prompt.encode("utf-8")
     ).hexdigest()
 
     # 1. the BELIEF profile: (model, prompt sha) -> the two verdict log-LRs.
@@ -234,26 +300,48 @@ def main() -> int:
     calibrated, banner = calibration_banner(args.model, prompt_sha256)
     print(banner, flush=True)
 
-    # 2. the IN-CALL isotonic: (model, served id) -> margin becomes a weight.
-    #    A DIFFERENT artifact from the profile above, fitted on a different
-    #    quantity, and either can exist without the other.
+    # 2. the isotonic for the ROUTE the margins were acquired on:
+    #    (model, served id) -> margin becomes a weight. A DIFFERENT artifact
+    #    from the profile above, fitted on a different quantity, and either can
+    #    exist without the other.
+    #
+    #    THE ROUTE DECIDES WHICH REGISTRY. `probe_delta_logit` holds an IN-CALL
+    #    margin when the variant reads the label from the scoring response, and
+    #    a separate-PROBE margin when it does not and the run passed --probe.
+    #    The two registries are not interchangeable: probe knots span
+    #    -1.70..+1.61 while in-call margins run ~3x wider (median |13.22|), so
+    #    reading an in-call margin through the probe curve returns 0.0000/1.0000
+    #    for every row -- weighted, counted, never an error. The live path
+    #    (`replace_sentence_score`) refuses that swap by name; this one used to
+    #    commit it.
     class _Probe:
         model_name = args.model
         backend = "openai_compat"
         _guard = None
         config = {"model_id": args.served_model_id or "", "max_top_logprobs": 1024}
 
-    path = sentence_calibration_path_for(_Probe()) if args.served_model_id else None
+    if variant.in_call_label_logprobs:
+        margin_route, path_for = IN_CALL_PROBE_ID, incall_calibration_path_for
+    else:
+        margin_route, path_for = DIRECT_PROBE_ID, sentence_calibration_path_for
+    path = path_for(_Probe()) if args.served_model_id else None
     calibration = _calibration_at(path) if path else None
+    check_margin_route(calibration, margin_route, variant_name, path)
+    # NAMED BY ROUTE, not by one of the two routes. This line and the manifest
+    # key both said "in-call" while `margin_route` can be the separate-probe
+    # curve -- reachable through the documented `--variant
+    # disconfirm_relnature_rf` -- so the artifact contradicted itself about
+    # which quantity it was fitted on, one layer above the mis-filed-curve
+    # confusion check_margin_route exists to refuse.
     print(
-        f"[weights] in-call isotonic: "
+        f"[weights] {margin_route} isotonic: "
         f"{'registered — margins become additive weights' if calibration else 'NONE — every row keeps its verdict weight'}",
         flush=True,
     )
     if args.require_calibrated and not (calibrated and calibration):
         raise SystemExit(
             "refusing to write: --require-calibrated needs BOTH a fitted belief "
-            "profile and a registered in-call isotonic for this stack"
+            f"profile and a registered {margin_route} isotonic for this stack"
         )
 
     input_dir, results_dir = Path(args.input_dir), Path(args.results_dir)
@@ -264,16 +352,70 @@ def main() -> int:
     if not shards:
         raise SystemExit(f"no input shards found in {input_dir}")
 
-    stats = {"n_statements": 0, "n_evidence": 0, "n_unscored": 0, "n_weighted": 0,
+    stats = {"n_statements": 0, "n_evidence": 0, "n_unscored": 0,
+             "n_error_cell": 0, "n_missing_cell": 0, "n_weighted": 0,
              "n_weight_failed": 0, "n_shards": 0, "n_missing_results": 0,
              "n_null_margin": 0, "weighting": {}}
     table: dict[str, float] = {}
+    asserted = {
+        "model": args.model,
+        "variant": variant_name,
+        "prompt_sha256": prompt_sha256,
+        "served_model_id": args.served_model_id,
+        # The output NAME carries --limit but cannot carry --gene-stmt-hashes, so
+        # a filtered results directory joins against an unfiltered build with
+        # every non-gene evidence falling to n_missing_cell -- under a manifest
+        # that says nothing about a subset. The runner records the digest; None
+        # here asserts the run was unfiltered, which is the common case and the
+        # one that must not pass by accident.
+        "stmt_hash_filter": args.stmt_hash_filter,
+    }
+    unrecorded = 0
     for shard in shards:
         index = int(runner.SHARD_RE.search(shard.name).group(1))
         results_path = runner.resolve_results_path(results_dir, index, args.limit)
         if results_path is None:
             stats["n_missing_results"] += 1
             continue
+        # --model/--variant are ASSERTIONS about a run that already happened,
+        # and getting one wrong resolves a belief profile fitted for a prompt
+        # the scoring run never sent -- then publishes that claim in the
+        # manifest. The scoring run records what it actually did beside each
+        # shard, so the assertion is checkable.
+        try:
+            recorded = runner.read_shard_provenance(
+                runner.meta_path_for(results_path)
+            )
+        except runner.ShardWithheld as exc:
+            # A SIDECAR NOBODY COULD READ IS NOT A SIDECAR-LESS SHARD. Both used
+            # to answer None, so a truncated or unreadable one joined on the
+            # unverified path where every assertion below compares nothing --
+            # the fault passed as agreement about a configuration nobody read.
+            raise SystemExit(
+                f"{exc}. Its verdicts cannot be joined under an unverified "
+                "configuration: repair or remove the sidecar, or rescore the "
+                "shard."
+            ) from exc
+        if recorded is None:
+            # Shards scored before the sidecar existed. Joined, because they are
+            # valid, but the manifest says the configuration was unverified
+            # rather than confirmed.
+            unrecorded += 1
+            recorded = {}
+        for key, claimed in asserted.items():
+            # served_model_id alone is skipped when unset: it selects the
+            # isotonic and an unset one means "resolve none", not an assertion
+            # about the run. Every other key asserts, None included.
+            if key == "served_model_id" and claimed is None:
+                continue
+            if key in recorded and recorded[key] != claimed:
+                raise SystemExit(
+                    f"{results_path.name} was scored with {key}="
+                    f"{recorded[key]!r}, but this run asserts {claimed!r}. "
+                    "The belief profile and the isotonic are both keyed on "
+                    "that, so the table would be computed — and its manifest "
+                    "written — for a run that never happened."
+                )
         shard_table = beliefs_for_shard(
             runner, shard, results_path, soft=soft, calibration=calibration,
             priors=RECALIBRATED_PRIORS, stats=stats,
@@ -294,6 +436,20 @@ def main() -> int:
         table.update(shard_table)
         stats["n_shards"] += 1
 
+    if unrecorded:
+        # THE MANIFEST IS NOT WHERE AN OPERATOR LOOKS FIRST. Every shard the 60M
+        # run has published predates the sidecar, so --model/--variant/
+        # --stmt-hash-filter are unverifiable assertions over that part of the
+        # table -- including the case the --stmt-hash-filter help describes as
+        # refused, which is refusable only where a sidecar recorded the digest.
+        print(
+            f"  [provenance] {unrecorded:,} of {stats['n_shards']:,} joined "
+            "shards recorded no sidecar: --model, --variant and "
+            "--stmt-hash-filter are UNVERIFIED for them "
+            "(manifest: n_shards_without_provenance)",
+            flush=True,
+        )
+
     # A run that found no shard results at all is a configuration error wearing
     # a successful exit code -- most often a --limit the scoring run used and
     # this one was not told about. An empty table is never a legitimate answer.
@@ -304,14 +460,52 @@ def main() -> int:
             "used --limit, pass the same --limit here; the filenames carry it."
         )
 
+    # The guard above counts shards whose FILE was found, so a join that read
+    # every file and kept nothing -- a scoring window where every cell finalized
+    # as "error", or results from a different preparation generation -- fell
+    # straight through it and published `{}` with exit 0. An empty table is not
+    # a harmless empty file: `build_table` omits unscored statements precisely
+    # because INDRA's Statement.from_json defaults a missing belief to 1.0, so a
+    # table with nothing in it makes the whole corpus read as certainly true.
+    if stats["n_statements"] == 0:
+        raise SystemExit(
+            f"{stats['n_shards']} shard results were read and NOT ONE statement "
+            f"survived the join ({stats['n_unscored']:,} evidences had no usable "
+            "cell). Publishing an empty table would leave every corpus statement "
+            "to default to belief 1.0 downstream."
+        )
+
+    # PARTIAL COVERAGE READS AS CERTAINTY. The two guards above refuse only the
+    # empty cases, so 999 of 1000 shards failing to resolve published a table
+    # over 0.1% of the corpus with exit 0 -- and by the argument the guard above
+    # already makes (Statement.from_json defaults a missing belief to 1.0), the
+    # other 99.9% then read as certainly true rather than as unscored.
+    coverage = stats["n_shards"] / len(shards)
+    if coverage < args.min_shard_coverage:
+        raise SystemExit(
+            f"only {stats['n_shards']:,} of {len(shards):,} input shards joined "
+            f"({coverage:.1%}), below --min-shard-coverage "
+            f"{args.min_shard_coverage:.1%}; {stats['n_missing_results']} had no "
+            "matching output. Every statement outside those shards defaults to "
+            "belief 1.0 downstream. Pass --min-shard-coverage explicitly to "
+            "build over a partial scoring run."
+        )
+
     # An isotonic that was registered but never actually applied produces a table
     # indistinguishable from a calibrated one, with a manifest naming the curve.
     if calibration is not None and stats["n_weighted"] == 0:
+        # THE REASON TRAVELS WITH THE REFUSAL. `apply_weights` records the first
+        # exception so "nothing weighted" is a diagnosis rather than a mystery,
+        # and it was written only to the manifest -- which this refusal aborts
+        # before writing, so the one run that needs the reason is the one run
+        # that discards it.
+        why = stats.get("first_weight_error")
         raise SystemExit(
             f"an isotonic is registered but NOT ONE row was weighted "
             f"({stats['n_weight_failed']} failed, {stats['n_null_margin']} carried "
             "no margin). Every belief here is verdict-weighted; publishing it "
             "under a calibrated manifest would misdescribe the whole table."
+            + (f" The first failure was: {why}" if why else "")
         )
 
     out = Path(args.out)
@@ -324,8 +518,17 @@ def main() -> int:
         "variant": variant_name,
         "prompt_sha256": prompt_sha256,
         "belief_profile_fitted": bool(soft),
-        "in_call_isotonic": path.name if path else None,
+        "margin_route": margin_route,
+        "isotonic": path.name if path else None,
         "served_model_id": args.served_model_id,
+        "stmt_hash_filter": args.stmt_hash_filter,
+        "shard_coverage": coverage,
+        # How many joined shards could not confirm the configuration asserted
+        # above, because they were scored before the runner wrote a sidecar.
+        # An absent sidecar is never read as agreement -- the assertion loop
+        # skips a key that is not recorded -- so this number is the size of the
+        # UNVERIFIED part of the table, not a count of confirmations.
+        "n_shards_without_provenance": unrecorded,
         "key": "stmt_hash — the first column of the corpus TSV, NOT re-derived here",
         **stats,
     }

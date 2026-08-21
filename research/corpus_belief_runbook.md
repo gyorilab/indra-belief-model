@@ -40,10 +40,17 @@ vllm serve google/gemma-4-26B-A4B-it --port 8000 --max-logprobs 128
 ```
 
 Every scoring request carries a 128-wide logprob window, because the verdict and
-its margin come from the same call. vLLM's default cap is far below that and
-rejects the whole request, not just the logprobs — so a server without this flag
-fails every row. A preflight issues one real scoring request before any shard is
-opened and exits naming the flag.
+its margin come from the same call. vLLM's default cap is 20 and rejects the
+whole request, not just the logprobs — so a server without this flag fails every
+row. A preflight issues one real scoring request before any shard is opened and
+exits naming the flag.
+
+128 is what this run asks for. The registry's `max_top_logprobs: 1024` is the
+upper bound over every caller of that entry — the separate probe's losing label
+was measured at rank 42/83/168 — so serving `--probe` traffic needs the server
+started at 1024 instead. The offline backend declares the registry bound so that
+it is never the binding constraint; that makes it accept a superset of what a
+128-capped server does, not the same set.
 
 ## 1. Prepare shards
 
@@ -62,6 +69,13 @@ prepared from a labelled corpus key exactly as shards from the real dump.
 The v2 file contains 748 statement objects but 1,084 labelled
 statement/evidence pairs, so calibration preparation uses `--all-evidence`;
 production preparation retains its historical first-evidence default.
+
+`--resume` compares a `preparation_code_sha256` over the four files whose logic
+decides shard contents. It hashes their BYTES, so an edit that provably cannot
+change a shard — an added fsync — refuses the resume AND renamespaces the Gilda
+cache. Read the diff, then resume with `--accept-preparation-code <the digest
+the manifest recorded>`: the recorded digest is kept, the cache survives, and
+the assertion is filed in the manifest as `preparation_code_accepted`.
 
 The batch user message is byte-identical to the live scorer's — the record owns
 the parts via `ScoringRecord.execution_body` and `ExecutionBody.render` owns the
@@ -84,11 +98,73 @@ Do NOT pass `--probe`. It buys a second request per evidence for a strictly
 worse reading — MEASURED n=80, in-call AUROC 0.8734 against the probe's 0.7237 —
 and is suppressed automatically when the free margin is available.
 
-Interruption is safe at shard granularity: completed result shards are skipped
-on restart, an interrupted shard is rerun, and the gzip result is written to a
-temp file then atomically renamed. Each failed job is retried three additional
-times; an exhausted failure is retained with verdict "error" so one bad row
-does not block publication of the shard.
+Interruption is safe at JOB granularity **for runs started after this change**:
+every scored row is appended to a run-keyed `.partial.jsonl` beside the output
+and skipped on restart, so an interrupted shard costs the last few rows rather
+than all 50,000. **The 60M run in flight was launched before the partial log
+existed**, so for it interruption is safe only at SHARD granularity — there is
+no `.partial.jsonl` beside its output, and killing it discards the whole
+in-progress shard, up to 50,000 scored evidences. Size a maintenance window or a
+scheduler preemption against that, not against "the last few rows".
+
+A completed result shard is skipped only if it still reads back — a file that
+does not parse is rescored rather than trusted, while one that merely cannot be
+READ right now (an ESTALE/EIO/EPERM on shared scratch) withholds that shard and
+lets the run continue, because rescoring overwrites published data that no rerun
+reproduces bit for bit and one unreadable file must not abort the other 1,199. The
+gzip result is fsynced, then atomically renamed from a process-unique staging
+name.
+
+Each failed job is retried three additional times when a rerun could change the
+answer; a CLIENT error (a 4xx, an input row with no user_message) is terminal on
+the first attempt. An unparseable reply is not one of those: a
+continuously-batched vLLM server is not bitwise reproducible at temperature 0 —
+the floating-point reduction order follows the batch composition, and
+gemma-4-26B-A4B is an MoE whose expert routing varies with batch shape — so the
+same bytes reissued into a different batch can come back parseable.
+
+The reissues are also the classifier. A row whose every attempt returned the
+IDENTICAL unreadable reply — a refusal, a degenerate repetition — is a property
+of the prompt bytes, counted as deterministic; replies that DIFFER across
+attempts stay transient. The split does not decide whether the gate counts a
+row — it decides which remedy the refusal offers, since a transient failure
+clears on a rerun and a deterministic one never will.
+
+An exhausted failure is retained with verdict "error" so one bad row does not
+block the shard. A shard whose exhausted-failure rate exceeds
+`--max-error-fraction` (default 1%) is not published, counting BOTH classes: a
+window of server trouble must not be sealed into the corpus as missing evidence,
+because a published shard is skipped forever and its statements are then
+believed from a fraction of their reads — and a client returning the same
+unreadable reply to every job must not bake a shard of `verdict="error"` into
+the corpus at exit 0, which gating on the transient class alone allowed. The
+refusal prints the split and the exact rate that would clear it; raising
+`--max-error-fraction` is the only way to publish failures no rerun can fix, and
+that is the point — it makes it a deliberate operator act rather than an
+unreachable state. A withheld shard does NOT stop the run: every remaining shard is still
+attempted, the withheld ones are named in a summary at the end, and the process
+exits 2 once. That covers a shard refused for a disagreeing sidecar too — a
+per-shard configuration mismatch must not cost the other 1,199 their run.
+
+Shards scored by a runner that writes one (this change, 2026-08-21) carry a
+`verdicts-NNNNNN[.limit-K].meta.json` sidecar recording the model, served id,
+variant, prompt sha, margin route, limit, statement-hash filter and the
+generation ceiling. That is what lets stage 4 check its `--model`/`--variant`
+against the run instead of asserting them, and what stops a
+`--gene-stmt-hashes` run's output from satisfying an unfiltered rerun.
+
+**The 60M run in flight was launched before the sidecar existed**, so none of
+its published shards have one. That is handled rather than special-cased: a
+MISSING sidecar (FileNotFoundError, and only that) is the unrecorded case, while
+a sidecar that cannot be read or parsed withholds its shard in stage 3 and
+refuses the build in stage 4 — a fault must not arrive as consent on the
+unverified path. Stage 4 joins a sidecar-less shard, skips every key it cannot
+check — absence is never read as agreement — and reports the count as `n_shards_without_provenance` in
+the manifest, which is the size of the unverified part of the table. The two
+guarantees in the paragraph above apply only to shards scored after the change;
+for the shards already on disk, `--model`/`--variant` remain unverifiable
+assertions and a `--gene-stmt-hashes` directory is still indistinguishable from
+an unfiltered one by filename alone.
 
 ## 3. Calibrate — the stage that must run on the target stack
 
@@ -208,10 +284,23 @@ PYTHONPATH=src python scripts/build_corpus_beliefs.py \
     --model vllm-gemma-4-26b --out beliefs.json
 ```
 
+`--model` accepts a registry alias and canonicalises it the same way the
+scoring run does, so `--model vllm-local` here joins shards recorded as
+`vllm-gemma-4-26b`.
+
 Add `--served-model-id google/gemma-4-26B-A4B-it` once the isotonic is
-registered. If the scoring run used `--limit`, the output filenames carry it;
-the results path is resolved rather than reconstructed, and an ambiguous
-directory holding two generations of a shard is refused rather than guessed.
+registered. If the scoring run used `--limit`, pass the same one here: the
+output filenames carry it and this consumer joins only against the exact
+generation it asked for, so a leftover smoke-test file cannot stand in for a
+full shard.
+
+Which isotonic is resolved follows the VARIANT, not the caller: a variant that
+reads the label from the scoring response produces in-call margins and resolves
+`_INCALL_CALIBRATIONS`, and only a `--probe`-acquired margin resolves the
+separate-probe table. The console line and the manifest's `isotonic` key are
+named by ROUTE for that reason — `margin_route` says which quantity the curve
+was fitted on, and a key that hardcoded "in-call" contradicted it on the
+`--variant disconfirm_relnature_rf` path.
 
 Until stage 3 lands this prints `NONE — every row keeps its verdict weight`,
 which is the honest state and still worth running: correct-but-uncalibrated
@@ -223,8 +312,31 @@ Each of these once produced a well-formed artifact and a zero exit code.
 
 - **No shard results readable.** Usually a `--limit` mismatch. Now an error, not
   an empty table.
+- **Every results file read and nothing joined.** A scoring window where every
+  cell finalized as "error" once passed the guard above, which counts FILES, and
+  published `{}` with exit 0 — and an empty table leaves every corpus statement
+  to default to belief 1.0 downstream. Refused.
+- **A results directory scored under a different model, variant or prompt.** The
+  sidecar records what the run did; a disagreeing `--model`/`--variant` is
+  refused rather than used to resolve a profile the run never sent. Only where a
+  sidecar exists: for the shards already on disk (§2) the assertion is
+  unverifiable, so the run prints how many shards it could not check and files
+  the count as `n_shards_without_provenance`.
 - **A statement spanning two shards.** Merging would replace a whole-statement
   belief with one computed from a fraction of its evidence. Refused.
+- **A table covering a fraction of the corpus.** 999 of 1000 shards failing to
+  resolve published 0.1% of the corpus with exit 0, and by the same argument the
+  guard above makes, the missing 99.9% read downstream as certainly true rather
+  than as unscored. Refused below `--min-shard-coverage` (default 0.99).
+- **A gene-filtered results directory joined as the whole corpus.** The output
+  name carries `--limit` but cannot carry `--gene-stmt-hashes`, so every
+  non-gene evidence fell to `n_missing_cell` under a manifest that never said
+  the table covered a subset. Refused unless `--stmt-hash-filter` names the
+  digest the scoring run recorded — again only where a sidecar recorded one. A
+  sidecar-less gene directory (`processed_model_results_gene`, the runner's own
+  default under `--gene-stmt-hashes`) still joins cleanly against the full
+  `--input-dir` and publishes `stmt_hash_filter: null`; the console line and
+  `n_shards_without_provenance` are the only warning.
 - **A registered isotonic that weighted nothing.** Would publish a
   verdict-weighted table under a calibrated manifest. Refused, and the first
   underlying error is recorded beside the count.
@@ -234,6 +346,10 @@ Each of these once produced a well-formed artifact and a zero exit code.
   same read the run uses.
 - **Conflicting gold labels on one (statement, evidence) pair.** Dropped and
   counted, never resolved by file order.
+- **The same (statement, evidence) pair scored twice.** The run is keyed on
+  job_id and the file on the pair, so a repeat is reconciled by the belief
+  combiner's own any-incorrect-wins rule and counted, never overwritten by
+  whichever job iterated last.
 
 ## Known limits
 
@@ -252,10 +368,14 @@ Each of these once produced a well-formed artifact and a zero exit code.
   gold digest are pinned, but its fit ran on `/scratch` with no `--report`
   artifact, so the Brier and ECE in its note cannot be re-derived by anyone
   else. Re-fit with `--report` to close it.
-- **The offline backend fails a whole batch on one bad job.** `--backend
-  offline` batches through `llm.chat()`, which is all-or-nothing, and retries
-  re-batch with the same offender. The corpus path uses `--backend server`,
-  where each job is its own request and the coupling does not exist.
+- **The offline backend is unexercised against real vLLM.** `--backend offline`
+  now isolates a failed batch to the conversation that caused it, so the
+  batch-poisoning half of this caution is gone. What remains is why it went
+  unfixed for so long: no machine in this repo's reach can load a 26B model, so
+  every test of that path installs its own `sys.modules['vllm']` stub and
+  asserts against shapes the test file itself defines. Our dispatcher is
+  pinned; the engine's behaviour is not. The corpus path uses `--backend
+  server`, where each job is its own request.
 - **Gold rows inside the corpus keep verdict weights.** The combiner refuses to
   score a record it was fitted on. Correct, counted, and negligible against 60M.
 - **The labelled sets are curator-selected**, so `fit_prevalence` is the curated

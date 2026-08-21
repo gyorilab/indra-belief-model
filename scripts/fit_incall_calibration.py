@@ -196,8 +196,14 @@ def load_rows_from_shards(input_dir: Path, results_dir: Path, labels_path: Path,
         # Resolved, not reconstructed: output names carry the scoring run's
         # --limit, and rebuilding the unlimited name misses every shard and
         # reports "0 usable rows" as though the data were bad rather than
-        # unfound.
-        results = _runner().resolve_results_path(Path(results_dir), index)
+        # unfound. `allow_limited` because a FIT genuinely does not know which
+        # --limit produced the rows it is offered -- it takes whatever gold-
+        # matched rows exist. A consumer that joins for coverage (the belief
+        # build) must not have that leniency, so it is stated here rather than
+        # in the resolver.
+        results = _runner().resolve_results_path(
+            Path(results_dir), index, allow_limited=True
+        )
         if results is None:
             skipped["no_results_file"] += 1
             continue

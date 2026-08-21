@@ -28,6 +28,7 @@ import csv
 import gzip
 import hashlib
 import json
+import os
 import signal
 import sqlite3
 import sys
@@ -151,17 +152,43 @@ def text_evidence_items(
     return [(0, evidence)], counts
 
 
+def _fsync_path(path: Path) -> None:
+    """Force this file's or directory's contents to stable storage."""
+    handle = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(handle)
+    finally:
+        os.close(handle)
+
+
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(
         json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     )
+    _fsync_path(tmp)
     tmp.replace(path)
+    _fsync_path(path.parent)
 
 
 def _code_fingerprint() -> str:
-    """Pin the preparation logic that materially affects shard contents."""
+    """Pin the preparation logic that materially affects shard contents.
+
+    Hashed as BYTES, so it also moves for an edit that provably cannot change a
+    shard: adding the fsyncs above moved it while every shard byte stayed the
+    same, which refuses a resume AND discards the whole Gilda cache the digest
+    namespaces. Over-detection is still the safe direction -- a missed content
+    change mixes two preparation generations in one corpus -- so the escape is
+    `--accept-preparation-code`, an operator assertion about one diff, rather
+    than a narrower hash that would miss the next entity.py change.
+
+    NO DIGEST IS QUOTED HERE, and none can be: this file is one of the four
+    inputs, so writing a measured value into this docstring changes the value it
+    claims. The pair that used to sit in this paragraph named a tree that never
+    existed. The current digest is written into the prepared corpus's
+    manifest.json, which is the one place it is measured rather than asserted.
+    """
     paths = [
         Path(__file__),
         ROOT / "src" / "indra_belief" / "data" / "entity.py",
@@ -312,7 +339,15 @@ class AtomicShardWriter:
             return None
         self._fh.close()
         self._fh = None
+        # DURABLE BEFORE THE MANIFEST THAT CLAIMS IT. `commit_current_shard`
+        # writes the resume manifest immediately after this returns, and that
+        # file is ~2KB against this one's ~9MB — so a crash in between made
+        # `input_rows_consumed` durable while the shard's bytes were not, and
+        # `--resume` then skipped ~50,000 evidences permanently. They are not
+        # recoverable by rerunning: they are simply absent from the corpus.
+        _fsync_path(self.tmp_path)
         self.tmp_path.replace(self.final_path)
+        _fsync_path(self.output_dir)
         return {
             "index": self.shard_index,
             "path": self.final_path.name,
@@ -523,6 +558,19 @@ def _build_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
+        "--accept-preparation-code",
+        default=None,
+        metavar="SHA256",
+        help="resume across a preparation-code change by naming the "
+             "preparation_code_sha256 the manifest recorded. The digest covers "
+             "the four files' BYTES, so a durability-only edit invalidates it "
+             "too; passing the recorded digest asserts the diff between that "
+             "revision and this one cannot change a shard's contents. The "
+             "recorded digest is kept -- it namespaces the Gilda cache, which "
+             "would otherwise be discarded and every lookup recomputed -- and "
+             "the assertion is recorded in the manifest",
+    )
+    parser.add_argument(
         "--limit-input-rows",
         type=int,
         default=None,
@@ -611,10 +659,36 @@ def main() -> int:
             for key, value in identity.items()
             if manifest.get(key) != value
         }
+        recorded_code = manifest.get("preparation_code_sha256")
+        if (set(mismatches) == {"preparation_code_sha256"}
+                and args.accept_preparation_code == recorded_code):
+            # The operator has read the diff and asserts it cannot change a
+            # shard. Keep the RECORDED digest: it namespaces the Gilda cache, so
+            # adopting the new one would silently discard the whole cache and
+            # recompute every grounding for a change that touched no content.
+            running_code = identity["preparation_code_sha256"]
+            identity["preparation_code_sha256"] = recorded_code
+            manifest.setdefault("preparation_code_accepted", []).append(
+                {"recorded": recorded_code, "running": running_code,
+                 "at": _now()}
+            )
+            mismatches = {}
+            print(f"  accepted preparation code {recorded_code[:16]} as "
+                  "content-equivalent to this revision", flush=True)
         if mismatches:
+            remedy = ""
+            if "preparation_code_sha256" in mismatches and recorded_code:
+                remedy = (
+                    "\n  preparation_code_sha256 hashes the BYTES of the four "
+                    "files that decide shard contents, so a durability-only "
+                    "edit moves it too. If the diff between the recorded "
+                    "revision and this one cannot change a shard, resume with "
+                    f"--accept-preparation-code {recorded_code}"
+                )
             raise SystemExit(
                 "resume configuration/input mismatch: "
                 + json.dumps(mismatches, sort_keys=True)
+                + remedy
             )
     else:
         existing_shards = list(output_dir.glob("grounded-*.jsonl.gz"))

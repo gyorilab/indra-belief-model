@@ -179,6 +179,156 @@ def test_atomic_shard_is_only_published_on_commit(tmp_path):
         assert json.loads(fh.readline()) == {"job_id": "10:0"}
 
 
+def test_a_committed_shard_is_durable_before_the_manifest_that_claims_it(
+    tmp_path, monkeypatch
+):
+    """The resume manifest is ~2KB; the shard it accounts for is ~9MB.
+
+    `commit_current_shard` renames the shard and then writes the manifest, and
+    neither was fsynced. On a node crash between them the small file's data
+    reaches disk first, so `input_rows_consumed` is durable while the shard's
+    bytes are zeroes -- and `--resume` starts past those ~50,000 evidences for
+    good. They are not recoverable by rerunning: they are simply absent from the
+    corpus, and the identity check compares configuration, not shard contents.
+    """
+    events: list[str] = []
+    real_fsync = pipeline.os.fsync
+    real_replace = Path.replace
+
+    def record_fsync(fd):
+        events.append("fsync")
+        return real_fsync(fd)
+
+    def record_replace(self, target):
+        events.append("rename")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(pipeline.os, "fsync", record_fsync)
+    monkeypatch.setattr(Path, "replace", record_replace)
+
+    writer = pipeline.AtomicShardWriter(tmp_path, 4, compresslevel=1)
+    writer.write({"job_id": "10:0"})
+    writer.commit()
+    assert events[:2] == ["fsync", "rename"], (
+        f"the shard was published before its bytes were durable: {events}"
+    )
+
+    events.clear()
+    pipeline._write_json_atomic(tmp_path / "manifest.json", {"shards": []})
+    assert events[:2] == ["fsync", "rename"], (
+        f"the manifest was published before its bytes were durable: {events}"
+    )
+
+
+def _empty_corpus_run(tmp_path, monkeypatch, *extra):
+    """Drive main() over an empty input, which exercises identity and nothing else."""
+    indra_db = types.ModuleType("indra_db")
+    dumping = types.ModuleType("indra_db.readonly_dumping")
+    util = types.ModuleType("indra_db.readonly_dumping.util")
+    util.clean_json_loads = json.loads
+    dumping.util = util
+    indra_db.readonly_dumping = dumping
+    monkeypatch.setitem(sys.modules, "indra_db", indra_db)
+    monkeypatch.setitem(sys.modules, "indra_db.readonly_dumping", dumping)
+    monkeypatch.setitem(sys.modules, "indra_db.readonly_dumping.util", util)
+
+    source = tmp_path / "processed.tsv.gz"
+    if not source.exists():
+        with gzip.open(source, "wt"):
+            pass
+    monkeypatch.setattr(sys, "argv", [
+        "build_processed_grounding_shards.py",
+        "--input", str(source),
+        "--output-dir", str(tmp_path / "prepared"),
+        *extra,
+    ])
+    return pipeline.main()
+
+
+def test_the_fingerprint_states_no_digest_that_writing_it_would_falsify():
+    """A file cannot quote its own hash.
+
+    The docstring carried a MEASURED pair, "7f6ede4cad6ac7d2 ->
+    113841f047f6a030", to show that a durability-only edit moves the digest. The
+    left-hand value was real; the right-hand one described no tree that ever
+    existed, because the digest covers this file's OWN bytes and writing the
+    result into the docstring changes it. Re-measuring and pasting today's value
+    reproduces the defect on the next edit -- the number is stale the moment
+    anyone touches the file it measures, and this codebase treats a wrong number
+    in a comment as a defect.
+
+    So the shape is pinned instead of the value: no 16-hex-digit literal in
+    either docstring. A digest that must be current belongs in a manifest, which
+    is where the pipeline already writes it.
+    """
+    import re
+
+    for name, doc in (
+        ("_code_fingerprint", pipeline._code_fingerprint.__doc__),
+        ("test_a_durability_only_edit_does_not_have_to_orphan_a_prepared_corpus",
+         test_a_durability_only_edit_does_not_have_to_orphan_a_prepared_corpus
+         .__doc__),
+    ):
+        assert not re.search(r"\b[0-9a-f]{16}\b", doc), (
+            f"{name} quotes a digest of the file it lives in; it is false as "
+            "soon as it is true"
+        )
+
+
+def test_a_durability_only_edit_does_not_have_to_orphan_a_prepared_corpus(
+    tmp_path, monkeypatch
+):
+    """`_code_fingerprint` hashes bytes, and the fsyncs changed the bytes.
+
+    A digest over the four pinned paths moves for a change that cannot alter a
+    single shard byte -- adding an fsync is the case this was written for. No
+    before/after pair is quoted (see the test above: the hash covers the file
+    the docstring lives in). Both consequences are silent-to-fatal: `--resume` dies with "resume configuration/input mismatch"
+    and the alternative branch refuses too ("has shards but no manifest"), so a
+    partially-prepared 60M corpus has no path forward; and `GroundingCache` is
+    namespaced on the same digest, so the entire persistent Gilda cache is
+    discarded and every lookup recomputed.
+    """
+    import pytest as _pytest
+
+    namespaces: list[str] = []
+    real_cache = pipeline.GroundingCache
+    monkeypatch.setattr(
+        pipeline, "GroundingCache",
+        lambda path, namespace: namespaces.append(namespace) or real_cache(
+            path, namespace),
+    )
+
+    assert _empty_corpus_run(tmp_path, monkeypatch) == 0
+    manifest_path = tmp_path / "prepared" / "manifest.json"
+    recorded = json.loads(manifest_path.read_text())["preparation_code_sha256"]
+
+    # the fsync-only edit, in the only way the digest can see it
+    monkeypatch.setattr(pipeline, "_code_fingerprint", lambda: "0" * 64)
+
+    with _pytest.raises(SystemExit) as excinfo:
+        _empty_corpus_run(tmp_path, monkeypatch)
+    message = str(excinfo.value)
+    assert "preparation_code_sha256" in message
+    assert f"--accept-preparation-code {recorded}" in message, (
+        f"the refusal names no way forward: {message}"
+    )
+
+    assert _empty_corpus_run(
+        tmp_path, monkeypatch, "--accept-preparation-code", recorded) == 0
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["preparation_code_sha256"] == recorded
+    assert manifest["preparation_code_accepted"][-1]["running"] == "0" * 64
+    assert namespaces[-1] == recorded, (
+        "the accepted resume renamespaced the Gilda cache, discarding it"
+    )
+
+    # an assertion about the WRONG digest is not an assertion
+    with _pytest.raises(SystemExit):
+        _empty_corpus_run(tmp_path, monkeypatch,
+                          "--accept-preparation-code", "1" * 64)
+
+
 # ── the job the whole corpus path is built on ─────────────────────────────────
 #
 # Everything above tests the machinery AROUND job preparation -- streaming,
