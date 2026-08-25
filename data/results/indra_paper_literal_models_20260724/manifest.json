@@ -78,7 +78,8 @@
     "framing_correction": "framing_correction.json",
     "margin_robustness": "paper_margin_robustness.json",
     "statement_error_f1": "statement_error_f1.json",
-    "table6_extended": "paper_table6_extended.json"
+    "table6_extended": "paper_table6_extended.json",
+    "counting_control": "counting_control.json"
   },
   "reproduce": [
     "git clone https://github.com/sorgerlab/indra_assembly_paper && git -C indra_assembly_paper checkout 63abdf1274d2f5534ed822585775031712916c83",
@@ -98,6 +99,7 @@
     "framing_correction.json": "7cc508af0f61308e9505b57235126dc7d7787bc760b13e876fe851edd83bc5d3",
     "paper_margin_robustness.json": "87490ef3ccb206daae3fcaafde830666883caa6301f116bd0f82c19d360d5f9e",
     "statement_error_f1.json": "af69002d0269ebc3d91047f9cb4de46c06bb5d60d8e336757ceaefca24afc076",
-    "paper_table6_extended.json": "70ebdc7fa8ef03bca3a4632d1b2801a107be3198aafa645b94787e57f18ed098"
+    "paper_table6_extended.json": "70ebdc7fa8ef03bca3a4632d1b2801a107be3198aafa645b94787e57f18ed098",
+    "counting_control.json": "c06b79c38aa962e86f1de4314aa7a0c430faa413f1967964abf1c133669cbd86"
   }
 }

@@ -1,0 +1,812 @@
+{
+ "artifact_kind": "counting_control",
+ "schema_version": 1,
+ "metric_source": "sklearn.metrics.average_precision_score (tie-aware) and roc_auc_score",
+ "question": "How much of every arm's statement-grain ranking is explained by evidence VOLUME alone -- a bare count off the corpus, with no reading, no model and no belief math?",
+ "finding": "Counting distinct source APIs is a strong statement-grain ranker on this panel. Reading clears it, but the headroom above the floor is a small fraction of the raw metric, and no statement-grain claim on this panel is interpretable without it.",
+ "why_here": "This panel carries roughly 20 evidence entries per statement and only 20.0% of it is single-evidence, against 62.4%/84.5%/84.3% for eval_curation_v1, external_curator_v1 and holdout_cc. Aggregation does most of the work here and volume is its dominant input, so a statement-grain metric on this panel is partly a measurement of volume.",
+ "why_band_1_matters": "The deployed corpus sits at the opposite end. EMMAA averages 2.26 evidences per statement, and 58.16% of all 940,203 statements carry belief exactly 0.65 -- SimpleScorer's value for a single reach evidence, 1-(0.05+0.3) -- with 73.24% on one of two values (research/deployment_plan.md). Band 1 below IS that regime.",
+ "single_evidence_shares_for_context": {
+  "note": "READ from deployed_baseline_replication.json, never written down here, so this control's framing cannot drift from the artifact that measures it. These are single-EVIDENCE shares, not single-source: results.py tracks those separately (by_n_evidence vs by_n_sources) and they are not interchangeable.",
+  "source": "data/results/deployed_baseline_replication_20260727/deployed_baseline_replication.json",
+  "shares": {
+   "indra_paper_2023": 0.20011841326228538,
+   "eval_curation_v1": 0.624315443592552,
+   "external_curator_v1": 0.8448275862068966,
+   "holdout_cc": 0.8429951690821256
+  }
+ },
+ "panel": {
+  "n": 1689,
+  "n_correct": 1237,
+  "n_errors": 452,
+  "positive_base_rate": 0.7323860272350503,
+  "n_evidence_entries": 34035,
+  "n_unique_pairs": 33361,
+  "mean_entries_per_statement": 20.150976909413853,
+  "share_single_evidence_by_entries": 0.19419775014801657,
+  "share_single_evidence_by_unique_pairs": 0.20011841326228538,
+  "two_censuses_note": "Both are correct and they differ on 10 statements at the single-evidence boundary. Bands here are cut on ENTRIES (multiplicity-weighted), matching ap_decomposition; deployed_baseline_replication reports UNIQUE PAIRS, which is the panel the reader arms were built on. Quote whichever, but say which.",
+  "label": "paper_replication_policy.released_paper_correct",
+  "ordering": "sorted(statement_id)"
+ },
+ "bootstrap": {
+  "resamples": 10000,
+  "valid_resamples": 10000,
+  "seed": 20260717,
+  "ci_level": 0.95,
+  "design": "paired statement bootstrap, stratified independently within each frozen fold preserving its size, with ONE shared index vector across every counter and arm; conditional on frozen fits, folds and predictions"
+ },
+ "floor": {
+  "key": "distinct_source_apis",
+  "rule": "the strongest counter by AUROC, asserted at build time"
+ },
+ "counters": [
+  {
+   "key": "distinct_pmids",
+   "label": "count of distinct PMIDs",
+   "note": "How many separate papers mention it. The paper's RF carries this as an explicit #PMIDs feature.",
+   "is_floor": false,
+   "average_precision": 0.8037722460406367,
+   "average_precision_ci95": [
+    0.7811954471105843,
+    0.8257066449600242
+   ],
+   "auroc": 0.6160368719640008,
+   "auroc_ci95": [
+    0.5880894034008358,
+    0.6438495016379875
+   ],
+   "distinct_scores": 98
+  },
+  {
+   "key": "evidence_count",
+   "label": "count of evidence entries",
+   "note": "The canonical census from the execution map, weighted by pair_multiplicity -- the same variable the AP decomposition bands on.",
+   "is_floor": false,
+   "average_precision": 0.8712707718196426,
+   "average_precision_ci95": [
+    0.8524773592106664,
+    0.8893256137146938
+   ],
+   "auroc": 0.7317115702420214,
+   "auroc_ci95": [
+    0.7055894227276058,
+    0.7570588608904075
+   ],
+   "distinct_scores": 142
+  },
+  {
+   "key": "distinct_source_apis",
+   "label": "count of distinct source APIs",
+   "note": "How many different readers independently produced it. The strongest counter here, and the floor the arms are read against.",
+   "is_floor": true,
+   "average_precision": 0.8910534334011426,
+   "average_precision_ci95": [
+    0.8759901605830448,
+    0.9054123595723339
+   ],
+   "auroc": 0.790085025861884,
+   "auroc_ci95": [
+    0.7686177544492345,
+    0.811108521504089
+   ],
+   "distinct_scores": 8
+  }
+ ],
+ "arms": [
+  {
+   "model_key": "glm_5",
+   "label": "GLM-5 gate",
+   "kind": "llm-gate",
+   "provenance": "reader-gate",
+   "average_precision": 0.9506590078548791,
+   "auroc": 0.9024760160536841,
+   "distinct_scores": 475,
+   "average_precision_vs_floor": {
+    "estimate": 0.05960557445373649,
+    "ci95": [
+     0.04827365121429622,
+     0.07123539396629329
+    ],
+    "clears_floor": true
+   },
+   "auroc_vs_floor": {
+    "estimate": 0.1123909901918001,
+    "ci95": [
+     0.09297062741801596,
+     0.13225132560392933
+    ],
+    "clears_floor": true
+   }
+  },
+  {
+   "model_key": "gemma_4_26b",
+   "label": "Gemma 4 26B gate",
+   "kind": "llm-gate",
+   "provenance": "reader-gate",
+   "average_precision": 0.9509925130833301,
+   "auroc": 0.9010308983338222,
+   "distinct_scores": 492,
+   "average_precision_vs_floor": {
+    "estimate": 0.05993907968218748,
+    "ci95": [
+     0.04875923714419865,
+     0.07148470819968762
+    ],
+    "clears_floor": true
+   },
+   "auroc_vs_floor": {
+    "estimate": 0.11094587247193821,
+    "ci95": [
+     0.0914492295135492,
+     0.13097531350555355
+    ],
+    "clears_floor": true
+   }
+  },
+  {
+   "model_key": "gemma_4_31b",
+   "label": "Gemma 4 31B gate",
+   "kind": "llm-gate",
+   "provenance": "reader-gate",
+   "average_precision": 0.9489114903136125,
+   "auroc": 0.8978634435295212,
+   "distinct_scores": 498,
+   "average_precision_vs_floor": {
+    "estimate": 0.057858056912469924,
+    "ci95": [
+     0.046729092837371956,
+     0.06910776091644164
+    ],
+    "clears_floor": true
+   },
+   "auroc_vs_floor": {
+    "estimate": 0.10777841766763718,
+    "ci95": [
+     0.08862594135143886,
+     0.1274918119746103
+    ],
+    "clears_floor": true
+   }
+  },
+  {
+   "model_key": "current_counts_full_features_oof",
+   "label": "Our CountsScorer RF, full features",
+   "kind": "paper-model",
+   "provenance": "our-reimplementation",
+   "average_precision": 0.9421597317022046,
+   "auroc": 0.8533438020904128,
+   "distinct_scores": 1683,
+   "average_precision_vs_floor": {
+    "estimate": 0.05110629830106195,
+    "ci95": [
+     0.04233825008637407,
+     0.06012487777562944
+    ],
+    "clears_floor": true
+   },
+   "auroc_vs_floor": {
+    "estimate": 0.06325877622852882,
+    "ci95": [
+     0.04650793965707612,
+     0.08038984083926178
+    ],
+    "clears_floor": true
+   }
+  },
+  {
+   "model_key": "paper_literal_rf_promoter",
+   "label": "Paper RF 2k-d13 + Type/#PMIDs/promoter",
+   "kind": "paper-model",
+   "provenance": "paper-published",
+   "average_precision": 0.9412042789486932,
+   "auroc": 0.8516384558702542,
+   "distinct_scores": 1546,
+   "average_precision_vs_floor": {
+    "estimate": 0.05015084554755056,
+    "ci95": [
+     0.041400085370593184,
+     0.05917117617358548
+    ],
+    "clears_floor": true
+   },
+   "auroc_vs_floor": {
+    "estimate": 0.061553430008370213,
+    "ci95": [
+     0.04504198467410738,
+     0.07838313481937549
+    ],
+    "clears_floor": true
+   }
+  },
+  {
+   "model_key": "gemma_4_e2b",
+   "label": "Gemma 4 E2B gate",
+   "kind": "llm-gate",
+   "provenance": "reader-gate",
+   "average_precision": 0.9251951801050831,
+   "auroc": 0.840031012798592,
+   "distinct_scores": 420,
+   "average_precision_vs_floor": {
+    "estimate": 0.034141746703940434,
+    "ci95": [
+     0.02417902279673946,
+     0.044749890849672486
+    ],
+    "clears_floor": true
+   },
+   "auroc_vs_floor": {
+    "estimate": 0.04994598693670804,
+    "ci95": [
+     0.030836362338539484,
+     0.06918557636031694
+    ],
+    "clears_floor": true
+   }
+  },
+  {
+   "model_key": "current_bayesian_source_subtype_oof",
+   "label": "Our BayesianScorer, source+subtype refit",
+   "kind": "paper-model",
+   "provenance": "our-reimplementation",
+   "average_precision": 0.9178478151228482,
+   "auroc": 0.8032779848477261,
+   "distinct_scores": 1399,
+   "average_precision_vs_floor": {
+    "estimate": 0.026794381721705562,
+    "ci95": [
+     0.021013683555123813,
+     0.03293803203581475
+    ],
+    "clears_floor": true
+   },
+   "auroc_vs_floor": {
+    "estimate": 0.013192958985842052,
+    "ci95": [
+     0.0014623723371705772,
+     0.02493711796496786
+    ],
+    "clears_floor": true
+   }
+  },
+  {
+   "model_key": "current_simple_hierarchy_all_sources",
+   "label": "INDRA SimpleScorer + hierarchy",
+   "kind": "paper-model",
+   "provenance": "indra-served",
+   "average_precision": 0.9030400323256944,
+   "auroc": 0.7822897961811691,
+   "distinct_scores": 824,
+   "average_precision_vs_floor": {
+    "estimate": 0.011986598924551783,
+    "ci95": [
+     0.002276265633441522,
+     0.021375363645881006
+    ],
+    "clears_floor": true
+   },
+   "auroc_vs_floor": {
+    "estimate": -0.007795229680714888,
+    "ci95": [
+     -0.021598086374266034,
+     0.0057010563928082455
+    ],
+    "clears_floor": false
+   }
+  },
+  {
+   "model_key": "current_indra_simple_default",
+   "label": "INDRA SimpleScorer, default priors",
+   "kind": "paper-model",
+   "provenance": "indra-served",
+   "average_precision": 0.9031171977429405,
+   "auroc": 0.7740322361408203,
+   "distinct_scores": 690,
+   "average_precision_vs_floor": {
+    "estimate": 0.0120637643417979,
+    "ci95": [
+     0.007081130113911217,
+     0.017343968200573923
+    ],
+    "clears_floor": true
+   },
+   "auroc_vs_floor": {
+    "estimate": -0.01605278972106372,
+    "ci95": [
+     -0.026803829834589815,
+     -0.005540113056790807
+    ],
+    "clears_floor": false
+   }
+  }
+ ],
+ "residual_by_evidence_count": {
+  "note": "The same arms scored INSIDE evidence-count bands. Within a band the volume signal is largely held fixed, so what remains is closer to reading quality. Bands are small; these are descriptive, and carry no intervals.",
+  "read_distinct_scores_first": "An arm that is constant inside a band scores AUROC 0.5 there by arithmetic, not by judgement. In band 1 the served SimpleScorer emits a single value for every statement, so its 0.5 is the absence of a ranking rather than a bad one -- with one evidence the noisy-OR collapses to that source's prior. This is where the 0.65 modal belief comes from, and band 1 is also the regime the deployment corpus is made of.",
+  "banding": "compute_paper_ap_decomposition.py::BAND_EDGES -- the frozen power-of-two ladder on the evidence census, imported so this control and the AP decomposition cannot band the same corpus two different ways",
+  "bands": [
+   {
+    "index": 1,
+    "band": "1",
+    "evidence_low": 1,
+    "evidence_high": 1,
+    "n": 328,
+    "n_positive": 155,
+    "positive_rate": 0.4725609756097561,
+    "scoreable": true,
+    "arms": {
+     "current_indra_simple_default": {
+      "average_precision": 0.4725609756097561,
+      "auroc": 0.5,
+      "distinct_scores": 1,
+      "is_constant": true
+     },
+     "current_simple_hierarchy_all_sources": {
+      "average_precision": 0.5022636668063875,
+      "auroc": 0.5324818198769345,
+      "distinct_scores": 26,
+      "is_constant": false
+     },
+     "paper_literal_rf_promoter": {
+      "average_precision": 0.6272518067474655,
+      "auroc": 0.6474920753309715,
+      "distinct_scores": 197,
+      "is_constant": false
+     },
+     "gemma_4_26b": {
+      "average_precision": 0.726060252277861,
+      "auroc": 0.783796382621667,
+      "distinct_scores": 2,
+      "is_constant": false
+     },
+     "glm_5": {
+      "average_precision": 0.7286767756240612,
+      "auroc": 0.7753309714711916,
+      "distinct_scores": 2,
+      "is_constant": false
+     },
+     "gemma_4_31b": {
+      "average_precision": 0.7405277059683039,
+      "auroc": 0.7963639753869103,
+      "distinct_scores": 2,
+      "is_constant": false
+     },
+     "gemma_4_e2b": {
+      "average_precision": 0.6216681965206748,
+      "auroc": 0.7015289949655044,
+      "distinct_scores": 2,
+      "is_constant": false
+     },
+     "current_bayesian_source_subtype_oof": {
+      "average_precision": 0.5940814793517601,
+      "auroc": 0.6769345515569645,
+      "distinct_scores": 108,
+      "is_constant": false
+     },
+     "current_counts_full_features_oof": {
+      "average_precision": 0.6073411220233806,
+      "auroc": 0.6451239977624464,
+      "distinct_scores": 322,
+      "is_constant": false
+     }
+    }
+   },
+   {
+    "index": 2,
+    "band": "2",
+    "evidence_low": 2,
+    "evidence_high": 2,
+    "n": 146,
+    "n_positive": 99,
+    "positive_rate": 0.678082191780822,
+    "scoreable": true,
+    "arms": {
+     "current_indra_simple_default": {
+      "average_precision": 0.8007201256158968,
+      "auroc": 0.7121212121212122,
+      "distinct_scores": 5,
+      "is_constant": false
+     },
+     "current_simple_hierarchy_all_sources": {
+      "average_precision": 0.8101534776635076,
+      "auroc": 0.726735439501397,
+      "distinct_scores": 25,
+      "is_constant": false
+     },
+     "paper_literal_rf_promoter": {
+      "average_precision": 0.8681571863863781,
+      "auroc": 0.7603696539866753,
+      "distinct_scores": 140,
+      "is_constant": false
+     },
+     "gemma_4_26b": {
+      "average_precision": 0.9090842304376657,
+      "auroc": 0.8647109391790243,
+      "distinct_scores": 5,
+      "is_constant": false
+     },
+     "glm_5": {
+      "average_precision": 0.8929996093388307,
+      "auroc": 0.8407479045776918,
+      "distinct_scores": 5,
+      "is_constant": false
+     },
+     "gemma_4_31b": {
+      "average_precision": 0.9055228015377457,
+      "auroc": 0.8695465291209973,
+      "distinct_scores": 4,
+      "is_constant": false
+     },
+     "gemma_4_e2b": {
+      "average_precision": 0.8598763201694252,
+      "auroc": 0.7909950569525037,
+      "distinct_scores": 5,
+      "is_constant": false
+     },
+     "current_bayesian_source_subtype_oof": {
+      "average_precision": 0.8676558909766461,
+      "auroc": 0.7490866107887385,
+      "distinct_scores": 113,
+      "is_constant": false
+     },
+     "current_counts_full_features_oof": {
+      "average_precision": 0.8834459162878112,
+      "auroc": 0.7902428540726413,
+      "distinct_scores": 146,
+      "is_constant": false
+     }
+    }
+   },
+   {
+    "index": 3,
+    "band": "3\u20134",
+    "evidence_low": 3,
+    "evidence_high": 4,
+    "n": 219,
+    "n_positive": 136,
+    "positive_rate": 0.6210045662100456,
+    "scoreable": true,
+    "arms": {
+     "current_indra_simple_default": {
+      "average_precision": 0.7876816426869617,
+      "auroc": 0.6994596031183558,
+      "distinct_scores": 23,
+      "is_constant": false
+     },
+     "current_simple_hierarchy_all_sources": {
+      "average_precision": 0.7901944446263272,
+      "auroc": 0.7101346562721476,
+      "distinct_scores": 57,
+      "is_constant": false
+     },
+     "paper_literal_rf_promoter": {
+      "average_precision": 0.8779603133259023,
+      "auroc": 0.8183912119064495,
+      "distinct_scores": 213,
+      "is_constant": false
+     },
+     "gemma_4_26b": {
+      "average_precision": 0.9089974548377001,
+      "auroc": 0.8832388377037562,
+      "distinct_scores": 14,
+      "is_constant": false
+     },
+     "glm_5": {
+      "average_precision": 0.9137163804919749,
+      "auroc": 0.8941796598157336,
+      "distinct_scores": 15,
+      "is_constant": false
+     },
+     "gemma_4_31b": {
+      "average_precision": 0.910486126360322,
+      "auroc": 0.889838766832034,
+      "distinct_scores": 14,
+      "is_constant": false
+     },
+     "gemma_4_e2b": {
+      "average_precision": 0.8794823423548913,
+      "auroc": 0.8381467044649185,
+      "distinct_scores": 15,
+      "is_constant": false
+     },
+     "current_bayesian_source_subtype_oof": {
+      "average_precision": 0.8491341746918368,
+      "auroc": 0.7748493975903614,
+      "distinct_scores": 191,
+      "is_constant": false
+     },
+     "current_counts_full_features_oof": {
+      "average_precision": 0.8751499736371189,
+      "auroc": 0.8130758327427356,
+      "distinct_scores": 219,
+      "is_constant": false
+     }
+    }
+   },
+   {
+    "index": 4,
+    "band": "5\u20138",
+    "evidence_low": 5,
+    "evidence_high": 8,
+    "n": 259,
+    "n_positive": 193,
+    "positive_rate": 0.7451737451737451,
+    "scoreable": true,
+    "arms": {
+     "current_indra_simple_default": {
+      "average_precision": 0.9162979114225867,
+      "auroc": 0.781402103940964,
+      "distinct_scores": 70,
+      "is_constant": false
+     },
+     "current_simple_hierarchy_all_sources": {
+      "average_precision": 0.9241097168597838,
+      "auroc": 0.810684565865913,
+      "distinct_scores": 123,
+      "is_constant": false
+     },
+     "paper_literal_rf_promoter": {
+      "average_precision": 0.9342281397843527,
+      "auroc": 0.8371800910661014,
+      "distinct_scores": 259,
+      "is_constant": false
+     },
+     "gemma_4_26b": {
+      "average_precision": 0.9478576374071105,
+      "auroc": 0.8906029203956666,
+      "distinct_scores": 49,
+      "is_constant": false
+     },
+     "glm_5": {
+      "average_precision": 0.954112007694674,
+      "auroc": 0.8981001727115716,
+      "distinct_scores": 48,
+      "is_constant": false
+     },
+     "gemma_4_31b": {
+      "average_precision": 0.9486299017418764,
+      "auroc": 0.8836944575286544,
+      "distinct_scores": 53,
+      "is_constant": false
+     },
+     "gemma_4_e2b": {
+      "average_precision": 0.9157089449248779,
+      "auroc": 0.8084079133301931,
+      "distinct_scores": 49,
+      "is_constant": false
+     },
+     "current_bayesian_source_subtype_oof": {
+      "average_precision": 0.9256469356508288,
+      "auroc": 0.7998115873763542,
+      "distinct_scores": 254,
+      "is_constant": false
+     },
+     "current_counts_full_features_oof": {
+      "average_precision": 0.9385465826478201,
+      "auroc": 0.8448736065316376,
+      "distinct_scores": 259,
+      "is_constant": false
+     }
+    }
+   },
+   {
+    "index": 5,
+    "band": "9\u201316",
+    "evidence_low": 9,
+    "evidence_high": 16,
+    "n": 294,
+    "n_positive": 248,
+    "positive_rate": 0.8435374149659864,
+    "scoreable": true,
+    "arms": {
+     "current_indra_simple_default": {
+      "average_precision": 0.9399498815329494,
+      "auroc": 0.7700736325385695,
+      "distinct_scores": 173,
+      "is_constant": false
+     },
+     "current_simple_hierarchy_all_sources": {
+      "average_precision": 0.9387115845995978,
+      "auroc": 0.7704242636746144,
+      "distinct_scores": 217,
+      "is_constant": false
+     },
+     "paper_literal_rf_promoter": {
+      "average_precision": 0.9591659933131012,
+      "auroc": 0.8265252454417953,
+      "distinct_scores": 294,
+      "is_constant": false
+     },
+     "gemma_4_26b": {
+      "average_precision": 0.9824158468654274,
+      "auroc": 0.9249649368863955,
+      "distinct_scores": 127,
+      "is_constant": false
+     },
+     "glm_5": {
+      "average_precision": 0.9799970439526856,
+      "auroc": 0.9232994389901823,
+      "distinct_scores": 121,
+      "is_constant": false
+     },
+     "gemma_4_31b": {
+      "average_precision": 0.978285200313793,
+      "auroc": 0.9076525245441796,
+      "distinct_scores": 130,
+      "is_constant": false
+     },
+     "gemma_4_e2b": {
+      "average_precision": 0.955470843416188,
+      "auroc": 0.804961430575035,
+      "distinct_scores": 116,
+      "is_constant": false
+     },
+     "current_bayesian_source_subtype_oof": {
+      "average_precision": 0.9494594941786487,
+      "auroc": 0.7771300841514727,
+      "distinct_scores": 292,
+      "is_constant": false
+     },
+     "current_counts_full_features_oof": {
+      "average_precision": 0.9653106181583002,
+      "auroc": 0.8473001402524545,
+      "distinct_scores": 294,
+      "is_constant": false
+     }
+    }
+   },
+   {
+    "index": 6,
+    "band": "17\u201332",
+    "evidence_low": 17,
+    "evidence_high": 32,
+    "n": 243,
+    "n_positive": 217,
+    "positive_rate": 0.8930041152263375,
+    "scoreable": true,
+    "arms": {
+     "current_indra_simple_default": {
+      "average_precision": 0.9578336728879125,
+      "auroc": 0.7668380007089685,
+      "distinct_scores": 224,
+      "is_constant": false
+     },
+     "current_simple_hierarchy_all_sources": {
+      "average_precision": 0.9345381559460164,
+      "auroc": 0.6993973768167316,
+      "distinct_scores": 226,
+      "is_constant": false
+     },
+     "paper_literal_rf_promoter": {
+      "average_precision": 0.9753288927889383,
+      "auroc": 0.859624246721021,
+      "distinct_scores": 243,
+      "is_constant": false
+     },
+     "gemma_4_26b": {
+      "average_precision": 0.9864766397685375,
+      "auroc": 0.9171393123006026,
+      "distinct_scores": 200,
+      "is_constant": false
+     },
+     "glm_5": {
+      "average_precision": 0.9885594926671077,
+      "auroc": 0.9383197447713576,
+      "distinct_scores": 187,
+      "is_constant": false
+     },
+     "gemma_4_31b": {
+      "average_precision": 0.9819958501398791,
+      "auroc": 0.9101382488479262,
+      "distinct_scores": 198,
+      "is_constant": false
+     },
+     "gemma_4_e2b": {
+      "average_precision": 0.9727772864596972,
+      "auroc": 0.8189471818504076,
+      "distinct_scores": 181,
+      "is_constant": false
+     },
+     "current_bayesian_source_subtype_oof": {
+      "average_precision": 0.9555479107202728,
+      "auroc": 0.7681673165544134,
+      "distinct_scores": 243,
+      "is_constant": false
+     },
+     "current_counts_full_features_oof": {
+      "average_precision": 0.9739471539890313,
+      "auroc": 0.8567883729174052,
+      "distinct_scores": 243,
+      "is_constant": false
+     }
+    }
+   },
+   {
+    "index": 7,
+    "band": "33+",
+    "evidence_low": 33,
+    "evidence_high": null,
+    "n": 200,
+    "n_positive": 189,
+    "positive_rate": 0.945,
+    "scoreable": true,
+    "arms": {
+     "current_indra_simple_default": {
+      "average_precision": 0.9871685159018305,
+      "auroc": 0.8150553150553149,
+      "distinct_scores": 194,
+      "is_constant": false
+     },
+     "current_simple_hierarchy_all_sources": {
+      "average_precision": 0.9780859100676165,
+      "auroc": 0.785954785954786,
+      "distinct_scores": 198,
+      "is_constant": false
+     },
+     "paper_literal_rf_promoter": {
+      "average_precision": 0.9984447457922878,
+      "auroc": 0.974025974025974,
+      "distinct_scores": 200,
+      "is_constant": false
+     },
+     "gemma_4_26b": {
+      "average_precision": 0.9959982330294128,
+      "auroc": 0.9403559403559403,
+      "distinct_scores": 189,
+      "is_constant": false
+     },
+     "glm_5": {
+      "average_precision": 0.9969593596597691,
+      "auroc": 0.953102453102453,
+      "distinct_scores": 186,
+      "is_constant": false
+     },
+     "gemma_4_31b": {
+      "average_precision": 0.9951808837806111,
+      "auroc": 0.931938431938432,
+      "distinct_scores": 188,
+      "is_constant": false
+     },
+     "gemma_4_e2b": {
+      "average_precision": 0.9926300080223267,
+      "auroc": 0.8953823953823954,
+      "distinct_scores": 186,
+      "is_constant": false
+     },
+     "current_bayesian_source_subtype_oof": {
+      "average_precision": 0.9878332963066123,
+      "auroc": 0.8239538239538239,
+      "distinct_scores": 200,
+      "is_constant": false
+     },
+     "current_counts_full_features_oof": {
+      "average_precision": 0.998911837891941,
+      "auroc": 0.9812409812409812,
+      "distinct_scores": 200,
+      "is_constant": false
+     }
+    }
+   }
+  ]
+ },
+ "assertions": {
+  "panel_join_agrees_on_uuid_and_matches_hash": true,
+  "unique_pair_panel_matches_non_reading_control": true,
+  "evidence_census_matches_execution_map": true,
+  "floor_key_is_the_strongest_counter": true,
+  "best_reader_arm_clears_the_floor": true,
+  "note": "Assertions are enforced in code; a violation fails the build rather than being reported here as False."
+ },
+ "provenance": {
+  "statements": "data/corpora/indra_paper_unique_pairs_20260717_statements.json",
+  "evidence_census": "data/benchmark/indra_paper_unique_pairs_20260717_execution_map.jsonl",
+  "non_reading_control": "data/results/indra_paper_literal_models_20260724/non_reading_control.json",
+  "banding": "scripts/compute_paper_ap_decomposition.py::BAND_EDGES",
+  "panel_loader": "scripts/compute_statement_review_queue.py::load_panel",
+  "score_loader": "scripts/compute_statement_review_queue.py::load_scores",
+  "arm_specs": "scripts/compute_statement_review_queue.py::ARMS",
+  "join": "gold canonical_corpus.statement_id -> corpus id, cross-checked on matches_hash",
+  "generated_by": "scripts/compute_counting_control.py"
+ }
+}
