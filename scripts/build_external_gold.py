@@ -9,7 +9,7 @@ sourced ENTIRELY from OTHER curators in the public INDRA curation DB — a held-
 human population — so model accuracy can be measured against curators the prior
 gold never saw.
 
-Feasibility (scripts/probe_curation_universe.py, data/results/curation_universe_probe.json):
+Feasibility (measured by a curation-universe probe, since removed):
 no single non-pair curator clears n>=100 balanced (best is imke.ditters at
 bal_ceiling 82). So we POOL all non-pair curators (the plan's documented
 contingency). The keyed /curation/list payload carries ev_json (evidence text +
@@ -33,7 +33,7 @@ Design (mirrors build_curation_eval.py exactly where it can):
   sampled to mirror the smaller class's source_api mix.
 - Output is the flat belief_benchmark/holdout row (drop-in for the scorer + the
   contamination guard), plus gold/all_tags/curators for provenance.
-- SELF-GUARD: assert cc.find_contamination([OUT]) == [] (node A1 repaired guard),
+- SELF-GUARD: assert cc.find_contamination([OUT]) == [] (the repaired guard),
   exactly as build_curation_eval.py self-guards. Fail loudly otherwise.
 
     PYTHONPATH=src python scripts/build_external_gold.py
@@ -352,7 +352,7 @@ def main(seed: int = SEED) -> None:
         "evidence_source": "inline ev_json (text/source_api/pmid) + pa_json (subj/obj/type) from the list payload; no second fetch",
     }
 
-    # Self-guard (node A1 repaired contamination checker) — fail loudly on leak.
+    # Self-guard (the repaired contamination checker) — fail loudly on leak.
     contam = cc.find_contamination(eval_paths=[OUT])
     meta["contamination_check"] = {
         "checker": "scripts/check_contamination.py (find_contamination)",

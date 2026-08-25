@@ -24,8 +24,6 @@ jobs:
       - name: Evaluation contamination guard
         run: python scripts/check_contamination.py
 
-      - name: Live-document anchor guard
-        run: python scripts/check_doc_anchors.py
 
 # No Node step here, because nothing tracked needs one. The `viewer/` SvelteKit
 # app was the last consumer and has been removed. The `/paper` JSON artifacts

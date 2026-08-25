@@ -5,7 +5,7 @@ WHY THIS IS A MODULE
 This repo had TWO gates that disagreed about the same candidate, in two scripts,
 and neither referenced the other:
 
-    fit_probe_belief_model.py   non-inferior ranking AND lower ECE AND more
+    the probe-combiner fitter    non-inferior ranking AND lower ECE AND more
                                 distinct scores
     fit_incall_calibration.py   superior ranking AND lower Brier
 
@@ -39,7 +39,8 @@ def gate_decision(ci_low: float, brier_incumbent: float, brier_candidate: float,
                   *, min_favourability: float = 2.0) -> dict:
     """Three checks, because each one alone has a known failure mode HERE.
 
-    RECONCILED WITH scripts/fit_probe_belief_model.py, which gates on
+    RECONCILED WITH the probe-combiner fitter (removed with the probe battery),
+    which gated on
     "non-inferior ranking AND lower ECE AND more distinct scores". That rule is
     right for the question it was written for and wrong for this one, and the
     difference is the INCUMBENT:

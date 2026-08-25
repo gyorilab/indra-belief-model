@@ -1,5 +1,12 @@
 # Probe-battery findings
 
+> **Provenance note (2026-08-25).** This is a historical record. The repository
+> was later cut to prod infrastructure plus the future-LLM compare loop, so some
+> paths cited below name code that no longer exists — the comparison harness, the
+> spend ledger, the viewer, the paper-replication lane, the probe battery. The
+> measurements and conclusions stand as recorded; git history holds the code they
+> were measured against. No guard checks these citations any more.
+
 GO, but **not for the battery**. Adding no-reasoning probe signal to the incumbent verdict passed the held-out ΔAUROC gate; the battery ALONE (the replacement pitch the GOAL funded) is NO-GO. The final integrated review then ran the ablation no node had run, and it moved the claim: **a SINGLE probe carries essentially the whole gain**, and the other fifteen add an amount whose CI spans zero. Read §1b before quoting §1 — §1's Arm C row is a true measurement of a 16-probe arm, but 16 probes are not what earned it.
 
 ## 1. Verdict

@@ -139,7 +139,7 @@ def _load_unified_fewshots() -> list[dict]:
 
 def load_all_examples() -> list[dict]:
     """Union of every fewshot source the model sees during inference."""
-    # Sources 3 and 4 stood here: the four S-phase probe modules' `_FEW_SHOTS`
+    # Sources 3 and 4 stood here: the four decomposed-scorer probe modules' `_FEW_SHOTS`
     # and the inline `"..." →` examples in their system prompts. Those modules
     # (scorers.probes.{subject_role,object_role,relation_axis,scope}) were
     # deleted with the decomposed architecture, so there are no probe prompt

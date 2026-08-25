@@ -23,7 +23,7 @@ for byte, together with the call topology (whether the relation-nature sub-call
 fires at all).
 
 The ``parse_verdict`` entry is now read off ``indra_belief.verdict``.
-K2-one-parser removed ``scorer._parse_verdict`` — a dispatcher that picked one
+The parser unification removed ``scorer._parse_verdict`` — a dispatcher that picked one
 of two parsers off the variant — so the profile no longer selects a reader at
 all. The values below are unchanged across all five ``MONO_VARIANT`` settings,
 which is the proof: the same four replies read the same way whichever profile
@@ -138,7 +138,7 @@ class _StubEntity:
 class _StubRecord:
     """Stands in for ScoringRecord — its ``__post_init__`` grounds via Gilda.
 
-    K1-prepared-execution replaced ``ScoringRecord.format_user_message`` (one
+    The prepared-execution refactor replaced ``ScoringRecord.format_user_message`` (one
     joined string) with ``execution_body`` (the five parts, joined once by
     ``ExecutionBody.render``). The stub follows the interface; the rendered
     bytes are unchanged, which is what the frozen fixture below proves.
@@ -261,9 +261,9 @@ def _probe(mod, variant=None) -> dict:
     injection path.
 
     ``build_messages`` is now read off ``_prepare(...).calls(note)``, since
-    K1-prepared-execution replaced ``_build_messages`` with the one request
+    The prepared-execution refactor replaced ``_build_messages`` with the one request
     value, and ``parse_verdict`` off ``indra_belief.verdict.parse_response``,
-    since K2-one-parser removed the per-variant parser dispatcher. Same
+    since The parser unification removed the per-variant parser dispatcher. Same
     messages, same parse, same bytes — that equality is the point of the frozen
     fixture, so the key names are kept and the values must not move.
     """
@@ -445,7 +445,7 @@ def test_variant_registry_shape():
     baseline = S.VARIANTS[""]
     assert baseline.structured is False
     assert baseline.resolve_relation_nature is None
-    # K2-one-parser: a profile no longer carries a parser at all. `structured`
+    # Parser unification: a profile no longer carries a parser at all. `structured`
     # says what the profile ASKS the model for, not who reads the answer.
     assert not hasattr(baseline, "parse_structured")
     assert not hasattr(baseline, "derive_verdict")
@@ -529,7 +529,7 @@ def test_score_entry_points_accept_a_variant():
     """score() and score_statement() are the public seams; the keyword has to
     reach them, not just the private helpers.
 
-    ``_parse_verdict`` is absent from the list below because K2-one-parser
+    ``_parse_verdict`` is absent from the list below because the parser unification
     deleted it: it dispatched on the variant to pick one of two parsers, and
     there is now one parser that no profile selects. The case it covered is not
     dropped — ``test_the_parser_is_not_variant_selected`` asserts the stronger

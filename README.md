@@ -224,9 +224,10 @@ at `data/probe_battery/mlx_verdict_logit_rows.jsonl`, with no in-tree producer.
 The script's `MODEL` and `PORT` defaults must stay equal to the
 `local-gemma-4-26b` entry in `src/indra_belief/model_client.py` —
 `mlx-community/gemma-4-26b-a4b-it-8bit` on port `8085`. Change one without the
-other and every call 404s. `tests/test_readme_code_claims.py` compares the
-script's defaults against the registry entry and fails if they diverge — and
-fails too if this section stops naming them.
+other and every call 404s. This agreement used to be enforced by a test that
+compared the script's defaults against the registry entry; that guard was removed
+with the rest of the prose-checking apparatus, so the two are now kept in step by
+hand.
 
 Why serve locally at all: this is currently the **only** reader we can read
 token logprobs from. Bedrock's gemma-4 routes accept `top_logprobs` and return

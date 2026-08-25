@@ -1,4 +1,4 @@
-"""Prove the fit gold and the validation gold are disjoint (node B1).
+"""Prove the fit gold and the validation gold are disjoint.
 
 GOAL.md states one invariant — "Fit and validation sets must not overlap" —
 and points at ``scripts/check_contamination.py``. That script cannot prove it.
@@ -11,7 +11,7 @@ pool" — a different question from "is the ship gate's test set held out from
 the population the calibration was fit on".
 
 So the single invariant needs two checks. The guard supplies the fewshot one
-(tests/test_contamination_guard_sources.py, node A1); this file supplies the
+(tests/test_contamination_guard_sources.py); this file supplies the
 gold-vs-gold one:
 
   * ``data/benchmark/eval_curation_v1.jsonl`` — the FIT gold. Every shipped

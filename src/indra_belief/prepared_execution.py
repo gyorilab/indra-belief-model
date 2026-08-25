@@ -86,7 +86,7 @@ _RELATION_NATURE_LABELS: Mapping[str, str] = MappingProxyType({
 
 # Which reader turns the model's reply back into (verdict, confidence). It
 # travels with the request that produced the reply, and it is a CONSTANT: this
-# was the seam K2-one-parser hung its parser from, and K2's answer is that there
+# was the seam the parser unification hung its parser from, and K2's answer is that there
 # is exactly one — `indra_belief.verdict` reads every reply, on the live path and
 # on the batch replay, under every profile. It was two values only because a
 # profile used to select its own parser.
@@ -181,7 +181,7 @@ class ExecutionBody:
     """The five parts of the user message, unjoined.
 
     The join below is the one that used to live twice — at
-    `data/scoring_record.py` (live) and `comparison/replay.py` (batch). It is
+    `data/scoring_record.py` (live). The batch replay half was removed. It is
     copied character-for-character from those two, which were already byte-equal;
     every frozen digest in `data/comparison/grounding_replay/manifest.json`
     depends on it.

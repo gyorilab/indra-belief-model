@@ -7,7 +7,7 @@ apparent objection and then resolved it (e.g. miRNA inverse-inference). The
 disconfirm disposition lives entirely in the prompt; code does not re-derive the
 verdict from support/objection.
 
-K2-one-parser removed the `parse_structured` / `derive_verdict` pair these cases
+The parser unification removed the `parse_structured` / `derive_verdict` pair these cases
 used to drive: the reading of the answer and the pass-through of the committed
 verdict are now one step, in `indra_belief.verdict`, shared by every profile and
 by the batch replay. Each case below is the SAME case, driven through the real
@@ -75,7 +75,7 @@ def test_no_committed_verdict_is_absence_not_a_verdict():
     """What `derive_verdict(...) == (None, None, "parse_null")` used to say.
 
     An answer that commits to nothing yields no Verdict at all — not a
-    fabricated one, and not a score. K2-one-parser: absence stays absent.
+    fabricated one, and not a score. Parser unification: absence stays absent.
     """
     assert parse_verdict(_answer(support="x", verdict=None, confidence=None)) is None
 

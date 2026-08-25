@@ -1,5 +1,12 @@
 # Serving architecture: current state, measured limits, and the refactor path
 
+> **Provenance note (2026-08-25).** This is a historical record. The repository
+> was later cut to prod infrastructure plus the future-LLM compare loop, so some
+> paths cited below name code that no longer exists — the comparison harness, the
+> spend ledger, the viewer, the paper-replication lane, the probe battery. The
+> measurements and conclusions stand as recorded; git history holds the code they
+> were measured against. No guard checks these citations any more.
+
 Written 2026-07-31. Covers the two execution paths that exist today, what breaks
 at corpus scale, and the ordered set of changes that gets to low latency and cost
 with batching alongside realtime.

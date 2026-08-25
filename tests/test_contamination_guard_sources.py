@@ -1,4 +1,4 @@
-"""Guard the contamination-guard's own sources (node A1).
+"""Guard the contamination-guard's own sources against its own sources.
 
 scripts/check_contamination.py scans every fewshot source the model sees
 during inference. A wrong module path once let Source 1

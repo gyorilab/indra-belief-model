@@ -4,7 +4,7 @@ Until now this logic lived, copied, across several scripts (pull_rasmachine_cura
 build_disagreement_queue, prepare_dataset) and was re-expressed
 again in the SvelteKit viewer's TypeScript. The `tag == "correct"` gold atom was
 independently rewritten in a half-dozen eval scripts besides. This module is the
-canonical Python home; the viewer's `viewer/src/lib/data/curation.ts` is its
+canonical and only home; a TypeScript twin under the viewer was its
 deliberate cross-language twin, kept in parity by tests/test_curation_parity (a
 fixture both sides must reduce identically).
 

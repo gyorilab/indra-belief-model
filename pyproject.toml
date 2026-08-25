@@ -42,7 +42,7 @@ dev = [
     "plotly>=5.0",
     "scipy>=1.10",
     # The `llm` extra, re-listed because the SUITE needs it and CI installs only
-    # `.[dev]`. `tests/test_comparison_runner.py` constructs a real ModelClient,
+    # `.[dev]`. The comparison runner's test constructed a real ModelClient,
     # whose `_setup_openai_client` does `from openai import OpenAI` inside the
     # function body — so this one fails at RUN time rather than at collection,
     # which is why the static guard in tests/test_declared_dependencies.py

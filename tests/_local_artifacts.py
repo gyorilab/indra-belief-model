@@ -48,10 +48,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # The gitignored trees these tests read. Declared as ROOTS rather than as a list
 # of individual files on purpose: a file list has to be maintained against every
 # new artifact and rots into the same hand-maintained-list defect that
-# `scripts/check_doc_anchors.py`'s DOCS glob and
-# `scripts/check_import_boundary.py`'s core derivation were both rewritten to
-# avoid. A root is a claim about a whole tree, and a tree is either fetched or
-# it is not.
+# `scripts/check_import_boundary.py`'s core derivation was rewritten to avoid.
+# A root is a claim about a whole tree, and a tree is either fetched or it is not.
 #
 #   data/comparison    every run directory, spend ledger, published bundle and
 #                      frozen replay substrate. ~20 GB. `.gitignore:102`.

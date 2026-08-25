@@ -393,7 +393,7 @@ _HASH_MASK = (1 << 64) - 1
 
 def _ukey(x) -> int | None:
     """Unsigned 64-bit int key — the source_hash join used everywhere (run rows,
-    eval gold, curation.ts curationKey all resolve to the same integer)."""
+    eval gold all resolve to the same integer)."""
     try:
         return int(x) & _HASH_MASK
     except (ValueError, TypeError):
@@ -648,10 +648,9 @@ def _statement_gold_any_correct(tags: list[str]) -> str | None:
     is a real multi-evidence effect.
 
     This deliberately does not live in ``indra_belief.curation`` beside
-    ``aggregate_gold``. That module is the canonical curation domain, mirrored in
-    viewer/src/lib/data/curation.ts under a cross-language parity guard, and it
-    owns the CURATOR rollup (several curators, one evidence). This is a
-    STATEMENT-grain evaluation construct with no viewer twin.
+    ``aggregate_gold``. That module is the canonical curation domain and owns the
+    CURATOR rollup (several curators, one evidence). This is a STATEMENT-grain
+    evaluation construct, a different question entirely.
     """
     if not tags:
         return None

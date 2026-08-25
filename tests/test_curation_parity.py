@@ -6,7 +6,7 @@ This file used to be a cross-language parity guard. The curation domain was
 deliberately duplicated in two languages — curation.py here and curation.ts in
 the viewer — and a parity test drove both over one fixture so neither could
 drift. The viewer was removed, taking curation.ts and its
-viewer/scripts/curation_gold_json.mjs runner with it, so the duplication the
+its Node runner with it, so the duplication the
 guard existed to protect is gone and the parity test was deleted with it.
 Python is now the single implementation; the fixture below still pins its
 behaviour.

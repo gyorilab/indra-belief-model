@@ -196,7 +196,7 @@ def variant_from_env(env: Mapping[str, str] | None = None) -> ScoringVariant:
     labels itself `mono_variant: "verdict_only"`, which is not a key here — a
     reader reproducing that run from its own label would get the baseline
     prompt with no signal. (That run itself was NOT scored that way; its
-    prompts come from scripts/build_verdict_only_replay.py, not from this
+    prompts came from a replay-substrate builder that has been removed, not from this
     module.) `""` stays silent: README.md documents it as the intended
     baseline switch.
     """

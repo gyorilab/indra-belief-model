@@ -28,8 +28,6 @@ this file tracks names, not line-level contents.)
 ### Guards (pytest-enforced; keep exit-code contract stable)
 - `check_contamination.py` — few-shot/holdout overlap guard (via
   `tests/test_contamination_guard_sources.py`).
-- `check_doc_anchors.py` — live research-doc source-anchor guard (via
-  `tests/test_doc_anchors.py`).
 - `calibration_ship_gate.py` — calibration ship-gate; its FAIL/PENDING exit code
   is asserted by `tests/test_ship_gate_enforcement.py`.
 

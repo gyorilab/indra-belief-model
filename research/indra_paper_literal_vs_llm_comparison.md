@@ -1,5 +1,12 @@
 # Running the 2023 assembly paper's own belief code: reproduction, and what a reading gate adds to the belief INDRA serves
 
+> **Provenance note (2026-08-25).** This is a historical record. The repository
+> was later cut to prod infrastructure plus the future-LLM compare loop, so some
+> paths cited below name code that no longer exists — the comparison harness, the
+> spend ledger, the viewer, the paper-replication lane, the probe battery. The
+> measurements and conclusions stand as recorded; git history holds the code they
+> were measured against. No guard checks these citations any more.
+
 > **Status:** complete (2026-07-24; restructured 2026-07-27 for the 2023 paper's
 > authors). Runs the 2023 INDRA assembly paper's **own released code** — not our
 > reimplementation — to reproduce Table 6, and places INDRA's *deployed* belief

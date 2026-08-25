@@ -3,7 +3,7 @@
 Hermetic: no network, no model, no `data/` access. Every case is a literal reply
 body, because that is the only input the parser has.
 
-K2-one-parser replaced THREE parse implementations with one and made an
+The parser unification replaced THREE parse implementations with one and made an
 unreadable reply a typed absence on BOTH paths. Each case below records what the
 three retired parsers did with the same input, because "unified" is a claim
 about equality and the claim has to be checkable:
