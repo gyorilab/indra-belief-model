@@ -163,7 +163,8 @@ def test_too_few_rows_refuses_to_produce_a_curve(tmp_path):
 #
 # The gate got this wrong once, in the direction that matters: it scored a
 # candidate ADDED to the verdict weight, while statement_belief REPLACES the
-# verdict weight with it (statement_belief.py:176). The wrong composition looked
+# verdict weight with it — statement_belief.py::_probe_weighted_belief takes
+# probe_weight INSTEAD of verdict_weight. The wrong composition looked
 # better on the metric being gated on -- +0.0748 AUROC -- while tripling ECE
 # (0.0374 -> 0.1241). A gate that evaluates a composition production never runs
 # is not a gate, and the number it produces is the most dangerous kind: real,
@@ -212,8 +213,9 @@ def test_a_favourable_calibration_trade_passes():
 
 def test_an_unfavourable_trade_is_reported_but_does_not_veto():
     """CONTRACT CHANGE, deliberate. The trade ratio was a third gate leg until
-    scripts/calibration_ship_gate.py:29 was read: "Brier-resolution is reported
-    as a diagnostic, NOT gated (noise-dominated at n~342)". These splits are
+    the G2 leg list in scripts/calibration_ship_gate.py's module docstring was
+    read: "Brier-resolution is reported as a diagnostic, NOT gated
+    (noise-dominated at n~342)". These splits are
     n~90 and the quantity is binned over BINS_8 -- about eleven rows a bin --
     so a RATIO of two such estimates is noisier still. It is reported, because
     it is what explains an ECE rise, and the decision rests on Brier, which is

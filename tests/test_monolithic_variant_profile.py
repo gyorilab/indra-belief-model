@@ -159,8 +159,8 @@ class _StubRecord:
         return ExecutionBody(claim=self._claim, evidence_text=self.evidence_text)
 
     # The two members `score()` reads that the private helpers never did:
-    # scorer.py:581 (`record.tier1_auto_reject()`, the deterministic Tier-1
-    # gate) and scorer.py:588 (`record.format_provenance()`). Answering "no
+    # ``scorers/monolithic/scorer.py::_score_categorical`` (`record.tier1_auto_reject()`, the deterministic Tier-1
+    # gate, and `record.format_provenance()` in the same function). Answering "no
     # auto-reject, no provenance" is what carries a probe past Tier 1 and into
     # the Tier-2 LLM call whose bytes the variant controls. Both are inert on
     # the `_dump()` script path, which never reaches `score()`.

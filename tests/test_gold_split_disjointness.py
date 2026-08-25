@@ -2,9 +2,9 @@
 
 GOAL.md states one invariant — "Fit and validation sets must not overlap" —
 and points at ``scripts/check_contamination.py``. That script cannot prove it.
-``find_contamination`` (scripts/check_contamination.py:280) folds every eval
-path into ONE pooled index: ``for path in eval_paths`` at :302 writes each
-record into the same ``eval_norm_to_records`` map (:300). Two golds handed to
+``scripts/check_contamination.py::find_contamination`` folds every eval path
+into ONE pooled index: its ``for path in eval_paths`` loop writes every record
+into a single ``eval_norm_to_records`` map. Two golds handed to
 it are UNIONED, never compared. What the script actually answers is "does a
 fewshot example the model sees at inference time also appear in the eval
 pool" — a different question from "is the ship gate's test set held out from
@@ -14,19 +14,20 @@ So the single invariant needs two checks. The guard supplies the fewshot one
 (tests/test_contamination_guard_sources.py); this file supplies the
 gold-vs-gold one:
 
-  * ``data/benchmark/eval_curation_v1.jsonl`` — the FIT gold. Every shipped
-    profile's ``_CONFUSION`` counts were tallied on it
-    (src/indra_belief/calibration_constants.py:54).
+  * ``data/benchmark/eval_curation_v1.jsonl`` — the FIT gold for most profiles;
+    their ``_CONFUSION`` counts were tallied on it
+    (``src/indra_belief/calibration_constants.py::_CONFUSION``).
   * ``data/benchmark/external_curator_gold_v1.jsonl`` — the independent
     32-curator VALIDATION gold.
 
 Overlap is measured at the grain the ship gate actually joins on: the
-``(matches_hash, source_hash)`` pair (scripts/calibration_ship_gate.py:203-217).
+``(matches_hash, source_hash)`` pair its ``by_pair`` index is keyed on
+(``scripts/calibration_ship_gate.py::statements_for_run``).
 Coarser grains are pinned too, so a real leak cannot hide behind "the pair
 tuple happened to differ".
 
 Byte identity of both golds is already pinned elsewhere — see
-tests/test_soft_belief.py:181 (``test_profile_gold_digests_match_pinned_artifacts``)
+``tests/test_soft_belief.py::test_profile_gold_digests_match_pinned_artifacts``
 against ``FIT_GOLD_SHA256`` / ``EXTERNAL_GOLD_SHA256``. This file deliberately
 does NOT re-hash them; it asserts about their CONTENT instead.
 """
@@ -39,9 +40,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-# Reuse, do not reimplement. ``_ukey`` (scripts/calibration_ship_gate.py:128,
-# masking with HASH_MASK at :84) is the exact normalizer the ship gate joins
-# gold on; ``cc._norm`` (scripts/check_contamination.py:46) is the exact
+# Reuse, do not reimplement. ``scripts/calibration_ship_gate.py::_ukey`` (which
+# masks with that module's ``HASH_MASK``) is the exact normalizer the ship gate
+# joins gold on; ``scripts/check_contamination.py::_norm`` is the exact
 # sentence normalizer the contamination guard uses. Copying either into this
 # file would let the definitions drift apart and quietly weaken the proof.
 from calibration_ship_gate import _ukey  # noqa: E402
@@ -84,7 +85,9 @@ def test_fit_and_validation_golds_are_disjoint():
     This is the invariant that makes the ship gate's reported numbers mean
     anything: the profile is FIT on eval_curation_v1 and TESTED on a set it
     has never been tallied against (thresholds are selected on the fit set
-    and frozen — scripts/calibration_ship_gate.py:74).
+    and frozen — ``scripts/calibration_ship_gate.py::training_thresholds``,
+    which is the leg that restricts selection to training statements; it
+    maximizes err-F1 via that module's ``best_tau`` over ``TAU_GRID``).
 
     Row and pair counts are asserted alongside the intersection so that a
     gold REBUILD is caught here rather than silently re-baselined: a zero
@@ -109,9 +112,10 @@ def test_fit_and_validation_golds_are_disjoint():
         f"pairs, e.g. {sorted(overlap)[:5]}"
     )
 
-    # Bind 1604 to the population the SHIPPED calibration was tallied on,
-    # rather than leaving it a free-floating literal. ``fit_unique_pairs`` is
-    # sum(_CONFUSION[name].values()) (calibration_constants.py:161), so this
+    # Bind the shipped fit population to the population measured above,
+    # rather than leaving either a free-floating literal. ``fit_unique_pairs`` is
+    # ``sum(_CONFUSION[name].values())`` in
+    # ``src/indra_belief/calibration_constants.py::_named_profile``, so this
     # asserts "the population I just measured is the population _CONFUSION
     # counts were drawn from" — not merely "some number equals 1604".
     profile = fitted_calibration_for(

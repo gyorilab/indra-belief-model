@@ -576,10 +576,11 @@ def main() -> int:
                 "provenance_triggered": last_result.get("provenance_triggered"),
                 "tokens": last_result.get("tokens"),
                 # The per-call token/model ledger, for the SAME whitelist reason as
-                # probe_delta_logit above. scorer.py:738 returns it and this row list
+                # probe_delta_logit above. ``scorers/monolithic/scorer.py::_score_categorical`` returns it and this row list
                 # dropped it, so every row scored through this runner was UNPRICEABLE:
-                # frontier_table.py:224 and cost_report.py:44 both read `call_log`, and
-                # with it absent frontier_table.py:244 sets cost=None, so the model
+                # ``scripts/frontier_table.py::_cost_summary`` and ``scripts/cost_report.py::tally``
+                # both read `call_log`, and
+                # with it absent that same `_cost_summary` sets cost=None, so the model
                 # cannot be placed on the cost x err-F1 frontier at all. That is what
                 # made the compare loop complete for local/self-hosted readers and
                 # incomplete for provider-hosted ones. Persisted even when empty, so

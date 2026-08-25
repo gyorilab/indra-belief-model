@@ -401,7 +401,7 @@ def main() -> int:
 
         # REPLACEMENT, not addition. statement_belief uses probe_weight INSTEAD
         # OF verdict_weight on a row carrying a measurement
-        # (statement_belief.py:176); it never sums them, because the margin
+        # (``statement_belief.py::_probe_weighted_belief``); it never sums them, because the margin
         # already encodes the verdict and adding both double-counts it.
         #
         # This was wrong here first, and the wrong version looked BETTER on the
@@ -418,7 +418,7 @@ def main() -> int:
         # FLOORED, because production floors. `probe_weight` applies
         # max(weight, source_logodds) to a confirming reading so a generic
         # reader cannot drag a well-curated source below its own track record
-        # (evidence_weights.py:106). Scoring the un-floored weight is the same
+        # (``evidence_weights.py::probe_weight``). Scoring the un-floored weight is the same
         # error as scoring the additive composition: a gate must evaluate the
         # arithmetic that runs.
         #

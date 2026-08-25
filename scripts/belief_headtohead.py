@@ -184,7 +184,7 @@ def main() -> None:
             # at all. Without this fallback a provider run joins to NOTHING and
             # this script emitted F1=0.000 with exit 0 — a fabricated
             # measurement, not an absent one. The same repair already lives in
-            # scripts/calibration_ship_gate.py:228-233.
+            # scripts/calibration_ship_gate.py::statements_for_run.
             mh = ukey(d.get("matches_hash"))
             if mh is not None:
                 stmt_key = str(mh)

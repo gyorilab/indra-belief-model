@@ -80,9 +80,10 @@ def gate_decision(ci_low: float, brier_incumbent: float, brier_candidate: float,
     return {
         "ranking": ranking,
         "scoring": scoring,
-        # DIAGNOSTIC, NOT A GATE LEG. This was a third condition until
-        # scripts/calibration_ship_gate.py:29 was read: "Brier-resolution is
-        # reported as a diagnostic, NOT gated (noise-dominated at n~342)". The
+        # DIAGNOSTIC, NOT A GATE LEG. This was a third condition until the G2
+        # leg list in scripts/calibration_ship_gate.py's module docstring was
+        # read: "Brier-resolution is reported as a diagnostic, NOT gated
+        # (noise-dominated at n~342)". The
         # splits here are n~90, a quarter of that, and reliability/resolution are
         # BINNED over BINS_8 -- roughly eleven rows a bin, and a RATIO of two such
         # estimates is noisier than either. Gating on it would have made this the

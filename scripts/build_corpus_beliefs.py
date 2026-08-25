@@ -33,7 +33,7 @@ calibration exists: the beliefs are correct-but-uncalibrated rather than absent.
 STREAMING
 ---------
 A statement's evidences never span shards -- the shard writer rolls only at
-statement boundaries (build_processed_grounding_shards.py:644) -- so a shard can
+statement boundaries (``build_processed_grounding_shards.py::commit_current_shard``) -- so a shard can
 be reduced to beliefs and released before the next is opened. That is what makes
 60M evidences tractable in constant memory.
 """
