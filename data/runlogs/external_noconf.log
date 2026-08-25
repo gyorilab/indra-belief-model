@@ -1,0 +1,60 @@
+gold=external_curator_gold_v1.jsonl rows=578 already_done=0
+model=bedrock-gemma-4-26b model_id=google.gemma-4-26b-a4b variant=disconfirm_relnature_rf_noconf workers=16
+prompt_sha256=bad4cb2d9f894a8bcf5dee689e558372eb92b20f43dd3b3015b0a6865613167e
+loading corpus index from /Users/noot/Documents/indra-belief-model/data/corpora/external_curator_gold_v1_statements.json ...
+INFO: [2026-08-15 20:08:41] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 20:08:41] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 20:08:41] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 20:08:41] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 20:08:47] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 20:08:49] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+Loading corpus from /Users/noot/Documents/indra-belief-model/data/corpora/external_curator_gold_v1_statements.json ...
+  469 statements loaded. Building index ...
+  Done. 564 source_hash entries.
+[1/578 valid] acc=100.00% coverage=0.17% rate=0.011 rows/s
+INFO: [2026-08-15 20:08:59] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+[20/578 valid] acc=80.00% coverage=3.46% rate=0.189 rows/s
+INFO: [2026-08-15 20:09:05] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 20:09:16] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 20:09:23] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+[40/578 valid] acc=87.50% coverage=6.92% rate=0.297 rows/s
+[60/578 valid] acc=85.00% coverage=10.38% rate=0.360 rows/s
+[80/578 valid] acc=83.75% coverage=13.84% rate=0.434 rows/s
+[100/578 valid] acc=82.00% coverage=17.30% rate=0.506 rows/s
+[120/578 valid] acc=82.50% coverage=20.76% rate=0.561 rows/s
+[140/578 valid] acc=80.71% coverage=24.22% rate=0.616 rows/s
+[160/578 valid] acc=80.62% coverage=27.68% rate=0.665 rows/s
+[180/578 valid] acc=81.11% coverage=31.14% rate=0.718 rows/s
+[200/578 valid] acc=80.50% coverage=34.60% rate=0.749 rows/s
+[220/578 valid] acc=79.09% coverage=38.06% rate=0.790 rows/s
+[240/578 valid] acc=78.33% coverage=41.52% rate=0.822 rows/s
+[260/578 valid] acc=78.08% coverage=44.98% rate=0.849 rows/s
+[280/578 valid] acc=78.57% coverage=48.44% rate=0.878 rows/s
+[300/578 valid] acc=78.67% coverage=51.90% rate=0.917 rows/s
+[320/578 valid] acc=78.75% coverage=55.36% rate=0.943 rows/s
+[340/578 valid] acc=78.82% coverage=58.82% rate=0.978 rows/s
+[360/578 valid] acc=79.72% coverage=62.28% rate=1.007 rows/s
+[380/578 valid] acc=80.26% coverage=65.74% rate=1.023 rows/s
+[400/578 valid] acc=79.75% coverage=69.20% rate=1.047 rows/s
+[420/578 valid] acc=80.00% coverage=72.66% rate=1.073 rows/s
+[440/578 valid] acc=80.00% coverage=76.12% rate=1.082 rows/s
+[460/578 valid] acc=80.43% coverage=79.58% rate=1.105 rows/s
+[480/578 valid] acc=80.42% coverage=83.04% rate=1.128 rows/s
+[500/578 valid] acc=80.00% coverage=86.51% rate=1.139 rows/s
+[520/578 valid] acc=79.81% coverage=89.97% rate=1.147 rows/s
+[540/578 valid] acc=79.44% coverage=93.43% rate=1.161 rows/s
+[560/578 valid] acc=79.82% coverage=96.89% rate=1.179 rows/s
+
+Evaluation summary
+  total input:              578
+  valid verdicts:           578
+  correct predictions:      461
+  accuracy on verdicts:    79.76%
+  coverage:                 100.00%
+  strict end-to-end acc:   79.76%
+  status counts:            {'scored': 578}
+  confusion (+ = correct): {'tp': 230, 'fp': 58, 'fn': 59, 'tn': 231}
+
+results: /Users/noot/Documents/indra-belief-model/data/results/external_curator_v1_bedrock-gemma_noconf.jsonl
+summary: /Users/noot/Documents/indra-belief-model/data/results/external_curator_v1_bedrock-gemma_noconf.summary.json
+EXIT=0

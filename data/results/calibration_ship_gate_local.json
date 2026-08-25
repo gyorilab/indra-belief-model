@@ -1,0 +1,196 @@
+[
+  {
+    "name": "local-gemma-mlx",
+    "test_label": "external_curator_gold_v1",
+    "provenance": {
+      "train_gold": "data/benchmark/eval_curation_v1.jsonl",
+      "train_gold_sha256": "8e266acefd191e25a92f88febcb6f6d7f1b3be8c8d8f45a18012f76d9930f600",
+      "train_run": "data/results/eval_curation_v1_local-gemma-4-26b.jsonl",
+      "train_run_sha256": "4a9658d21da067f4a05bcec7ee04f3a0d1dd1f38335d1e0bc17f1c16ea2b2732",
+      "train_configuration": "local-gemma-4-26b@prompt-sha256:07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+      "test_gold": "data/benchmark/external_curator_gold_v1.jsonl",
+      "test_gold_sha256": "52cde61f8f3e3dac01ad13f09c9d6db623eea888ffd617410d1c88de6527c80f",
+      "test_run": "data/results/external_curator_v1_local-gemma-4-26b.jsonl",
+      "test_run_sha256": "0e9f513e105932f47305f1aadb01e305fce4b1178b92bb0b02d4c3b4064415f2",
+      "test_configuration": "local-gemma-4-26b@prompt-sha256:07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+      "statement_grain": "run stmt_hash",
+      "statement_gold": "any-incorrect-wins",
+      "train_join": {
+        "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
+        "n_run_rows": 1606,
+        "n_joined_rows": 1606,
+        "n_exact_joined_rows": 1606,
+        "n_source_fallback_rows": 0,
+        "n_unmatched_rows": 0,
+        "n_ambiguous_rows": 0,
+        "n_grouped_statements": 913
+      },
+      "test_join": {
+        "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
+        "n_run_rows": 587,
+        "n_joined_rows": 587,
+        "n_exact_joined_rows": 587,
+        "n_source_fallback_rows": 0,
+        "n_unmatched_rows": 0,
+        "n_ambiguous_rows": 0,
+        "n_grouped_statements": 469
+      }
+    },
+    "reader_profile": {
+      "confusion": {
+        "cc": 651,
+        "ci": 91,
+        "ic": 148,
+        "ii": 710
+      },
+      "sensitivity": 0.8147684605757196,
+      "false_positive_rate": 0.1136079900124844,
+      "specificity": 0.8863920099875156,
+      "miss_rate": 0.1852315394242804,
+      "log_lr_confirm": 1.9701501369938037,
+      "log_lr_reject": -1.5655526949691612,
+      "prior_correct": 0.499375,
+      "prior_logodds": -0.00250000130208456,
+      "profile_id": "local-gemma-4-26b@prompt-07377e338ff2@eval_curation_v1",
+      "reader_configuration": "local-gemma-4-26b@prompt-sha256:07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364",
+      "fit_run": "data/results/eval_curation_v1_local-gemma-4-26b.jsonl",
+      "fit_gold": "data/benchmark/eval_curation_v1.jsonl",
+      "fit_gold_sha256": "8e266acefd191e25a92f88febcb6f6d7f1b3be8c8d8f45a18012f76d9930f600",
+      "fit_unique_pairs": 1600,
+      "gold_rule": "exact pair; multi-curator any-incorrect-wins; duplicate pairs removed"
+    },
+    "eval": {
+      "metrics": {
+        "hard": {
+          "n": 463,
+          "ece": 0.23098858572786177,
+          "brier": 0.22169870162483388,
+          "resolution": 0.09126324561956668,
+          "reliability": 0.061771062071996015,
+          "auroc": 0.7930149665957527,
+          "auprc": 0.7375535022948544,
+          "mean_correct": 0.43813008201709397,
+          "mean_incorrect": 0.1176101484716157
+        },
+        "parametric": {
+          "n": 463,
+          "ece": 0.10508923192380405,
+          "brier": 0.27884203828855125,
+          "resolution": 0.0011315774711673373,
+          "reliability": 0.02711254021799242,
+          "auroc": 0.4673515470458702,
+          "auprc": 0.48829895425779585,
+          "mean_correct": 0.5432832022403632,
+          "mean_incorrect": 0.5538517251374508
+        },
+        "clean": {
+          "n": 463,
+          "ece": 0.05203090211354689,
+          "brier": 0.15970869877078114,
+          "resolution": 0.09405307587078583,
+          "reliability": 0.004067797212997294,
+          "auroc": 0.8084107789347964,
+          "auprc": 0.7554037663511786,
+          "mean_correct": 0.7457646073691659,
+          "mean_incorrect": 0.31259223467578084
+        }
+      },
+      "errf1_boot": {
+        "tau_hard": 0.3,
+        "tau_soft": 0.65,
+        "f1_hard": 0.7955555555555556,
+        "f1_soft": 0.8,
+        "delta": 0.004444444444444473,
+        "ci_hard": [
+          0.7546216475095785,
+          0.8343836905831515
+        ],
+        "ci_soft": [
+          0.7598228293345857,
+          0.838719532225215
+        ],
+        "ci_delta": [
+          -0.008840684642078586,
+          0.018957033475200544
+        ],
+        "n": 463
+      },
+      "errf1_sweep": {
+        "0.4": {
+          "hard": 0.7955555555555556,
+          "soft": 0.7991169977924943
+        },
+        "0.5": {
+          "hard": 0.6780715396578538,
+          "soft": 0.7991169977924943
+        },
+        "0.6": {
+          "hard": 0.6780715396578538,
+          "soft": 0.8
+        }
+      },
+      "thresholds": {
+        "hard": 0.3,
+        "calibrated": 0.65,
+        "train_f1_hard": 0.7976470588235294,
+        "train_f1_calibrated": 0.8348017621145375,
+        "n_train": 910,
+        "n_train_undefined": 3,
+        "selection": "argmax error-detection F1 on train over TAU_GRID; frozen before test",
+        "grid": [
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7
+        ]
+      },
+      "n_test": 463,
+      "n_undefined": 6,
+      "join": {
+        "join_mode": "per-row exact (matches_hash, source_hash) first; truth-safe source fallback",
+        "n_run_rows": 587,
+        "n_joined_rows": 587,
+        "n_exact_joined_rows": 587,
+        "n_source_fallback_rows": 0,
+        "n_unmatched_rows": 0,
+        "n_ambiguous_rows": 0,
+        "n_grouped_statements": 469
+      },
+      "base_rate": 0.5053995680345572,
+      "error_rate": 0.4946004319654428
+    },
+    "gate": {
+      "ece": {
+        "pass": true,
+        "hard": 0.23098858572786177,
+        "soft": 0.05203090211354689
+      },
+      "auroc": {
+        "pass": true,
+        "hard": 0.7930149665957527,
+        "soft": 0.8084107789347964
+      },
+      "errf1": {
+        "pass": true,
+        "hard": 0.7955555555555556,
+        "soft": 0.8,
+        "delta": 0.004444444444444473,
+        "ci_delta": [
+          -0.008840684642078586,
+          0.018957033475200544
+        ],
+        "noninferiority_margin": 0.154
+      },
+      "e4_identity": {
+        "pass": true,
+        "note": "tests/test_soft_belief.py byte-identity verified"
+      },
+      "overall": true
+    }
+  }
+]

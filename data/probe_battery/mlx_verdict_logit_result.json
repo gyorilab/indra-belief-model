@@ -1,0 +1,143 @@
+{
+ "artifact_kind": "mlx_verdict_logit_probe",
+ "schema_version": 1,
+ "question": "Among evidences given the SAME verdict, does the verdict-token logit margin rank gold-correct above gold-incorrect?",
+ "probe": {
+  "id": "mlx.verdict_bareword",
+  "not_the_shipped_probe": "A bare-word variant, required because mlx_lm.server does not honour the assistant prefill. It is NOT in probes.battery.PROBES and has no fitted calibration. No statement here is a result about pol.verdict_direct."
+ },
+ "panel": {
+  "n_rows_attempted": 5371,
+  "n_scored": 5371,
+  "contract_ok_rate": 1.0,
+  "n_gold_correct": 3513,
+  "n_gold_incorrect": 1858,
+  "base_rate_correct": 0.6540681437348724
+ },
+ "verdict_distribution": {
+  "predicted_correct": 3470,
+  "predicted_incorrect": 1901
+ },
+ "auroc": {
+  "margin": {
+   "estimate": 0.7821794920113728,
+   "ci95": [
+    0.7696147478199511,
+    0.7947050046083216
+   ]
+  },
+  "verdict_only": {
+   "estimate": 0.6955894559864836,
+   "ci95": [
+    0.6825350234815042,
+    0.7087561153483615
+   ]
+  },
+  "margin_minus_verdict_only": {
+   "estimate": 0.08659003602488924,
+   "ci95": [
+    0.07880827720391456,
+    0.09430091847986694
+   ],
+   "excludes_zero": true
+  },
+  "incumbent_cross_stack": {
+   "estimate": 0.835269475792972,
+   "note": "shipped evidence-grain arm llm-gemma-4-26b, scored on Bedrock WITH deliberation -- cross-stack, see docstring"
+  }
+ },
+ "within_verdict": {
+  "note": "THE strict test. Chance (0.5) means the margin varies without tracking correctness.",
+  "by_verdict": {
+   "correct": {
+    "n": 3470,
+    "n_gold_correct": 2745,
+    "n_gold_incorrect": 725,
+    "auroc": 0.7336338169712957,
+    "scoreable": true,
+    "unscoreable_because": null
+   },
+   "incorrect": {
+    "n": 1901,
+    "n_gold_correct": 768,
+    "n_gold_incorrect": 1133,
+    "auroc": 0.6151832340394233,
+    "scoreable": true,
+    "unscoreable_because": null
+   }
+  },
+  "weighted": {
+   "estimate": 0.691709676559177,
+   "ci95": [
+    0.6760292480677615,
+    0.7071140881162304
+   ],
+   "beats_chance": true
+  },
+  "prior_measurement": {
+   "source": "project_praw_saturation_result",
+   "n": 99,
+   "within_verdict_auroc": 0.5,
+   "config": "post-CoT p_raw on the production prompt",
+   "relation": "a DIFFERENT configuration; this run tests a no-reasoning bare-word probe at n>=4000"
+  }
+ },
+ "held_out_combination": {
+  "design": "out-of-fold logistic combination on the panel's frozen fold_id, scored PER FOLD and size-weighted -- never pooled across folds",
+  "cross_stack": true,
+  "cross_stack_note": "shipped evidence-grain arm llm-gemma-4-26b, scored on Bedrock WITH deliberation -- cross-stack, see docstring",
+  "n_scored": 5371,
+  "auroc": {
+   "incumbent_only": 0.833588063106111,
+   "incumbent_plus_verdict": 0.8696310664296757,
+   "incumbent_plus_margin": 0.8861152890354602
+  },
+  "auroc_incumbent_raw_score": 0.835269475792972,
+  "pooling_artifact_note": "Pooled across folds the incumbent-only arm reads ~0.814 against a raw-score AUROC of ~0.835, because ten separately scaled logistic fits do not share a ranking. Per-fold scoring removes that artifact; the pooled form would have inflated every delta below.",
+  "delta_margin_vs_incumbent": {
+   "estimate": 0.05252722592934922,
+   "ci95": [
+    0.046156810930675356,
+    0.058927258397826206
+   ],
+   "excludes_zero": true,
+   "valid_resamples": 10000
+  },
+  "delta_verdict_vs_incumbent": {
+   "estimate": 0.03604300332356469,
+   "ci95": [
+    0.030792952723094992,
+    0.04156075844802806
+   ],
+   "excludes_zero": true,
+   "valid_resamples": 10000
+  },
+  "delta_margin_vs_verdict": {
+   "estimate": 0.016484222605784526,
+   "ci95": [
+    0.013050042373704863,
+    0.019891753675351
+   ],
+   "excludes_zero": true,
+   "valid_resamples": 10000
+  },
+  "verdict": "the MARGIN adds beyond a second verdict",
+  "why_this_gates": "A within-verdict AUROC above chance does not imply held-out gain; see project_deliberation_length_signal, where it did not."
+ },
+ "saturation": {
+  "n_abs_margin_gt_15": 822,
+  "share_saturated": 0.15304412586110594,
+  "distinct_margins": 539,
+  "distinct_verdict_scores": 2
+ },
+ "bootstrap": {
+  "resamples": 10000,
+  "valid_resamples": 10000,
+  "seed": 20260717,
+  "design": "fold-stratified paired bootstrap, one shared index vector; conditional on frozen predictions"
+ },
+ "provenance": {
+  "rows": "data/probe_battery/mlx_verdict_logit_rows.jsonl",
+  "generated_by": "scripts/analyze_mlx_verdict_logit_probe.py"
+ }
+}

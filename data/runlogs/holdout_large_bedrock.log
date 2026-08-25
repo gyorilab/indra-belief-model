@@ -1,0 +1,275 @@
+gold=holdout_large.jsonl rows=4625 already_done=0
+model=bedrock-gemma-4-26b model_id=google.gemma-4-26b-a4b variant=disconfirm_relnature_rf workers=16
+prompt_sha256=07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364
+loading corpus index from /Users/noot/Documents/biomolecular-clique-finding/data/benchmark/indra_benchmark_corpus.json.gz ...
+INFO: [2026-08-15 17:22:06] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:22:08] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:22:10] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+Loading corpus from /Users/noot/Documents/biomolecular-clique-finding/data/benchmark/indra_benchmark_corpus.json.gz ...
+  894,939 statements loaded. Building index ...
+  ... processed 100,000 / 894,939
+  ... processed 200,000 / 894,939
+  ... processed 300,000 / 894,939
+  ... processed 400,000 / 894,939
+  ... processed 500,000 / 894,939
+  ... processed 600,000 / 894,939
+  ... processed 700,000 / 894,939
+  ... processed 800,000 / 894,939
+  Done. 2,125,946 source_hash entries.
+[1/4625 valid] acc=100.00% coverage=0.02% rate=0.008 rows/s
+INFO: [2026-08-15 17:22:11] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:22:14] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:22:31] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:22:32] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:22:34] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:22:36] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:22:59] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:22:59] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+[20/4625 valid] acc=80.00% coverage=0.43% rate=0.114 rows/s
+INFO: [2026-08-15 17:22:59] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:23:00] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+INFO: [2026-08-15 17:23:04] indra.ontology.bio.ontology - Loading INDRA bio ontology from cache at /Users/noot/.indra/bio_ontology/1.34/bio_ontology.pkl
+[40/4625 valid] acc=72.50% coverage=0.86% rate=0.137 rows/s
+[60/4625 valid] acc=73.33% coverage=1.30% rate=0.194 rows/s
+[80/4625 valid] acc=76.25% coverage=1.73% rate=0.251 rows/s
+[100/4625 valid] acc=76.00% coverage=2.16% rate=0.298 rows/s
+[120/4625 valid] acc=76.67% coverage=2.59% rate=0.344 rows/s
+[140/4625 valid] acc=78.57% coverage=3.03% rate=0.393 rows/s
+[160/4625 valid] acc=78.12% coverage=3.46% rate=0.432 rows/s
+[180/4625 valid] acc=78.89% coverage=3.89% rate=0.477 rows/s
+[200/4625 valid] acc=80.00% coverage=4.32% rate=0.512 rows/s
+[220/4625 valid] acc=80.45% coverage=4.76% rate=0.549 rows/s
+[240/4625 valid] acc=81.67% coverage=5.19% rate=0.586 rows/s
+[260/4625 valid] acc=81.92% coverage=5.62% rate=0.616 rows/s
+[280/4625 valid] acc=82.14% coverage=6.05% rate=0.643 rows/s
+[300/4625 valid] acc=82.67% coverage=6.49% rate=0.662 rows/s
+[320/4625 valid] acc=82.19% coverage=6.92% rate=0.682 rows/s
+[340/4625 valid] acc=82.65% coverage=7.35% rate=0.706 rows/s
+[360/4625 valid] acc=83.33% coverage=7.78% rate=0.727 rows/s
+[380/4625 valid] acc=83.16% coverage=8.22% rate=0.749 rows/s
+[400/4625 valid] acc=83.50% coverage=8.65% rate=0.771 rows/s
+[420/4625 valid] acc=82.86% coverage=9.08% rate=0.791 rows/s
+[440/4625 valid] acc=82.50% coverage=9.51% rate=0.810 rows/s
+[460/4625 valid] acc=82.61% coverage=9.95% rate=0.826 rows/s
+[480/4625 valid] acc=82.50% coverage=10.38% rate=0.842 rows/s
+[500/4625 valid] acc=82.20% coverage=10.81% rate=0.857 rows/s
+[520/4625 valid] acc=82.50% coverage=11.24% rate=0.872 rows/s
+[540/4625 valid] acc=82.22% coverage=11.68% rate=0.886 rows/s
+[560/4625 valid] acc=82.32% coverage=12.11% rate=0.892 rows/s
+[580/4625 valid] acc=81.72% coverage=12.54% rate=0.904 rows/s
+[600/4625 valid] acc=81.50% coverage=12.97% rate=0.919 rows/s
+[620/4625 valid] acc=81.13% coverage=13.41% rate=0.933 rows/s
+[640/4625 valid] acc=81.09% coverage=13.84% rate=0.947 rows/s
+[660/4625 valid] acc=81.36% coverage=14.27% rate=0.955 rows/s
+[680/4625 valid] acc=81.18% coverage=14.70% rate=0.965 rows/s
+[700/4625 valid] acc=81.14% coverage=15.14% rate=0.978 rows/s
+[720/4625 valid] acc=80.97% coverage=15.57% rate=0.993 rows/s
+[740/4625 valid] acc=80.95% coverage=16.00% rate=1.008 rows/s
+[760/4625 valid] acc=80.79% coverage=16.43% rate=1.019 rows/s
+[780/4625 valid] acc=80.77% coverage=16.86% rate=1.034 rows/s
+[800/4625 valid] acc=81.00% coverage=17.30% rate=1.045 rows/s
+[820/4625 valid] acc=80.85% coverage=17.73% rate=1.054 rows/s
+[840/4625 valid] acc=80.95% coverage=18.16% rate=1.063 rows/s
+[860/4625 valid] acc=81.05% coverage=18.59% rate=1.075 rows/s
+[880/4625 valid] acc=81.36% coverage=19.03% rate=1.085 rows/s
+[900/4625 valid] acc=81.11% coverage=19.46% rate=1.089 rows/s
+[920/4625 valid] acc=81.09% coverage=19.89% rate=1.100 rows/s
+[940/4625 valid] acc=81.06% coverage=20.32% rate=1.103 rows/s
+[960/4625 valid] acc=81.04% coverage=20.76% rate=1.107 rows/s
+[980/4625 valid] acc=80.82% coverage=21.19% rate=1.112 rows/s
+[1000/4625 valid] acc=80.80% coverage=21.62% rate=1.117 rows/s
+[1020/4625 valid] acc=80.88% coverage=22.05% rate=1.121 rows/s
+[1040/4625 valid] acc=80.67% coverage=22.49% rate=1.129 rows/s
+[1060/4625 valid] acc=80.85% coverage=22.92% rate=1.137 rows/s
+[1080/4625 valid] acc=81.02% coverage=23.35% rate=1.145 rows/s
+[1100/4625 valid] acc=80.91% coverage=23.78% rate=1.146 rows/s
+[1120/4625 valid] acc=80.89% coverage=24.22% rate=1.149 rows/s
+[1140/4625 valid] acc=80.88% coverage=24.65% rate=1.152 rows/s
+[1160/4625 valid] acc=81.03% coverage=25.08% rate=1.155 rows/s
+[1180/4625 valid] acc=81.19% coverage=25.51% rate=1.158 rows/s
+[1200/4625 valid] acc=81.08% coverage=25.95% rate=1.160 rows/s
+[1220/4625 valid] acc=81.15% coverage=26.38% rate=1.168 rows/s
+[1240/4625 valid] acc=80.97% coverage=26.81% rate=1.176 rows/s
+[1260/4625 valid] acc=80.71% coverage=27.24% rate=1.182 rows/s
+[1280/4625 valid] acc=80.86% coverage=27.68% rate=1.189 rows/s
+[1300/4625 valid] acc=81.00% coverage=28.11% rate=1.189 rows/s
+[1320/4625 valid] acc=80.76% coverage=28.54% rate=1.197 rows/s
+[1340/4625 valid] acc=80.67% coverage=28.97% rate=1.206 rows/s
+[1360/4625 valid] acc=80.88% coverage=29.41% rate=1.215 rows/s
+[1380/4625 valid] acc=80.87% coverage=29.84% rate=1.221 rows/s
+[1400/4625 valid] acc=80.79% coverage=30.27% rate=1.228 rows/s
+[1420/4625 valid] acc=80.92% coverage=30.70% rate=1.230 rows/s
+[1440/4625 valid] acc=81.04% coverage=31.14% rate=1.233 rows/s
+[1460/4625 valid] acc=81.10% coverage=31.57% rate=1.238 rows/s
+[1480/4625 valid] acc=81.22% coverage=32.00% rate=1.238 rows/s
+[1500/4625 valid] acc=81.27% coverage=32.43% rate=1.245 rows/s
+[1520/4625 valid] acc=81.32% coverage=32.86% rate=1.248 rows/s
+[1540/4625 valid] acc=81.23% coverage=33.30% rate=1.255 rows/s
+[1560/4625 valid] acc=81.35% coverage=33.73% rate=1.260 rows/s
+[1580/4625 valid] acc=81.39% coverage=34.16% rate=1.264 rows/s
+[1600/4625 valid] acc=81.38% coverage=34.59% rate=1.267 rows/s
+[1620/4625 valid] acc=81.30% coverage=35.03% rate=1.274 rows/s
+[1640/4625 valid] acc=81.46% coverage=35.46% rate=1.281 rows/s
+[1660/4625 valid] acc=81.39% coverage=35.89% rate=1.289 rows/s
+[1680/4625 valid] acc=81.49% coverage=36.32% rate=1.293 rows/s
+[1700/4625 valid] acc=81.53% coverage=36.76% rate=1.295 rows/s
+[1720/4625 valid] acc=81.51% coverage=37.19% rate=1.301 rows/s
+[1740/4625 valid] acc=81.55% coverage=37.62% rate=1.305 rows/s
+[1760/4625 valid] acc=81.65% coverage=38.05% rate=1.309 rows/s
+[1780/4625 valid] acc=81.74% coverage=38.49% rate=1.313 rows/s
+[1800/4625 valid] acc=81.89% coverage=38.92% rate=1.313 rows/s
+[1820/4625 valid] acc=81.81% coverage=39.35% rate=1.319 rows/s
+[1840/4625 valid] acc=81.79% coverage=39.78% rate=1.319 rows/s
+[1860/4625 valid] acc=81.72% coverage=40.22% rate=1.324 rows/s
+[1880/4625 valid] acc=81.76% coverage=40.65% rate=1.328 rows/s
+[1900/4625 valid] acc=81.79% coverage=41.08% rate=1.331 rows/s
+[1920/4625 valid] acc=81.77% coverage=41.51% rate=1.330 rows/s
+[1940/4625 valid] acc=81.65% coverage=41.95% rate=1.334 rows/s
+[1960/4625 valid] acc=81.63% coverage=42.38% rate=1.335 rows/s
+[1980/4625 valid] acc=81.62% coverage=42.81% rate=1.331 rows/s
+[2000/4625 valid] acc=81.55% coverage=43.24% rate=1.330 rows/s
+[2020/4625 valid] acc=81.49% coverage=43.68% rate=1.331 rows/s
+[2040/4625 valid] acc=81.52% coverage=44.11% rate=1.330 rows/s
+[2060/4625 valid] acc=81.60% coverage=44.54% rate=1.333 rows/s
+[2080/4625 valid] acc=81.63% coverage=44.97% rate=1.335 rows/s
+[2100/4625 valid] acc=81.81% coverage=45.41% rate=1.339 rows/s
+[2120/4625 valid] acc=81.89% coverage=45.84% rate=1.344 rows/s
+[2140/4625 valid] acc=81.82% coverage=46.27% rate=1.343 rows/s
+[2160/4625 valid] acc=81.90% coverage=46.70% rate=1.346 rows/s
+[2180/4625 valid] acc=81.93% coverage=47.14% rate=1.349 rows/s
+[2200/4625 valid] acc=82.00% coverage=47.57% rate=1.352 rows/s
+[2220/4625 valid] acc=81.89% coverage=48.00% rate=1.352 rows/s
+[2240/4625 valid] acc=81.83% coverage=48.43% rate=1.356 rows/s
+[2260/4625 valid] acc=81.73% coverage=48.86% rate=1.361 rows/s
+[2280/4625 valid] acc=81.80% coverage=49.30% rate=1.360 rows/s
+[2300/4625 valid] acc=81.70% coverage=49.73% rate=1.358 rows/s
+[2320/4625 valid] acc=81.72% coverage=50.16% rate=1.360 rows/s
+[2340/4625 valid] acc=81.67% coverage=50.59% rate=1.358 rows/s
+[2360/4625 valid] acc=81.57% coverage=51.03% rate=1.359 rows/s
+[2380/4625 valid] acc=81.60% coverage=51.46% rate=1.360 rows/s
+[2400/4625 valid] acc=81.62% coverage=51.89% rate=1.364 rows/s
+[2420/4625 valid] acc=81.57% coverage=52.32% rate=1.368 rows/s
+[2440/4625 valid] acc=81.48% coverage=52.76% rate=1.371 rows/s
+[2460/4625 valid] acc=81.59% coverage=53.19% rate=1.377 rows/s
+[2480/4625 valid] acc=81.61% coverage=53.62% rate=1.381 rows/s
+[2500/4625 valid] acc=81.60% coverage=54.05% rate=1.387 rows/s
+[2520/4625 valid] acc=81.63% coverage=54.49% rate=1.390 rows/s
+[2540/4625 valid] acc=81.65% coverage=54.92% rate=1.389 rows/s
+[2560/4625 valid] acc=81.56% coverage=55.35% rate=1.392 rows/s
+[2580/4625 valid] acc=81.43% coverage=55.78% rate=1.395 rows/s
+[2600/4625 valid] acc=81.50% coverage=56.22% rate=1.400 rows/s
+[2620/4625 valid] acc=81.64% coverage=56.65% rate=1.404 rows/s
+[2640/4625 valid] acc=81.67% coverage=57.08% rate=1.404 rows/s
+[2660/4625 valid] acc=81.65% coverage=57.51% rate=1.404 rows/s
+[2680/4625 valid] acc=81.64% coverage=57.95% rate=1.410 rows/s
+[2700/4625 valid] acc=81.63% coverage=58.38% rate=1.410 rows/s
+[2720/4625 valid] acc=81.62% coverage=58.81% rate=1.409 rows/s
+[2740/4625 valid] acc=81.53% coverage=59.24% rate=1.409 rows/s
+[2760/4625 valid] acc=81.45% coverage=59.68% rate=1.411 rows/s
+[2780/4625 valid] acc=81.51% coverage=60.11% rate=1.416 rows/s
+[2800/4625 valid] acc=81.46% coverage=60.54% rate=1.418 rows/s
+[2820/4625 valid] acc=81.49% coverage=60.97% rate=1.421 rows/s
+[2840/4625 valid] acc=81.44% coverage=61.41% rate=1.423 rows/s
+[2860/4625 valid] acc=81.54% coverage=61.84% rate=1.428 rows/s
+[2880/4625 valid] acc=81.46% coverage=62.27% rate=1.425 rows/s
+[2900/4625 valid] acc=81.45% coverage=62.70% rate=1.428 rows/s
+[2920/4625 valid] acc=81.54% coverage=63.14% rate=1.429 rows/s
+[2940/4625 valid] acc=81.56% coverage=63.57% rate=1.431 rows/s
+[2960/4625 valid] acc=81.49% coverage=64.00% rate=1.424 rows/s
+[2980/4625 valid] acc=81.48% coverage=64.43% rate=1.415 rows/s
+[3000/4625 valid] acc=81.47% coverage=64.86% rate=1.417 rows/s
+[3020/4625 valid] acc=81.49% coverage=65.30% rate=1.421 rows/s
+[3040/4625 valid] acc=81.55% coverage=65.73% rate=1.424 rows/s
+[3060/4625 valid] acc=81.57% coverage=66.16% rate=1.423 rows/s
+[3080/4625 valid] acc=81.49% coverage=66.59% rate=1.422 rows/s
+[3100/4625 valid] acc=81.58% coverage=67.03% rate=1.422 rows/s
+[3120/4625 valid] acc=81.57% coverage=67.46% rate=1.425 rows/s
+[3140/4625 valid] acc=81.53% coverage=67.89% rate=1.425 rows/s
+[3160/4625 valid] acc=81.52% coverage=68.32% rate=1.429 rows/s
+[3180/4625 valid] acc=81.45% coverage=68.76% rate=1.430 rows/s
+[3200/4625 valid] acc=81.47% coverage=69.19% rate=1.431 rows/s
+[3220/4625 valid] acc=81.43% coverage=69.62% rate=1.430 rows/s
+[3240/4625 valid] acc=81.48% coverage=70.05% rate=1.430 rows/s
+[3260/4625 valid] acc=81.50% coverage=70.49% rate=1.434 rows/s
+[3280/4625 valid] acc=81.52% coverage=70.92% rate=1.435 rows/s
+[3300/4625 valid] acc=81.45% coverage=71.35% rate=1.438 rows/s
+[3320/4625 valid] acc=81.42% coverage=71.78% rate=1.438 rows/s
+[3340/4625 valid] acc=81.41% coverage=72.22% rate=1.438 rows/s
+[3360/4625 valid] acc=81.43% coverage=72.65% rate=1.440 rows/s
+[3380/4625 valid] acc=81.39% coverage=73.08% rate=1.435 rows/s
+[3400/4625 valid] acc=81.41% coverage=73.51% rate=1.436 rows/s
+[3420/4625 valid] acc=81.37% coverage=73.95% rate=1.437 rows/s
+[3440/4625 valid] acc=81.40% coverage=74.38% rate=1.439 rows/s
+[3460/4625 valid] acc=81.42% coverage=74.81% rate=1.437 rows/s
+[3480/4625 valid] acc=81.32% coverage=75.24% rate=1.437 rows/s
+[3500/4625 valid] acc=81.20% coverage=75.68% rate=1.435 rows/s
+[3520/4625 valid] acc=81.22% coverage=76.11% rate=1.438 rows/s
+[3540/4625 valid] acc=81.21% coverage=76.54% rate=1.438 rows/s
+[3560/4625 valid] acc=81.12% coverage=76.97% rate=1.438 rows/s
+[3580/4625 valid] acc=81.12% coverage=77.41% rate=1.437 rows/s
+[3600/4625 valid] acc=81.06% coverage=77.84% rate=1.439 rows/s
+[3620/4625 valid] acc=81.08% coverage=78.27% rate=1.440 rows/s
+[3640/4625 valid] acc=81.13% coverage=78.70% rate=1.441 rows/s
+[3660/4625 valid] acc=81.12% coverage=79.14% rate=1.442 rows/s
+[3680/4625 valid] acc=81.11% coverage=79.57% rate=1.443 rows/s
+[3700/4625 valid] acc=81.11% coverage=80.00% rate=1.442 rows/s
+[3720/4625 valid] acc=81.10% coverage=80.43% rate=1.444 rows/s
+[3740/4625 valid] acc=81.10% coverage=80.86% rate=1.448 rows/s
+[3760/4625 valid] acc=81.14% coverage=81.30% rate=1.449 rows/s
+[3780/4625 valid] acc=81.14% coverage=81.73% rate=1.449 rows/s
+[3800/4625 valid] acc=81.13% coverage=82.16% rate=1.452 rows/s
+[3820/4625 valid] acc=81.07% coverage=82.59% rate=1.452 rows/s
+[3840/4625 valid] acc=81.12% coverage=83.03% rate=1.454 rows/s
+[3860/4625 valid] acc=81.06% coverage=83.46% rate=1.455 rows/s
+[3880/4625 valid] acc=81.06% coverage=83.89% rate=1.455 rows/s
+[3900/4625 valid] acc=81.00% coverage=84.32% rate=1.456 rows/s
+[3920/4625 valid] acc=81.07% coverage=84.76% rate=1.456 rows/s
+[3940/4625 valid] acc=81.07% coverage=85.19% rate=1.457 rows/s
+[3960/4625 valid] acc=81.06% coverage=85.62% rate=1.456 rows/s
+[3980/4625 valid] acc=81.06% coverage=86.05% rate=1.455 rows/s
+[4000/4625 valid] acc=80.95% coverage=86.49% rate=1.452 rows/s
+[4020/4625 valid] acc=81.00% coverage=86.92% rate=1.453 rows/s
+[4040/4625 valid] acc=80.94% coverage=87.35% rate=1.453 rows/s
+[4060/4625 valid] acc=80.96% coverage=87.78% rate=1.451 rows/s
+[4080/4625 valid] acc=80.96% coverage=88.22% rate=1.449 rows/s
+[4100/4625 valid] acc=81.02% coverage=88.65% rate=1.449 rows/s
+[4120/4625 valid] acc=81.00% coverage=89.08% rate=1.450 rows/s
+[4140/4625 valid] acc=81.04% coverage=89.51% rate=1.452 rows/s
+[4160/4625 valid] acc=81.08% coverage=89.95% rate=1.452 rows/s
+[4180/4625 valid] acc=81.15% coverage=90.38% rate=1.453 rows/s
+[4200/4625 valid] acc=81.17% coverage=90.81% rate=1.452 rows/s
+[4220/4625 valid] acc=81.16% coverage=91.24% rate=1.453 rows/s
+[4240/4625 valid] acc=81.16% coverage=91.68% rate=1.450 rows/s
+[4260/4625 valid] acc=81.15% coverage=92.11% rate=1.451 rows/s
+[4280/4625 valid] acc=81.17% coverage=92.54% rate=1.452 rows/s
+[4300/4625 valid] acc=81.21% coverage=92.97% rate=1.452 rows/s
+[4320/4625 valid] acc=81.20% coverage=93.41% rate=1.453 rows/s
+[4340/4625 valid] acc=81.22% coverage=93.84% rate=1.455 rows/s
+[4360/4625 valid] acc=81.22% coverage=94.27% rate=1.456 rows/s
+[4380/4625 valid] acc=81.23% coverage=94.70% rate=1.456 rows/s
+[4400/4625 valid] acc=81.27% coverage=95.14% rate=1.457 rows/s
+[4420/4625 valid] acc=81.29% coverage=95.57% rate=1.455 rows/s
+[4440/4625 valid] acc=81.33% coverage=96.00% rate=1.457 rows/s
+[4460/4625 valid] acc=81.30% coverage=96.43% rate=1.458 rows/s
+[4480/4625 valid] acc=81.27% coverage=96.86% rate=1.458 rows/s
+[4500/4625 valid] acc=81.31% coverage=97.30% rate=1.455 rows/s
+[4520/4625 valid] acc=81.33% coverage=97.73% rate=1.453 rows/s
+[4540/4625 valid] acc=81.30% coverage=98.16% rate=1.454 rows/s
+[4560/4625 valid] acc=81.34% coverage=98.59% rate=1.456 rows/s
+[4580/4625 valid] acc=81.27% coverage=99.03% rate=1.456 rows/s
+[4600/4625 valid] acc=81.30% coverage=99.46% rate=1.458 rows/s
+[4620/4625 valid] acc=81.34% coverage=99.89% rate=1.460 rows/s
+
+Evaluation summary
+  total input:              4625
+  valid verdicts:           4625
+  correct predictions:      3761
+  accuracy on verdicts:    81.32%
+  coverage:                 100.00%
+  strict end-to-end acc:   81.32%
+  status counts:            {'scored': 4625}
+  confusion (+ = correct): {'tp': 2136, 'fp': 363, 'fn': 501, 'tn': 1625}
+
+results: /Users/noot/Documents/indra-belief-model/data/results/holdout_large_bedrock-gemma-4-26b.jsonl
+summary: /Users/noot/Documents/indra-belief-model/data/results/holdout_large_bedrock-gemma-4-26b.summary.json
+EXIT=0
