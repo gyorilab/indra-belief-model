@@ -625,7 +625,7 @@ def loopback_server():
     """Minimal 127.0.0.1 HTTP server that can dribble a response body.
 
     Modeled on `local_server` in tests/test_bedrock_responses_transport.py and
-    duplicated rather than imported or hoisted into tests/conftest.py: this node
+    duplicated rather than imported or hoisted into a shared conftest: this node
     is file-scoped, and cross-test-module fixture imports are brittle. Torn down
     in a `finally` so the suite can never hang on it.
     """
