@@ -1,27 +1,25 @@
-"""Cross-language parity: src/indra_belief/curation.py vs the viewer's
-viewer/src/lib/data/curation.ts must reduce the same curations JSONL to the same
-gold index. This is the drift guard for the deliberate two-language duplication
-of the curation domain — neither side may diverge on the gold rule, the
-any-incorrect-wins aggregation, the hash-bridge, or the index shape.
+"""The gold rule of src/indra_belief/curation.py, over the corner cases that
+matter: the gold rule itself, any-incorrect-wins aggregation, the hash-bridge,
+and the index shape.
 
-The TS side runs via Node's native type-stripping (node --experimental-strip-types),
-through viewer/scripts/curation_gold_json.mjs. Skipped if node is unavailable.
+This file used to be a cross-language parity guard. The curation domain was
+deliberately duplicated in two languages — curation.py here and curation.ts in
+the viewer — and a parity test drove both over one fixture so neither could
+drift. The viewer was removed, taking curation.ts and its
+viewer/scripts/curation_gold_json.mjs runner with it, so the duplication the
+guard existed to protect is gone and the parity test was deleted with it.
+Python is now the single implementation; the fixture below still pins its
+behaviour.
 """
 from __future__ import annotations
 
-import json
-import shutil
-import subprocess
 from pathlib import Path
-
-import pytest
 
 from indra_belief.curation import build_index, Curation
 
 ROOT = Path(__file__).resolve().parents[1]
-TS_RUNNER = ROOT / "viewer" / "scripts" / "curation_gold_json.mjs"
 
-# Fixture exercising the corners the two languages must agree on:
+# Fixture exercising the corners the gold rule must get right:
 #  - single 'correct'                      -> correct
 #  - single dissenting tag                 -> incorrect
 #  - multi-curation all correct            -> correct
@@ -67,24 +65,3 @@ def test_python_gold_rule():
     assert g["-42|-7"]["verdict"] == "incorrect"  # polarity, negative hashes
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
-def test_curation_gold_parity(tmp_path):
-    """Python and TypeScript must produce byte-identical gold from one fixture."""
-    fixture_path = tmp_path / "curations.jsonl"
-    fixture_path.write_text("\n".join(json.dumps(c) for c in FIXTURE) + "\n")
-
-    py = _py_gold(FIXTURE)
-
-    proc = subprocess.run(
-        ["node", "--experimental-strip-types", str(TS_RUNNER), str(fixture_path)],
-        capture_output=True,
-        text=True,
-    )
-    assert proc.returncode == 0, f"TS runner failed: {proc.stderr}"
-    ts = json.loads(proc.stdout)
-
-    assert ts == py, (
-        "Python and TypeScript curation gold DIVERGED.\n"
-        f"  python: {json.dumps(py, sort_keys=True)}\n"
-        f"  ts:     {json.dumps(ts, sort_keys=True)}"
-    )
