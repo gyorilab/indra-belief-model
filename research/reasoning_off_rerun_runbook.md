@@ -464,7 +464,8 @@ Thinking-run verdict counts, all out of 33,361:
 ## Open defect found while preparing this
 
 GLM-5's chain-of-thought was being **discarded, not skipped**. Mantle returns it
-under `message.reasoning`; `parse_bedrock_chat_payload` reads only
+under `message.reasoning`; the since-removed chat transport's
+`parse_bedrock_chat_payload` read only
 `message.reasoning_content`. So every GLM-5 monolithic call in the thinking run
 recorded `reasoning_trace.status="none"` with empty `free_cot` while the
 response body actually carried ~2.2 kB of CoT — verified by base64-decoding a

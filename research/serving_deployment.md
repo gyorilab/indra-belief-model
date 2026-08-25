@@ -490,13 +490,14 @@ remote-with-keep-alive-and-colocation on p50, and it buys its number by giving u
 [M] Size: 0.2343 s per call = 32.5% of the mean call, and 50.07% of all off-model time
 (the 50.09% in §3.2 is a different ratio — `connect()` over the fresh cycle).
 
-[V] `src/indra_belief/bedrock_responses_transport.py` constructs a connection via
-`_connection_factory` inside `call()` and closes it on the way out; the same shape is in
-`src/indra_belief/bedrock_chat_transport.py`. [V] `build_pinned_https_opener` in both files
-uses `urllib.request.build_opener` — no pooling, no keep-alive, no HTTP/2. Every call pays
-DNS, TCP handshake and TLS handshake. [V] `_DeadlineConnectionMixin.connect` in
-`src/indra_belief/bedrock_transport_base.py` additionally spawns a bounded `getaddrinfo`
-helper thread per connect.
+[V] The one remaining raw transport, `src/indra_belief/bedrock_responses_transport.py`,
+constructs a connection via `_connection_factory` inside `call()` and closes it on the way
+out. [V] `build_pinned_https_opener` lives in
+`src/indra_belief/bedrock_transport_base.py` and is re-exported by
+`src/indra_belief/bedrock_responses_transport.py`; it uses `urllib.request.build_opener` —
+no pooling, no keep-alive, no HTTP/2. Every call pays DNS, TCP handshake and TLS handshake.
+[V] `_DeadlineConnectionMixin.connect` in `src/indra_belief/bedrock_transport_base.py`
+additionally spawns a bounded `getaddrinfo` helper thread per connect.
 
 [M] Aggregate over one arm: 32,310 calls × 0.2343 s = 7,573 thread-seconds; at 8 workers
 that is about 16 minutes of wall clock per arm, roughly an hour across the four-arm fleet.

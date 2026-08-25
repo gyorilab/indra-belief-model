@@ -16,9 +16,6 @@ dependencies = [
     "scikit-learn>=1.2.0",
 ]
 
-[project.scripts]
-indra-belief-comparison = "indra_belief.comparison.cli:main"
-
 [project.optional-dependencies]
 llm = [
     "openai>=1.0.0",

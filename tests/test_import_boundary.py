@@ -70,7 +70,9 @@ def test_a_seeded_core_to_research_import_is_caught(importer):
     assert cib.find_boundary_violations(graph) == []
 
     name = f"{cib.PACKAGE}.{importer}"
-    target = f"{cib.PACKAGE}.comparison.contracts"
+    # `comparison.contracts` was the exemplar until the comparison harness was
+    # removed. Any declared research root serves: the guard checks direction.
+    target = f"{cib.PACKAGE}.results"
     graph[name] = tuple(graph[name]) + (
         cib.Edge(importer=name, target=target, line=1, scope="module"),
     )
@@ -90,31 +92,32 @@ def test_a_lazy_import_inside_a_function_is_not_a_loophole(tmp_path):
     src = tmp_path / "sneaky.py"
     src.write_text(
         "def score(record):\n"
-        "    from indra_belief.comparison.replay import ReplayIndex\n"
-        "    return ReplayIndex\n",
+        "    from indra_belief.results import build_run_export\n"
+        "    return build_run_export\n",
         encoding="utf-8",
     )
     edges = cib.import_edges(f"{cib.PACKAGE}.sneaky", src)
     targets = {e.target for e in edges}
-    assert any(t.startswith(f"{cib.PACKAGE}.comparison") for t in targets), targets
+    assert any(t.startswith(f"{cib.PACKAGE}.results") for t in targets), targets
     assert any(e.scope != "module" for e in edges), (
         "a function-scoped import must not be recorded as module-level"
     )
 
 
-def test_contract_error_moved_to_the_core_and_still_binds_one_object():
-    """The back-edge repair must not have forked the exception.
+def test_contract_error_lives_in_the_core_and_still_binds_one_object():
+    """`ContractError` belongs to the core and `ReplayError` derives from it.
 
-    `ContractError` moved into the core and `comparison.contracts` re-exports it.
-    Two distinct classes would mean every `except ContractError` and
-    `pytest.raises(ContractError)` in the harness silently stops catching the
-    core's error — a boundary fix that breaks error handling is not a fix.
+    This test began as a fork check. `ContractError` was moved into the core to
+    repair the one back-edge this guard exists to prevent, and
+    `comparison.contracts` re-exported it; two distinct classes would have meant
+    every `except ContractError` in the harness silently stopped catching the
+    core's error. The harness has since been removed outright, so there is no
+    second importer left to fork FROM — what survives, and is still worth
+    pinning, is where the class lives and what it derives from.
     """
-    from indra_belief.comparison.contracts import ContractError as harness_side
     from indra_belief.prepared_execution import ContractError as core_side
     from indra_belief.prepared_execution import ReplayError
 
-    assert core_side is harness_side
     assert issubclass(core_side, ValueError)
     assert issubclass(ReplayError, core_side)
 

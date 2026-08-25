@@ -13,11 +13,11 @@ about equality and the claim has to be checkable:
     live-baseline     _prompts.extract_verdict  (MONO_VARIANT="")
     batch             comparison/replay.parse_structured + parse_response
 
-`scripts/replay_parser_diff.py` is the population-scale half of the same claim:
-over all 228,812 stored LLM responses in `data/comparison*` those three and this
-one agree exactly, and under seeded truncation the new parser matches
-live-structured on every mutant while the batch parser loses six verdicts. What
-is here is the case-by-case half, including the classes the corpus cannot show
+The population-scale replay was removed with the de-cruft, leaving this test as
+the whole of the claim: over all 228,812 stored LLM responses in
+`data/comparison*` those three and this one agreed exactly, and under seeded
+truncation the new parser matched live-structured on every mutant while the batch
+parser lost six verdicts. The cases here include classes the corpus cannot show
 because a parse failure erased its own evidence.
 """
 from __future__ import annotations

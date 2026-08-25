@@ -13,21 +13,19 @@ set -euo pipefail
 
 # Directories under which an untracked source file is a likely mistake.
 SCAN_DIRS=(
-    "viewer/src"
-    "viewer/scripts"
     "src/indra_belief"
     "tests"
     "scripts"
 )
 
 # Tracked file extensions worth blocking on. Add to taste.
-SOURCE_EXT_REGEX='\.(ts|tsx|svelte|py|mjs|json)$'
+SOURCE_EXT_REGEX='\.(py|json)$'
 
 # Excludes — files we know are runtime artifacts, snapshots, or
 # scratch. These belong outside the source-tree scan or are
 # explicitly disposable. Keep this list short; add only items
 # observed to legitimately stay untracked.
-EXCLUDE_REGEX='(__pycache__|\.pytest_cache|node_modules|\.svelte-kit|\.vite|build|dist|coverage|^viewer/static)'
+EXCLUDE_REGEX='(__pycache__|\.pytest_cache|build|dist|coverage)'
 
 # Bash 3.x compatible: read into an array via a while loop instead of
 # `mapfile`, which only exists in bash 4+. macOS ships bash 3.2 by

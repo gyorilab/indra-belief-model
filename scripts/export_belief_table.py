@@ -121,9 +121,16 @@ def main() -> int:
     soft = ((metrics or {}).get("metrics_basis") or {}).get("soft_calibration") or {}
     profile_id = soft.get("profile_id")
     calibrated = soft.get("status") == "available" and bool(profile_id)
+    # A RESOLVED profile carries reader_configuration as the string
+    # "<model>@prompt-sha256:<64 hex>". An UNRESOLVED one carries the dict that
+    # `reader_configuration_for_run` returns, under status "unavailable" — and
+    # calling .split on that raised AttributeError instead of reporting an
+    # uncalibrated run. Only the string form is parsed here.
+    raw_reader = soft.get("reader_configuration")
+    reader_str = raw_reader if isinstance(raw_reader, str) else ""
     reader = {
-        "model": (soft.get("reader_configuration") or "").split("@prompt-sha256:")[0] or None,
-        "prompt_sha256": ((soft.get("reader_configuration") or "").split("@prompt-sha256:") + [None])[1],
+        "model": reader_str.split("@prompt-sha256:")[0] or None,
+        "prompt_sha256": (reader_str.split("@prompt-sha256:") + [None])[1],
     }
     # A run whose beliefs moved off the hard gate MUST name the profile that moved
     # them. Publishing a fitted number under a "HARD GATE" label is worse than

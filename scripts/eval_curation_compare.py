@@ -168,10 +168,8 @@ def mcnemar_p(b: int, c: int) -> float:
 # ---- gold-join trio: build_gold_index / gold_for / join_model ----------------
 # DELIBERATE, leaner variant — kept DISTINCT from scripts/calibration_stage0.py's
 # same-named trio; the two are NOT to be unified. This trio is the stable public
-# API imported by analyze_external_gold, bootstrap_precision, convergence_report,
-# learning_curve_v2, demo_simulate_more_data (build_gold_index + join_model) and
-# frontier_table (build_gold_index + gold_for), so it must NOT adopt stage0's
-# collapsing / raising / permissive-fallback behavior.
+# API imported by frontier_table (build_gold_index + gold_for), so it must NOT
+# adopt stage0's collapsing / raising / permissive-fallback behavior.
 #
 # Three intentional call-site divergences from calibration_stage0.py's trio:
 #   1. build_gold_index does NO multi-curator collapse — last-write-wins into

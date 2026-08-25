@@ -25,7 +25,7 @@ Scope:
   * Every `research/*.md`. The glob is deliberately NON-recursive, which is what
     keeps `research/archive/**` out — completed-phase records are history and are
     never scanned.
-  * Extracts explicit `src/`, `scripts/`, and `viewer/src/` paths ending in .py,
+  * Extracts explicit `src/` and `scripts/` paths ending in .py,
     .ts, .svelte, or .sh.
   * A referenced file that does not exist is a DEAD ANCHOR.
   * A live `file.py:123` / `path/file.ts:123-140` citation is an UNSTABLE
@@ -129,10 +129,13 @@ GRANDFATHERED_ANCHORS: dict[str, dict[str, int]] = {}
 
 # An explicit repository-rooted code path plus an optional numeric line
 # coordinate. The left boundary prevents a path segment inside a URL from being
-# mistaken for a repository reference.
+# mistaken for a repository reference — and, since the `viewer/` app was
+# removed, it is also what keeps `viewer/src/...` in the historical record from
+# being read as a live anchor: the `/` before `src` fails the lookbehind, so
+# those citations no longer resolve to anything this guard must find on disk.
 _ANCHOR = re.compile(
     r"(?<![A-Za-z0-9_./:-])"
-    r"(?P<path>(?:(?:viewer/)?src|scripts)/[A-Za-z0-9_./+\[\]-]+\.(?:py|ts|svelte|sh))"
+    r"(?P<path>(?:src|scripts)/[A-Za-z0-9_./+\[\]-]+\.(?:py|ts|svelte|sh))"
     r"(?![A-Za-z0-9])"
     r"(?P<line>:\d+(?:-\d+)?(?![\d.]))?"
 )
@@ -161,6 +164,76 @@ _SUPERSEDED_HEADING = re.compile(r"superseded|historical", re.IGNORECASE)
 # "**Targets.** new script" convention.
 _BUILD_INTENT = re.compile(r"\b(build|create|scaffold)\b|new script|new file",
                            re.IGNORECASE)
+
+
+# Paths this repository DELETED, and to which a citation in the research corpus
+# is therefore history rather than drift. This is not `GRANDFATHERED_ANCHORS`:
+# that table holds debt a document owes and must ratchet down to zero by being
+# FIXED. These paths can never be fixed — the files are gone and are not coming
+# back — so a per-document debt counter would sit at a permanent nonzero floor
+# and stop meaning anything. Declaring the removal once, here, keeps the guard
+# sharp on every path that still could exist.
+#
+# Removed 2026-08-24 with the paid comparison lane: the benchmark harness
+# (`indra_belief.comparison`), crash-safe spend accounting, and the scripts that
+# drove them. Only these exact paths are exempt; a typo'd or genuinely stale
+# citation to anything else still fails.
+#
+# Removed 2026-08-24 with the probe-battery offline tooling: this is the held-out
+# evaluator whose arms research/probe_battery_findings.md reports; the tooling is
+# RECOVERABLE at git ref c99ae3e because §1d/§8c leave
+# `perturb.evidence_first` beating the full battery held out as an OPEN finding,
+# and its deleted runner was the only code that produced `probes_fit.jsonl` /
+# `probes_test.jsonl`. Its runner, `scripts/run_probe_battery.py`, needs no entry
+# here: DOC_ROOT is `research/` only
+# (`DOCS = tuple(sorted(DOC_ROOT.glob("*.md")))`), and it is cited only in
+# README.md and scripts/serve_mlx.sh, neither of which this guard scans.
+#
+# Removed 2026-08-25 with the untested paper-figure computers. Only two of the
+# six deleted scripts are cited by research/*.md; the other four intentionally
+# need no REMOVED_PATHS entry.
+#
+# Removed 2026-08-25 with the scope cut to prod-infrastructure plus the future-LLM
+# compare loop: 67 files went (42 scripts, 24 tests, and one JSON golden), and
+# only 5 needed an entry. The 24 deleted
+# `tests/*.py` files need none because `_ANCHOR` matches only `src/` and `scripts/`
+# paths, so research/kernel_unification_findings.md's citation to
+# `tests/test_replay_parser_diff.py` was never read as an anchor; the other 37
+# deleted scripts are cited by no live research doc.
+#
+# The three Bedrock transports were briefly in this set and have been RESTORED —
+# they are self-contained stdlib modules that never needed the harness, and the
+# Bedrock lanes depend on them. A path listed here must actually be absent, or
+# this table converts real drift into silence.
+REMOVED_PATHS: frozenset[str] = frozenset({
+    "src/indra_belief/spend_guard.py",
+    "scripts/build_verdict_only_replay.py",
+    "scripts/reproduce_published_statement_beliefs.py",
+    "scripts/modularity_baseline.py",
+    "scripts/verify_reasoning_disabled.py",
+    "scripts/supervise_comparison_arm.sh",
+    "scripts/supervise_comparison_all.sh",
+    "scripts/monitor_comparison_fleet.sh",
+    "scripts/eval_probe_battery.py",
+    "scripts/compute_paper_ap_decomposition.py",
+    "scripts/compute_reasoning_ablation.py",
+    "scripts/compute_paper_robustness.py",
+    "scripts/reservoir_sample_cogex.py",
+    "scripts/reproduce_indra_paper_headlines.py",
+    "scripts/compute_deployed_baseline_replication.py",
+    "scripts/compute_statement_review_queue.py",
+    "scripts/replay_parser_diff.py",
+})
+
+
+# Populated by find_dead_anchors; reported by main() so an exempted citation is
+# COUNTED and named, never silently dropped.
+removed_cites: list[dict] = []
+
+
+def _is_removed(rel: str) -> bool:
+    """True for a path deleted outright, including anything under comparison/."""
+    return rel in REMOVED_PATHS or rel.startswith("src/indra_belief/comparison/")
 
 
 def _rel(p: Path) -> str:
@@ -212,6 +285,7 @@ def find_dead_anchors(paths: list | None = None) -> list[dict]:
 
     records: list[tuple[str, int, str, bool]] = []  # (doc, lineno, text, skip)
     misses: list[dict] = []
+    removed_cites.clear()
     scanned: list[str] = []
     for p in paths:
         p = Path(p)
@@ -239,6 +313,9 @@ def find_dead_anchors(paths: list | None = None) -> list[dict]:
             rel = m.group("path")
             seen.add((m.start(), rel, m.group("line")))
             if rel in planned.get(doc_rel, ()):
+                continue
+            if _is_removed(rel):
+                removed_cites.append({"doc": doc_rel, "line": lineno, "path": rel})
                 continue
             if not (ROOT / rel).exists():
                 misses.append({"doc": doc_rel, "line": lineno, "path": rel,
@@ -511,6 +588,13 @@ def find_dead_symbols(doc) -> list[dict]:
     rel = _rel(doc)
     misses, seen = [], set()
     for lineno, chain in _citations(lines):
+        # A citation rooted in a module this repository deleted is history, the
+        # same as a REMOVED_PATHS anchor. Without this the checker silently
+        # REBINDS the chain to a surviving same-named object elsewhere in the
+        # tree and reports a confusing miss against it.
+        if chain.startswith(("indra_belief.comparison", "indra_belief.spend_guard")):
+            removed_cites.append({"doc": rel, "line": lineno, "path": chain})
+            continue
         verdict, detail = resolve_symbol(chain)
         if verdict == "missing" and (lineno, chain) not in seen:
             seen.add((lineno, chain))
@@ -564,6 +648,18 @@ def main(argv: list | None = None) -> int:
             coverage["checked"] += c["checked"]
             coverage["unchecked"] += c["unchecked"]
 
+    if removed_cites:
+        by_doc: dict[str, int] = {}
+        for r in removed_cites:
+            by_doc[r["doc"]] = by_doc.get(r["doc"], 0) + 1
+        print(
+            f"\nHISTORICAL — {len(removed_cites)} citation(s) in {len(by_doc)} document(s) "
+            "name a path this repository DELETED (see REMOVED_PATHS). These are the "
+            "record of work that happened; they are exempt from the missing-file check "
+            "and from nothing else:"
+        )
+        for doc in sorted(by_doc):
+            print(f"    {by_doc[doc]:3d}  {doc}")
     if anchor_misses:
         print(f"\nINVALID ANCHORS — {len(anchor_misses)} reference(s):\n")
         for m in anchor_misses:

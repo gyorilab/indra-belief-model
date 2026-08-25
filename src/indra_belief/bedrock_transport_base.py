@@ -4,8 +4,7 @@ Both the Responses and Chat-Completions raw transports enforce the same
 bounded, proxy-free, redirect-free, ambient-trust-free HTTP posture.  The
 byte-identical machinery that posture is built from — the monotonic deadline
 connection mixin, the bounded DNS resolver, the pinned-TLS context factory,
-the response-framing/header validators, and the transport-trace field
-validators — lives here once so each transport keeps only its own
+the response-framing/header validators — lives here once so each transport keeps only its own
 API-specific request-body builder, payload parser, and control flow.
 
 The lane-labelled helpers (the deadline mixin, ``_resolve_host_bounded``, and
@@ -18,6 +17,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+import hashlib
 import http.client
 import math
 from pathlib import Path
@@ -26,12 +26,12 @@ import socket
 import ssl
 import threading
 import time
-from typing import Any, Mapping
+from typing import Any, Callable
 import urllib.parse
 import urllib.request
 
 
-_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+MAX_CA_BUNDLE_BYTES = 8 * 1024 * 1024
 
 
 class _AbsoluteDeadlineExpired(TimeoutError):
@@ -268,6 +268,75 @@ def _new_tls_context() -> ssl.SSLContext:
     return context
 
 
+def _explicit_tls_context(
+    ca_bundle: Path,
+    *,
+    context_factory: Callable[[], ssl.SSLContext] | None = None,
+    max_bytes: int = MAX_CA_BUNDLE_BYTES,
+) -> tuple[ssl.SSLContext, str, str]:
+    """Load exact CA bytes via cadata, with an explicit cafile capability fallback.
+
+    ``context_factory`` is injected by each lane module so that a test which
+    patches THAT module's ``_new_tls_context`` still governs the context this
+    builds; resolving the name in this module's globals would silently ignore
+    the patch.
+    """
+    new_context = context_factory or _new_tls_context
+    raw = _read_file_bounded(ca_bundle, max_bytes)
+    digest = hashlib.sha256(raw).hexdigest()
+    try:
+        cadata = raw.decode("ascii", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise ValueError("TLS CA bundle is not an ASCII PEM bundle") from exc
+
+    context = new_context()
+    try:
+        context.load_verify_locations(cadata=cadata)
+        return context, digest, "cadata"
+    except (TypeError, NotImplementedError):
+        # Some Python/TLS builds do not expose the cadata capability.  The
+        # fallback names the same explicit file; it never calls load_default_certs.
+        context = new_context()
+        try:
+            context.load_verify_locations(cafile=str(ca_bundle))
+        except (OSError, ssl.SSLError) as exc:
+            raise ValueError("TLS CA bundle could not be loaded by explicit path") from exc
+        # Detect a cooperative file change across the capability fallback.
+        if _read_file_bounded(ca_bundle, max_bytes) != raw:
+            raise ValueError("TLS CA bundle changed while it was loaded")
+        return context, digest, "cafile_fallback"
+    except ssl.SSLError as exc:
+        # Malformed PEM is not a capability failure and must not be made valid by
+        # silently trying a different trust-loading mechanism.
+        raise ValueError("TLS CA bundle could not be loaded as PEM cadata") from exc
+
+
+def build_pinned_https_opener(
+    ca_bundle: str | Path,
+    *,
+    expected_ca_bundle_sha256: str | None = None,
+    context_factory: Callable[[], ssl.SSLContext] | None = None,
+    max_bytes: int = MAX_CA_BUNDLE_BYTES,
+) -> tuple[urllib.request.OpenerDirector, str, str]:
+    """Return a no-proxy/no-redirect opener with one byte-pinned CA bundle."""
+
+    if expected_ca_bundle_sha256 is not None and not re.fullmatch(
+        r"[0-9a-f]{64}", expected_ca_bundle_sha256
+    ):
+        raise ValueError("expected TLS CA bundle SHA-256 is invalid")
+    context, digest, load_mode = _explicit_tls_context(
+        Path(ca_bundle), context_factory=context_factory, max_bytes=max_bytes
+    )
+    if expected_ca_bundle_sha256 is not None and digest != expected_ca_bundle_sha256:
+        raise ValueError("TLS CA bundle differs from its frozen SHA-256")
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _RejectRedirects(),
+        urllib.request.HTTPSHandler(context=context),
+    )
+    return opener, digest, load_mode
+
+
 def _redact_bearer(text: str, token: str) -> str:
     safe = text.replace(token, "[REDACTED]") if token else text
     return re.sub(r"(?i)Bearer\s+[^\s,;]+", "Bearer [REDACTED]", safe)
@@ -333,78 +402,6 @@ def _response_framing(headers: Any) -> tuple[str, int | None]:
     if declared is not None:
         return "content_length", declared
     return "connection_close", None
-
-
-def _trace_int(value: Any, *, field: str, minimum: int = 0) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-        raise ValueError(f"transport trace {field} is not an integer >= {minimum}")
-    return value
-
-
-def _trace_optional_int(value: Any, *, field: str, minimum: int = 0) -> int | None:
-    if value is None:
-        return None
-    return _trace_int(value, field=field, minimum=minimum)
-
-
-def _trace_digest(value: Any, *, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise ValueError(f"transport trace {field} is not a lowercase SHA-256")
-    return value
-
-
-def _trace_optional_digest(value: Any, *, field: str) -> str | None:
-    if value is None:
-        return None
-    return _trace_digest(value, field=field)
-
-
-def _trace_printable_id(value: Any, *, field: str, maximum: int) -> str | None:
-    if value is None:
-        return None
-    if (
-        not isinstance(value, str)
-        or not value
-        or len(value) > maximum
-        or not value.isascii()
-        or any(not 0x20 <= ord(character) <= 0x7E for character in value)
-    ):
-        raise ValueError(f"transport trace {field} is not bounded printable text")
-    return value
-
-
-def _validate_trace_framing(
-    trace: Mapping[str, Any], *, kind: str | None, raw: bytes | None
-) -> None:
-    framing = trace["response_framing"]
-    if framing not in {None, "content_length", "chunked", "connection_close"}:
-        raise ValueError("transport trace response framing is unsupported")
-    framing_valid = trace["response_framing_valid"]
-    if framing_valid is not None and type(framing_valid) is not bool:
-        raise ValueError("transport trace response framing validity is invalid")
-    declared = _trace_optional_int(
-        trace["response_content_length_declared"],
-        field="response_content_length_declared",
-    )
-    if framing == "content_length":
-        if declared is None:
-            raise ValueError("transport trace content-length framing has no length")
-    elif declared is not None:
-        raise ValueError("transport trace declares Content-Length under foreign framing")
-    if framing is None and framing_valid is True:
-        raise ValueError("transport trace claims valid framing without a framing mode")
-    if kind == "complete":
-        assert raw is not None
-        if framing_valid is not True or framing is None:
-            raise ValueError("transport trace complete response lacks valid framing")
-        if declared is not None and declared != len(raw):
-            raise ValueError("transport trace complete response differs from Content-Length")
-    elif kind == "partial_prefix":
-        assert raw is not None
-        if framing is None or framing_valid is None:
-            raise ValueError("transport trace partial response lacks framing evidence")
-        if declared is not None and len(raw) > declared:
-            raise ValueError("transport trace partial response exceeds Content-Length")
 
 
 def _finite_float(token: str) -> float:

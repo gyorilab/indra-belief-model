@@ -160,18 +160,20 @@ def test_calibration_resolver():
     # gemma-4-31B is a DIFFERENT model — must NOT inherit the 26B fit
     assert calibration_for("local-gemma-4-31b") is None
     assert calibration_for("google-gemma-4-31b") is None
-    # Bedrock reasoning-first has its OWN measured serving/configuration profile.
+    # The local MLX reader at the reasoning-first prompt has its OWN measured
+    # serving/configuration profile. This read the bedrock-gemma-4-26b profile
+    # (confusion cc 1995 / ci 336 / ic 467 / ii 1505, refitted onto
+    # holdout_large_fit) until the paid Bedrock lane was removed.
     bp = calibration_for(
-        "bedrock-gemma-4-26b", prompt_sha256=REASONING_FIRST_PROMPT_SHA256
+        "local-gemma-4-26b", prompt_sha256=REASONING_FIRST_PROMPT_SHA256
     )
-    # Refitted 2026-08-15 onto holdout_large_fit; see calibration_constants._CONFUSION.
-    assert bp["confusion"] == {"cc": 1995, "ci": 336, "ic": 467, "ii": 1505}
+    # Fitted on eval_curation_v1; see calibration_constants._CONFUSION.
+    assert bp["confusion"] == {"cc": 651, "ci": 91, "ic": 148, "ii": 710}
     assert bp["confusion"] != gp["confusion"]
     assert calibration_for(
-        "bedrock-gemma-4-26b", prompt_sha256=BASELINE_PROMPT_SHA256
+        "local-gemma-4-26b", prompt_sha256=BASELINE_PROMPT_SHA256
     ) is None
-    assert calibration_for("bedrock-gemma-4-26b-noreason") is None
-    assert calibration_for("bedrock-gemma-4-e2b") is None
+    assert calibration_for("local-gemma-4-31b") is None
     assert calibration_for(None) is None
     assert calibration_for("some-unfitted-model") is None
     assert calibration_for("not-gemma") is None

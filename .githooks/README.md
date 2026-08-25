@@ -14,7 +14,7 @@ git config core.hooksPath .githooks
 
 ### `pre-commit`
 
-Blocks `git commit` when there are untracked `.ts` / `.tsx` / `.svelte` / `.py` / `.mjs` / `.json` files under tracked directories (`viewer/src`, `viewer/scripts`, `src/indra_belief`, `tests`, `scripts`). Several cycles in this repo shipped broken on clean checkouts because new files were added locally but never `git add`-ed; the hook catches the class.
+Blocks `git commit` when there are untracked `.py` / `.json` files under tracked directories (`src/indra_belief`, `tests`, `scripts`). Several cycles in this repo shipped broken on clean checkouts because new files were added locally but never `git add`-ed; the hook catches the class.
 
 Bypass (use sparingly):
 

@@ -38,7 +38,10 @@ class _Client:
         self.model_name = model_name
 
 
-FITTED = "bedrock-gemma-4-26b"      # has a ship-approved reasoning-first profile
+# `bedrock-gemma-4-26b` stood here until the paid Bedrock lane was removed
+# and its two profiles with it. `local-gemma-4-26b` is the surviving fitted
+# reader on the same reasoning-first prompt.
+FITTED = "local-gemma-4-26b"        # has a ship-approved reasoning-first profile
 UNFITTED = "vllm-local"             # a real registry entry with no fitted profile
 
 

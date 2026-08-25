@@ -165,7 +165,8 @@ def auprc(scores, labels) -> float:
     equals `sklearn.metrics.average_precision_score` and is invariant to the
     order of the input rows.
 
-    Tie grouping mirrors `indra_belief.comparison.metrics::_weighted_pr_summaries`
+    Tie grouping was mirrored from the since-removed comparison harness's
+    `_weighted_pr_summaries`
     (the weighted sibling; same reduceat algorithm, weights all 1 here). Mirrored
     rather than imported: that module imports sklearn at top level and its
     `_unit_interval` raises on out-of-range input.

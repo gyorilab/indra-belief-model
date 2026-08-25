@@ -784,9 +784,9 @@ ninety-two across eighteen files with CI red on every push.
 8. ~~**`nonretryable_failure_on_resume` collapses distinct classes.**~~
    **DISCHARGED — the type is carried, and a credential failure is no longer permanent.**
    Three changes, and a fourth defect the work exposed.
-   *The type rides along.* `replay.RowDisposition` carries the row's own `error.type`
-   beside the retry class, `ResumeState.settled_error_types` carries it to the scheduler,
-   and `runner._quarantine_failure` reports it as `type` beside the kind. The kind stays
+   *The type rides along.* In the since-removed comparison harness, RowDisposition
+   carried the row's own error type beside the retry class, the resume state carried
+   it to the scheduler, and the runner reported it as `type` beside the kind. The kind stays
    exactly the allowlisted reason — `_QUARANTINE_KINDS` is exact-match and its default is
    halt, so it must not learn to match a prefix. **[V]**
    *Credential failures are retryable across a restart.* `error_row` now records

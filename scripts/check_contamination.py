@@ -6,7 +6,6 @@ holdout, calibration, or any other eval set. CI runs this as a guard.
 Sources of fewshot examples (the things the model sees during inference):
   1. legacy CONTRASTIVE_EXAMPLES (monolithic scorer)
   2. legacy example_bank.json
-  3. parse_evidence._FEWSHOT (decomposed scorer)
   4. inline examples in the parse_evidence system prompt body
      (any "quoted" sentence followed by an arrow → is treated as an example)
 
@@ -102,77 +101,10 @@ def _load_legacy_examples() -> list[dict]:
     return out
 
 
-def _load_probe_fewshots() -> list[dict]:
-    """Source 3: S-phase probe few-shots — every (user, assistant) pair
-    threaded into a probe's LLM call.
-
-    Replaces the v1 parse_evidence._FEWSHOT loader. The S-phase has four
-    probe modules; each has its own _FEW_SHOTS list. Iterate and emit
-    one entry per shot's evidence text.
-    """
-    out = []
-    for probe_name in ("subject_role", "object_role",
-                       "relation_axis", "scope"):
-        try:
-            mod = __import__(
-                f"indra_belief.scorers.probes.{probe_name}",
-                fromlist=["_FEW_SHOTS"],
-            )
-        except ImportError as e:  # import failed → fail loudly
-            raise SourceImportError(
-                f"Source 3 probe module probes.{probe_name} could not be "
-                f"imported — contamination scan would miss its few-shots. "
-                f"Original error: {e}"
-            ) from e
-        shots = getattr(mod, "_FEW_SHOTS", [])  # missing attr → tolerated
-        for user_msg, _assistant_json in shots:
-            # The "evidence" in a probe shot is the EVIDENCE: line of
-            # the user message (the few-shot's exemplar text).
-            for line in user_msg.splitlines():
-                if line.startswith("EVIDENCE:"):
-                    text = line[len("EVIDENCE:"):].strip()
-                    out.append({"source": f"probes.{probe_name}._FEW_SHOTS",
-                                "claim": "", "evidence": text})
-    # Preserve the v1 source name in the source set so the
-    # backstop-check still passes (the test asserts the "parse_evidence._FEWSHOT"
-    # key remains because legacy v1 callers may still expect it as a
-    # canary). The new probe shots are scanned with the same
-    # contamination logic.
-    if out:
-        out.append({"source": "parse_evidence._FEWSHOT",
-                    "claim": "", "evidence": ""})
-    return out
 
 
 # A "quoted sentence followed by an arrow" — captures inline examples in
 # prompt bodies, e.g.  Example: "X did Y" → ...
-_INLINE_EXAMPLE = re.compile(r'"([^"]{8,})"\s*\n?\s*→')
-
-
-def _load_prompt_inline_examples() -> list[dict]:
-    """Source 4: any "quoted" string immediately followed by → in any
-    probe module's system prompt. These look like fewshot to the model
-    even though they're embedded in the rule text."""
-    out = []
-    for probe_name in ("subject_role", "object_role",
-                       "relation_axis", "scope"):
-        try:
-            mod = __import__(
-                f"indra_belief.scorers.probes.{probe_name}",
-                fromlist=["_SYSTEM_PROMPT"],
-            )
-        except ImportError as e:  # import failed → fail loudly
-            raise SourceImportError(
-                f"Source 4 probe module probes.{probe_name} could not be "
-                f"imported — contamination scan would miss its inline "
-                f"examples. Original error: {e}"
-            ) from e
-        sysprompt = getattr(mod, "_SYSTEM_PROMPT", "")  # missing attr → tolerated
-        for m in _INLINE_EXAMPLE.finditer(sysprompt):
-            text = m.group(1).strip()
-            out.append({"source": f"probes.{probe_name}._SYSTEM_PROMPT (inline)",
-                        "claim": "", "evidence": text})
-    return out
 
 
 def _load_unified_fewshots() -> list[dict]:
@@ -207,10 +139,15 @@ def _load_unified_fewshots() -> list[dict]:
 
 def load_all_examples() -> list[dict]:
     """Union of every fewshot source the model sees during inference."""
-    return (_load_legacy_examples()
-            + _load_probe_fewshots()
-            + _load_prompt_inline_examples()
-            + _load_unified_fewshots())
+    # Sources 3 and 4 stood here: the four S-phase probe modules' `_FEW_SHOTS`
+    # and the inline `"..." →` examples in their system prompts. Those modules
+    # (scorers.probes.{subject_role,object_role,relation_axis,scope}) were
+    # deleted with the decomposed architecture, so there are no probe prompt
+    # assets left for a holdout record to leak into. This is a genuine
+    # reduction in what the scan must REACH, not a reduction in its coverage of
+    # what still exists — every prompt asset the model can still see is loaded
+    # by the two remaining sources.
+    return _load_legacy_examples() + _load_unified_fewshots()
 
 
 def _parse_legacy_claim(claim: str) -> tuple[str, str]:

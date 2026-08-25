@@ -39,6 +39,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from indra_belief.metrics import auroc as _canonical_auroc
 from indra_belief.metrics import ece  # noqa: E402
 from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
 from indra_belief.noise_model import (  # noqa: E402
@@ -61,25 +62,21 @@ RECALIBRATED_WITH_INDRA_DEFAULTS = with_benchmark_recalibration(RECALIBRATED_PRI
 
 
 def auroc(scored: list[tuple[float, bool]]) -> float | None:
-    """AUROC with positive class = label True, via the rank (Mann-Whitney) form,
-    averaging ranks over ties. None if either class is empty."""
-    pos = sum(1 for _, lab in scored if lab)
-    neg = len(scored) - pos
-    if not pos or not neg:
+    """AUROC with positive class = label True. None if either class is empty.
+
+    The rank (Mann-Whitney) body this used to carry was byte-identical to
+    `indra_belief.metrics.auroc`, so the estimator now lives there and this is
+    the adapter: unzip the pairs, and map the canonical `nan`-on-degenerate back
+    to the `None` this module's callers (and its JSON output, where nan is not
+    valid) have always seen.
+    """
+    if not scored:
         return None
-    ordered = sorted(scored, key=lambda x: x[0])
-    ranks = [0.0] * len(ordered)
-    i = 0
-    while i < len(ordered):
-        j = i
-        while j + 1 < len(ordered) and ordered[j + 1][0] == ordered[i][0]:
-            j += 1
-        avg = (i + j) / 2.0 + 1.0  # 1-based average rank for the tie block
-        for k in range(i, j + 1):
-            ranks[k] = avg
-        i = j + 1
-    rank_sum_pos = sum(r for r, (_, lab) in zip(ranks, ordered) if lab)
-    return (rank_sum_pos - pos * (pos + 1) / 2.0) / (pos * neg)
+    scores = [s for s, _ in scored]
+    labels = [bool(lab) for _, lab in scored]
+    if not any(labels) or all(labels):
+        return None
+    return float(_canonical_auroc(scores, labels))
 
 
 def implied_accuracy(priors: dict[str, tuple[float, float]], src: str) -> float:

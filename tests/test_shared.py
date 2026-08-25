@@ -28,17 +28,3 @@ def test_canonical_covers_all_24_letters():
     assert len(GREEK_GLYPHS) == 48
     for g in ("ξ", "Ξ", "υ", "Υ"):  # the previously-dropped letters
         assert g in GREEK_GLYPHS
-
-
-def test_norm_alias_handles_xi_and_upsilon():
-    from indra_belief.scorers.context_builder import _norm_alias
-    # the bug-fix cases (xi / upsilon were unnormalized before the merge)
-    assert _norm_alias("p38ξ") == "p38x"
-    assert _norm_alias("PKCυ") == "pkcu"
-    assert _norm_alias("p38xi") == "p38x"
-    # existing behavior preserved
-    assert _norm_alias("p38α") == "p38a"
-    assert _norm_alias("PKCbeta") == "pkcb"
-    assert _norm_alias("PI3Kbeta") == "p3kb"  # pre-existing: "pi" word eats "PI" (consistent both sides)
-    assert _norm_alias("NF-κB") == "nfkb"
-    assert _norm_alias("") is None

@@ -24,7 +24,6 @@
 .venv/
 .env
 data/
-viewer/
 research/
 .git/
 .claude/

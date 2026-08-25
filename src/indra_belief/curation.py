@@ -234,11 +234,6 @@ INDRA_DB_REST_URL = "https://db.indra.bio"
 CURATION_LIST_PATH = "/curation/list"
 
 
-def curation_list_url(matches_hash: int, base_url: str = INDRA_DB_REST_URL) -> str:
-    """The public, key-required curation endpoint (no auth needed for by-hash)."""
-    return f"{base_url.rstrip('/')}{CURATION_LIST_PATH}/{matches_hash}"
-
-
 async def fetch_curations(
     matches_hashes: Iterable[int],
     *,

@@ -113,7 +113,6 @@ class TestInstalledIndraPriors:
         [
             "scripts/belief_headtohead.py",
             "scripts/text_miner_baselines.py",
-            "scripts/compute_deployed_baseline_replication.py",
         ],
     )
     def test_default_baseline_callers_do_not_import_the_frozen_table(self, relative_path):

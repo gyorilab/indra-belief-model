@@ -52,64 +52,8 @@ FORMAL_GEMMA_MODEL_IDS = frozenset(
 )
 DEFAULT_MAX_REQUEST_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
-MAX_CA_BUNDLE_BYTES = 8 * 1024 * 1024
+MAX_CA_BUNDLE_BYTES = _base.MAX_CA_BUNDLE_BYTES
 _ALLOWED_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high"})
-_TRACE_KEYS = frozenset(
-    {
-        "schema_version",
-        "backend",
-        "method",
-        "endpoint",
-        "expected_model_id",
-        "request_body_bytes",
-        "request_body_sha256",
-        "response_http_status",
-        "response_body_bytes",
-        "response_body_sha256",
-        "response_body_prefix_bytes",
-        "response_body_prefix_sha256",
-        "response_body_complete",
-        "response_body_preimage_kind",
-        "response_body_preimage_b64",
-        "response_body_preimage_redacted",
-        "response_json_sha256",
-        "response_size_exceeded",
-        "response_content_length_declared",
-        "response_framing",
-        "response_framing_valid",
-        "response_representation_valid",
-        "transport_failure_class",
-        "max_request_bytes",
-        "max_response_bytes",
-        "tls_ca_bundle_sha256",
-        "tls_ca_load_mode",
-        "redirects_allowed",
-        "environment_proxies_allowed",
-        "ambient_tls_trust_allowed",
-        "provider_request_id",
-        "provider_response_id",
-        "provider_response_model",
-        "provider_response_status",
-    }
-)
-_TRANSPORT_FAILURE_CLASSES = frozenset(
-    {
-        "absolute_timeout",
-        "connection_error",
-        "connection_interrupted",
-        "http_status",
-        "invalid_http_framing",
-        "invalid_json",
-        "invalid_provider_metadata",
-        "invalid_representation",
-        "invalid_response_schema",
-        "response_size_limit",
-        "tls_certificate_verification",
-        "tls_hostname_verification",
-        "unexpected_transport_error",
-        "unsafe_response_preimage",
-    }
-)
 
 
 class BedrockResponsesTransportError(RuntimeError):
@@ -132,7 +76,6 @@ class BedrockResponsesConnectionError(
 # strings that used to be embedded in the deadline/DNS/endpoint helpers are now
 # passed by this module's call sites so every error message is reproduced
 # char-for-char.
-_SHA256_RE = _base._SHA256_RE
 _AbsoluteDeadlineExpired = _base._AbsoluteDeadlineExpired
 _DeadlineConnectionMixin = _base._DeadlineConnectionMixin
 _DeadlineHTTPConnection = _base._DeadlineHTTPConnection
@@ -147,12 +90,6 @@ _retry_after_seconds = _base._retry_after_seconds
 _single_header = _base._single_header
 _declared_content_length = _base._declared_content_length
 _response_framing = _base._response_framing
-_trace_int = _base._trace_int
-_trace_optional_int = _base._trace_optional_int
-_trace_digest = _base._trace_digest
-_trace_optional_digest = _base._trace_optional_digest
-_trace_printable_id = _base._trace_printable_id
-_validate_trace_framing = _base._validate_trace_framing
 _finite_float = _base._finite_float
 
 
@@ -234,326 +171,6 @@ def verify_transport_response_preimage(trace: Mapping[str, Any]) -> bytes:
         if canonical_json_sha256(payload) != expected_json_sha:
             raise ValueError("transport response canonical JSON SHA-256 mismatch")
     return raw
-
-
-def _trace_preimage(trace: Mapping[str, Any]) -> tuple[str | None, bytes | None]:
-    """Validate the response evidence fields without trusting transport code."""
-
-    kind = trace["response_body_preimage_kind"]
-    complete = trace["response_body_complete"]
-    if type(complete) is not bool:
-        raise ValueError("transport trace response_body_complete is not boolean")
-    redacted = trace["response_body_preimage_redacted"]
-    if redacted is not None and type(redacted) is not bool:
-        raise ValueError("transport trace response preimage redaction flag is invalid")
-    encoded = trace["response_body_preimage_b64"]
-
-    body_bytes = _trace_optional_int(
-        trace["response_body_bytes"], field="response_body_bytes"
-    )
-    body_sha = _trace_optional_digest(
-        trace["response_body_sha256"], field="response_body_sha256"
-    )
-    prefix_bytes = _trace_optional_int(
-        trace["response_body_prefix_bytes"], field="response_body_prefix_bytes"
-    )
-    prefix_sha = _trace_optional_digest(
-        trace["response_body_prefix_sha256"], field="response_body_prefix_sha256"
-    )
-    json_sha = _trace_optional_digest(
-        trace["response_json_sha256"], field="response_json_sha256"
-    )
-
-    if kind is None:
-        if (
-            complete is not False
-            or encoded is not None
-            or body_bytes is not None
-            or body_sha is not None
-            or prefix_bytes is not None
-            or prefix_sha is not None
-            or json_sha is not None
-            or redacted not in {None, True}
-        ):
-            raise ValueError("transport trace absent response preimage is contradictory")
-        return None, None
-
-    if kind not in {"complete", "partial_prefix"}:
-        raise ValueError("transport trace response preimage kind is unsupported")
-    if redacted is not False:
-        raise ValueError("transport trace retained response preimage is redacted")
-    if not isinstance(encoded, str):
-        raise ValueError("transport trace retained response preimage is missing")
-    try:
-        raw = base64.b64decode(encoded.encode("ascii"), validate=True)
-    except (ValueError, UnicodeEncodeError) as exc:
-        raise ValueError("transport trace response preimage is not canonical base64") from exc
-    if base64.b64encode(raw).decode("ascii") != encoded:
-        raise ValueError("transport trace response preimage base64 is not canonical")
-
-    if kind == "complete":
-        if (
-            complete is not True
-            or body_bytes != len(raw)
-            or body_sha != hashlib.sha256(raw).hexdigest()
-            or prefix_bytes is not None
-            or prefix_sha is not None
-        ):
-            raise ValueError("transport trace complete response commitment is incoherent")
-        if len(raw) > DEFAULT_MAX_RESPONSE_BYTES:
-            raise ValueError("transport trace complete response exceeds the frozen limit")
-        computed_json_sha = _try_canonical_json_sha256(raw)
-        if json_sha != computed_json_sha:
-            raise ValueError("transport trace canonical response JSON commitment differs")
-        return kind, raw
-
-    if (
-        complete is not False
-        or not raw
-        or body_bytes is not None
-        or body_sha is not None
-        or prefix_bytes != len(raw)
-        or prefix_sha != hashlib.sha256(raw).hexdigest()
-        or json_sha is not None
-        or len(raw) > DEFAULT_MAX_RESPONSE_BYTES + 1
-    ):
-        raise ValueError("transport trace partial response commitment is incoherent")
-    return kind, raw
-
-
-def _validated_response_result(
-    raw: bytes, trace: Mapping[str, Any]
-) -> BedrockResponsesResult:
-    payload = _load_strict_json(raw)
-    if payload.get("object") != "response":
-        raise ValueError("provider response object differs from the frozen envelope")
-    if payload.get("model") != trace["expected_model_id"]:
-        raise ValueError("provider response model differs from the frozen model")
-    return parse_bedrock_responses_payload(payload, transport_trace=trace)
-
-
-def validate_transport_trace(
-    trace: Mapping[str, Any],
-    *,
-    expected_request_sha256: str,
-    expected_ca_bundle_sha256: str,
-    successful: bool,
-) -> bytes | None:
-    """Validate one formal Responses trace entirely offline.
-
-    The caller supplies commitments already bound to its request and sealed CA
-    artifact.  A successful trace returns the exact provider bytes.  A failed
-    trace returns exact bytes only when a complete unredacted response was
-    retained; partial, absent, oversized, or bearer-omitted evidence returns
-    ``None`` after its shape and failure semantics are validated.
-    """
-
-    if not isinstance(trace, Mapping):
-        raise ValueError("transport trace must be an object")
-    if set(trace) != _TRACE_KEYS:
-        missing = sorted(_TRACE_KEYS - set(trace))
-        extra = sorted((set(trace) - _TRACE_KEYS), key=str)
-        raise ValueError(
-            f"transport trace key census differs (missing={missing!r}, extra={extra!r})"
-        )
-    expected_request_sha256 = _trace_digest(
-        expected_request_sha256, field="expected_request_sha256"
-    )
-    expected_ca_bundle_sha256 = _trace_digest(
-        expected_ca_bundle_sha256, field="expected_ca_bundle_sha256"
-    )
-    if type(successful) is not bool:
-        raise ValueError("successful must be boolean")
-
-    if (
-        type(trace["schema_version"]) is not int
-        or trace["schema_version"] != 1
-        or trace["backend"] != BACKEND_NAME
-        or trace["method"] != HTTP_METHOD
-        or trace["endpoint"] != FORMAL_RESPONSES_ENDPOINT
-    ):
-        raise ValueError("transport trace differs from the frozen Responses route")
-    expected_model_id = trace["expected_model_id"]
-    if expected_model_id not in FORMAL_GEMMA_MODEL_IDS:
-        raise ValueError("transport trace expected model is not a formal Gemma model")
-    request_bytes = _trace_int(
-        trace["request_body_bytes"], field="request_body_bytes", minimum=1
-    )
-    if request_bytes > DEFAULT_MAX_REQUEST_BYTES:
-        raise ValueError("transport trace request exceeds the frozen limit")
-    if (
-        _trace_digest(trace["request_body_sha256"], field="request_body_sha256")
-        != expected_request_sha256
-    ):
-        raise ValueError("transport trace request commitment differs from the caller")
-    if (
-        trace["max_request_bytes"] != DEFAULT_MAX_REQUEST_BYTES
-        or trace["max_response_bytes"] != DEFAULT_MAX_RESPONSE_BYTES
-    ):
-        raise ValueError("transport trace byte limits differ from the frozen limits")
-    if (
-        trace["tls_ca_bundle_sha256"] != expected_ca_bundle_sha256
-        or trace["tls_ca_load_mode"] not in {"cadata", "cafile_fallback"}
-    ):
-        raise ValueError("transport trace TLS trust differs from the sealed CA bundle")
-    if (
-        trace["redirects_allowed"] is not False
-        or trace["environment_proxies_allowed"] is not False
-        or trace["ambient_tls_trust_allowed"] is not False
-    ):
-        raise ValueError("transport trace admits ambient egress behavior")
-
-    status = _trace_optional_int(
-        trace["response_http_status"], field="response_http_status", minimum=100
-    )
-    if status is not None and status > 599:
-        raise ValueError("transport trace response HTTP status is outside 100..599")
-    request_id = _trace_printable_id(
-        trace["provider_request_id"], field="provider_request_id", maximum=256
-    )
-    if status is None and request_id is not None:
-        raise ValueError("transport trace has a provider request id without a response")
-    response_id = _trace_printable_id(
-        trace["provider_response_id"], field="provider_response_id", maximum=512
-    )
-    response_model = trace["provider_response_model"]
-    if response_model is not None and (
-        not isinstance(response_model, str) or not response_model
-    ):
-        raise ValueError("transport trace provider response model is invalid")
-    response_status = trace["provider_response_status"]
-    if response_status is not None and response_status not in {"completed", "incomplete"}:
-        raise ValueError("transport trace provider response status is invalid")
-    representation_valid = trace["response_representation_valid"]
-    if representation_valid is not None and type(representation_valid) is not bool:
-        raise ValueError("transport trace representation validity is invalid")
-    if type(trace["response_size_exceeded"]) is not bool:
-        raise ValueError("transport trace response_size_exceeded is not boolean")
-
-    kind, raw = _trace_preimage(trace)
-    _validate_trace_framing(trace, kind=kind, raw=raw)
-    failure_class = trace["transport_failure_class"]
-    if failure_class is not None and failure_class not in _TRANSPORT_FAILURE_CLASSES:
-        raise ValueError("transport trace failure class is unsupported")
-
-    if trace["response_size_exceeded"]:
-        if failure_class != "response_size_limit" or kind == "complete":
-            raise ValueError("transport trace response-size failure is contradictory")
-        declared = trace["response_content_length_declared"]
-        if kind is None:
-            if (
-                trace["response_framing"] != "content_length"
-                or not isinstance(declared, int)
-                or isinstance(declared, bool)
-                or declared <= DEFAULT_MAX_RESPONSE_BYTES
-            ):
-                raise ValueError("transport trace declared oversize response is incoherent")
-        elif raw is None or len(raw) != DEFAULT_MAX_RESPONSE_BYTES + 1:
-            raise ValueError("transport trace observed oversize prefix is incoherent")
-    elif failure_class == "response_size_limit":
-        raise ValueError("transport trace size-limit failure did not exceed the limit")
-
-    if successful:
-        if (
-            failure_class is not None
-            or status != 200
-            or representation_valid is not True
-            or trace["response_size_exceeded"] is not False
-            or kind != "complete"
-            or raw is None
-            or trace["response_json_sha256"] is None
-        ):
-            raise ValueError("successful transport trace has contradictory outcome fields")
-        result = _validated_response_result(raw, trace)
-        if (
-            response_id != result.provider_response_id
-            or response_model != result.provider_model
-            or response_model != expected_model_id
-            or response_status != result.provider_status
-        ):
-            raise ValueError("transport trace provider response metadata differs from bytes")
-        return raw
-
-    if failure_class is None:
-        raise ValueError("failed transport trace has no terminal failure class")
-    if any(
-        value is not None for value in (response_id, response_model, response_status)
-    ):
-        raise ValueError("failed transport trace claims successful provider metadata")
-
-    if failure_class == "http_status":
-        if status is None or status == 200 or representation_valid is not None:
-            raise ValueError("transport trace HTTP-status failure is contradictory")
-        if kind not in {"complete", None}:
-            raise ValueError("transport trace HTTP-status failure has partial evidence")
-    elif failure_class == "invalid_http_framing":
-        if status is None or trace["response_framing_valid"] is not False:
-            raise ValueError("transport trace framing failure is contradictory")
-        if kind not in {None, "partial_prefix"}:
-            raise ValueError("transport trace framing failure claims a complete body")
-    elif failure_class == "absolute_timeout":
-        if kind not in {None, "partial_prefix"} or representation_valid is not None:
-            raise ValueError("transport trace timeout outcome is contradictory")
-    elif failure_class == "connection_interrupted":
-        if (
-            status is None
-            or kind not in {None, "partial_prefix"}
-            or trace["response_framing_valid"] is not False
-            or representation_valid is not None
-        ):
-            raise ValueError("transport trace interrupted response is contradictory")
-    elif failure_class in {
-        "tls_certificate_verification",
-        "tls_hostname_verification",
-        "connection_error",
-    }:
-        if status is not None or kind is not None or trace["response_framing"] is not None:
-            raise ValueError("transport trace pre-response failure is contradictory")
-    elif failure_class == "unexpected_transport_error":
-        if kind is not None or representation_valid is not None:
-            raise ValueError("transport trace unexpected failure retained foreign evidence")
-    elif failure_class == "invalid_provider_metadata":
-        if status is None or representation_valid is not None or kind != "complete":
-            raise ValueError("transport trace provider-metadata failure is contradictory")
-    elif failure_class == "invalid_representation":
-        if status != 200 or representation_valid is not False or kind != "complete":
-            raise ValueError("transport trace representation failure is contradictory")
-    elif failure_class == "invalid_json":
-        if (
-            status != 200
-            or representation_valid is not True
-            or kind != "complete"
-            or raw is None
-            or trace["response_json_sha256"] is not None
-        ):
-            raise ValueError("transport trace JSON failure is contradictory")
-    elif failure_class == "invalid_response_schema":
-        if (
-            status != 200
-            or representation_valid is not True
-            or kind != "complete"
-            or raw is None
-            or trace["response_json_sha256"] is None
-        ):
-            raise ValueError("transport trace response-schema failure is contradictory")
-        try:
-            _validated_response_result(raw, trace)
-        except ValueError:
-            pass
-        else:
-            raise ValueError("transport trace labels a valid response as schema-invalid")
-    elif failure_class == "unsafe_response_preimage":
-        if (
-            status != 200
-            or representation_valid is not True
-            or kind is not None
-            or trace["response_body_preimage_redacted"] is not True
-        ):
-            raise ValueError("transport trace unsafe-preimage failure is contradictory")
-
-    if trace["response_body_preimage_redacted"] is True and kind is not None:
-        raise ValueError("transport trace exposes a bearer-redacted response preimage")
-    return raw if kind == "complete" else None
 
 
 def build_bedrock_responses_body(
@@ -852,33 +469,12 @@ def _explicit_tls_context(
 ) -> tuple[ssl.SSLContext, str, str]:
     """Load exact CA bytes via cadata, with an explicit cafile capability fallback."""
 
-    raw = _read_file_bounded(ca_bundle, MAX_CA_BUNDLE_BYTES)
-    digest = hashlib.sha256(raw).hexdigest()
-    try:
-        cadata = raw.decode("ascii", errors="strict")
-    except UnicodeDecodeError as exc:
-        raise ValueError("TLS CA bundle is not an ASCII PEM bundle") from exc
-
-    context = _new_tls_context()
-    try:
-        context.load_verify_locations(cadata=cadata)
-        return context, digest, "cadata"
-    except (TypeError, NotImplementedError):
-        # Some Python/TLS builds do not expose the cadata capability.  The
-        # fallback names the same explicit file; it never calls load_default_certs.
-        context = _new_tls_context()
-        try:
-            context.load_verify_locations(cafile=str(ca_bundle))
-        except (OSError, ssl.SSLError) as exc:
-            raise ValueError("TLS CA bundle could not be loaded by explicit path") from exc
-        # Detect a cooperative file change across the capability fallback.
-        if _read_file_bounded(ca_bundle, MAX_CA_BUNDLE_BYTES) != raw:
-            raise ValueError("TLS CA bundle changed while it was loaded")
-        return context, digest, "cafile_fallback"
-    except ssl.SSLError as exc:
-        # Malformed PEM is not a capability failure and must not be made valid by
-        # silently trying a different trust-loading mechanism.
-        raise ValueError("TLS CA bundle could not be loaded as PEM cadata") from exc
+    # Home: bedrock_transport_base._explicit_tls_context. The factory is
+    # passed from THIS module's globals so a lane-local monkeypatch of
+    # _new_tls_context still governs the context that gets built.
+    return _base._explicit_tls_context(
+        ca_bundle, context_factory=_new_tls_context, max_bytes=MAX_CA_BUNDLE_BYTES
+    )
 
 
 def build_pinned_https_opener(
@@ -888,17 +484,12 @@ def build_pinned_https_opener(
 ) -> tuple[urllib.request.OpenerDirector, str, str]:
     """Return a no-proxy/no-redirect opener with one byte-pinned CA bundle."""
 
-    if not re.fullmatch(r"[0-9a-f]{64}", expected_ca_bundle_sha256):
-        raise ValueError("expected TLS CA bundle SHA-256 is invalid")
-    context, digest, load_mode = _explicit_tls_context(Path(ca_bundle))
-    if digest != expected_ca_bundle_sha256:
-        raise ValueError("TLS CA bundle differs from its frozen SHA-256")
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({}),
-        _RejectRedirects(),
-        urllib.request.HTTPSHandler(context=context),
+    return _base.build_pinned_https_opener(
+        ca_bundle,
+        expected_ca_bundle_sha256=expected_ca_bundle_sha256,
+        context_factory=_new_tls_context,
+        max_bytes=MAX_CA_BUNDLE_BYTES,
     )
-    return opener, digest, load_mode
 
 
 def _validate_representation_headers(headers: Any) -> None:

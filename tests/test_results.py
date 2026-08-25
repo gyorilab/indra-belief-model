@@ -539,7 +539,7 @@ def _confirmed_read_export(tmp_path, model):
              "error": None, "latency_s": 1.0, "tokens": 50, "call_log": [{"finish_reason": "stop", "out_tokens": 50}]}]
     prompt_sha256 = (
         REASONING_FIRST_PROMPT_SHA256
-        if model == "bedrock-gemma-4-26b" else BASELINE_PROMPT_SHA256
+        if model == "local-gemma-4-26b" else BASELINE_PROMPT_SHA256
     )
     _pe, per_stmt, _meta, _m = build_run_export(
         str(_write_run(tmp_path, rows)), str(_write_corpus(tmp_path, corpus)),
@@ -558,11 +558,11 @@ def test_canonical_belief_is_calibrated_for_remote_fitted_reader(tmp_path):
     assert s["belief"] != s["belief_hard"]
 
 
-def test_canonical_belief_is_calibrated_for_bedrock_fitted_reader(tmp_path):
+def test_canonical_belief_is_calibrated_for_a_fitted_reader(tmp_path):
     # Reasoning-first Bedrock Gemma has its own measured configuration profile;
     # it must not fall back to hard or inherit the remote profile implicitly.
     remote = _confirmed_read_export(tmp_path, model="remote-gemma-4-26b")[0]
-    per_stmt = _confirmed_read_export(tmp_path, model="bedrock-gemma-4-26b")
+    per_stmt = _confirmed_read_export(tmp_path, model="local-gemma-4-26b")
     assert len(per_stmt) == 1
     s = per_stmt[0]
     assert s["belief_soft"] is not None
@@ -571,7 +571,7 @@ def test_canonical_belief_is_calibrated_for_bedrock_fitted_reader(tmp_path):
     assert s["belief"] != remote["belief"]
 
 
-@pytest.mark.parametrize("model", ["local-gemma-4-26b", "some-unrecognized-reader"])
+@pytest.mark.parametrize("model", ["local-gemma-4-31b", "some-unrecognized-reader"])
 def test_canonical_belief_falls_back_to_hard_for_unfitted_configuration(tmp_path, model):
     # Same weights on an unvalidated host and wholly unknown readers are both
     # named-empty: canonical belief remains the hard-gate fallback.

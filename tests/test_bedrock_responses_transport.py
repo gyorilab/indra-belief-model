@@ -4,7 +4,6 @@ from __future__ import annotations
 import ast
 import base64
 from collections import deque
-import copy
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -24,6 +23,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from indra_belief import bedrock_responses_transport as responses_transport
+from indra_belief import bedrock_transport_base as transport_base
 from indra_belief.bedrock_responses_transport import (
     BACKEND_NAME,
     FORMAL_RESPONSES_ENDPOINT,
@@ -34,11 +34,9 @@ from indra_belief.bedrock_responses_transport import (
     build_pinned_https_opener,
     canonical_json_bytes,
     canonical_json_sha256,
-    validate_transport_trace,
     verify_transport_response_preimage,
 )
 from indra_belief.model_client import LOCAL_MODELS, ModelClient, ReasoningStatus
-from indra_belief.spend_guard import classify_provider_failure
 
 
 MODEL_ID = "google.gemma-4-e2b"
@@ -197,42 +195,6 @@ def _body(*, relation: bool = False) -> dict:
         max_output_tokens=3000 if relation else 16000,
         reasoning_effort="none" if relation else "high",
     )
-
-
-def _offline_formal_transport() -> RawBedrockResponsesTransport:
-    """Build trace state only; this object has no connection capability."""
-
-    transport = RawBedrockResponsesTransport.__new__(RawBedrockResponsesTransport)
-    transport.endpoint = FORMAL_RESPONSES_ENDPOINT
-    transport.expected_model_id = MODEL_ID
-    transport._token = TOKEN
-    transport._max_request_bytes = responses_transport.DEFAULT_MAX_REQUEST_BYTES
-    transport._max_response_bytes = responses_transport.DEFAULT_MAX_RESPONSE_BYTES
-    transport._tls_ca_bundle_sha256 = CA_SHA256
-    transport._tls_ca_load_mode = "cadata"
-    return transport
-
-
-def _offline_formal_success_trace() -> tuple[dict, bytes, str]:
-    request_raw = canonical_json_bytes(_body())
-    payload = _responses_payload()
-    response_raw = _payload_bytes(payload)
-    trace = _offline_formal_transport()._trace(
-        request_raw=request_raw,
-        status=200,
-        response_raw=response_raw,
-        response_json_sha256=canonical_json_sha256(payload),
-        response_content_length_declared=len(response_raw),
-        response_body_complete=True,
-        response_framing="content_length",
-        response_framing_valid=True,
-        response_representation_valid=True,
-    )
-    trace["provider_request_id"] = "fixture-aws-request-id"
-    trace["provider_response_id"] = payload["id"]
-    trace["provider_response_model"] = payload["model"]
-    trace["provider_response_status"] = payload["status"]
-    return trace, response_raw, hashlib.sha256(request_raw).hexdigest()
 
 
 class _LegacyResponse:
@@ -482,185 +444,6 @@ def test_success_records_exact_route_headers_and_wire_commitments(local_server) 
     assert trace["environment_proxies_allowed"] is False
     assert trace["ambient_tls_trust_allowed"] is False
     assert TOKEN not in json.dumps(trace)
-
-
-def test_offline_formal_trace_validator_returns_exact_success_preimage() -> None:
-    trace, response_raw, request_sha = _offline_formal_success_trace()
-    assert validate_transport_trace(
-        trace,
-        expected_request_sha256=request_sha,
-        expected_ca_bundle_sha256=CA_SHA256,
-        successful=True,
-    ) == response_raw
-
-
-def test_offline_formal_trace_validator_has_an_exact_key_census() -> None:
-    trace, _response_raw, request_sha = _offline_formal_success_trace()
-    for key in tuple(trace):
-        mutated = copy.deepcopy(trace)
-        del mutated[key]
-        with pytest.raises(ValueError, match="key census"):
-            validate_transport_trace(
-                mutated,
-                expected_request_sha256=request_sha,
-                expected_ca_bundle_sha256=CA_SHA256,
-                successful=True,
-            )
-    injected = copy.deepcopy(trace)
-    injected["extra_claim"] = "not transport evidence"
-    with pytest.raises(ValueError, match="key census"):
-        validate_transport_trace(
-            injected,
-            expected_request_sha256=request_sha,
-            expected_ca_bundle_sha256=CA_SHA256,
-            successful=True,
-        )
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("schema_version", 2),
-        ("backend", "forged_backend"),
-        ("method", "GET"),
-        ("endpoint", "https://attacker.invalid/openai/v1/responses"),
-        ("expected_model_id", "google.gemma-4-31b"),
-        ("request_body_bytes", 0),
-        ("request_body_sha256", "0" * 64),
-        ("response_http_status", 599),
-        ("response_body_bytes", 1),
-        ("response_body_sha256", "0" * 64),
-        ("response_json_sha256", "0" * 64),
-        ("response_content_length_declared", 1),
-        ("response_framing", "chunked"),
-        ("response_framing_valid", False),
-        ("response_representation_valid", False),
-        ("transport_failure_class", "http_status"),
-        ("max_request_bytes", 1),
-        ("max_response_bytes", 1),
-        ("tls_ca_bundle_sha256", "0" * 64),
-        ("tls_ca_load_mode", "ambient_default"),
-        ("redirects_allowed", True),
-        ("environment_proxies_allowed", True),
-        ("ambient_tls_trust_allowed", True),
-        ("provider_request_id", "bad\nrequest-id"),
-        ("provider_response_id", "forged-response"),
-        ("provider_response_model", "google.gemma-4-31b"),
-        ("provider_response_status", "incomplete"),
-    ],
-)
-def test_offline_formal_trace_validator_rejects_adversarial_success_mutations(
-    field: str, value,
-) -> None:
-    trace, _response_raw, request_sha = _offline_formal_success_trace()
-    trace[field] = value
-    with pytest.raises(ValueError):
-        validate_transport_trace(
-            trace,
-            expected_request_sha256=request_sha,
-            expected_ca_bundle_sha256=CA_SHA256,
-            successful=True,
-        )
-
-
-def test_offline_formal_trace_validator_accepts_exact_error_evidence_shapes() -> None:
-    transport = _offline_formal_transport()
-    request_raw = canonical_json_bytes(_body())
-    request_sha = hashlib.sha256(request_raw).hexdigest()
-    error_raw = canonical_json_bytes({"error": "provider failure"})
-    complete = transport._trace(
-        request_raw=request_raw,
-        status=500,
-        response_raw=error_raw,
-        response_json_sha256=canonical_json_sha256({"error": "provider failure"}),
-        response_content_length_declared=len(error_raw),
-        response_body_complete=True,
-        response_framing="content_length",
-        response_framing_valid=True,
-        transport_failure_class="http_status",
-    )
-    assert validate_transport_trace(
-        complete,
-        expected_request_sha256=request_sha,
-        expected_ca_bundle_sha256=CA_SHA256,
-        successful=False,
-    ) == error_raw
-
-    prefix = b'{"partial":'
-    partial = transport._trace(
-        request_raw=request_raw,
-        status=200,
-        response_raw=prefix,
-        response_content_length_declared=len(prefix) + 20,
-        response_body_complete=False,
-        response_framing="content_length",
-        response_framing_valid=True,
-        transport_failure_class="absolute_timeout",
-    )
-    assert validate_transport_trace(
-        partial,
-        expected_request_sha256=request_sha,
-        expected_ca_bundle_sha256=CA_SHA256,
-        successful=False,
-    ) is None
-
-    absent = transport._trace(
-        request_raw=request_raw,
-        status=None,
-        response_raw=None,
-        response_body_complete=False,
-        transport_failure_class="tls_certificate_verification",
-    )
-    assert validate_transport_trace(
-        absent,
-        expected_request_sha256=request_sha,
-        expected_ca_bundle_sha256=CA_SHA256,
-        successful=False,
-    ) is None
-
-    bearer_omitted = transport._trace(
-        request_raw=request_raw,
-        status=500,
-        response_raw=f'{{"error":"{TOKEN}"}}'.encode(),
-        response_content_length_declared=len(f'{{"error":"{TOKEN}"}}'.encode()),
-        response_body_complete=True,
-        response_framing="content_length",
-        response_framing_valid=True,
-        transport_failure_class="http_status",
-    )
-    assert bearer_omitted["response_body_preimage_redacted"] is True
-    assert validate_transport_trace(
-        bearer_omitted,
-        expected_request_sha256=request_sha,
-        expected_ca_bundle_sha256=CA_SHA256,
-        successful=False,
-    ) is None
-
-
-def test_offline_formal_trace_validator_rejects_forged_error_semantics() -> None:
-    success, _response_raw, request_sha = _offline_formal_success_trace()
-    forged_schema_error = copy.deepcopy(success)
-    forged_schema_error["provider_response_id"] = None
-    forged_schema_error["provider_response_model"] = None
-    forged_schema_error["provider_response_status"] = None
-    forged_schema_error["transport_failure_class"] = "invalid_response_schema"
-    with pytest.raises(ValueError, match="labels a valid response"):
-        validate_transport_trace(
-            forged_schema_error,
-            expected_request_sha256=request_sha,
-            expected_ca_bundle_sha256=CA_SHA256,
-            successful=False,
-        )
-
-    partial = copy.deepcopy(forged_schema_error)
-    partial["transport_failure_class"] = "absolute_timeout"
-    with pytest.raises(ValueError, match="timeout"):
-        validate_transport_trace(
-            partial,
-            expected_request_sha256=request_sha,
-            expected_ca_bundle_sha256=CA_SHA256,
-            successful=False,
-        )
 
 
 @pytest.mark.parametrize(
@@ -1100,7 +883,9 @@ def test_tls_certificate_failure_is_terminal_and_redacted(local_server) -> None:
     with pytest.raises(BedrockResponsesTransportError) as caught:
         transport.call(_body(), timeout=2)
     assert not isinstance(caught.value, ConnectionError)
-    assert classify_provider_failure(caught.value) == ("other", None)
+    # The spend guard's classify_provider_failure() asserted here on how this
+    # exception classified for the paid-run ledger. That module was removed;
+    # the exception type and identity checks above are the transport's own.
     assert TOKEN not in str(caught.value)
     rendered_traceback = "".join(
         traceback.format_exception(caught.type, caught.value, caught.tb)
@@ -1163,7 +948,9 @@ def test_mid_body_connection_reset_is_retryable_with_partial_provenance(
     transport._connection_factory = lambda _deadline, _abort: ResetConnection()
     with pytest.raises(BedrockResponsesConnectionError) as caught:
         transport.call(_body(), timeout=2)
-    assert classify_provider_failure(caught.value) == ("transport_or_server", None)
+    # The spend guard's classify_provider_failure() asserted here on how this
+    # exception classified for the paid-run ledger. That module was removed;
+    # the exception type and identity checks above are the transport's own.
     trace = caught.value.transport_trace
     assert trace["response_http_status"] == 200
     assert trace["response_body_complete"] is False
@@ -1421,6 +1208,52 @@ def test_only_stdlib_import_roots_are_in_paid_transport_module() -> None:
     # stdlib-only base module; any other relative import smuggles a heavy sibling.
     assert relative_targets <= {"bedrock_transport_base"}, (
         f"unexpected relative import(s) in paid responses transport: {sorted(relative_targets)}"
+    )
+    assert roots <= {
+        "__future__",
+        "base64",
+        "dataclasses",
+        "datetime",
+        "email",
+        "hashlib",
+        "http",
+        "json",
+        "math",
+        "pathlib",
+        "re",
+        "socket",
+        "ssl",
+        "threading",
+        "time",
+        "typing",
+        "urllib",
+    }
+
+
+def test_only_stdlib_import_roots_are_in_bedrock_transport_base() -> None:
+    # The paid Responses lane reaches the network through bedrock_transport_base
+    # (`from . import bedrock_transport_base as _base`), so the base module
+    # carries the same stdlib-only invariant as the lane module — and it is
+    # a LEAF: it must import only stdlib and NO intra-package sibling. A relative
+    # pull of a heavy sibling (`from . import model_client`, `from .scorers import
+    # x`) would smuggle openai/indra/gilda into the paid path, so relative imports
+    # of ANY form (level>0, whether or not node.module is set) are rejected here.
+    tree = ast.parse(Path(transport_base.__file__).read_text())
+    roots = set()
+    relative_targets = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(alias.name.split(".", 1)[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0:
+                roots.add(node.module.split(".", 1)[0])
+            elif node.module:  # from .pkg import x
+                relative_targets.add(node.module.split(".", 1)[0])
+            else:  # from . import x, y
+                relative_targets.update(a.name.split(".", 1)[0] for a in node.names)
+    assert relative_targets == set(), (
+        "bedrock_transport_base must be a stdlib-only leaf; found relative "
+        f"import(s): {sorted(relative_targets)}"
     )
     assert roots <= {
         "__future__",

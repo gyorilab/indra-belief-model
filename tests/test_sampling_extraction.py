@@ -1,103 +1,21 @@
-"""Characterization + extraction guard for the shared two-stage cluster sampler.
+"""Characterization guard for the shared two-stage cluster sampler.
 
-`two_stage_sample` is shared by build_review_queue and build_disagreement_queue.
-This test pins the OBSERVABLE behavior of both builders at a fixed seed and
-proves the sampler in indra_belief.sampling is behavior-preserving (same queues,
-same item_ids). It also locks the two invariants the sampler exists to enforce:
-the global per-statement cap, and that the curated-first path is a strict
-generalization (no-op when nothing is curated).
+The two former callers (`build_review_queue` and `build_disagreement_queue`) were
+removed in the de-cruft, leaving these tests as the only in-tree coverage for
+`indra_belief.sampling` and its shared two-stage cluster sampler.
 """
-import argparse
-import json
 import os
 import sys
 from collections import Counter
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-import build_disagreement_queue as bdq  # noqa: E402
-import build_review_queue as brq  # noqa: E402
 
 # Fixed RNG seed for the RNG-identity test: the reference draw and the extracted
 # sampler must consume the same Random stream, so both sides use this one seed.
 # The exact value is arbitrary — only its sameness across both calls matters.
 RNG_IDENTITY_SEED = 20260602
-
-
-# ── shared synthetic exports ────────────────────────────────────────────────
-
-
-def _two_run_export(tmp_path, name, verdict_a, verdict_b):
-    """One export dir per run; the two disagree on every row so they all enter
-    the disagreement population. S1 is a 6-row mega-cluster (cap target)."""
-    rows = []
-    for i in range(6):
-        rows.append({
-            "stmt_i": 0, "evidence_i": i, "stmt_hash": "S1", "evidence_hash": f"S1e{i}",
-            "indra_matches_hash": "-100", "source_hash": 1000 + i,
-            "stmt_type": "Complex", "source_api": "reach",
-            "bucket": "semantic_correct", "bucket_group": "semantic",
-            "verdict": verdict_a if name == "A" else verdict_b,
-        })
-    for j in range(1, 8):
-        rows.append({
-            "stmt_i": j, "evidence_i": 0, "stmt_hash": f"S{j+1}", "evidence_hash": f"S{j+1}e0",
-            "indra_matches_hash": str(-200 - j), "source_hash": 2000 + j,
-            "stmt_type": "Phosphorylation", "source_api": "sparser",
-            "bucket": "semantic_correct", "bucket_group": "semantic",
-            "verdict": verdict_a if name == "A" else verdict_b,
-        })
-    d = tmp_path / f"export_{name}"
-    d.mkdir()
-    (d / "per_evidence.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
-    (d / "export_meta.json").write_text(json.dumps({"run_id": f"run{name}", "model": f"model-{name}"}))
-    return str(d)
-
-
-def _dq_args(run_a, run_b, **kw):
-    base = dict(run_a=run_a, run_b=run_b, n_per_direction=4, cap=3,
-                annotators=["ann1"], double_annotator=None, double_frac=0.0,
-                seed=7, curations="", out=None)
-    base.update(kw)
-    return argparse.Namespace(**base)
-
-
-# ── characterization: current behavior, frozen ─────────────────────────────
-
-
-def test_disagreement_queue_deterministic_and_capped(tmp_path):
-    a = _two_run_export(tmp_path, "A", "correct", "correct")
-    b = _two_run_export(tmp_path, "B", "incorrect", "incorrect")
-    q1, meta = bdq.build(_dq_args(a, b))
-    q2, _ = bdq.build(_dq_args(a, b))
-    # frozen seed → identical queues
-    assert [it["item_id"] for it in q1] == [it["item_id"] for it in q2]
-    # global per-statement cap holds (the 6-row S1 mega-cluster is tamed)
-    per_stmt = Counter(it["stmt_hash"] for it in q1)
-    assert max(per_stmt.values()) <= 3
-    # no model-answer leak beyond the stratification verdicts the queue records
-    assert all("reasoning" not in it and "our_score" not in it for it in q1)
-
-
-def test_review_queue_still_passes_its_own_invariants(tmp_path):
-    # sanity that the review builder is importable + runs under this harness too
-    rows = [
-        {"stmt_i": 0, "evidence_i": i, "stmt_hash": "S1", "evidence_hash": f"e{i}",
-         "bucket": "semantic_correct", "stmt_type": "Complex", "source_api": "reach"}
-        for i in range(8)
-    ]
-    d = tmp_path / "rexport"
-    d.mkdir()
-    (d / "per_evidence.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
-    (d / "export_meta.json").write_text(json.dumps({"run_id": "r", "model": "m"}))
-    args = argparse.Namespace(export=str(d), pass_name="rough", n_per_bucket=5, audit_n=1,
-                              cap=3, source_floor=0, annotators=["a"], double_annotator=None,
-                              double_frac=0.0, seed=1, out=None)
-    queue, meta = brq.build_queue(args)
-    assert max(Counter(it["stmt_hash"] for it in queue).values()) <= 3
 
 
 # ── the shared sampler ──────────────────────────────────────────────────────

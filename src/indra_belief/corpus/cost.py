@@ -149,36 +149,6 @@ def price_basis(model_id: str) -> str | None:
     return p[2] if p is not None else None
 
 
-PROBE_STEP_KINDS = frozenset({
-    "subject_role_probe",
-    "object_role_probe",
-    "relation_axis_probe",
-    "scope_probe",
-})
-
-
-def _normalize_probe_step_filter(
-    probe_step_filter: Iterable[str] | None,
-) -> tuple[str, ...]:
-    if probe_step_filter is None:
-        return ()
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in probe_step_filter:
-        step_kind = str(raw).strip()
-        if not step_kind:
-            continue
-        if step_kind not in PROBE_STEP_KINDS:
-            raise ValueError(
-                "probe_step_filter only accepts decomposed probe step kinds; "
-                f"got {step_kind!r}"
-            )
-        if step_kind not in seen:
-            seen.add(step_kind)
-            out.append(step_kind)
-    return tuple(out)
-
-
 def model_has_known_cost(model_id: str) -> bool:
     return price_for(model_id) is not None
 
@@ -220,9 +190,6 @@ def estimate_cost(
     stmts: Iterable["Statement"],
     *,
     model_id: str = "claude-sonnet-4-6",
-    architecture: str = "decomposed",
-    probe_step_filter: Iterable[str] | None = None,
-    probe_only: bool = False,
     avg_evidences_per_stmt: float | None = None,
     avg_llm_calls_per_evidence: float | None = None,
     avg_input_tokens_per_call: int = 330,
@@ -236,15 +203,13 @@ def estimate_cost(
         stmts: list/iterable of INDRA Statements (consumed once for counts).
         model_id: looked up in `MODEL_PRICES_PER_M_TOKENS` unless overridden.
         avg_evidences_per_stmt: if None, computed from the actual stmts.
-        architecture: scoring architecture. `decomposed` defaults to
-            about 5 LLM calls/evidence; `monolithic` defaults to 1.
-        probe_step_filter: selected decomposed probe rows for probe-only
-            repair runs.
-        probe_only: estimate only the selected decomposed probes, excluding
-            grounding and aggregate adjudication.
-        avg_llm_calls_per_evidence: if None, chosen from architecture.
+        avg_llm_calls_per_evidence: if None, 1.0 — the monolithic scorer issues
+            ONE call per (Statement, Evidence). This used to be selected by an
+            `architecture` argument that defaulted to `decomposed` and 5.0; that
+            architecture has been removed, and with it a default that silently
+            quintupled every estimate taken without an explicit argument.
         avg_input_tokens_per_call / avg_output_tokens_per_call: typical
-            decomposed-probe call shape.
+            single-call shape.
         in_price_per_m / out_price_per_m: override model's rate (e.g. for
             negotiated rates or unlisted models).
 
@@ -256,22 +221,8 @@ def estimate_cost(
     stmts = list(stmts)
     n_stmts = len(stmts)
 
-    if architecture not in {"decomposed", "monolithic"}:
-        raise ValueError(
-            "architecture must be 'decomposed' or 'monolithic', "
-            f"got {architecture!r}"
-        )
-    normalized_probe_filter = _normalize_probe_step_filter(probe_step_filter)
-    if probe_only:
-        if architecture != "decomposed":
-            raise ValueError("probe_only estimates are only valid for decomposed runs")
-        if not normalized_probe_filter:
-            raise ValueError("probe_only estimates require probe_step_filter")
     if avg_llm_calls_per_evidence is None:
-        if probe_only:
-            avg_llm_calls_per_evidence = float(len(normalized_probe_filter))
-        else:
-            avg_llm_calls_per_evidence = 1.0 if architecture == "monolithic" else 5.0
+        avg_llm_calls_per_evidence = 1.0
 
     if avg_evidences_per_stmt is None:
         total_evidences = sum(len(getattr(s, "evidence", []) or []) for s in stmts)
@@ -313,9 +264,7 @@ def estimate_cost(
         "model_id": model_id,
         "assumptions": {
             "avg_evidences_per_stmt": round(avg_evidences_per_stmt, 2),
-            "architecture": architecture,
-            "scoring_mode": "probe_only" if probe_only else "aggregate",
-            "probe_step_filter": list(normalized_probe_filter),
+            "architecture": "monolithic",
             "avg_llm_calls_per_evidence": avg_llm_calls_per_evidence,
             "avg_input_tokens_per_call": avg_input_tokens_per_call,
             "avg_output_tokens_per_call": avg_output_tokens_per_call,

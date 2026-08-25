@@ -1,24 +1,21 @@
-"""Evidence quality scorer entry point — two architectures available.
+"""Evidence quality scorer entry point.
 
-Two scoring architectures live side-by-side in this package:
+One architecture: a single LLM call per (Statement, Evidence) with
+type-adaptive contrastive few-shot retrieval, implemented in
+`indra_belief.scorers.monolithic.*` and exposing
+`score_evidence(stmt, ev, client) -> dict` and
+`score_statement(stmt, client) -> list[dict]`.
 
-  decomposed
-    parse_claim → substrate_route → four probes (subject_role,
-    object_role, relation_axis, scope) → ProbeBundle → adjudicate.
-    Implemented in `indra_belief.scorers.probes.*`.
-
-  monolithic (default)
-    Single LLM call per (Statement, Evidence) with type-adaptive
-    contrastive few-shot retrieval. Implemented in
-    `indra_belief.scorers.monolithic.*`.
-
-Both expose the same shape — `score_evidence(stmt, ev, client) -> dict`
-and `score_statement(stmt, client) -> list[dict]`. This module
-dispatches to one or the other via the CLI `--arch` flag.
+There used to be a second, `decomposed`: parse_claim → substrate_route → four
+probes → ProbeBundle → adjudicate, under `scorers.probes.*`, selected by an
+`--arch` flag. It lost to this one on holdout_cc (F1 0.751 vs 0.657, McNemar
+p<10^-4) and was kept for a while as a comparison baseline. It has been removed
+along with its dependency tail (context_builder, relation_patterns, commitments,
+parse_claim, grounding, kg_signal, the panel variant); git history holds it. The
+flag is gone with it, so this module no longer dispatches — it runs the scorer.
 
 Run:
-    PYTHONPATH=src python -m indra_belief.scorers.scorer --arch decomposed
-    PYTHONPATH=src python -m indra_belief.scorers.scorer --arch monolithic
+    PYTHONPATH=src python -m indra_belief.scorers.scorer
 """
 from __future__ import annotations
 
@@ -26,32 +23,16 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Callable, Literal
 
 from indra_belief.model_client import ModelClient
-# Decomposed path lives in scorers.decomposed; re-exported here for the CLI
-# dispatcher + backward-compat (older scripts import these names from this
-# module). The PACKAGE default (indra_belief.score_*) is the monolithic scorer.
-from indra_belief.scorers.decomposed import score_evidence, score_statement  # noqa: F401
+# Re-exported for backward compatibility: older scripts import these names from
+# this module. They are the monolithic scorer's, which is now the only one.
+from indra_belief.scorers.monolithic import score_evidence, score_statement  # noqa: F401
 
 
 log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
-
-
-Arch = Literal["decomposed", "monolithic"]
-
-
-def _resolve_scorer(arch: Arch) -> Callable:
-    """Return a `score_evidence(stmt, ev, client) -> dict` callable for the
-    requested architecture. Imports each sibling lazily so a caller using one
-    arch doesn't pay the other's prompt-asset load cost."""
-    if arch == "monolithic":
-        from indra_belief.scorers.monolithic import score_evidence as _ev
-    else:
-        from indra_belief.scorers.decomposed import score_evidence as _ev
-    return _ev
 
 
 def main():
@@ -62,15 +43,6 @@ def main():
         description="Evidence quality scorer (INDRA native)"
     )
     parser.add_argument("--model", default="gemma-remote")
-    parser.add_argument("--arch", choices=("decomposed", "monolithic"),
-                        default="monolithic",
-                        help="Which scoring architecture to run. "
-                             "monolithic (default) = single LLM call per "
-                             "(Stmt, Ev) with type-adaptive contrastive "
-                             "few-shots. Empirically dominant on holdout_cc "
-                             "(F1 0.751 vs decomposed 0.657, McNemar p<10^-4). "
-                             "decomposed = four-probe + adjudicator (sibling "
-                             "implementation, retained as a comparison baseline).")
     parser.add_argument("--holdout",
                         default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
     parser.add_argument("--output",
@@ -80,7 +52,7 @@ def main():
                         help="Resume from existing output file (skip scored records)")
     args = parser.parse_args()
 
-    score_fn = _resolve_scorer(args.arch)
+    from indra_belief.scorers.monolithic import score_evidence as score_fn
 
     index = CorpusIndex()
     records = index.build_records(args.holdout)
@@ -104,7 +76,7 @@ def main():
                         )
             print(f"Resuming: {len(scored_hashes)} records already scored")
 
-    print(f"\nScorer (arch={args.arch}): {len(records)} records, model={args.model}")
+    print(f"\nScorer: {len(records)} records, model={args.model}")
 
     client = ModelClient(args.model)
 
@@ -137,7 +109,7 @@ def main():
             "subject": record.subject,
             "stmt_type": record.stmt_type,
             "object": record.object,
-            "arch": args.arch,
+            "arch": "monolithic",
         })
 
         r_save = {k: v for k, v in result.items() if k != "raw_text"}

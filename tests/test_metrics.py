@@ -264,7 +264,7 @@ def test_metrics_import_roots_are_exactly_the_declared_four():
     )
 
 
-def test_importing_metrics_pulls_neither_comparison_nor_sklearn():
+def test_importing_metrics_pulls_neither_the_harness_nor_sklearn():
     # Mirror of the AST guard at runtime: static imports could be clean while a
     # transitive import (via indra_belief/__init__ or a lazy hop) still drags
     # sklearn in. A fresh interpreter is the only honest check — the in-process

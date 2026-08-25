@@ -37,9 +37,9 @@
 # resolver never REQUESTS mlx; it is not that mlx would refuse to install (mlx
 # 0.32.0 carries no Darwin marker; its Darwin-only piece is mlx-metal==0.32.0).
 # The scorer never imports mlx — it reaches this server over HTTP as a plain
-# openai_compat backend. The one in-process MLX path,
-# scripts/run_probe_battery.py, imports mlx_lm lazily inside its read functions
-# (zero module-scope mlx imports) and is run under ~/.venvs/mlx-serve/bin/python.
+# openai_compat backend. No repository module imports mlx or mlx_lm; mlx-lm is
+# purely a serving-venv concern. probe_logprobs.py uses ModelClient on this route;
+# the generic run_vllm_processed_shards.py server backend can also dial it via httpx.
 #
 # Setup (once):
 #   uv venv ~/.venvs/mlx-serve --python 3.12

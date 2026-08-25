@@ -15,7 +15,6 @@ import json
 import sys
 sys.path.insert(0, SOURCE_ROOT)
 import indra_belief.model_client
-import indra_belief.spend_guard
 print(json.dumps(sorted(
     name for name in sys.modules
     if name == "indra" or name.startswith("indra.")

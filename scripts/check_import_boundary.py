@@ -2,20 +2,20 @@
 
 The repository holds two things that have to stay separable: a CORE that serves a
 belief for one (Statement, Evidence) pair, and a RESEARCH harness that measures
-whether that belief is any good. Research INHERITS the core — `comparison` reads
-`prepared_execution`, `verdict`, `scorers`, `spend_guard`, `hashing`,
-`model_client`; `results` reads `calibration_constants`, `noise_model`,
-`statement_belief`. Those forward edges are correct and this guard leaves them
-alone. The reverse edge is the defect: a core that reaches into the harness
-cannot be deployed without it.
+whether that belief is any good. Research INHERITS the core — `results` reads
+`calibration_constants`, `noise_model`, `statement_belief`. Those forward edges
+are correct and this guard leaves them alone. The reverse edge is the defect: a
+core that reaches into the harness cannot be deployed without it.
 
 At the commit that added this file the tree had exactly ONE such edge —
 `prepared_execution` importing `ContractError` from `comparison.contracts`, the
 serving kernel reaching into the research harness for the base class of its own
 `ReplayError`, in a module whose Home note already argued the ownership rule it
-was breaking. `ContractError` now lives in `prepared_execution` and
-`comparison.contracts` re-exports it, so no importer changed. Nothing enforced
-that edge's absence, which is why it existed; this guard is the enforcement. It
+was breaking. `ContractError` was moved into `prepared_execution`, where it still
+lives; the `comparison` harness that re-exported it has since been removed
+outright, along with `spend_guard` and the paid Bedrock transports, so the
+largest research root this guard ever policed is gone. The guard stays: the rule
+it enforces is about direction, not about which harness happens to exist. It
 is wired into pytest via tests/test_import_boundary.py, mirroring how
 scripts/check_contamination.py is wired via
 tests/test_contamination_guard_sources.py. CI reaches it only through that test
@@ -32,13 +32,12 @@ computed two ways that must agree, and both of them make "checked" the DEFAULT:
     rather than a copy of it; `DECLARED_ENTRY_POINTS` adds the five serving
     surfaces the package `__init__` does not re-export, each with its reason.
   * `core_modules()` is every first-party module NOT under a declared research
-    root. A closure alone would leave the unreached unguarded — `belief_scorer`,
-    `scorers.kg_signal` and `scorers.probes.bind_check` are scorer code that no
-    closure in this file reaches today — and "unguarded by default" is exactly
+    root. A closure alone would leave the unreached unguarded — `belief_scorer`
+    is scorer code that no closure in this file reaches today — and "unguarded by default" is exactly
     how the doc guard's hand-maintained DOCS list rotted. So the guard checks the
     complement instead: a NEW module under `src/indra_belief/` is checked on the
     commit that adds it, and to be exempt it has to be declared research out loud.
-    Those three modules are CHECKED, and each carries an entry in
+    That module is CHECKED, and carries an entry in
     `UNREACHED_DISPOSITIONS` below saying what it is and why it stays. That table
     is ANNOTATION ONLY: `core_modules()` never reads it, so writing a disposition
     cannot remove a module from checking. Unreached and unchecked are different
@@ -82,9 +81,7 @@ read as "the core is deployable". THIS IS AN IMPORT-GRAPH CHECK, NOTHING MORE.
     Zero literals in a call position is therefore NOT zero path coupling.
     `src/indra_belief/data/corpus.py::DEFAULT_CORPUS` is the stronger assembled
     counter-example: it resolves to repo `data/` and its module is in
-    `core_closure()`. `src/indra_belief/scorers/kg_signal.py::_DEFAULT_CORPUS`
-    also resolves to repo `data/`, although that module is not serving-reachable.
-    In contrast,
+    `core_closure()`. In contrast,
     `src/indra_belief/scorers/monolithic/scorer.py::_EXAMPLE_BANK_PATH` resolves
     to PACKAGE data. `assembled_data_paths()` derives and distinguishes those
     bases rather than treating every `/ "data"` expression alike. Prose
@@ -154,9 +151,9 @@ PUBLIC_API_MODULE = f"{PACKAGE}.__init__"
 # looked core.
 DECLARED_ENTRY_POINTS: Mapping[str, str] = {
     f"{PACKAGE}.scorers.scorer":
-        "its own docstring: 'Evidence quality scorer entry point — two "
-        "architectures available'. Dispatches monolithic and decomposed, and is "
-        "how the decomposed arch the package docstring points at is reached.",
+        "its own docstring: 'Evidence quality scorer entry point'. Re-exports "
+        "the monolithic scorer and carries the benchmark main; it stopped being "
+        "a dispatcher when the decomposed arch was removed.",
     f"{PACKAGE}.statement_belief":
         "per-evidence verdicts -> one calibrated statement belief. Serving a "
         "belief for a Statement IS this call; nothing in the package __init__ "
@@ -165,10 +162,6 @@ DECLARED_ENTRY_POINTS: Mapping[str, str] = {
         "produces the reader profile `statement_belief(soft=...)` consumes "
         "(`calibration_for_run`), so a served belief is calibrated by it. Fitted "
         "by research, read by the core.",
-    f"{PACKAGE}.spend_guard":
-        "a deployed service that dispatches to a paid provider cannot enforce a "
-        "cap without it, which is also why its `corpus.cost` import is a core "
-        "edge and not a violation.",
     f"{PACKAGE}.probes":
         "the public forced-verdict reader for one evidence record. Unlike the "
         "offline measurements under scripts/, this transport read is callable "
@@ -180,10 +173,6 @@ DECLARED_ENTRY_POINTS: Mapping[str, str] = {
 # Keep this short: everything NOT under a root here is checked, so a prefix added
 # here removes guard coverage and has to earn it.
 RESEARCH_ROOTS: Mapping[str, str] = {
-    f"{PACKAGE}.comparison":
-        "the benchmark harness — run plans, spend ledgers, frozen replay, "
-        "provider dispatch for a measured arm, the comparison CLI. The most "
-        "worked code in the repo and still research: it measures.",
     f"{PACKAGE}.results":
         "turns a scoring run into the viewer's per-evidence / per-statement "
         "export plus the bucket taxonomy. A reading of a run, not a run.",
@@ -204,8 +193,8 @@ RESEARCH_ROOTS: Mapping[str, str] = {
 # tomorrow reaches what it reaches without an edit here.
 #
 # ROOTS ARE `scripts/` ONLY, NEVER `tests/`. Measured: tests/test_belief_scorer.py
-# and tests/test_bind_check.py import two of the three modules that no closure
-# reaches, so rooting a closure at tests/ would zero the orphan signal outright —
+# imports the one module that no closure reaches, so rooting a closure at tests/
+# would zero the orphan signal outright —
 # every module a test touches would report as reached, which is the opposite of
 # what "reached by nothing" is asked to mean.
 TOOL_ENTRY_DIR = ROOT / "scripts"
@@ -240,23 +229,6 @@ UNREACHED_DISPOSITIONS: Mapping[str, str] = {
         "EXPECTED shape for a plug-in socket rather than a sign of disuse. An "
         "internal importer would mean we had started calling our own socket, "
         "which is not what implementing someone else's interface is for.",
-    f"{PACKAGE}.scorers.kg_signal":
-        "RESEARCH LINEAGE, UNWIRED: the U-phase KG-as-confidence-modifier, whose "
-        "Q-phase verdict-override predecessor regressed -2.65pp and whose "
-        "surviving contract is deliberately asymmetric — KG presence boosts "
-        "confidence, KG absence is silent. Nothing calls `get_signal` today, and "
-        "it is kept rather than deleted because two live things still describe "
-        "it: README.md's source-tree map lists `kg_signal.py`, and "
-        "`EvidenceContext.kg_signal` in scorers/context.py carries both the field "
-        "and the full 16-line contract for this module's output, which would be "
-        "left describing nothing.",
-    f"{PACKAGE}.scorers.probes.bind_check":
-        "TESTED SCAFFOLDING: Stage 2 of the CC-phase extract-then-bind-check "
-        "redesign — the deterministic half deciding whether an extracted relation "
-        "tuple matches the claim, with no LLM — which LOST to the shipped AA "
-        "probe on holdout_cc and was kept on purpose as the measured alternative. "
-        "The axis taxonomy and sign reconciliation it encodes are verified "
-        "independently of the arm that lost.",
 }
 
 
@@ -523,7 +495,7 @@ def test_reachers() -> Mapping[str, tuple[str, ...]]:
     """Unreached module -> the test files that import it, derived by AST.
 
     An ANNOTATION, computed only over the current unreached bucket and never fed
-    back into it. The point is that the report can say "tests/test_bind_check.py
+    back into it. The point is that the report can say "tests/test_belief_scorer.py
     reaches it" as a fact about the tree: rename that file and the printed line
     changes, which a sentence written into a docstring would not.
 

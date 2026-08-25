@@ -1,7 +1,6 @@
 """The no-reasoning probe battery as data plus minimal rendering.
 
-This package is separate from :mod:`indra_belief.scorers.probes`, the existing
-four-probe decision pipeline.  Every probe here terminates in the same closed
+Every probe here terminates in the same closed
 ``correct`` / ``incorrect`` token decision; that shared label set is what makes
 :func:`indra_belief.logprobs.label_probability` applicable.  This module has no
 model client, parser, scoring logic, or metric.

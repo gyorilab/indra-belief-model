@@ -193,27 +193,6 @@ def classify(d: dict[str, Any], ev: str, reasoning: str) -> str:
     return "row_error"
 
 
-def corpus_evidence_text(path: str = DEFAULT_CORPUS) -> dict[tuple[int, int], str]:
-    """``(stmt_i, evidence_i) -> evidence sentence`` from the corpus (cached).
-
-    Positional index (validated byte-exact against the run); the empty-string
-    marker reflects only genuine no-evidence records.
-    """
-    global _CORPUS_TEXT
-    if _CORPUS_TEXT is None:
-        with open(path) as f:
-            corpus = json.load(f)
-        m: dict[tuple[int, int], str] = {}
-        for si, stmt in enumerate(corpus):
-            for ei, ev in enumerate(stmt.get("evidence") or []):
-                m[(si, ei)] = ev.get("text") or ""
-        _CORPUS_TEXT = m
-    return _CORPUS_TEXT
-
-
-_CORPUS_TEXT: dict[tuple[int, int], str] | None = None
-
-
 # ── enrichment ──────────────────────────────────────────────────────────────
 
 def _r3(x: Any) -> float | None:

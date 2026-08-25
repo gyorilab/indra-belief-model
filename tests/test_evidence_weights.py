@@ -34,7 +34,12 @@ from indra_belief.evidence_weights import (
 )
 from indra_belief.noise_model import RECALIBRATED_PRIORS, compute_gated_belief
 
-_P = calibration_for("bedrock-gemma-4-26b", prompt_sha256=REASONING_FIRST_PROMPT_SHA256)
+# Anchored on a SURVIVING fitted reader at the same prompt. This read
+# `bedrock-gemma-4-26b` until the paid Bedrock lane was removed and its two
+# profiles with it. Nothing in this file hard-codes a number — every expectation
+# is derived from the profile below — so the swap changes the anchor, not the
+# assertions.
+_P = calibration_for("local-gemma-4-26b", prompt_sha256=REASONING_FIRST_PROMPT_SHA256)
 LC, LR, PRIOR = _P["log_lr_confirm"], _P["log_lr_reject"], _P["prior_logodds"]
 
 CONFIGURATIONS = {

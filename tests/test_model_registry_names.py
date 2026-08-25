@@ -59,7 +59,7 @@ def test_every_registry_key_names_a_model_not_just_a_server():
 
 def test_the_registry_is_not_empty_so_the_check_is_not_vacuous():
     names = _registry_names()
-    assert len(names) > 20, f"only found {len(names)} entries; the scan broke"
+    assert len(names) > 8, f"only found {len(names)} entries; the scan broke"
     assert any(n.startswith("bedrock-") for n in names)
 
 

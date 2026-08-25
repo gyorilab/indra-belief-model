@@ -1,9 +1,11 @@
-"""No-reasoning probe declarations, distinct from ``scorers.probes``.
+"""No-reasoning probe declarations.
 
-``indra_belief.scorers.probes`` is the pre-existing 11-module, four-probe
-decision pipeline.  This package instead holds the two-label logit battery and
-its serving-callable forced-verdict reader.  Calibration conveniences are
-loaded lazily so importing the shared battery declaration remains NumPy-free.
+This package holds the two-label logit battery and its serving-callable
+forced-verdict reader.  It was named to distinguish itself from
+``indra_belief.scorers.probes``, an 11-module four-probe decision pipeline that
+has since been removed, so the distinction no longer needs drawing.
+Calibration conveniences are loaded lazily so importing the shared battery
+declaration remains NumPy-free.
 """
 
 from importlib import import_module

@@ -23,7 +23,7 @@ from indra_belief.prepared_execution import (
     relation_mismatch_note,
     relation_user_message,
 )
-from indra_belief.scorers.probes._llm import _extract_json
+from indra_belief.scorers._shared import _extract_json
 
 log = logging.getLogger(__name__)
 

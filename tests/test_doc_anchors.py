@@ -56,8 +56,8 @@ import check_doc_anchors as cda  # noqa: E402
 def test_live_docs_cite_no_dead_symbols():
     """Every dotted citation this guard can resolve still resolves, corpus-wide.
 
-    The regression: K1-prepared-execution deleted `ReplayIndex.main_request`,
-    `ReplayIndex._record` and `ScoringRecord.format_user_message`, and the
+    The regression: K1-prepared-execution deleted `PreparedExecution.main_request`,
+    `PreparedExecution.render` and `ScoringRecord.format_user_message`, and the
     fourteen citations of them in the serving doc stayed GREEN — the guard
     asserted that `comparison/replay.py` exists, which it does, and never opened
     it. §9's protocol section was left telling a benchmark operator to call a
@@ -82,7 +82,7 @@ def test_a_dead_symbol_exits_four_and_says_where_it_looked(tmp_path, capsys):
     """The seeded proof: the exact citation that shipped green must now fail.
 
     Reproduced on the live document before this check existed —
-    `ReplayIndex.main_request` in §9.1 and `ReplayIndex._record` in the §1
+    `PreparedExecution.main_request` in §9.1 and `PreparedExecution.render` in the §1
     diagram, guard exit 0, "OK". Both forms are pinned here, the fenced one
     included: four of the fourteen dead citations lived inside the architecture
     diagram, which is a fenced block and therefore invisible to any check that
@@ -91,21 +91,21 @@ def test_a_dead_symbol_exits_four_and_says_where_it_looked(tmp_path, capsys):
     doc = tmp_path / "serving_architecture.md"
     doc.write_text("# Serving architecture\n"
                    "```\n"
-                   "  ReplayIndex._record()   <- renderer A\n"
+                   "  PreparedExecution.render()   <- renderer A\n"
                    "```\n"
-                   "Prompts come from `ReplayIndex.main_request`.\n")
+                   "Prompts come from `PreparedExecution.main_request`.\n")
 
     dead = cda.find_dead_symbols(doc)
-    assert {m["symbol"] for m in dead} == {"ReplayIndex._record",
-                                           "ReplayIndex.main_request"}
+    assert {m["symbol"] for m in dead} == {"PreparedExecution.render",
+                                           "PreparedExecution.main_request"}
     # The message must name the file it resolved against, or the maintainer has
     # to guess which of several same-named modules the guard read.
-    assert all("comparison/replay.py" in m["reason"] for m in dead)
+    assert all("prepared_execution.py" in m["reason"] for m in dead)
 
     assert cda.main([str(doc)]) == 4, "a dead symbol must exit non-zero (4)"
     printed = capsys.readouterr().out
     assert "DEAD SYMBOLS" in printed
-    assert "ReplayIndex.main_request" in printed
+    assert "PreparedExecution.main_request" in printed
 
 
 def test_symbol_check_reports_what_it_cannot_read_as_unchecked(tmp_path):
@@ -120,9 +120,9 @@ def test_symbol_check_reports_what_it_cannot_read_as_unchecked(tmp_path):
     doc.write_text(
         "# Doc\n"
         "Bare name: `parse_response`. Attribute: `self._reservations`.\n"
-        "Stdlib: `json.dumps`. Filename: `spend_guard.py`.\n"
+        "Stdlib: `json.dumps`. Filename: `noise_model.py`.\n"
         "Ambiguous head: `scorer._select_examples`.\n"
-        "Resolvable and real: `ReplayIndex.prepare`, `ExecutionBody.render`.\n"
+        "Resolvable and real: `PreparedExecution.calls`, `ScoringRecord.source_hash`.\n"
     )
     assert cda.find_dead_symbols(doc) == []
     coverage = cda.symbol_coverage(doc)
@@ -130,15 +130,16 @@ def test_symbol_check_reports_what_it_cannot_read_as_unchecked(tmp_path):
     assert coverage["checked"] == 2, coverage
     assert coverage["unchecked"] >= 4, coverage
 
-    for chain in ("self._reservations", "json.dumps", "spend_guard.py",
+    for chain in ("self._reservations", "json.dumps", "noise_model.py",
                   "scorer._select_examples"):
         assert cda.resolve_symbol(chain)[0] == "unchecked", chain
-    for chain in ("ReplayIndex.prepare", "ExecutionBody.render",
-                  "comparison.replay", "verdict.parse_response"):
+    for chain in ("PreparedExecution.calls", "ScoringRecord.source_hash",
+                  "statement_belief.statement_belief", "verdict.parse_response"):
         assert cda.resolve_symbol(chain)[0] == "ok", chain
-    # A re-export counts: replay.py imports parse_response from verdict.py, so a
-    # reader following `replay.parse_response` arrives somewhere real.
-    assert cda.resolve_symbol("replay.parse_response")[0] == "ok"
+    # A re-export counts: monolithic/scorer.py imports parse_response from
+    # verdict.py, so a reader following that chain arrives somewhere real. This
+    # used comparison/replay.py as the example until that module was removed.
+    assert cda.resolve_symbol("monolithic.scorer.parse_response")[0] == "ok"
 
 
 def test_live_docs_have_zero_dead_anchors():
@@ -171,7 +172,7 @@ def test_synthetic_dead_and_numeric_anchors_flagged_and_superseded_skipped(tmp_p
         "Volatile live cite: `scripts/check_doc_anchors.py:99`.\n"
         "Volatile basename cite: `noise_model.py:52-76`.\n"
         "Volatile suffix cite: `scorers/monolithic/scorer.py:59`.\n"
-        "Stable viewer cite: `viewer/src/lib/data/queries.ts` (`getRunCalibration`).\n"
+        "A removed-app path is not a repo cite: `viewer/src/lib/data/queries.ts`.\n"
         "A URL is not a repo cite: `https://example.org/src/url_only.py:12`.\n"
         "Versions and prose are not cites: Python 3.12; `runtime.py:3.12`; `schema_version: 8`.\n"
         "Old numeric note: `noise_model.py:12` (historical) — ignore.\n"
@@ -194,7 +195,11 @@ def test_synthetic_dead_and_numeric_anchors_flagged_and_superseded_skipped(tmp_p
     assert numeric and "unstable numeric anchor" in numeric[0]["reason"]
     assert any(m["path"] == "noise_model.py" for m in misses)
     assert any(m["path"] == "scorers/monolithic/scorer.py" for m in misses)
+    # The viewer was removed; `viewer/...` no longer matches _ANCHOR at all (the
+    # `/` before `src` fails the left boundary), so a doc citing one in the
+    # historical record is inert rather than a missing-file failure.
     assert "viewer/src/lib/data/queries.ts" not in flagged
+    assert not any(m["path"].startswith("viewer/") for m in misses)
     assert "src/url_only.py" not in flagged
     assert "runtime.py" not in flagged
 
@@ -292,10 +297,10 @@ def test_exit_precedence_is_invalid_anchor_then_stale_table_then_dead_symbol(
 
     doc.write_text("# Doc\n"
                    "Missing path: `src/indra_belief/totally_bogus.py`.\n"
-                   "Dead symbol: `ReplayIndex.main_request`.\n")
+                   "Dead symbol: `PreparedExecution.main_request`.\n")
     assert cda.main([str(doc)]) == 1, "an invalid anchor outranks the other two"
 
-    doc.write_text("# Doc\nDead symbol: `ReplayIndex.main_request`.\n")
+    doc.write_text("# Doc\nDead symbol: `PreparedExecution.main_request`.\n")
     assert cda.main([str(doc)]) == 3, "a stale table entry outranks a dead symbol"
 
     monkeypatch.delitem(cda.GRANDFATHERED_ANCHORS, key)
@@ -371,4 +376,24 @@ def test_section_scoped_shim_stays_retired():
         "section nobody registers is UNREAD, not clean. A document that genuinely "
         "needs an allowance declares it in GRANDFATHERED_ANCHORS, which may only "
         "shrink."
+    )
+
+
+def test_every_removed_path_names_a_file_that_is_actually_absent():
+    """REMOVED_PATHS may only list paths that are GONE.
+
+    An entry naming a file still on disk silently converts real drift into
+    "historical": the guard skips the anchor, so a stale citation to a live file
+    stops being reported. The table's own comment states the rule; nothing
+    enforced it. This does.
+
+    It is not hypothetical. Mid-arc the index carried a staged deletion of
+    scripts/compute_paper_robustness.py while the REMOVED_PATHS entry covering it
+    was still unstaged, so the committed tree would have had the file present and
+    exempted at the same time.
+    """
+    present = sorted(p for p in cda.REMOVED_PATHS if (cda.ROOT / p).exists())
+    assert present == [], (
+        "these REMOVED_PATHS entries name files that still exist, so the guard "
+        f"is blind to any stale citation of them: {present}"
     )

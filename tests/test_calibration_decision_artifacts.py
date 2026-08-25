@@ -7,9 +7,14 @@ from pathlib import Path
 from indra_belief.calibration_constants import fitted_calibration_for
 
 ROOT = Path(__file__).resolve().parents[1]
+# One artifact per (reader, validation gold). The gate script defaults
+# --json to calibration_ship_gate.json, so a run against a non-default
+# --test-gold will overwrite the holdout_cc gate unless it is given its own
+# path — which is how the external and local files below came to exist.
 ARTIFACTS = (
     ROOT / "data/results/calibration_ship_gate.json",
     ROOT / "data/results/calibration_ship_gate_external.json",
+    ROOT / "data/results/calibration_ship_gate_local.json",
 )
 
 
@@ -48,4 +53,6 @@ def test_decision_artifacts_name_the_exact_production_profiles():
             assert len(provenance["test_run_sha256"]) == 64
             seen.add(profile["profile_id"])
 
-    assert len(seen) == 3
+    # One per gate row: medpsy-4b + gemma-26B (holdout_cc), bedrock-gemma-26B
+    # (external_curator_gold_v1), local-gemma-26B (external_curator_gold_v1).
+    assert len(seen) == 4

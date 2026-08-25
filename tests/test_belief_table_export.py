@@ -81,7 +81,7 @@ def test_identical_beliefs_on_one_hash_are_not_a_collision():
 
 
 @pytest.mark.skipif(
-    not (ROOT / "data/results/eval_curation_v1_gemma_rf_bedrock.jsonl").exists()
+    not (ROOT / "data/results/eval_curation_v1_local-gemma-4-26b.jsonl").exists()
     or not (ROOT / "data/corpora/eval_curation_v1_statements.json").exists(),
     reason="needs the gitignored run/corpus tree",
 )
@@ -90,9 +90,9 @@ def test_end_to_end_manifest_names_the_profile_that_produced_the_numbers(tmp_pat
     out = tmp_path / "table.json"
     proc = subprocess.run(
         [sys.executable, str(ROOT / "scripts/export_belief_table.py"),
-         "--run", "data/results/eval_curation_v1_gemma_rf_bedrock.jsonl",
+         "--run", "data/results/eval_curation_v1_local-gemma-4-26b.jsonl",
          "--corpus", "data/corpora/eval_curation_v1_statements.json",
-         "--model", "bedrock-gemma-4-26b", "--run-id", "test",
+         "--model", "local-gemma-4-26b", "--run-id", "test",
          "--require-calibrated", "--out", str(out)],
         cwd=ROOT, capture_output=True, text=True,
     )

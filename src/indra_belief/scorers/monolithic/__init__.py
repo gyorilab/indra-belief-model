@@ -1,4 +1,4 @@
-"""Monolithic single-call scorer — sibling to the decomposed four-probe arch.
+"""Monolithic single-call scorer — the package's only scoring architecture.
 
 Exposes the same public shape as `indra_belief.scorers`:
 

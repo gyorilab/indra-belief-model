@@ -22,14 +22,11 @@ hides things.
     exists to stop is a COLLECTION error, and collection executes module level
     and nothing deeper. Widening would flag every optional-backend import.
   * WHAT PYTEST REACHES, not the whole repo. Every file under `tests/`, plus the
-    `scripts/` modules those files import, transitively. A script no test
-    imports cannot break collection, and `scripts/run_indra_paper_literal_models.py`
-    is the live example: it imports `bioexp`, the 2023 assembly paper's own
-    package, which is a GitHub repository rather than a PyPI distribution.
-    Declaring it would make every clean install clone it to run a script CI
-    never runs. It is named here so the omission is a decision on the record and
-    not a gap — and `test_the_scope_is_what_pytest_collects` pins the rule, so a
-    test that starts importing that script pulls it back into scope.
+    `scripts/` modules those files import, transitively. A script no test imports
+    is not in the collection closure; `scripts/build_holdout.py` is the live
+    negative-control exemplar. If a test starts importing it, its module-level
+    imports enter the declared-dependency check above. The
+    `test_the_scope_is_what_pytest_collects` test pins this scope rule.
   * TRANSITIVITY IS INVISIBLE. `scipy` arrives via scikit-learn; the repo pins
     it anyway so the floor is stated rather than inherited.
 """
@@ -218,17 +215,13 @@ def test_the_scope_is_what_pytest_collects():
         str(p.name) for p in test_files - set(reached)
     )
 
-    # Reached, because tests/test_modularity_baseline.py loads it.
-    assert ROOT / "scripts" / "reproduce_published_statement_beliefs.py" in reached
-
-    # NOT reached: no test imports it. This is the `bioexp` case the module
-    # docstring records — if a test ever imports this script, it enters the
-    # closure and its undeclared imports start failing the check above.
-    unreached = ROOT / "scripts" / "run_indra_paper_literal_models.py"
+    # NOT reached: no test imports it, so it is outside the collection closure.
+    # If a test starts importing it, its module-level imports enter the
+    # declared-dependency check above.
+    unreached = ROOT / "scripts" / "build_holdout.py"
     assert unreached not in reached, (
-        "a test now imports this script, so its dependencies (bioexp, a GitHub "
-        "package rather than a PyPI distribution) are in scope and must be "
-        "declared or the import made lazy"
+        "a test now imports this script; its module-level imports are in scope "
+        "for the declared-dependency check"
     )
 
 
