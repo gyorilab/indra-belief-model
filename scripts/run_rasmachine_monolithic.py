@@ -3,9 +3,10 @@
 
 Results are appended one evidence row at a time.  Re-running the same command
 skips completed keys and retries prior parser abstentions or recorded row
-errors by default.  Metered provider comparison runs intentionally do not enter
-through this utility; ``python -m indra_belief.comparison run`` is their sole
-entry point and owns spend accounting.
+errors by default.  Metered provider runs intentionally do not enter through this
+utility, which is the unmetered local/self-hosted lane; ``scripts/run_vllm_gold_eval.py``
+is their entry point.  (This used to name ``python -m indra_belief.comparison run``,
+whose harness and its spend accounting were removed.)
 """
 
 from __future__ import annotations
@@ -53,7 +54,6 @@ from indra_belief.scorers.monolithic import scorer as monolithic_scorer  # noqa:
 DEFAULT_INPUT = ROOT / "data/corpora/latest_statements_rasmachine.json"
 DEFAULT_OUTPUT = ROOT / "data/results/rasmachine_mono_gemma_remote_direct.jsonl"
 STOP_REQUESTED = False
-_ARCH = "monolithic"
 
 
 def _request_stop(signum: int, _frame: Any) -> None:
@@ -72,20 +72,11 @@ def _now() -> str:
 
 
 def _score_one(stmt: Any, evidence: Any, client: ModelClient, max_tokens: int | None):
-    if _ARCH == "panel":
-        from indra_belief.scorers.panel import score_via_panel
-
-        result = score_via_panel(stmt, evidence, client)
-    elif _ARCH == "decomposed":
-        from indra_belief.scorers.probes.orchestrator import score_via_probes
-
-        result = score_via_probes(stmt, evidence, client)
-    else:
-        # The canonical monolithic boundary already applies the sentence
-        # calibration. Do not issue the forced-verdict probe twice here.
-        return monolithic_scorer.score_statement(
-            stmt, evidence, client, max_tokens=max_tokens
-        )
+    # The canonical monolithic boundary already applies the sentence
+    # calibration. Do not issue the forced-verdict probe twice here.
+    return monolithic_scorer.score_statement(
+        stmt, evidence, client, max_tokens=max_tokens
+    )
 
     statement = _statement_metadata(stmt)
     return replace_sentence_score(
@@ -587,9 +578,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input", default=str(DEFAULT_INPUT))
     parser.add_argument("--output", "--out", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--model", default="remote-gemma-4-26b")
-    parser.add_argument(
-        "--arch", choices=("monolithic", "decomposed", "panel"), default="monolithic"
-    )
     parser.add_argument("--max-tokens", type=_optional_positive_int, default=None)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
@@ -612,8 +600,6 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run(args: argparse.Namespace) -> int:
-    global _ARCH
-    _ARCH = args.arch
     if args.retries < 0 or args.retry_sleep_s < 0:
         raise ValueError("retry values must be nonnegative")
     if args.workers < 1 or args.progress_every < 1:
@@ -669,7 +655,7 @@ def _run(args: argparse.Namespace) -> int:
         "status": "running",
         "started_at": _now(),
         "model": canonical_model_name(args.model),
-        "architecture": args.arch,
+        "architecture": "monolithic",
         "input": str(input_path),
         "output": str(output_path),
         "total_evidences": total,

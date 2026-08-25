@@ -38,8 +38,9 @@ Model: gemma-4-26b (Ollama remote or local MLX 8-bit).
 
 The CLI default is the monolithic scorer: a deterministic LLM call per
 `(Statement, Evidence)` pair with type-adaptive contrastive examples (a second
-call fires only for `[Complex]` claims — see Tier 2). The decomposed four-probe
-scorer remains available for ablations with `--arch decomposed`.
+call fires only for `[Complex]` claims — see Tier 2). A decomposed four-probe
+scorer used to sit beside it for ablations; it lost on holdout_cc and has been
+removed (git history holds it).
 
 ### Two-tier monolithic path
 
@@ -87,7 +88,6 @@ Types with bank examples: Activation (2 pairs), Inhibition (2), Phosphorylation,
 ```bash
 PYTHONPATH=src python -m indra_belief.scorers.scorer \
     --model gemma-remote \
-    --arch monolithic
 ```
 
 ## Design decisions we already paid for
@@ -212,15 +212,14 @@ so off Darwin a resolver never *requests* `mlx` — it is not that `mlx` would
 refuse to install. (`mlx` 0.32.0 carries no Darwin marker itself; its
 Darwin-only piece is `mlx-metal==0.32.0; platform_system == "Darwin"`.)
 
-The scorer never imports mlx: it reaches the server over HTTP as a plain
-`openai_compat` backend. The one in-process MLX path,
-`scripts/run_probe_battery.py`, imports `mlx_lm` lazily inside its read functions
-— `grep -cE '^(import|from) mlx' scripts/run_probe_battery.py` → 0 at module
-scope, while `grep -nE '^[[:space:]]+(import|from) mlx'` on the same file returns
-three indented hits inside function bodies. Gold loading, prompt rendering,
-record construction and artifact verification therefore stay importable in
-`.venv`, and that script is run under `~/.venvs/mlx-serve/bin/python` when it
-actually needs the model.
+No module in this repository imports `mlx` or `mlx_lm`; the `mlx-lm` dependency
+is purely a `~/.venvs/mlx-serve` serving-venv concern. The scorer reaches the
+MLX server over HTTP through `ModelClient`'s plain `openai_compat` backend, and
+`scripts/probe_logprobs.py` is the dedicated logprob probe on that route. No
+MLX-specific `httpx` caller remains; the generic
+`scripts/run_vllm_processed_shards.py` server backend uses `httpx` and can be
+pointed at `local-gemma-4-26b`. The 2.7 MB rows left by the retired probe remain
+at `data/probe_battery/mlx_verdict_logit_rows.jsonl`, with no in-tree producer.
 
 The script's `MODEL` and `PORT` defaults must stay equal to the
 `local-gemma-4-26b` entry in `src/indra_belief/model_client.py` —
@@ -316,8 +315,8 @@ verdicts = score_statement(stmt, client)
 
 The importable `score_statement` / `score_evidence` run the **monolithic**
 scorer — the default arch (empirically dominant on holdout_cc, F1 0.751 vs the
-decomposed 0.657). For the decomposed four-probe path, import the same names
-from `indra_belief.scorers.decomposed`.
+decomposed 0.657). That decomposed path has since been removed, so these names
+are the only ones.
 
 To score just one evidence of a Statement (skipping the rest of `stmt.evidence`), use `score_evidence(stmt, ev, client)`.
 
@@ -386,7 +385,7 @@ measurement profile, not survival weights.
 
 ### Representative INDRA curations
 
-The viewer's `representative` lane starts from a **5,000-pair uniform evidence-row
+The `representative` lane starts from a **5,000-pair uniform evidence-row
 reservoir** drawn without replacement with Algorithm R from exactly
 **44,944,056 grounded/assembled evidence rows** in the CoGEx 2025-09-16 dump.
 The 5,000 rows are the sampling frame, not the size of CoGEx, and the sampling
@@ -398,7 +397,7 @@ provenance but blocks two exact pairs that occur in older benchmarks, leaving
 4,998 eligible keys. Every card shown to a curator is atomically reserved in a
 persistent draw ledger; completed INDRA history and all prior reservations,
 including skips, are removed before the next random draw. Production must set
-`CURATION_DRAW_LEDGER_DIR` to storage shared by every viewer instance and
+`CURATION_DRAW_LEDGER_DIR` to storage shared by every consumer and
 acknowledge it with `CURATION_DRAW_LEDGER_SHARED=1`; sampling fails closed when
 that guarantee is not configured. Rows that no longer materialize through INDRA
 or lack usable text are retried, so the served population is conditional on
@@ -426,7 +425,7 @@ completed-sequence randomness is unproven.
 
 All 403 snapshot pairs are reservoir members and have zero prior-benchmark or
 pre-reservoir-curation overlap. The latter is pinned against
-`mock7ee_pre_reservoir_pair_manifest.jsonl` (124 genuine old-viewer submissions,
+`mock7ee_pre_reservoir_pair_manifest.jsonl` (124 genuine submissions from the retired viewer,
 123 unique pairs; the unrelated API auth probe is excluded). That proves frame
 membership, not that the historical completion sequence was a simple random
 sample: the legacy UI retained no draw/skip log, retried unusable rows, and
@@ -460,40 +459,39 @@ PYTHONPATH=src python scripts/run_rasmachine_monolithic.py \
 Estimate cost first: `from indra_belief.corpus import estimate_cost` returns
 projected LLM-call counts and USD per model before you spend.
 
-The `viewer/` SvelteKit app browses finished runs. It is a read-only,
-in-memory projection over the per-run exports under `data/exports/<run>/`
+A `viewer/` SvelteKit app used to browse finished runs as a read-only
+projection over the per-run exports under `data/exports/<run>/`. **It has been
+removed.** The exports it read are still produced and still tracked
 (`per_statement.json` + `per_evidence.jsonl` + `export_meta.json` +
-`metrics.json`), loaded by SvelteKit server load functions (`+page.server.ts`) —
-no database. Current calibration comparisons fail closed unless both products
-carry matching byte-level corpus and gold digests, the same exact evaluated
-evidence- and statement-key sets, and a compatible metrics contract. Temporal deltas are
-stricter still: they require the same exact reader configuration. Fit-set
-results are labeled in-sample and are never presented as external validation.
-The publication-grade statement comparison has its own frozen artifact and
-status contract; see
-[`research/indra_belief_comparison.md`](research/indra_belief_comparison.md)
-and `/frontier?view=belief`.
+`metrics.json`), so the data layer is intact and every exporter script still
+runs — there is simply no UI over it. Read the artifacts directly, or via the
+Python helpers in `src/indra_belief/results.py`.
 
-```bash
-cd viewer && npm install && npm run dev  # http://127.0.0.1:5174
-```
+The invariants the viewer enforced at render time still hold as properties of
+the artifacts: current calibration comparisons fail closed unless both products
+carry matching byte-level corpus and gold digests, the same exact evaluated
+evidence- and statement-key sets, and a compatible metrics contract; temporal
+deltas require the same exact reader configuration; fit-set results are labeled
+in-sample and are never external validation. The publication-grade statement
+comparison has its own frozen artifact and status contract, recorded in the
+committed artifacts under `data/results/` and in git history; the standalone
+research memo that described it was retired with the comparison harness.
 
 ### Observed LLM cost (per run)
 
 Each ordinary run export carries the real USD it cost to score, computed from
 the token usage actually observed during the run — not an estimate. Pricing for
-these exports lives in `src/indra_belief/corpus/cost.py`; the viewer only reads
-baked numbers.
+these exports lives in `src/indra_belief/corpus/cost.py`, which is where the
+numbers are baked; consumers only read them.
 
 At export time, every evidence row's `call_log` (one entry per LLM call, each
 carrying `prompt_tokens`, `out_tokens`, and the real `model_id`) is priced via
 `token_cost_usd` and summed. Per-row `cost_usd` is baked into `per_evidence.jsonl`;
 a run total + input/output token totals + `usd_per_1k_evidence` go into
-`export_meta.json`. The run feed (`/runs`) shows a compact per-run cost; the run
-detail (`/runs/<id>`) shows total, cost per 1k LLM-scored evidence, tokens, and
-the model(s) billed.
+`export_meta.json`, alongside total input/output token counts and
+`usd_per_1k_evidence`.
 
-Three honest states — the viewer never invents a price:
+Three honest states — a price is never invented:
 
 - **known** — every scored row used a model with a verified price (local /
   self-hosted models are genuinely free → `$0.00`).
@@ -521,7 +519,6 @@ projections of the same run and are explicitly non-additive.
 ```bash
 PYTHONPATH=src python -m indra_belief.scorers.scorer \
     --model gemma-remote \
-    --arch monolithic \
     --holdout data/benchmark/holdout_large.jsonl \
     --output data/results/run.jsonl \
     --resume data/results/run.jsonl  # resume interrupted runs
@@ -549,27 +546,12 @@ src/indra_belief/
   results.py               # Run-result loading + row shaping
   scorers/
     scorer.py              # Public score_statement / score_evidence + benchmark main
-    _shared.py             # Verdict→score mapping shared across scorers
-    context.py             # Per-record scoring context
-    context_builder.py     # Grounding + alias context assembly
-    commitments.py         # Claim-commitment extraction
-    grounding.py           # Gilda-backed entity grounding
-    kg_signal.py           # Knowledge-graph corroboration signal
-    parse_claim.py         # Statement → typed claim parse
-    relation_patterns.py   # Regex relation cues
-    monolithic/            # Default scorer
+    monolithic/            # The scorer (the only architecture)
+    _shared.py             # Verdict→score mapping + JSON extraction, shared
       scorer.py            # MONO_VARIANT dispatch (default disconfirm_relnature_rf)
       _prompts.py          # Baseline six-rule system prompt
       _prompts_disconfirm.py  # Commit-first disconfirm prompt + backstop
       _prompts_relation.py    # [Complex] relation-nature step (Gilda aliases)
-    probes/                # Decomposed four-probe scorer (--arch decomposed)
-      orchestrator.py      # Probe pipeline + router
-      router.py            # Statement → probe set
-      subject_role.py object_role.py relation_axis.py scope.py bind_check.py
-      adjudicator.py       # Probe verdicts → final
-      _llm.py types.py
-    panel/                 # Objection-panel ablation
-      orchestrator.py detectors.py adjudicator.py types.py
   corpus/
     cost.py                # estimate_cost + MODEL_PRICES_PER_M_TOKENS (only surviving surface)
   tools/
@@ -579,39 +561,12 @@ src/indra_belief/
     scoring_record.py      # ScoringRecord: wraps INDRA Statement + Evidence
     corpus.py              # CorpusIndex: source_hash → Statement lookup
     example_bank.json      # Type-specific contrastive pairs
-
-viewer/                    # SvelteKit dashboard — read-only projection over data/exports/<run>/
-  src/lib/
-    format.ts              # Cue extraction, verdict rendering, sentence formatting
-    residuals.ts           # Residual histogram bucket logic
-    index.ts               # Re-exports
-    components/            # BeliefPrimitive, BeliefRuler, SiteNav, Validity
-    data/                  # In-memory data layer over the JSONL exports
-      runs.ts              # Run discovery (dirs with export_meta.json)
-      queries.ts           # Per-run / per-statement / per-evidence selectors
-      curation.ts          # INDRA-curation gold lane (twin of curation.py)
-      adjudicate.ts review.ts store.ts types.ts
-  src/routes/                # each route pairs a +page.svelte with a sibling
-                             # +page.server.ts load (runs/[run_id]/ adds
-                             # +layout.server.ts); the server loads run the
-                             # $lib/data selectors over the per-run JSONL exports
-    +page.svelte           # Dashboard: focus + findings + validity + runs feed
-    +layout.svelte         # Shared nav shell
-    +error.svelte          # Generic 4xx/5xx error page
-    runs/+page.svelte                      # Runs index
-    runs/[run_id]/+page.svelte             # Per-run detail (+layout.server.ts loads the run)
-    statements/+page.svelte                # Matrix (paginated, URL-stated)
-    statements/[stmt_hash]/+page.svelte    # Per-stmt deep-dive (evidence cards + rollup)
-    compare/+page.svelte                   # Model-vs-model dig (L0–L3, optional gold mode)
-    adjudicate/+page.svelte                # Blind human verdict (curation revealed as 3rd judge)
-    review/+page.svelte                    # Faithfulness / correctness review queue
-
 data/
   benchmark/
     holdout.jsonl          # 200-record balanced evaluation set
     holdout_large.jsonl    # 4,625-record half-corpus evaluation
     example_pairs.json     # Entity pairs excluded from holdouts
-  exports/<run>/           # Per-run viewer exports (per_statement.json + per_evidence.jsonl + export_meta.json)
+  exports/<run>/           # Per-run exports (per_statement.json + per_evidence.jsonl + export_meta.json)
   corpora/                 # Sampled INDRA Statement dumps to score
   results/                 # Evaluation results
 
@@ -620,10 +575,9 @@ scripts/
   check_contamination.py        # Pre-eval gate: examples must not overlap holdout
   check_doc_anchors.py          # Live-doc guard: referenced implementation files exist
   serve_mlx.sh                  # Local MLX reader on Apple Silicon (the one logprob-capable route)
-  export_representative_curations.py  # Export first-write unique-pair representative snapshot
 
 .github/workflows/
-  ci.yml                        # pytest + guards + viewer/deck checks on every push and PR
+  ci.yml                        # pytest + guards on every push and PR
 ```
 
 ## References

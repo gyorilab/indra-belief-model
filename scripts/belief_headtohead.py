@@ -35,6 +35,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from indra_belief.metrics import auroc as _canonical_auroc
 from indra_belief.metrics import confusion_pr, ece  # noqa: E402
 from indra_belief.noise_model import (  # noqa: E402
     RECALIBRATED_PRIORS,
@@ -116,23 +117,21 @@ def load_exact_gold(path: str) -> tuple[GoldMap, dict[tuple[int, int], dict], in
 
 
 def auroc(scored: list[tuple[float, bool]]) -> float | None:
-    pos = sum(1 for _, lab in scored if lab)
-    neg = len(scored) - pos
-    if not pos or not neg:
+    """AUROC with positive class = label True. None if either class is empty.
+
+    The rank (Mann-Whitney) body this used to carry was byte-identical to
+    `indra_belief.metrics.auroc`, so the estimator now lives there and this is
+    the adapter: unzip the pairs, and map the canonical `nan`-on-degenerate back
+    to the `None` this module's callers (and its JSON output, where nan is not
+    valid) have always seen.
+    """
+    if not scored:
         return None
-    ordered = sorted(scored, key=lambda x: x[0])
-    ranks = [0.0] * len(ordered)
-    i = 0
-    while i < len(ordered):
-        j = i
-        while j + 1 < len(ordered) and ordered[j + 1][0] == ordered[i][0]:
-            j += 1
-        avg = (i + j) / 2.0 + 1.0
-        for k in range(i, j + 1):
-            ranks[k] = avg
-        i = j + 1
-    rank_sum_pos = sum(r for r, (_, lab) in zip(ranks, ordered) if lab)
-    return (rank_sum_pos - pos * (pos + 1) / 2.0) / (pos * neg)
+    scores = [s for s, _ in scored]
+    labels = [bool(lab) for _, lab in scored]
+    if not any(labels) or all(labels):
+        return None
+    return float(_canonical_auroc(scores, labels))
 
 
 def discrimination(rows: list[dict], key: str) -> dict:
@@ -178,6 +177,17 @@ def main() -> None:
         d = json.loads(line)
         n_run += 1
         stmt_key, mh = run_statement_key(d.get("stmt_hash"))
+        if mh is None:
+            # Same statement identity, TWO encodings: run_rasmachine_monolithic.py
+            # persists it as `stmt_hash` (16-char hex); run_vllm_gold_eval.py
+            # persists `matches_hash` (already unsigned) and writes NO stmt_hash
+            # at all. Without this fallback a provider run joins to NOTHING and
+            # this script emitted F1=0.000 with exit 0 — a fabricated
+            # measurement, not an absent one. The same repair already lives in
+            # scripts/calibration_ship_gate.py:228-233.
+            mh = ukey(d.get("matches_hash"))
+            if mh is not None:
+                stmt_key = str(mh)
         sh = ukey(d.get("source_hash"))
         if stmt_key is None or mh is None or sh is None:
             n_invalid_key += 1
@@ -399,6 +409,16 @@ def main() -> None:
     L.append(f"verdict_statement counts: {dict(vcounts)}.\n")
     with out_md.open("w") as f:
         f.write("\n".join(L))
+
+    if n_joined == 0:
+        raise SystemExit(
+            f"[{args.label}] REFUSING to emit a measurement: 0 of {n_run} run rows "
+            f"joined to gold ({n_unmatched} unmatched, {n_invalid_key} invalid key). "
+            "Every metric below would be computed over an empty set and would print "
+            "as 0.000 rather than as absent. Check the run and the gold share a "
+            "statement key: monolithic runs carry `stmt_hash`, vLLM gold-eval runs "
+            "carry `matches_hash`."
+        )
 
     # console
     print(f"[{args.label}] coverage {n_joined}/{n_run} → {len(stmts)} statements "

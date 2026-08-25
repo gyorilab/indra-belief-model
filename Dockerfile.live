@@ -17,13 +17,13 @@
 # entry point is `python -m indra_belief.scorers.scorer`, the same CLI a
 # developer runs from a checkout.
 #
-# IMPORT TRAP, carried over from serving_deployment.md §5.1 because it bites at
-# exactly this seam: `src/indra_belief/scorers/scorer.py` re-exports the
-# DECOMPOSED architecture at module import (`from indra_belief.scorers.decomposed
-# import score_evidence, score_statement`), while its own `--arch` flag defaults
-# to `monolithic`. A caller who imports names from that module gets the
-# non-default architecture. `--arch` selection is load-bearing here, and
-# `src/indra_belief/scorers/__init__.py` is 0 bytes, so it cannot arbitrate.
+# IMPORT TRAP, RESOLVED — kept as a note because serving_deployment.md §5.1
+# still describes the hazard. `src/indra_belief/scorers/scorer.py` used to
+# re-export the DECOMPOSED architecture at module import while its own `--arch`
+# flag defaulted to `monolithic`, so importing names from that module silently
+# got you the non-default architecture. The decomposed architecture has been
+# removed: `scorer.py` now re-exports the monolithic scorer, there is no `--arch`
+# flag, and the two paths cannot disagree because there is only one.
 #
 # WHY THIS INVERTS THE BATCH FILE'S INSTALL. The batch image installs its deps
 # explicitly and finishes with `pip install --no-deps .`, because pyproject.toml
@@ -164,7 +164,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN useradd --create-home --uid 10001 belief
 
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
-COPY --from=builder /usr/local/bin/indra-belief-comparison /usr/local/bin/indra-belief-comparison
 
 WORKDIR /app
 COPY --chown=belief:belief scripts/ ./scripts/
@@ -282,7 +281,7 @@ CMD ["--help"]
 #
 #   # Thereafter, warm:
 #   docker run --rm -v indra-belief-resources:/app/resources \
-#     -v "$PWD/data:/app/data" indra-belief:live --arch monolithic --help
+#     -v "$PWD/data:/app/data" indra-belief:live --help
 #
 # WHY THE WARM-UP IS AN OPERATOR STEP AND NOT A BUILD STEP.
 # `indra.ontology.bio.ontology.BioOntology.initialize` has NO prebuilt-pickle

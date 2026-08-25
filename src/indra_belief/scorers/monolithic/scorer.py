@@ -1,5 +1,5 @@
-"""Monolithic single-call belief scorer — sibling to the decomposed
-four-probe pipeline.
+"""Monolithic single-call belief scorer — the only one. A decomposed
+four-probe pipeline stood beside it until it lost on holdout_cc and was removed.
 
 Two-tier architecture (single LLM call per (Statement, Evidence)):
   Tier 1: Deterministic grounding check (GroundedEntity.should_auto_reject)
@@ -12,12 +12,11 @@ Two-tier architecture (single LLM call per (Statement, Evidence)):
     - Entity context injected from ScoringRecord
     - Output: a single JSON verdict, read by `indra_belief.verdict`
 
-The decomposed sibling lives in indra_belief.scorers.probes.*.
-Selection between architectures is via the CLI `--arch` flag in
-indra_belief.scorers.scorer. The entry points here are `score(client, record)`
-and `score_statement(stmt, ev, client)`; the canonical `score_evidence` name
-the decomposed path also exposes is a delegate over `score_statement` in this
-package's `__init__`.
+There is no architecture selection any more — the decomposed sibling and the
+`--arch` flag that chose between them are gone. The entry points here are
+`score(client, record)` and `score_statement(stmt, ev, client)`; the canonical
+`score_evidence` name is a delegate over `score_statement` in this package's
+`__init__`.
 
 The scoring profile — prompt, few-shot renderer, output contract, and whether
 the relation-nature step fires — is a `ScoringVariant` value. The profile does
@@ -27,7 +26,7 @@ on the batch replay alike. It defaults to
 overridden per call with `variant=`.
 
 Run:
-    PYTHONPATH=src python -m indra_belief.scorers.scorer --arch monolithic ...
+    PYTHONPATH=src python -m indra_belief.scorers.scorer ...
 """
 from __future__ import annotations
 
