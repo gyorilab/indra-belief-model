@@ -2,8 +2,9 @@
 
 `indra_belief.evidence_weights` re-states an aggregation that already exists
 inside `noise_model._soft_gated_belief`. Duplicated arithmetic is how two
-implementations drift apart while both look right, and `noise_model` is
-byte-frozen so the duplication cannot be avoided by refactoring.
+implementations drift apart while both look right, and `noise_model` is the
+published implementation whose bytes four `data/comparison/models/*/manifest.json`
+bundles record, so the duplication cannot be avoided by refactoring it.
 
 This file is the thing that makes the duplication safe: fed VERDICT-DERIVED
 weights, the generalization must reproduce `compute_gated_belief(...,

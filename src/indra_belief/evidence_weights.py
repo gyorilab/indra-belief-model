@@ -18,13 +18,21 @@ identical weight. The direct verdict probe measures that margin and already
 returns it in exactly this currency — ``CalibratedProbeReading.weight_of_evidence``, the
 calibrated log-odds relative to the fit base rate — and nothing consumes it.
 
-(The frozen source spells this weight ``ell`` — the letter used for it in
+(The published source spells this weight ``ell`` — the letter used for it in
 that formula. It is the same quantity under a name that says what it is.)
 
-``noise_model`` is BYTE-FROZEN under ``llm._implementation_digest()``, so a
-per-row weight cannot be threaded through it. This module is the generalization:
-the same aggregation, taking a weight per evidence instead of deriving it from a
-verdict.
+``noise_model`` is a PUBLISHED implementation: its bytes are recorded under
+``implementation.notes.implementation_components.noise_model`` in the four
+``data/comparison/models/*/manifest.json`` bundles, and the module still matches
+that record. Threading a per-row weight through it would break that
+correspondence, so this module is the generalization instead: the same
+aggregation, taking a weight per evidence rather than deriving it from a
+verdict. (That record is provenance, not a lock. Nothing in this tree enforces
+it -- the function that computed it, ``comparison/llm.py::_implementation_digest``,
+was retired with the paid benchmark harness. What actually holds ``noise_model``
+still is behavioural: tests/test_noise_model.py, tests/test_soft_belief.py,
+tests/test_statement_belief_truth_table.py, and the exact-reduction property
+below.)
 
 WHY THIS IS NOT A SECOND BELIEF MODEL
 -------------------------------------
@@ -82,7 +90,7 @@ def verdict_weight(
     log_lr_confirm: float,
     log_lr_reject: float,
 ) -> float:
-    """The weight the frozen model gives a read. Extracted so it is testable.
+    """The weight the published model gives a read. Extracted so it is testable.
 
     This is a transcription of the branch inside ``_soft_gated_belief``; the
     reduction test pins it against the real thing.
@@ -98,7 +106,7 @@ def probe_weight(weight: float, source_logodds: float) -> float:
     """A continuous reading's weight, with the source floor preserved.
 
     The floor exists so a generic reader cannot drag a well-curated source below
-    its own track record. That intent is verdict-shaped in the frozen model
+    its own track record. That intent is verdict-shaped in the published model
     (applied to confirmations only), and the faithful continuous analogue is to
     apply it when the reading FAVOURS correct — ``weight > 0`` — and to let a
     disconfirming reading stand on its own, exactly as a rejection does.
@@ -119,7 +127,7 @@ def belief_from_weights(
 
     Within a source the reads are correlated — same reader — so their weights are
     AVERAGED and the source counts once; across sources they SUM. That is the
-    frozen model's rule and this does not relitigate it.
+    published model's rule and this does not relitigate it.
     """
     if not evidence:
         raise ValueError("belief_from_weights requires at least one evidence row")

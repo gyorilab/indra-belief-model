@@ -37,9 +37,11 @@ one (Statement, Evidence) pair puts on the wire; this one owns the RESPONSE that
 comes back. Both are consumed by `scorers.monolithic` and by `comparison.replay`
 alike, so neither package may own either, and `scorers.*` must never import
 `comparison.*`. It deliberately does NOT live in `scorers/_shared.py`:
-`comparison/llm.py` sha256s that file's BYTES into the `implementation_digest`
-published in local comparison manifests, so parsing remains independent of the
-shared request/rendering helpers.
+the now-retired `comparison/llm.py` sha256'd that file's BYTES into the
+`implementation_digest` published in `data/comparison/models/*/manifest.json`,
+so parsing was kept independent of the shared request/rendering helpers. The
+digest machinery is gone; the separation it forced is left in place because
+those manifests remain the published record of how that comparison was scored.
 """
 from __future__ import annotations
 

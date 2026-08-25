@@ -22,8 +22,8 @@ This is the k-feature generalisation of
 ``calibration_constants.py::profile_from_confusion``.  It deliberately does
 not import, modify, or replace that shipped production belief calibration: the
 2x2-confusion map is closed-form by design.  Nothing here is wired into the
-belief math, and ``src/indra_belief/noise_model.py`` is byte-frozen under
-``llm._implementation_digest()``.
+belief math, and this module neither imports nor mutates
+``src/indra_belief/noise_model.py``.
 
 The isotonic knots are learned from out-of-fold decisions, whereas
 ``raw_logit`` uses the full-data logistic refit, so the two sit on slightly

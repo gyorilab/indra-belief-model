@@ -12,8 +12,8 @@ and the best claim-level method in Vashurin et al. TACL 2025 Table 5), with the
 NLI entail/contradict partition replaced by an exact lexical one — valid precisely
 because `verdict.VALID_VERDICTS` is closed and the two spellings share no prefix.
 
-Nothing here touches the belief math. `noise_model.py` is byte-frozen under
-`llm._implementation_digest()`; wiring p_raw into it is a separate, gated step.
+Nothing here touches the belief math: this module neither imports nor mutates
+`noise_model.py`, and wiring p_raw into it is a separate, gated step.
 This module only turns a transport-level distribution into a number plus enough
 provenance to tell a real measurement from a degenerate one.
 """
