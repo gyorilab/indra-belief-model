@@ -63,8 +63,6 @@ RESEARCH_ROOTS: Mapping[str, str] = {
         "confusion / precision / recall / F1 / ECE over a scored eval set.",
     f"{PACKAGE}.curation":
         "INDRA curations as gold — the label side of every evaluation.",
-    f"{PACKAGE}.sampling":
-        "two-stage cluster sampling and interval sizing for eval queues.",
     f"{PACKAGE}.model_meta":
         "curated model parameter counts baked into a run's export for the "
         "viewer's size axis.",

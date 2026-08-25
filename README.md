@@ -543,7 +543,6 @@ src/indra_belief/
   statement_belief.py      # verdicts → hybrid log-odds score (hard-gate fallback)
   curation.py              # INDRA-curation gold rule + hash bridge + index
   metrics.py               # Binary confusion P/R/F1 + ECE calibration
-  sampling.py              # Two-stage / priority sampling + Wilson half-width
   results.py               # Run-result loading + row shaping
   scorers/
     scorer.py              # Public score_statement / score_evidence + benchmark main

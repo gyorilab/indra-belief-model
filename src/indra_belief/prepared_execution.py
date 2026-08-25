@@ -36,7 +36,7 @@ when K2's whole answer is that exactly one parser reads every reply. The
 constant below states that; a per-instance copy of it only obscured it.
 
 Home. Top level of the package, next to `hashing.py` / `metrics.py` /
-`curation.py` / `sampling.py`, because both `scorers.monolithic` and
+`curation.py`, because both `scorers.monolithic` and
 `comparison.replay` consume it and neither may own it.
 
 Relation text. `relation_user_message` and `relation_mismatch_note` are the only
