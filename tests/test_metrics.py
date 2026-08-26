@@ -5,7 +5,6 @@ short-key from aa/cc/three_way confusion). The behavioral guarantee that the
 five eval scripts reproduce their committed .md reports byte-exactly is the
 real extraction proof; these lock the unit contract.
 """
-import ast
 import json
 import math
 import random
@@ -13,6 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _ast_import_roots import import_roots
 import indra_belief.metrics as metrics_module
 from indra_belief.metrics import (
     BINS_8,
@@ -43,6 +43,14 @@ def test_confusion_metrics_long_key_shape_and_math():
     assert m["recall"] == 3 / 4
     assert m["f1"] == 0.75
     assert m["accuracy"] == 4 / 6
+
+
+def test_confusion_metrics_f1_is_the_harmonic_mean():
+    pairs = [(True, True)] * 2 + [(False, True)] * 2 + [(True, False), (False, False)]
+    m = confusion_metrics(pairs)
+    assert m["precision"] != m["recall"]
+    assert math.isclose(m["f1"], 4 / 7)
+    assert not math.isclose(m["f1"], (m["precision"] + m["recall"]) / 2)
 
 
 def test_confusion_pr_short_key_shape():
@@ -241,19 +249,7 @@ def test_metrics_import_roots_are_exactly_the_declared_four():
     # than imported. A grep-based "no sklearn" check reads those two sentences
     # as violations and false-positives on a file that is in fact clean. The AST
     # sees import statements only, so documentation can never trip it.
-    tree = ast.parse(Path(metrics_module.__file__).read_text())
-    roots = set()
-    relative_targets = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            roots.update(alias.name.split(".", 1)[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            if node.level == 0:
-                roots.add(node.module.split(".", 1)[0])
-            elif node.module:  # from .pkg import x
-                relative_targets.add(node.module.split(".", 1)[0])
-            else:  # from . import x, y
-                relative_targets.update(a.name.split(".", 1)[0] for a in node.names)
+    roots, relative_targets = import_roots(Path(metrics_module.__file__))
     assert relative_targets == set(), (
         "metrics.py must not reach into intra-package siblings; found relative "
         f"import(s): {sorted(relative_targets)}"

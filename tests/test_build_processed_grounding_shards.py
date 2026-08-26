@@ -245,6 +245,83 @@ def _empty_corpus_run(tmp_path, monkeypatch, *extra):
     return pipeline.main()
 
 
+def test_completed_run_releases_claim_and_resumes(tmp_path, monkeypatch):
+    assert _empty_corpus_run(tmp_path, monkeypatch) == 0
+    manifest_path = tmp_path / "prepared" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["status"] == "completed"
+    assert manifest["owner"] is None
+
+    assert _empty_corpus_run(tmp_path, monkeypatch, "--resume") == 0
+    assert json.loads(manifest_path.read_text())["owner"] is None
+
+
+def test_foreign_claim_requires_its_named_override(tmp_path, monkeypatch):
+    import pytest as _pytest
+
+    assert _empty_corpus_run(tmp_path, monkeypatch, "--resume") == 0
+    manifest_path = tmp_path / "prepared" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    pid = pipeline.os.getpid()
+    recorded_claim = f"elsewhere:{pid}"
+    manifest["status"] = "running"
+    manifest["owner"] = {
+        "host": "elsewhere",
+        "pid": pid,
+        "since": pipeline._now(),
+    }
+    manifest_path.write_text(json.dumps(manifest))
+
+    with _pytest.raises(SystemExit) as excinfo:
+        _empty_corpus_run(tmp_path, monkeypatch, "--resume")
+    assert recorded_claim in str(excinfo.value)
+    assert f"--accept-claim {recorded_claim}" in str(excinfo.value)
+
+    assert _empty_corpus_run(
+        tmp_path, monkeypatch, "--resume", "--accept-claim", recorded_claim
+    ) == 0
+    assert json.loads(manifest_path.read_text())["owner"] is None
+
+
+def test_same_host_dead_claim_is_taken_over(tmp_path, monkeypatch, capsys):
+    assert _empty_corpus_run(tmp_path, monkeypatch, "--resume") == 0
+    manifest_path = tmp_path / "prepared" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    host = pipeline.socket.gethostname()
+    dead_pid = pipeline.os.getpid() + 1_000_000
+    manifest["status"] = "running"
+    manifest["owner"] = {
+        "host": host,
+        "pid": dead_pid,
+        "since": pipeline._now(),
+    }
+    manifest_path.write_text(json.dumps(manifest))
+
+    def process_is_gone(pid, signal_number):
+        assert (pid, signal_number) == (dead_pid, 0)
+        raise ProcessLookupError
+
+    monkeypatch.setattr(pipeline.os, "kill", process_is_gone)
+    capsys.readouterr()
+    assert _empty_corpus_run(tmp_path, monkeypatch, "--resume") == 0
+    assert (
+        f"taking over abandoned claim {host}:{dead_pid}"
+        in capsys.readouterr().out
+    )
+
+
+def test_ownerless_legacy_manifest_resumes(tmp_path, monkeypatch):
+    assert _empty_corpus_run(tmp_path, monkeypatch) == 0
+    manifest_path = tmp_path / "prepared" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["status"] = "running"
+    manifest.pop("owner")
+    manifest_path.write_text(json.dumps(manifest))
+
+    assert _empty_corpus_run(tmp_path, monkeypatch, "--resume") == 0
+    assert json.loads(manifest_path.read_text())["owner"] is None
+
+
 def test_the_fingerprint_states_no_digest_that_writing_it_would_falsify():
     """A file cannot quote its own hash.
 

@@ -18,7 +18,6 @@ rather than a pure posterior.
 from __future__ import annotations
 
 import math
-import random
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -29,60 +28,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import calibration_stage0 as c0  # noqa: E402  (reuse join + metrics)
+import calibration_stage0 as c0  # noqa: E402  (reuse metrics)
 from indra_belief.calibration_constants import profile_from_confusion  # noqa: E402
-from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
 from indra_belief.metrics import ece  # noqa: E402
 from indra_belief.noise_model import (  # noqa: E402
     _DEFAULT_PRIOR,
     RECALIBRATED_PRIORS,
-    compute_gated_belief,
 )
 
 PRIORS = RECALIBRATED_PRIORS
-
-
-def statements_from_joined(joined) -> list[dict]:
-    """Group a ``(gold, scored)`` stream produced by ``calibration_stage0.join_model``."""
-    by_stmt: dict[int, dict] = defaultdict(lambda: {"ev": [], "tags": []})
-    for g, s in joined:
-        # Statement id is pa_hash on the eval/holdout golds; the external
-        # multi-curator gold carries matches_hash instead — fall back to it so
-        # the ship gate can run on that gold. No-op when pa_hash is present.
-        statement_key = g.get("pa_hash")
-        if statement_key is None:
-            statement_key = g.get("matches_hash")
-        rec = by_stmt[statement_key]
-        rec["ev"].append({
-            "source_api": s.get("source_api") or g.get("source_api"),
-            "verdict": s.get("verdict"),
-            "ev_gold_correct": is_gold_correct(g["tag"]),
-            "evidence_hash": s.get("evidence_hash"),
-        })
-        rec["tags"].append(g["tag"])
-    out = []
-    for pa, rec in by_stmt.items():
-        gold = aggregate_gold(rec["tags"])
-        if gold is None:
-            continue
-        out.append({"pa_hash": pa, "ev": rec["ev"],
-                    "n_ev": len(rec["ev"]), "gold_correct": is_gold_correct(gold)})
-    return out
-
-
-def split_stratified(stmts, seed=0, frac_train=0.5):
-    """Stratified train/test split by per-statement gold (deterministic)."""
-    rng = random.Random(seed)
-    pos = [s for s in stmts if s["gold_correct"]]
-    neg = [s for s in stmts if not s["gold_correct"]]
-    rng.shuffle(pos)
-    rng.shuffle(neg)
-    tr, te = [], []
-    for group in (pos, neg):
-        k = int(round(len(group) * frac_train))
-        tr += group[:k]
-        te += group[k:]
-    return tr, te
 
 
 def fit_reader_profile(train_stmts) -> dict:
@@ -140,12 +94,6 @@ def soft_belief(evidence, log_lr_confirm, log_lr_reject, priors=PRIORS, prior_lo
         return 1.0 / (1.0 + z)
     z = math.exp(total)
     return z / (1.0 + z)
-
-
-def hard_belief(evidence) -> tuple[float, float]:
-    ev = [{"source_api": e["source_api"], "included": e["verdict"] != "incorrect"} for e in evidence]
-    res = compute_gated_belief(ev, priors=PRIORS)
-    return res.belief, res.parametric_only
 
 
 def metric_block(scores, labels) -> dict:

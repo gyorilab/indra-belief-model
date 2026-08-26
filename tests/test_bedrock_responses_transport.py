@@ -1,7 +1,6 @@
 """Adversarial, loopback-only tests for the formal Gemma Responses transport."""
 from __future__ import annotations
 
-import ast
 import base64
 from collections import deque
 import hashlib
@@ -17,6 +16,7 @@ import time
 import traceback
 import urllib.request
 
+from _ast_import_roots import import_roots
 import pytest
 
 
@@ -1190,20 +1190,7 @@ def test_watchdog_race_before_tls_wrap_closes_candidate(monkeypatch) -> None:
 
 
 def test_only_stdlib_import_roots_are_in_paid_transport_module() -> None:
-    source_path = Path(responses_transport.__file__)
-    tree = ast.parse(source_path.read_text())
-    roots = set()
-    relative_targets = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            roots.update(alias.name.split(".", 1)[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            if node.level == 0:
-                roots.add(node.module.split(".", 1)[0])
-            elif node.module:  # from .pkg import x
-                relative_targets.add(node.module.split(".", 1)[0])
-            else:  # from . import x
-                relative_targets.update(a.name.split(".", 1)[0] for a in node.names)
+    roots, relative_targets = import_roots(Path(responses_transport.__file__))
     # The only permitted intra-package import on the paid path is the shared
     # stdlib-only base module; any other relative import smuggles a heavy sibling.
     assert relative_targets <= {"bedrock_transport_base"}, (
@@ -1238,19 +1225,7 @@ def test_only_stdlib_import_roots_are_in_bedrock_transport_base() -> None:
     # pull of a heavy sibling (`from . import model_client`, `from .scorers import
     # x`) would smuggle openai/indra/gilda into the paid path, so relative imports
     # of ANY form (level>0, whether or not node.module is set) are rejected here.
-    tree = ast.parse(Path(transport_base.__file__).read_text())
-    roots = set()
-    relative_targets = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            roots.update(alias.name.split(".", 1)[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            if node.level == 0:
-                roots.add(node.module.split(".", 1)[0])
-            elif node.module:  # from .pkg import x
-                relative_targets.add(node.module.split(".", 1)[0])
-            else:  # from . import x, y
-                relative_targets.update(a.name.split(".", 1)[0] for a in node.names)
+    roots, relative_targets = import_roots(Path(transport_base.__file__))
     assert relative_targets == set(), (
         "bedrock_transport_base must be a stdlib-only leaf; found relative "
         f"import(s): {sorted(relative_targets)}"

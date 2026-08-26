@@ -6,7 +6,7 @@ First, it is the shared join and metric layer for the calibration scripts.
 ``scripts/calibration_ship_gate.py:67`` imports it as ``c0`` and calls
 ``c0.load_jsonl`` at lines 204 and 212; ``scripts/calibration_stage1.py:32``
 imports it as ``c0`` and calls ``c0.brier_murphy``, ``c0.auroc``, and
-``c0.auprc`` at lines 152 and 157. ``tests/test_metrics.py:131`` pins
+``c0.auprc`` in ``calibration_stage1::metric_block``. ``tests/test_metrics.py:131`` pins
 ``auroc``, ``auprc``, ``brier_murphy``, and ``reliability_bins`` as the same
 objects exported by ``indra_belief.metrics``, preventing served metrics and
 ship-gate measurements from silently diverging.

@@ -357,10 +357,13 @@ def test_preflight_passes_on_a_server_that_agrees(capsys):
     assert "[preflight] ok" in capsys.readouterr().out
 
 
-def test_preflight_is_satisfied_by_a_plain_server_for_a_no_logprob_variant():
+def test_preflight_is_satisfied_by_a_plain_server_for_a_no_logprob_variant(capsys):
     """The deliberative variant asks for no window, so a stock server is fine —
     the check must not invent a requirement the run does not have."""
     _preflight(_Silent, variant="disconfirm_relnature_rf")
+    out = capsys.readouterr().out
+    assert "[preflight] ok" in out
+    assert "logprobs=off" in out
 
 
 def test_preflight_reports_an_unreachable_server_as_such():

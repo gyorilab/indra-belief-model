@@ -35,7 +35,6 @@ import json
 import logging
 import os
 import re
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
@@ -45,11 +44,6 @@ log = logging.getLogger(__name__)
 from indra_belief.data.scoring_record import ScoringRecord
 from indra_belief.model_client import ModelClient
 from indra_belief.prepared_execution import PreparedExecution, prepare_from_record
-
-# CorpusIndex is imported lazily in main() — the benchmark harness is the
-# only consumer. Keeping it out of the module-level import chain means
-# `from indra_belief import ModelResponse` (for typing) doesn't pay the
-# cost of pulling in the INDRA corpus index.
 
 from indra_belief.scorers.monolithic._prompts import (
     SYSTEM_PROMPT,
@@ -237,8 +231,6 @@ def _relation_note(client, record, *, variant: ScoringVariant | None = None) -> 
             e,
         )
         return ""
-
-ROOT = Path(__file__).resolve().parents[4]
 
 # Provenance is injected only when grounding is flagged; selective injection avoids context overhead.
 
@@ -522,21 +514,14 @@ def _in_call_margin(response, variant) -> float | None:
         return None
 
 
-def _score_single(
+def _finish_score(
     client: ModelClient,
-    record: ScoringRecord,
-    max_tokens: int | None,
-    temperature: float = 0.1,
-    *,
-    variant: ScoringVariant | None = None,
-    margin_out: dict | None = None,
+    execution: PreparedExecution,
+    note: str,
+    examples: Sequence[dict],
+    variant: ScoringVariant,
+    margin_out: dict | None,
 ) -> dict:
-    """Single LLM call for Tier 2 (+ optional relation-nature note). Returns result dict."""
-    variant = variant or DEFAULT_VARIANT
-    examples = _select_examples(record.stmt_type)
-    note = _relation_note(client, record, variant=variant)
-    execution = _prepare(record, examples, route="plain", max_tokens=max_tokens,
-                         temperature=temperature, variant=variant)
     response = client.call(**_call_kwargs(execution, note, variant))
     parsed = parse_response(response)
     _stamp_committed_justification(response, variant=variant)
@@ -556,6 +541,23 @@ def _score_single(
         "selected_example_ids": [ex["id"] for ex in selected_examples],
         "selected_examples": selected_examples,
     }
+
+
+def _score_single(
+    client: ModelClient,
+    record: ScoringRecord,
+    max_tokens: int | None,
+    *,
+    variant: ScoringVariant | None = None,
+    margin_out: dict | None = None,
+) -> dict:
+    """Single LLM call for Tier 2 (+ optional relation-nature note). Returns result dict."""
+    variant = variant or DEFAULT_VARIANT
+    examples = _select_examples(record.stmt_type)
+    note = _relation_note(client, record, variant=variant)
+    execution = _prepare(record, examples, route="plain", max_tokens=max_tokens,
+                         variant=variant)
+    return _finish_score(client, execution, note, examples, variant, margin_out)
 
 
 def _format_entity_lookups(record: ScoringRecord) -> list[str]:
@@ -617,25 +619,7 @@ def _score_with_tools(
     note = _relation_note(client, record, variant=variant)
     execution = _prepare(record, examples, route="tool", lookups=lookups,
                          max_tokens=max_tokens, variant=variant)
-    response = client.call(**_call_kwargs(execution, note, variant))
-    parsed = parse_response(response)
-    _stamp_committed_justification(response, variant=variant)
-    selected_examples = _example_trace_rows(examples)
-    # Side channel, NOT a new key in the returned dict. The variant-behaviour
-    # golden captures these two functions' RETURN SHAPE and is a pre-refactor
-    # capture with no regeneration path, so widening it would mean hand-editing
-    # a fixture whose whole value is that it predates the change. The margin is
-    # probe output; it belongs in the fields replace_sentence_score writes.
-    if margin_out is not None:
-        margin_out["in_call_label_margin"] = _in_call_margin(response, variant)
-    return {
-        "verdict": None if parsed is None else parsed.label,
-        "confidence": None if parsed is None else parsed.confidence,
-        "raw_text": response.raw_text,
-        "tokens": response.tokens,
-        "selected_example_ids": [ex["id"] for ex in selected_examples],
-        "selected_examples": selected_examples,
-    }
+    return _finish_score(client, execution, note, examples, variant, margin_out)
 
 
 def _score_categorical(
@@ -832,110 +816,3 @@ def score_statement(
     """
     record = ScoringRecord(statement=statement, evidence=evidence)
     return score(client, record, max_tokens=max_tokens, variant=variant)
-
-
-def main():
-    import argparse
-    from indra_belief.data.corpus import CorpusIndex
-
-    parser = argparse.ArgumentParser(description="Evidence quality scorer (INDRA native)")
-    # Default model backend is overridable via IBR_MODEL; unchanged default
-    # ('gemma-remote') keeps a transient backend from being hard-pinned here.
-    parser.add_argument("--model", default=os.environ.get("IBR_MODEL", "gemma-remote"))
-    parser.add_argument("--holdout", default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
-    parser.add_argument("--output", default=str(ROOT / "data" / "results" / "scorer_output.jsonl"))
-    parser.add_argument("--max-tokens", type=int, default=12000)
-    parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--resume", type=str, default=None,
-                        help="Resume from existing output file (skip scored records)")
-    args = parser.parse_args()
-
-    # Load corpus and build records
-    index = CorpusIndex()
-    records = index.build_records(args.holdout)
-    if args.limit:
-        records = records[:args.limit]
-
-    # Resume support: skip already-scored records
-    scored_hashes = set()
-    if args.resume:
-        resume_path = Path(args.resume)
-        if resume_path.exists():
-            with open(resume_path) as f:
-                for lineno, line in enumerate(f, start=1):
-                    try:
-                        r = json.loads(line)
-                        scored_hashes.add(r.get("source_hash"))
-                    except json.JSONDecodeError:
-                        # Skip corrupt NDJSON line; surface it for data-integrity visibility.
-                        log.warning(
-                            "resume: skipping corrupt JSON line %d in %s: %r",
-                            lineno, resume_path, line.rstrip("\n")[:200],
-                        )
-            print(f"Resuming: {len(scored_hashes)} records already scored")
-
-    print(f"\nScorer: {len(records)} records, model={args.model}")
-
-    client = ModelClient(args.model)
-
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    mode = "a" if args.resume else "w"
-    out_fh = open(output_path, mode)
-
-    correct = 0
-    total_parsed = 0
-    tier_counts = {}
-    t_start = time.time()
-
-    for i, record in enumerate(records):
-        if record.source_hash in scored_hashes:
-            continue
-
-        result = score(client, record, args.max_tokens)
-
-        gt_correct = record.tag == "correct"
-        llm_correct = (result["verdict"] == "correct") if result["verdict"] else None
-
-        if llm_correct is not None:
-            total_parsed += 1
-            if llm_correct == gt_correct:
-                correct += 1
-
-        tier = result.get("tier", "?")
-        tier_counts[tier] = tier_counts.get(tier, 0) + 1
-
-        result.update({
-            "source_hash": record.source_hash,
-            "tag": record.tag or "",
-            "subject": record.subject,
-            "stmt_type": record.stmt_type,
-            "object": record.object,
-        })
-
-        r_save = {k: v for k, v in result.items() if k != "raw_text"}
-        r_save["raw_text_preview"] = result.get("raw_text", "")  # full output — no cap
-        out_fh.write(json.dumps(r_save) + "\n")
-        out_fh.flush()
-
-        acc = correct / total_parsed * 100 if total_parsed > 0 else 0
-        mark = "✓" if (llm_correct == gt_correct) else ("✗" if llm_correct is not None else "?")
-        tier_short = {
-            "deterministic_mismatch": "T1:MSMATCH",
-            "deterministic_pseudogene": "T1:PSEUDO",
-            "ambiguous_then_llm": "T1→T2",
-            "llm_comprehension": "T2:LLM",
-        }.get(tier, tier)
-        print(f"  [{i+1:3d}/{len(records)}] {mark} {record.subject:>10s} [{record.stmt_type:>15s}] {record.object:10s} "
-              f"→ {result['verdict'] or 'PARSE':>9s} [{tier_short:10s}] acc={acc:.1f}%")
-
-    out_fh.close()
-
-    print(f"\n{'='*70}")
-    print(f"RESULTS: {correct}/{total_parsed} = {correct/max(total_parsed,1)*100:.1f}%")
-    print(f"Tier breakdown: {tier_counts}")
-    print(f"Saved to {output_path}")
-
-
-if __name__ == "__main__":
-    main()

@@ -128,6 +128,33 @@ def test_legacy_raw_score_is_not_relabelled_as_calibrated(tmp_path):
     assert metrics["tiers"]["ev"]["status"] == "unavailable"
 
 
+def test_unreadable_run_meta_is_distinguished_from_absent_sidecar(tmp_path):
+    run, corp = _write(
+        tmp_path,
+        [_row(0, 11, "correct", 0.95)],
+        _corpus(),
+    )
+    meta_path = Path(run).with_suffix(".meta.json")
+    meta_path.write_text("{")
+
+    _per_ev, _per_stmt, unreadable_meta, _metrics = build_run_export(
+        run, corp, run_id="unreadable", model="gemma"
+    )
+    unreadable_reason = unreadable_meta["sentence_score"]["reason"]
+    assert str(meta_path) in unreadable_reason
+    assert "present but could not be read" in unreadable_reason
+    assert "legacy" not in unreadable_reason
+
+    meta_path.unlink()
+    _per_ev, _per_stmt, absent_meta, _metrics = build_run_export(
+        run, corp, run_id="absent", model="gemma"
+    )
+    assert absent_meta["sentence_score"]["reason"] == (
+        "run metadata does not identify raw score as the calibrated "
+        "sentence probability; legacy values were not exported"
+    )
+
+
 def _gold(tmp_path, gold_rows):
     g = tmp_path / "gold.jsonl"
     g.write_text("\n".join(json.dumps(r) for r in gold_rows) + "\n")
