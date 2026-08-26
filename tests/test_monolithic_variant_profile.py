@@ -3,8 +3,9 @@
 ``scorer.py`` used to resolve ``MONO_VARIANT`` into a module global at import
 and branch on it in seven places, so the profile could only be changed by
 re-importing the module under a mutated environment and the baseline branch was
-unreachable from a test. C0-profile-identity replaces that global with an
-immutable ``ScoringVariant`` threaded through the scoring entry points.
+unreachable from a test. The scorer now takes an immutable ``ScoringVariant``
+threaded through its scoring entry points instead of that global, which is what
+makes the profile selectable in-process without re-import.
 
 This module is the proof the replacement changed nothing. The fixture
 ``tests/fixtures/monolithic_variant_golden.json`` was captured from a PRISTINE
@@ -23,9 +24,10 @@ for byte, together with the call topology (whether the relation-nature sub-call
 fires at all).
 
 The ``parse_verdict`` entry is now read off ``indra_belief.verdict``.
-The parser unification removed ``scorer._parse_verdict`` — a dispatcher that picked one
-of two parsers off the variant — so the profile no longer selects a reader at
-all. The values below are unchanged across all five ``MONO_VARIANT`` settings,
+``scorer._parse_verdict``, the dispatcher that picked one of two parsers off the
+variant, no longer exists; ``indra_belief.verdict.parse_response`` reads every
+reply, so the profile selects no reader at all.
+The values below are unchanged across all five ``MONO_VARIANT`` settings,
 which is the proof: the same four replies read the same way whichever profile
 produced them, and they read the way the pre-refactor capture did.
 
@@ -37,9 +39,10 @@ stubs rather than ``ScoringRecord`` (whose ``__post_init__`` grounds live).
 
 Regeneration is NOT automatic and must never be done from the modified tree: the
 fixture's whole value is that it predates the refactor. Recapturing it would be
-re-baselining, not testing. As of K2 the probe cannot run against the pristine
-worktree either — it reads the parse off ``indra_belief.verdict``, which does
-not exist there — so the fixture is now frozen outright. That is the intended
+re-baselining, not testing. The probe can no longer run against that pristine
+worktree either: it reads the parse off ``indra_belief.verdict``, a module the
+captured checkout does not have,
+so the fixture is now frozen outright. That is the intended
 end state for a value nothing is allowed to move.
 
 The tests below split into two families. The frozen-golden family compares the
@@ -67,9 +70,9 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 _FIXTURE = _ROOT / "tests" / "fixtures" / "monolithic_variant_golden.json"
 
-# The five MONO_VARIANT values. "" is README.md:65-66's documented baseline
-# switch; "bogus_typo" is the unrecognized-value path, which resolves to the
-# same baseline.
+# The five MONO_VARIANT values. README's default-variant paragraph documents
+# MONO_VARIANT="" as the intended baseline; "bogus_typo" is the
+# unrecognized-value path, which resolves to the same baseline.
 # Deliberately EXCLUDES disconfirm_relnature_rf_noconf. The golden is a frozen
 # pre-refactor capture that cannot be regenerated from this tree, so a variant
 # added afterwards has no honest entry in it — inventing one would capture from
@@ -257,28 +260,27 @@ def _probe(mod, variant=None) -> dict:
     """Every surface ``MONO_VARIANT`` controlled, as plain JSON-able data.
 
     ``variant`` is passed through to the scorer only when given, so one probe
-    body serves both the ambient module default and the post-C0 in-process
-    injection path.
+    body serves both the ambient module default and the in-process injection
+    path.
 
-    ``build_messages`` is now read off ``_prepare(...).calls(note)``, since
-    The prepared-execution refactor replaced ``_build_messages`` with the one request
-    value, and ``parse_verdict`` off ``indra_belief.verdict.parse_response``,
-    since The parser unification removed the per-variant parser dispatcher. Same
-    messages, same parse, same bytes — that equality is the point of the frozen
-    fixture, so the key names are kept and the values must not move.
+    ``build_messages`` is now read off ``_prepare(...).calls(note)`` because
+    ``_build_messages`` is gone and the prepared request value carries the
+    calls. ``parse_verdict`` is read off
+    ``indra_belief.verdict.parse_response``, where one parser reads every reply.
+    Same messages, same parse, same bytes — that equality is the point of the
+    frozen fixture, so the key names are kept and the values must not move.
     """
     kw = {} if variant is None else {"variant": variant}
 
     def parsed_pair(response) -> list:
         """(verdict, confidence) for one reply, read the way production reads it.
 
-        No variant is passed: post-K2 there is one parser and no profile selects
-        it. Unlike the ``ACTIVE_SYSTEM_PROMPT`` branch below, no fallback to the
-        retired per-variant dispatcher is kept — calling a symbol this node
-        deleted is exactly what the node forbids. The consequence is stated
-        plainly: this probe no longer runs against a pre-K2 checkout, so the
-        fixture is frozen rather than re-derivable, and its values are asserted
-        below instead.
+        No variant is passed: one parser reads every reply and no profile
+        selects it. Unlike the ``ACTIVE_SYSTEM_PROMPT`` branch below, no
+        fallback to the retired per-variant dispatcher is kept, because that
+        symbol no longer exists. The consequence is stated plainly: this probe
+        cannot re-derive the fixture from the checkout it was captured in, so
+        the fixture is frozen and its values are asserted below instead.
         """
         from indra_belief.verdict import parse_response
 
@@ -293,10 +295,9 @@ def _probe(mod, variant=None) -> dict:
     elif hasattr(mod, "DEFAULT_VARIANT"):
         system = mod.DEFAULT_VARIANT.system_prompt
     else:
-        # A pre-C0 checkout, where the profile was the module global
-        # ACTIVE_SYSTEM_PROMPT. This branch is dead against this tree and is
-        # kept only so the fixture can be re-derived from the worktree it was
-        # captured in.
+        # The profile used to be the module global ACTIVE_SYSTEM_PROMPT. This branch
+        # is dead against this tree and is kept only so the fixture can be
+        # re-derived from the checkout it was captured in.
         system = mod.ACTIVE_SYSTEM_PROMPT
 
     records = _records()
@@ -409,8 +410,8 @@ def test_golden_covers_every_probed_value(golden):
 
 def test_in_process_variant_injection_matches_the_golden():
     """The new capability: select a non-default variant with NO environment
-    manipulation and no re-import. Impossible before C0 — the profile was fixed
-    at the moment the module was first imported."""
+    manipulation and no re-import. This was impossible while the profile was a
+    module global fixed at the moment the module was first imported."""
     from indra_belief.scorers.monolithic import scorer as S
 
     # The ambient module default is something else; the injected value wins.
@@ -506,8 +507,8 @@ def test_unrecognized_variant_falls_back_to_baseline_with_a_warning(caplog):
 
 
 def test_empty_variant_selects_baseline_silently(caplog):
-    """README.md:65-66 documents MONO_VARIANT="" as the intended baseline
-    switch, so it must stay quiet."""
+    """README's default-variant paragraph documents ``MONO_VARIANT=""`` as the
+    intended baseline switch, so it must stay quiet."""
     import logging
 
     from indra_belief.scorers.monolithic import scorer as S

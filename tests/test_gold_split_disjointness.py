@@ -1,7 +1,8 @@
 """Prove the fit gold and the validation gold are disjoint.
 
-GOAL.md states one invariant — "Fit and validation sets must not overlap" —
-and points at ``scripts/check_contamination.py``. That script cannot prove it.
+The fit gold and the validation gold must not overlap.
+``scripts/check_contamination.py`` is the obvious place to look for that proof
+and cannot supply it.
 ``scripts/check_contamination.py::find_contamination`` folds every eval path
 into ONE pooled index: its ``for path in eval_paths`` loop writes every record
 into a single ``eval_norm_to_records`` map. Two golds handed to
@@ -53,9 +54,9 @@ from indra_belief.calibration_constants import (  # noqa: E402
     fitted_calibration_for,
 )
 
-# The bedrock reasoning-first profile was refitted onto holdout_large_fit on
-# 2026-08-15; the fit gold is whatever _PROFILE_META names, not a constant of
-# the repo. eval_curation_v1 remains the fit gold for the OTHER profiles.
+# The bedrock reasoning-first profile fits on holdout_large_fit; its fit gold is
+# whatever _PROFILE_META names rather than a repository constant.
+# eval_curation_v1 remains the fit gold for the other profiles.
 FIT_GOLD = "data/benchmark/holdout_large_fit.jsonl"
 # eval_curation_v1 is still the fit gold for gemma_remote / medpsy_remote /
 # local_gemma_mlx, and it is ALSO the only gold pair that overlaps
@@ -195,8 +196,8 @@ def test_residual_coarse_grain_overlap_is_pinned():
         f"evidence-grain overlap changed: {sorted(ev_overlap)}"
     )
 
-    # Sentence grain uses the contamination guard's own normalizer so the two
-    # checks of GOAL.md's invariant speak the same dialect. Empty strings are
+    # Sentence grain uses the contamination guard's own normalizer so both
+    # disjointness checks speak the same dialect. Empty strings are
     # excluded: 5 validation rows carry a blank evidence_text, so the
     # validation set has 557 distinct non-empty sentences (558 if the blank is
     # counted as one). The overlap is 3 either way.
@@ -214,20 +215,12 @@ def test_residual_coarse_grain_overlap_is_pinned():
 def test_fit_gold_fewshot_contamination_is_bounded():
     """Neither gold contains fewshot text.
 
-    This USED to record an accepted 17 hits, all from Source 1
-    (CONTRASTIVE_EXAMPLES), against the then-fit gold eval_curation_v1 — ~1% of
-    1604 pairs, tolerated because the contrastive fewshots are live in the
-    production prompt (scorer.py imports CONTRASTIVE_EXAMPLES as _ALL_EXAMPLES)
-    so the bias was common-mode across every profile, and because rebuilding the
-    gold would have moved the fit population out from under the shipped counts.
+    holdout_large_fit returns ZERO fewshot hits, so this test bounds growth from
+    zero on BOTH golds; any fewshot reaching either one turns it red.
 
-    The 2026-08-15 refit onto holdout_large_fit removed that residue outright:
-    the new fit gold returns ZERO hits. The tolerance is therefore gone rather
-    than inherited, and this test now bounds growth from zero on BOTH golds —
-    any fewshot reaching either one turns it red.
-
-    eval_curation_v1 still carries its 17 hits and is still the fit gold for the
-    other three profiles; that is asserted where those profiles are, not here.
+    eval_curation_v1 still carries its 17 hits from CONTRASTIVE_EXAMPLES, live in
+    the production prompt via scorer.py; those hits are asserted where the
+    profiles fitted on eval_curation_v1 are checked.
     """
     fit_hits = cc.find_contamination(eval_paths=[ROOT / FIT_GOLD])
     assert fit_hits == [], (

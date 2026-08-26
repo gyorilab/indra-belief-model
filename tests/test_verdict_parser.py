@@ -13,8 +13,8 @@ about equality and the claim has to be checkable:
     live-baseline     _prompts.extract_verdict  (MONO_VARIANT="")
     batch             comparison/replay.parse_structured + parse_response
 
-The population-scale replay was removed with the de-cruft, leaving this test as
-the whole of the claim: over all 228,812 stored LLM responses in
+The population-scale replay harness no longer exists, leaving this test as the
+whole of the claim: over all 228,812 stored LLM responses in
 `data/comparison*` those three and this one agreed exactly, and under seeded
 truncation the new parser matched live-structured on every mutant while the batch
 parser lost six verdicts. The cases here include classes the corpus cannot show
@@ -66,7 +66,7 @@ def test_all_closed_set_label_confidence_pairs(verdict, confidence):
 
 
 # --------------------------------------------------------------------------
-# Absence — the behaviour this node changed
+# Absence — an unreadable reply is a typed None, never a neutral verdict
 # --------------------------------------------------------------------------
 
 def test_an_absent_confidence_still_reads_as_medium():

@@ -32,8 +32,8 @@ profile they built, not merely that their bytes matched.
 There is no `parser_id` field, and there was one. It was assigned `PARSER_ID` at
 both producers and read nowhere, which is what a structurally constant field
 looks like — it invited the reader to believe the parser varies per execution
-when K2's whole answer is that exactly one parser reads every reply. The
-constant below states that; a per-instance copy of it only obscured it.
+when exactly one parser reads every reply. The constant below states that; a
+per-instance copy of it only obscured it.
 
 Home. Top level of the package, next to `hashing.py` / `metrics.py` /
 `curation.py`, because both `scorers.monolithic` and
@@ -85,11 +85,10 @@ _RELATION_NATURE_LABELS: Mapping[str, str] = MappingProxyType({
 })
 
 # Which reader turns the model's reply back into (verdict, confidence). It
-# travels with the request that produced the reply, and it is a CONSTANT: this
-# was the seam the parser unification hung its parser from, and K2's answer is that there
-# is exactly one — `indra_belief.verdict` reads every reply, on the live path and
-# on the batch replay, under every profile. It was two values only because a
-# profile used to select its own parser.
+# travels with the request that produced the reply, and it is a CONSTANT: there
+# is exactly one parser — `indra_belief.verdict` reads every reply, on the live
+# path and on the batch replay, under every profile. It was two values only
+# because a profile used to select its own parser.
 PARSER_ID = "indra_belief.verdict"
 
 _LOOKUP_BLOCK_HEADER = "Entity database lookups:"

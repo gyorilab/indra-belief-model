@@ -1,10 +1,9 @@
-"""Grounded rebuild of external_gold_v1 statements (E4-grounded node).
+"""Grounded rebuild of external_gold_v1 statements.
 
-The original external_gold_to_statements_json.py reconstructed each statement from
-NAME strings only (db_refs={"TEXT": name}) -> 0/308 agents grounded, so the
-scorer's grounding/provenance tier ran INERT (not production parity). That made
-the resulting err-F1 (0.774) uninterpretable against the 0.856/0.862 reference
-whose agents were 100% grounded.
+NAME-only statement reconstruction in external_gold_to_statements_json.py
+(db_refs={"TEXT": name}) yields 0/308 grounded agents, leaving the scorer's
+grounding/provenance tier INERT (not production parity). Its err-F1 of 0.774 is
+uninterpretable against the 0.856/0.862 reference with 100% grounded agents.
 
 This build recovers the GROUNDED pre-assembled statement (pa_json, which carries
 real db_refs: HGNC/UP/CHEBI/MESH/...) for each gold row via the public per-hash

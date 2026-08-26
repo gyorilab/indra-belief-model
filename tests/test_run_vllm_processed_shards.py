@@ -1,4 +1,4 @@
-"""Tests for the simplified processed-shard vLLM runner."""
+"""Tests for the processed-shard vLLM runner."""
 from __future__ import annotations
 
 import gzip
@@ -244,14 +244,12 @@ def test_unparseable_response_keeps_diagnostic_preview():
 
 
 def test_parser_accepts_gemma_plain_field_lines():
-    """A real gemma reply: the disconfirm fields, one per line, no punctuation.
+    """An OBSERVED gemma reply: disconfirm fields, one per line, no punctuation.
 
-    The fixture text is unchanged from the scale_up branch — it is an observed
-    reply from the vLLM-served model this runner drives, which is what makes it
-    worth keeping. What changed is WHERE it is read: `_prompts.extract_verdict`
-    no longer exists, because `indra_belief.verdict` became the single parser for
-    the live path and the batch replay alike. The two patterns that make this
-    reply readable came from this branch and now live there.
+    The fixture is a reply from the vLLM-served model this runner drives, which
+    makes it worth keeping. `indra_belief.verdict` is the SINGLE parser for the
+    live path and batch replay, including the two patterns that make this reply
+    readable.
     """
     from indra_belief.verdict import parse_verdict
 
@@ -272,8 +270,8 @@ def test_the_runner_reads_that_reply_through_the_same_parser():
     """The runner's own `parse` must agree with the parser it delegates to.
 
     This is the property the delegation buys: a reply that scores here scores
-    identically on the live scorer and the batch replay, because all three now
-    read through `indra_belief.verdict`.
+    identically on the live scorer and the batch replay, because all three read
+    through `indra_belief.verdict`.
     """
     text = (
         "relation_check way to a biological process is licensed\n"
@@ -298,18 +296,13 @@ def test_an_unreadable_reply_stays_absent_rather_than_becoming_a_number():
 
 
 def test_batch_runner_sends_byte_IDENTICAL_prompts_to_the_live_scorer():
-    """WAS a pin on DISCONFIRM_SYSTEM_PROMPT, which conflated two things.
+    """Prompt bytes must match the live scorer for every variant.
 
-    The invariant worth having is PARITY: whatever variant this runner is asked
-    for, it must send the same bytes the live scorer sends, because a
-    calibration profile is keyed on (model, prompt sha) and a batch path that
-    drifted by one character would silently score against a profile fitted for
-    a prompt it never sent.
+    A calibration profile is keyed on (model, prompt sha), so one drifted
+    character scores against a profile fitted for a prompt that was never sent.
 
-    Pinning one constant asserted parity only for the single variant the runner
-    was hard-wired to, and in doing so it also froze the CHOICE of variant --
-    which is what made the no-CoT path unreachable at corpus scale. Parity is
-    the real property; the choice is a flag.
+    Pinning one constant establishes parity only for that variant and freezes
+    the CHOICE of variant. PARITY is the property; choice is a flag.
 
     HONEST ABOUT ITS OWN STRENGTH: the loop below is true BY CONSTRUCTION today,
     because MonolithicPrompt reads `system_prompt` straight off the variant. It
@@ -333,9 +326,12 @@ def test_batch_runner_sends_byte_IDENTICAL_prompts_to_the_live_scorer():
 
 
 def test_the_default_variant_sends_no_chain_of_thought():
-    """The corpus-scale default. At 60M evidences an unasked-for CoT is the
-    entire bill, and the previous default was 'whatever the chat template does'
-    because the request carried no reasoning control at all."""
+    """The corpus-scale default explicitly disables chain of thought.
+
+    At 60M evidences an unasked-for CoT is the entire bill, so the request must
+    carry explicit reasoning control rather than accept the chat template's
+    default.
+    """
     assert runner.MonolithicPrompt().variant.reasoning_effort == "none"
 
 
@@ -408,13 +404,10 @@ def test_complex_job_runs_relation_nature_before_verdict():
 def test_main_reaches_shard_discovery_without_a_name_error(tmp_path, monkeypatch, capsys):
     """The corpus runner's entry point must actually import and run.
 
-    REGRESSION. `main()` computed the pinned prompt's sha for the calibration
-    banner using the bare name `DISCONFIRM_SYSTEM_PROMPT` — which this module
-    imports INSIDE `MonolithicPrompt.__init__`, deliberately, so it stays
-    importable without the scorer's dependency graph. The name was never in
-    module scope, so every invocation died with NameError before touching a
-    shard. Nothing caught it: the suite exercises this file's helpers, never its
-    entry point.
+    The calibration banner reads `DISCONFIRM_SYSTEM_PROMPT`, imported INSIDE
+    `MonolithicPrompt.__init__` to keep this file importable without the scorer's
+    dependency graph. A module-scope reference there dies with NameError before
+    touching a shard, while the rest of the suite exercises only helpers.
 
     This drives main() far enough to prove the banner path executes, then lets
     it exit on an empty input directory. It asserts the failure mode, not a
@@ -449,12 +442,8 @@ def test_require_calibrated_refuses_an_unfitted_prompt(tmp_path, monkeypatch):
     """An unfitted (model, prompt) must refuse rather than quietly publish
     hard-gate beliefs at corpus scale.
 
-    The subject used to be the runner's DEFAULT variant, on the reasoning that
-    nothing was fitted for this stack yet. Fitting `verdict_only` for it made
-    the assertion unreachable -- the test still ran, still passed once the
-    message was updated, and guarded nothing. So the unfitted pair is now
-    chosen explicitly AND its premise is asserted: if someone fits this one too,
-    this fails as a stale premise instead of quietly going hollow.
+    The unfitted pair is chosen EXPLICITLY and its premise is ASSERTED, so
+    fitting it makes this test fail as stale instead of quietly going hollow.
 
     `disconfirm_relnature_rf` is the deliberated contract. It is fitted on
     Bedrock and on MLX but not here, and not by oversight: its verdict lands
@@ -588,10 +577,8 @@ def test_offline_client_preserves_requested_logprobs(monkeypatch):
 
 # ── the offline dispatcher ────────────────────────────────────────────────────
 #
-# Everything below stubs `vllm` through sys.modules the way
-# test_offline_client_preserves_requested_logprobs does, which is what makes the
-# batching thread exercisable without a GPU: "no machine here can run it" is how
-# a batch handler that destroys its own client shipped.
+# Everything below stubs `vllm` through sys.modules, which makes the batching
+# thread exercisable without a GPU.
 #
 # WHAT THAT DOES NOT BUY. The stub is written here, so these tests pin OUR
 # dispatcher against shapes THIS FILE defines -- they cannot tell us that real
@@ -708,16 +695,14 @@ def _batched(monkeypatch, chat, payload_a, payload_b, **kwargs):
 
 
 def test_a_degenerate_output_does_not_wedge_the_offline_client_forever(monkeypatch):
-    """The batch failure handler used to destroy the client it was handling.
+    """A partway batch failure must not kill the only batching thread.
 
-    WHAT WENT WRONG. `_run` resolved outputs in a loop and, on any raise partway
-    through, called `future.set_exception` on EVERY future in the batch --
-    including the ones it had already resolved. CPython raises
-    InvalidStateError from set_exception on a FINISHED future, and that raise
-    happened INSIDE the handler, so it propagated out of `_run` and killed the
-    only batching thread. Every later post() enqueued into a queue nobody
-    drained and blocked forever on an untimed future.result(): the shard hung,
-    wrote no output, and discarded every row it had already scored.
+    Resolving outputs in a loop and, on a partway raise, calling
+    `future.set_exception` on EVERY future -- including ones already FINISHED --
+    raises InvalidStateError inside the handler. That kills the dispatcher,
+    leaves every later post() in an undrained queue, and blocks forever on an
+    untimed future.result(): the shard hangs, writes no output, and discards
+    every row already scored.
 
     The trigger is real -- a preempted request comes back with `outputs == []`
     -- and it has to land at index >= 1, because a raise on the first output
@@ -751,13 +736,12 @@ def test_a_degenerate_output_does_not_wedge_the_offline_client_forever(monkeypat
 
 
 def test_one_unprocessable_conversation_fails_only_itself(monkeypatch):
-    """`llm.chat()` is all-or-nothing; the batch must not be.
+    """One unprocessable conversation must fail only itself.
 
-    A single over-length conversation used to fail every future beside it --
-    batch_size defaults to --workers, so 96 of them -- and
-    score_job_with_retries re-batched with the same offender, multiplying the
-    cost by --retries instead of isolating it. A failed group is now re-issued
-    one conversation at a time, so the failure lands on the row that caused it.
+    `llm.chat()` is all-or-nothing, so one over-length conversation can fail up
+    to 96 requests because batch_size defaults to --workers. Retries rebatch the
+    offender and multiply the cost by --retries; singleton reissue lands the
+    failure on its owning row.
     """
     def chat(conversations):
         if any(c[-1]["content"] == "too long" for c in conversations):
@@ -778,14 +762,13 @@ def test_one_unprocessable_conversation_fails_only_itself(monkeypatch):
 
 
 def test_a_batch_does_not_inherit_the_first_payloads_template_arguments(monkeypatch):
-    """`chat_template_kwargs` used to be read off payloads[0] for the whole call.
+    """Each batch must be homogeneous in chat-template arguments.
 
     The probe body carries `enable_thinking: False` plus the two continuation
-    flags and a scoring body carries neither, so whichever request happened to
-    arrive first inside the 2 ms window decided the thinking channel and the
-    prefill geometry for up to 96 unrelated jobs. Same input, different verdict,
-    decided by thread timing, and nothing in the output says which rows were
-    affected.
+    flags, while a scoring body carries neither. If kwargs come from payloads[0],
+    whichever request arrives first inside the 2 ms window decides the thinking
+    channel and prefill geometry for up to 96 unrelated jobs. Same input,
+    different verdict, decided by thread timing and unrecorded in the output.
     """
     # `len(batched) == 2` alone is equally true of a client that never batches,
     # which is the code path this test exists to rule out. Recording when each
@@ -883,12 +866,12 @@ def test_the_probe_request_reaches_the_offline_backend_intact(monkeypatch):
 
 
 def test_the_offline_backend_honours_a_json_object_response_format(monkeypatch):
-    """The relation-nature call forces JSON; dropping that changed the verdict.
+    """The relation-nature call requires JSON; dropping it changes the verdict.
 
     `score_job` sends `response_format: {"type": "json_object"}` for a [Complex]
-    claim. The offline client built SamplingParams from temperature, max_tokens
-    and logprobs only, so the model answered free text, `_extract_json` found no
-    object, `relation_note` returned "" and the claim was scored WITHOUT the
+    claim. If SamplingParams carries only temperature, max_tokens and logprobs,
+    the model answers free text, `_extract_json` finds no
+    object, `relation_note` returns "" and the claim is scored WITHOUT the
     rejection note the relnature variant exists for -- differently from the same
     job on --backend server, with no error and no counter.
     """
@@ -941,10 +924,9 @@ def test_the_offline_engine_is_told_the_window_the_run_will_ask_for(monkeypatch)
     client.close()
     assert instances[0].kwargs.get("max_logprobs") == 128
 
-    # `>= variant.in_call_label_logprobs` held trivially: the shipped registry
-    # entry declares 1024 against a 128-wide variant, so the assertion passed for
-    # any of the three terms and for code that dropped two of them. Each term is
-    # made to win on its own.
+    # Each of the three widths must win independently. A single
+    # `>= variant.in_call_label_logprobs` assertion is vacuous: the registry's
+    # 1024 against a 128-wide variant passes even when two terms are dropped.
     from indra_belief.probes.reader import PROBE_TOP_LOGPROBS
 
     def _variant(window):
@@ -975,11 +957,11 @@ def test_the_offline_engine_is_told_the_window_the_run_will_ask_for(monkeypatch)
 
 
 def test_post_refuses_rather_than_parks_when_the_dispatcher_is_gone(monkeypatch):
-    """`post` used to `del timeout` and wait on an unbounded future.result().
+    """`post` must bound future.result() and refuse when the dispatcher is gone.
 
-    With no dispatcher every worker parked there, the ThreadPoolExecutor never
-    drained, and the run hung on a machine holding the GPU instead of failing
-    one job.
+    Without a dispatcher, an unbounded wait parks every worker, prevents the
+    ThreadPoolExecutor from draining, and hangs a GPU-holding run instead of
+    failing one job.
     """
     import concurrent.futures as _cf
 
@@ -1043,9 +1025,9 @@ def test_preflight_blames_the_engine_not_the_base_url_on_the_offline_backend():
     import pytest as _pytest
 
     class Dead:
-        # THE REAL ATTRIBUTE. Declaring the string here instead meant the test
-        # passed against its own stub: deleting `transport_description` from
-        # OfflineVllmClient left preflight blaming --base-url and this green.
+        # THE REAL ATTRIBUTE. A locally declared string makes this pass against
+        # its own stub even when OfflineVllmClient leaves preflight blaming
+        # --base-url.
         transport_description = runner.OfflineVllmClient.transport_description
 
         def post(self, *_args, **_kwargs):
@@ -1065,11 +1047,12 @@ def test_preflight_blames_the_engine_not_the_base_url_on_the_offline_backend():
 
 
 def test_an_unparseable_reply_is_retried_because_temperature_zero_is_not_a_replay():
-    """The premise this used to assert is false, and it cost real evidences.
+    """Temperature 0 does not make identical request bytes a replay.
 
-    It read: "the variant pins temperature 0 and the request bytes are identical
-    on every attempt, so this reply is this reply". A continuously-batched vLLM
-    server is not bitwise reproducible at temperature 0 -- the floating-point
+    REJECTED PREMISE: "the variant pins temperature 0 and the request bytes are
+    identical on every attempt, so this reply is this reply". A
+    continuously-batched vLLM server is not bitwise reproducible at temperature
+    0 -- the floating-point
     reduction order follows the batch composition, and gemma-4-26B-A4B is an MoE
     whose expert routing varies with batch shape. The identical bytes reissued
     into a different batch genuinely can come back parseable, so a reply the
@@ -1362,15 +1345,16 @@ def test_a_malformed_tier1_verdict_is_terminal_too():
 
 
 def test_a_repeated_pair_does_not_let_an_error_erase_a_scored_verdict(tmp_path):
-    """The run is keyed on job_id; the published file is keyed on the PAIR.
+    """Repeated jobs for one pair must be reconciled independently of file order.
 
+    The run is keyed on job_id; the published file is keyed on the PAIR.
     Under --all-evidence a statement can carry the same evidence twice, which is
-    two jobs and one cell. `payload[stmt][source] = cell` made the later job win
-    by file order, so an errored duplicate erased a good verdict and its margin
-    -- the belief build then counted BOTH jobs as unscored and the statement
-    disappeared from the table. Reverse the order and the error is masked
-    instead. Reconciled by the same rule statement_belief applies to a repeated
-    evidence, and counted so a shard cannot lose reads in silence.
+    two jobs and one cell. Direct assignment lets the later job win by file
+    order, so an errored duplicate erases a good verdict and its margin -- the
+    belief build then counts BOTH jobs as unscored and the statement disappears
+    from the table. Reverse order masks the error instead. Reconcile with the
+    same rule statement_belief applies to repeated evidence, and count the
+    duplicate so a shard cannot lose reads in silence.
     """
     shard = tmp_path / "grounded-000000.jsonl.gz"
     write_jobs(
@@ -1416,13 +1400,15 @@ def test_a_repeated_pair_reconciles_conservatively(tmp_path):
 
 
 def test_the_sole_candidate_for_a_shard_is_not_a_different_generation(tmp_path):
-    """A leftover smoke test must not stand in for the full shard.
+    """A limited smoke-test output must not stand in for the full shard.
 
     `--shard-index 0 --limit 1000` is this file's own documented example. Its
-    output was the only candidate for shard 0, so the glob fallback returned it
-    to a caller asking for the unlimited shard: 49,000 evidences fell to
-    n_unscored, every statement past the limit vanished from the belief table,
-    and the manifest looked healthy because a shard HAD been read.
+    output can be the only candidate for shard 0; a glob fallback then returns it
+    to a caller asking for the unlimited shard. The remaining 49,000 evidences
+    fall to n_unscored, every statement past the limit vanishes from the belief
+    table, and the manifest looks healthy because a shard is read.
+    `allow_limited` is the explicit opt-in for a caller that accepts that
+    generation.
     """
     (tmp_path / "verdicts-000000.limit-1000.json.gz").write_bytes(b"")
 
@@ -1469,13 +1455,14 @@ def test_write_final_atomic_fsyncs_the_payload_before_publishing_it(tmp_path,
 
 def test_two_writers_of_one_shard_cannot_interleave_into_one_file(tmp_path,
                                                                   monkeypatch):
-    """`.{final}.tmp` is derived only from the shard, so it was SHARED.
+    """Concurrent writers must use process-unique staging names.
 
+    `.{final}.tmp` is derived only from the shard, so it is SHARED.
     Per-shard parallelism across nodes is the documented usage, and a supervisor
-    relaunching a run whose predecessor is still draining is the concrete case:
-    the second process opened the same staging inode with O_TRUNC while the
-    first was mid-write, so the published gzip was NULs followed by the tail of
-    another stream -- and the loser's rename raised FileNotFoundError.
+    relaunching a run while its predecessor is still draining is the concrete
+    case. The second process can open the same staging inode with O_TRUNC while
+    the first is mid-write, publishing NULs followed by another stream's tail;
+    the loser's rename raises FileNotFoundError.
     """
     final = tmp_path / "verdicts-000800.json.gz"
     both_open = threading.Barrier(2, timeout=10)
@@ -1591,9 +1578,10 @@ def test_a_published_shard_that_does_not_read_back_is_rescored(tmp_path):
     """`final_path.exists()` cannot tell a finished shard from wreckage.
 
     A crash between the rename and writeback leaves a zero-length or NUL-filled
-    gzip. The runner skipped it as complete forever, so the 50,000 verdicts were
-    never regenerated and the corruption surfaced one stage later as a
-    BadGzipFile -- with the corrupt-file-to-shard correlation left to a human.
+    gzip. A skip based only on existence treats it as complete forever, so the
+    50,000 verdicts are never regenerated and the corruption surfaces one stage
+    later as a BadGzipFile -- with the corrupt-file-to-shard correlation left to
+    a human.
     """
     jobs = _shard_jobs(3)
     outcome, final = _score_shard(tmp_path, jobs, _ScoringClient())
@@ -1609,10 +1597,11 @@ def test_a_published_shard_that_does_not_read_back_is_rescored(tmp_path):
 
 
 def test_a_window_of_failures_is_not_sealed_into_the_corpus(tmp_path):
-    """A transient outage used to become the shard's final answer.
+    """A transient outage must not become the shard's final answer.
 
     Every job in flight during a vLLM restart exhausts its attempts in
-    milliseconds and finalizes as verdict="error". Publishing that sealed it:
+    milliseconds and finalizes as verdict="error". Publishing those rows seals
+    the outage:
     the next run skips a completed shard, and downstream those evidences are
     dropped as unscored, so their statements are published with a belief
     computed from a fraction of their reads -- a wrong number, not an absent
@@ -1645,11 +1634,11 @@ def test_a_gene_filtered_shard_does_not_satisfy_an_unfiltered_rerun(tmp_path):
     """The output NAME carries --limit but cannot carry --gene-stmt-hashes.
 
     With an explicit --output-dir (the norm, since the defaults are one
-    machine's /scratch paths) a filtered run wrote verdicts-NNNNNN.json.gz
-    holding only gene statements. The unfiltered run that followed found every
-    shard "complete", printed skip for all of them and exited 0 having scored
-    nothing, and the belief build then published a table covering the gene
-    subset under a manifest that said nothing about a filter.
+    machine's /scratch paths), a filtered run and an unfiltered run collide on
+    verdicts-NNNNNN.json.gz. The generic name can mark every shard "complete",
+    print skip for all of them, and exit 0 having scored nothing; the belief
+    build then publishes only the gene subset under a manifest that says nothing
+    about a filter.
     """
     jobs = _shard_jobs(3)
     outcome, final = _score_shard(tmp_path, jobs, _ScoringClient(), stmt_hashes={101})
@@ -1666,14 +1655,13 @@ def test_a_gene_filtered_shard_does_not_satisfy_an_unfiltered_rerun(tmp_path):
 def test_a_disagreeing_sidecar_withholds_ITS_shard_and_not_the_run(tmp_path,
                                                                    monkeypatch,
                                                                    capsys):
-    """A refusal that halted the loop is the failure B1(b) exists to prevent.
+    """A per-shard provenance conflict must not halt the shard loop.
 
-    `provenance_conflict` raised SystemExit from inside `run_shard`, and the
-    shard loop has no try around the call -- so one shard whose sidecar
-    disagrees stopped every shard queued behind it, hours of work discarded over
-    a per-shard configuration mismatch. It cannot bite the sidecar-less shards
-    the live run has already published; it bites the first time a rescored shard
-    writes one and a later run changes --served-model-id or --variant.
+    Raising SystemExit from `provenance_conflict` inside `run_shard` stops every
+    shard queued behind one disagreeing sidecar, discarding hours of work over a
+    per-shard configuration mismatch. Sidecar-less shards cannot conflict; the
+    check applies once a rescored shard writes one and another run changes
+    --served-model-id or --variant.
     """
     import sys
 
@@ -1683,7 +1671,7 @@ def test_a_disagreeing_sidecar_withholds_ITS_shard_and_not_the_run(tmp_path,
     write_jobs(inputs / "grounded-000001.jsonl.gz", _shard_jobs(2, prefix="B"))
     out = tmp_path / "out"
     out.mkdir()
-    # shard 0 published by an earlier run under a different served id
+    # shard 0 carries a different served id from the active run
     runner.write_final_atomic(out / "verdicts-000000.json.gz",
                               {"100": {"10": {"verdict": "correct"}}})
     runner.write_shard_meta(out / "verdicts-000000.meta.json",
@@ -1723,13 +1711,13 @@ def test_a_disagreeing_sidecar_withholds_ITS_shard_and_not_the_run(tmp_path,
 
 
 def test_a_scored_shard_records_the_configuration_that_produced_it(tmp_path):
-    """The published dict cannot say who scored it, and a belief needs to know.
+    """The sidecar must identify the scorer configuration.
 
-    Model, served id, variant, prompt sha and the acquisition route of
+    The published dict cannot say who scored it. Model, served id, variant,
+    prompt sha and the acquisition route of
     `probe_delta_logit` are all absent from {stmt_hash: {source_hash: cell}}, so
-    the belief build's --model/--variant were unverifiable assertions that
-    silently selected a profile — and then published the assertion as a fact in
-    its own manifest.
+    the belief build's --model/--variant are unverifiable assertions that can
+    select a profile silently and publish the assertion as fact in its manifest.
     """
     outcome, final = _score_shard(tmp_path, _shard_jobs(2), _ScoringClient())
     assert outcome.code == 0
@@ -1750,13 +1738,12 @@ def test_a_shard_of_permanently_failing_rows_needs_a_deliberate_operator_act(
 ):
     """A shard of pure deterministic failure must not publish itself.
 
-    Gating on the TRANSIENT class alone -- the previous rule, adopted to break
-    an unclearable wedge -- meant a shard whose every cell is verdict="error"
-    exited 0 and was published: a systematically broken prompt or input bakes
-    itself into the corpus silently, which is the failure the gate was added to
-    prevent. Both classes count now, and the wedge is broken the other way: the
-    escape is the operator raising --max-error-fraction knowingly, an explicit
-    human decision rather than an unreachable state.
+    Gating only TRANSIENT failures lets a shard whose every cell is
+    verdict="error" exit 0 and publish itself: a systematically broken prompt or
+    input bakes into the corpus silently. Both classes count; the escape from the
+    otherwise unclearable wedge is the operator knowingly raising
+    --max-error-fraction, an explicit human decision rather than an unreachable
+    state.
 
     The two classes still have DIFFERENT remedies, so the refusal names the
     split: transient failures clear on a rerun, deterministic ones never will.
@@ -1771,9 +1758,9 @@ def test_a_shard_of_permanently_failing_rows_needs_a_deliberate_operator_act(
     assert not final.exists()
     assert "DETERMINISTIC 2" in outcome.reason and "TRANSIENT 0" in outcome.reason
     refusal = capsys.readouterr().out
-    # Pinned to the DISTINCT half of each remedy. Asserting "rerun" and
-    # "--max-error-fraction" appear was vacuous: both words occur elsewhere in
-    # the refusal, so deleting either remedy sentence left this green.
+    # Pin the DISTINCT half of each remedy. Generic "rerun" and
+    # "--max-error-fraction" assertions are vacuous because both words occur
+    # elsewhere in the refusal.
     assert "TRANSIENT ones, which can come back different" in refusal, (
         "the refusal no longer says what a rerun is worth doing FOR"
     )
@@ -1825,13 +1812,12 @@ def test_the_gate_measures_errors_against_the_rows_it_actually_publishes(
 ):
     """Numerator and denominator must share a basis.
 
-    The error counts come from `finalize`, keyed on the (stmt_hash, source_hash)
-    PAIR after duplicates collapse. The gate divided them by the JOB count,
-    which under --all-evidence is larger -- one statement can carry the same
-    evidence twice. So the published fraction was measured against rows that are
-    not in the published table, and the gate read low by exactly the duplicate
-    count: here 1/4 = 25% against the true 1/3 = 33%, which straddles a 30%
-    threshold and publishes a shard that should be withheld.
+    The gate must derive numerator and denominator from the published PAIR basis.
+    Error counts come from `finalize` after duplicates collapse; dividing them by
+    the larger JOB count under --all-evidence measures against rows absent from
+    the published table. The gate then reads low by exactly the duplicate count:
+    here 1/4 = 25% against the true 1/3 = 33%, which straddles a 30% threshold
+    and publishes a shard that should be withheld.
     """
     jobs = [
         {"job_id": "0:0", "input_row_index": 0, "stmt_hash": 100,
@@ -1934,13 +1920,12 @@ def test_permanently_UNREADABLE_REPLIES_are_classed_but_still_gated(tmp_path):
 
 def test_a_withheld_shard_does_not_halt_the_shards_behind_it(tmp_path, monkeypatch,
                                                              capsys):
-    """Losing 1,199 shards of progress to one bad window is the worse failure.
+    """One withheld shard must not discard 1,199 shards of progress.
 
-    `for shard in shards: code = run_shard(...); if code: return code` meant a
-    single withheld shard stopped every shard queued behind it -- and the only
-    signal was the process exit code, hours after the console line scrolled
-    away. Every shard is attempted, the withheld ones are named at the end, and
-    the run exits non-zero ONCE.
+    An early return after `run_shard` lets one withheld shard stop every shard
+    queued behind it, with only a process exit code after the console line
+    scrolls away. Every shard must be attempted, the withheld ones named at the
+    end, and the run must exit non-zero ONCE.
     """
     import sys
 
@@ -1992,16 +1977,13 @@ def test_a_withheld_shard_does_not_halt_the_shards_behind_it(tmp_path, monkeypat
 
 def test_main_declares_the_logprob_window_and_the_timeout_to_the_engine(tmp_path,
                                                                        monkeypatch):
-    """main()'s own wiring, which nothing exercised.
+    """main() must pass max_logprobs and timeout to OfflineVllmClient.
 
-    `offline_max_logprobs` and the client were each tested alone, and nothing
-    asserted they were connected: deleting `max_logprobs=` from the
-    OfflineVllmClient construction left the suite green while the engine fell
-    back to vLLM's default of 20 and rejected every 128-wide request -- after a
-    26B model had been loaded. Deleting `timeout=` restored the unbounded
-    `future.result()` that parks every worker. No suite total is quoted here on
-    purpose: it drifts with every test added, and a stale one reads as a
-    measurement.
+    Omitting `max_logprobs=` makes the engine fall back to vLLM's default of 20
+    and reject every 128-wide request after loading a 26B model. Omitting
+    `timeout=` leaves the unbounded `future.result()` that parks every worker.
+    No suite total is quoted here: it drifts with every test added, and a stale
+    total reads as a measurement.
     """
     import sys
 
@@ -2054,12 +2036,12 @@ def test_main_declares_the_logprob_window_and_the_timeout_to_the_engine(tmp_path
 
 
 def test_a_payload_ending_on_a_chunk_boundary_is_not_condemned(tmp_path):
-    """A VALID shard was declared wreckage and rescored, at 1-in-1MiB odds.
+    """A valid chunk-boundary payload must not become wreckage at 1-in-1MiB odds.
 
-    The check kept only the LAST 1 MiB chunk and tested `tail.rstrip()`, so a
-    payload of exactly 1 (mod 1 MiB) bytes ended its final read on the lone
-    trailing newline, which rstrips to empty. 50,000 verdicts thrown away and
-    regenerated, for a length.
+    If the check keeps only the LAST 1 MiB chunk and tests `tail.rstrip()`, a
+    payload of exactly 1 (mod 1 MiB) bytes ends its final read on the lone
+    trailing newline, which rstrips to empty. That classification throws away
+    and regenerates 50,000 verdicts for a length.
     """
     chunk = 1 << 20
     body = b'{"a":"' + b"x" * (chunk + 1 - 9) + b'"}\n'
@@ -2074,10 +2056,9 @@ def test_a_payload_ending_on_a_chunk_boundary_is_not_condemned(tmp_path):
 def test_a_zero_length_output_is_wreckage(tmp_path, monkeypatch):
     """The FRAME CHECK catches the zero-length shapes, and each guard is pinned.
 
-    Both shapes also fail the final-`}` test further down, so asserting only
-    `published_output_is_readable` credits neither guard: `size < 20` and the
-    all-zero-trailer test can each be deleted with this test still green. What
-    they uniquely decide is asserted directly.
+    Both shapes also fail the final-`}` test, so an assertion through only
+    `published_output_is_readable` is true without either guard. Direct
+    assertions independently pin `size < 20` and the all-zero-trailer test.
 
     `size < 20` is about a file too SHORT to have a trailer: seeking to -8 from
     the end of a 3-byte file raises OSError [Errno 22], which this runner reads
@@ -2088,9 +2069,8 @@ def test_a_zero_length_output_is_wreckage(tmp_path, monkeypatch):
 
     The all-zero trailer is about COST: an empty member is 41 bytes here
     (MEASURED -- `gzip.open` on a path also writes the basename into the FNAME
-    header, 20 bytes of it) and a resume walks ~1,200 published shards before
-    the first new job, so the shapes an interrupted writer leaves must be
-    decidable without decompressing ~9MB of shared scratch each.
+    header, 20 bytes of it), so `_gzip_frame_is_plausible` must decide the
+    interrupted-writer shape without decompression.
     """
     path = tmp_path / "verdicts-000000.json.gz"
     path.write_bytes(b"")
@@ -2143,13 +2123,13 @@ def test_a_shard_that_decompresses_short_of_the_closing_brace_is_wreckage(tmp_pa
 
 
 def test_a_valid_prefix_with_a_garbage_tail_is_caught_only_by_reading_it(tmp_path):
-    """The shape the ~1,200 already-published shards can actually be in.
+    """A valid prefix with a garbage tail requires full decompression.
 
-    They were written by the pre-fsync `gzip.open` + `replace` writer, where a
-    kill mid-write leaves a valid PREFIX and a tail that is not NULs. The frame
-    check cannot see it -- magic intact, last 8 bytes non-zero -- so the full
-    decompress is what rejects it. Deleting that read as "redundant with the
-    frame check" re-opens the defect against the corpus that motivated it.
+    The on-disk shards were written by the pre-fsync `gzip.open` + `replace`
+    writer, where a kill mid-write leaves a valid PREFIX and a tail that is not
+    NULs. `_gzip_frame_is_plausible` cannot see it -- magic intact, last 8 bytes
+    non-zero. Treating the full read as redundant with that symbol accepts this
+    live-corpus shape.
     """
     path = tmp_path / "verdicts-000000.json.gz"
     runner.write_final_atomic(path, {"101": {"11": {"verdict": "correct"}}})
@@ -2167,21 +2147,17 @@ def test_a_valid_prefix_with_a_garbage_tail_is_caught_only_by_reading_it(tmp_pat
 
 
 def test_an_unreadable_shard_withholds_ITS_shard_and_not_the_run(tmp_path):
-    """A shard that is fine and a mount that is not are different answers.
+    """A read fault withholds only its shard; it is not file wreckage.
 
-    Both readability checks answered False on a bare OSError, so an ESTALE/EIO
-    /EPERM during the resume walk over ~1,200 shards classified a perfectly
-    valid shard as wreckage: `run_shard` then regenerated ~50,000 verdicts and
-    overwrote the published file with data that is NOT the same -- batched vLLM
-    at temperature 0 is not bitwise reproducible on an MoE, and `_cell_priority`
-    resolves a repeated pair differently from the writer that produced every
-    file now on disk.
+    `_gzip_frame_is_plausible` propagates a read fault because returning False
+    makes `run_shard` regenerate ~50,000 verdicts and overwrite the published
+    file with data that is NOT the same -- batched vLLM at temperature 0 is not
+    bitwise reproducible on an MoE, and `_cell_priority` resolves a repeated pair
+    differently from the writer that produced every file on disk.
 
-    Raising SystemExit from inside the per-shard loop answered that with the
-    other half of the same defect: one unreadable file aborted all ~1,200
-    shards, while the sidecar-conflict branch beside it -- an equally per-shard
-    problem -- deliberately withholds one shard and lets the loop continue. It
-    is one argument, so it gets one answer: a named withheld shard.
+    Raising SystemExit inside the per-shard loop aborts the run. The
+    sidecar-conflict branch establishes the matching response for this per-shard
+    problem: name the withheld shard and let the loop continue.
     """
     import pytest as _pytest
 
@@ -2206,17 +2182,15 @@ def test_an_unreadable_shard_withholds_ITS_shard_and_not_the_run(tmp_path):
 
 
 def test_a_sidecar_that_could_not_be_READ_is_not_a_shard_without_one(tmp_path):
-    """A fault must not read as consent.
+    """read_shard_provenance must separate failure from genuine absence.
 
-    `read_shard_provenance` caught a bare `except Exception: return None`, so a
-    transient mount fault on a .meta.json -- ESTALE/EIO/EPERM during a resume
-    walk over ~1,200 shards on shared scratch -- was indistinguishable from
-    "this shard predates sidecars". That routed a read failure onto the
-    sidecar-less path, where absence never disagrees with anything: the shard
-    was accepted as matching a configuration nobody had read.
+    Returning None after a read or parse fault makes it indistinguishable from
+    "this shard predates sidecars" and routes failure onto the sidecar-less
+    path, where absence never disagrees with anything. The shard is then accepted
+    as matching a configuration nobody read.
 
     Genuine ABSENCE is the legitimate live-corpus case and must stay silent --
-    the ~1,200 shards already published have no sidecar at all.
+    the published shards have no sidecar at all.
     """
     jobs = _shard_jobs(3)
     outcome, final = _score_shard(tmp_path, jobs, _ScoringClient())
@@ -2239,7 +2213,7 @@ def test_a_sidecar_that_could_not_be_READ_is_not_a_shard_without_one(tmp_path):
     assert "shard 7" in outcome.reason and "sidecar" in outcome.reason
     assert not truncated.posts, "the shard was rescored over on a read failure"
 
-    # and the mount fault it was named for
+    # the mount-fault branch
     meta.write_bytes(recorded)
     meta.chmod(0o000)
     try:
@@ -2253,9 +2227,9 @@ def test_a_sidecar_that_could_not_be_READ_is_not_a_shard_without_one(tmp_path):
 
 def test_a_lost_tail_is_rejected_without_decompressing_the_shard(tmp_path,
                                                                  monkeypatch):
-    """A resume walks ~1,200 published shards before the first new job.
+    """_gzip_frame_is_plausible rejects lost-tail wreckage without decompression.
 
-    Decompressing every one of them is a multi-GB scan of shared scratch. The
+    Decompressing every published shard is a multi-GB scan of shared scratch. The
     two shapes an interrupted writer leaves -- an empty file, and one whose tail
     extents were lost to a crash, so the CRC32/ISIZE trailer is all zeros -- are
     decidable from two seeks.
@@ -2282,13 +2256,11 @@ def test_a_lost_tail_is_rejected_without_decompressing_the_shard(tmp_path,
 
 
 def test_the_sidecar_is_fsynced_before_it_is_renamed(tmp_path, monkeypatch):
-    """The sidecar got neither fsync nor an atomic staging discipline.
+    """The sidecar must be fsynced before its atomic rename.
 
-    Its own docstring claimed the write order made the pair safe to interrupt --
-    a crash-safety property the body did not implement. An unfsynced sidecar
-    survives a node crash as zero bytes, and a zero-byte sidecar is not a
-    configuration: it now withholds the shard it belongs to on every later run,
-    which is a durability defect wearing a correctness fault's clothes.
+    An unfsynced sidecar can survive a node crash as ZERO BYTES. A zero-byte
+    sidecar is not a configuration and withholds its shard on every later run,
+    turning a durability failure into a persistent correctness fault.
     """
     events: list[str] = []
     real_fsync = runner.os.fsync
@@ -2315,11 +2287,11 @@ def test_the_sidecar_is_fsynced_before_it_is_renamed(tmp_path, monkeypatch):
 
 def test_two_writers_of_one_sidecar_do_not_destroy_each_others_staging_file(
         tmp_path, monkeypatch):
-    """The defect fixed 20 lines below it, reintroduced verbatim.
+    """Each sidecar writer needs a process-unique staging name.
 
     `path.name + ".tmp"` is derived only from the shard, so every process
-    writing that sidecar opened the SAME inode: they truncated each other, and
-    the loser's `replace` raised FileNotFoundError -- killing a run whose shard
+    writing that sidecar can open the SAME inode. They truncate each other, and
+    the loser's `replace` raises FileNotFoundError -- killing a run whose shard
     was fully scored and about to be published.
     """
     meta_path = tmp_path / "verdicts-000800.meta.json"
@@ -2401,21 +2373,18 @@ def test_the_append_boundary_does_not_grow_a_healthy_log(tmp_path):
 
 
 def test_a_restart_under_a_different_ceiling_cannot_resume_the_partial_log(tmp_path):
-    """The resume digest omitted the two knobs that decide the generation.
+    """The resume digest must include both knobs that decide generation.
 
-    Interrupt a shard, restart with a different --max-tokens, and the run-keyed
-    partial log was accepted: the published shard mixes rows generated under two
+    If a shard restarts with a different --max-tokens and accepts the run-keyed
+    partial log, the published shard mixes rows generated under two
     ceilings, and nothing in the file, the sidecar or the console can see it. The
-    same digest already blocked a variant switch, so the omission contradicted
-    its own purpose.
+    digest must also block a variant switch.
     """
     prompt = runner.MonolithicPrompt(runner.DEFAULT_VARIANT)
-    # --temperature 0.7 with a variant that pins 0: the two differ, so the
-    # recorded value can only be the EFFECTIVE one. Read against the variant's
-    # own attribute -- which _shard_args also happens to set to 0.0 -- the
-    # assertion held whichever of the two run_provenance wrote down, and the
-    # digest then failed to change when the temperature that generated the rows
-    # did.
+    # --temperature 0.7 differs from the variant's pinned 0, so provenance must
+    # record the EFFECTIVE value. Comparing only with the variant attribute is
+    # vacuous because _shard_args also sets 0.0; it cannot prove the digest
+    # changes with the temperature that generated the rows.
     wide = runner.run_provenance(
         _shard_args(tmp_path, max_tokens=8192, temperature=0.7), prompt, None)
     narrow = runner.run_provenance(

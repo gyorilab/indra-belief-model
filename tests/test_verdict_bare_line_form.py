@@ -2,8 +2,8 @@
 
 From haohangyan's scale_up branch, commit "Use disconfirm_relnature and add more
 rules to parser from output result" — patterns written against the parser as it
-lived in `scorers/monolithic/_prompts.py`, before K2 made
-`indra_belief.verdict` its single owner. The merge conflicted exactly there,
+lived in `scorers/monolithic/_prompts.py`, which `indra_belief.verdict` has since
+replaced as the single owner of reply parsing. The merge conflicted exactly there,
 because our side had DELETED that parser. The patterns are carried here instead;
 these tests are the evidence the branch did not carry.
 

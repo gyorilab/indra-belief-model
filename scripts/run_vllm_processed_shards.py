@@ -163,20 +163,18 @@ def valid_result(row: dict[str, Any] | None) -> bool:
 def resolve_results_path(output_dir: Path, shard_index: int,
                         limit: int | None = None,
                         *, allow_limited: bool = False) -> Path | None:
-    """Find the scored file for a shard.
+    """Find the scored file for a shard by its limit-qualified name.
 
-    The canonical resolver, because reconstructing this name from a remembered
-    --limit has now failed twice in two different consumers. Output names carry
-    the limit (`verdicts-000000.limit-400.json.gz`), so a reader that rebuilds
-    the unlimited name misses EVERY shard -- and both times the symptom was a
-    clean exit over an empty result rather than an error.
+    Output names carry the limit (`verdicts-000000.limit-400.json.gz`), so a
+    reader that reconstructs the unlimited name from a remembered --limit
+    misses EVERY shard and exits cleanly over an empty result rather than
+    raising an error.
 
     The name is fully determined by (index, limit), so the DEFAULT is the exact
-    match and nothing else. The glob fallback used to accept the sole candidate
-    for an index whatever limit it carried, which silently joined a 1,000-job
-    smoke test in place of a 50,000-job shard: the remaining 49,000 evidences
-    fell to `n_unscored` and every statement past the limit vanished from the
-    belief table, under a manifest that looked healthy.
+    match and nothing else. A non-exact glob fallback can silently join a
+    1,000-job smoke test in place of a 50,000-job shard: the remaining 49,000
+    evidences fall to `n_unscored` and every statement past the limit vanishes
+    from the belief table under a manifest that looks healthy.
 
     ``allow_limited`` is for the one caller that genuinely does not know the
     scoring run's --limit -- the calibration fit, which reads whatever rows it
@@ -223,29 +221,28 @@ def meta_path_for(results_path: Path) -> Path:
 def publish_atomically(path: Path, write_body) -> None:
     """Write `path` so a reader never sees a partial or unwritten one.
 
-    Two properties the plain `open` + `replace` did not have, and both are
-    needed by every file this runner publishes -- the shard AND its sidecar:
+    Every file this runner publishes -- the shard AND its sidecar -- requires
+    both properties:
 
     * DURABILITY. The rename is metadata and the body is data, so a node crash
-      could commit the rename while the extents were still dirty -- leaving a
-      zero-length or NUL-filled file that the completion check read as a
+      can commit the rename while the extents are still dirty -- leaving a
+      zero-length or NUL-filled file that the completion check reads as a
       finished shard forever. fsync the file before the rename and the directory
       after it; two fsyncs against a shard that took minutes to score.
     * A UNIQUE staging name. A name derived only from the target -- `{final}.tmp`
-      -- is shared by every process writing that target, so two of them opened
-      the SAME inode with O_TRUNC, interleaved their writes, and the loser's
-      rename raised FileNotFoundError on a shard that was fully scored.
+      -- is shared by every process writing that target. Two writers can open
+      the SAME inode with O_TRUNC and interleave their writes; the loser's rename
+      then raises FileNotFoundError on a shard that was fully scored.
 
     NOT SWEPT, deliberately. SIGKILL between mkstemp and rename leaks one
-    `.{name}.XXXX.tmp`, where the shared fixed name used to overwrite itself:
-    harmless to every reader (no reader globs staging names) but it accumulates
-    over preemptions. Sweeping this shard's stale staging files on publish would
-    delete the in-flight staging file of a concurrent writer of the same shard
-    -- the exact collision the unique name exists to prevent, and the one
+    `.{name}.XXXX.tmp`: harmless to every reader (no reader globs staging names)
+    but cumulative over preemptions. Sweeping this shard's stale staging files
+    on publish would delete the in-flight staging file of a concurrent writer of
+    the same shard -- the exact collision the unique name exists to prevent. The
     `test_two_writers_of_one_sidecar_do_not_destroy_each_others_staging_file`
-    pins -- and telling a live one from an abandoned one needs an age cutoff
-    with no measurement behind it. Orphans are for the operator to remove
-    between runs, when nothing is writing.
+    test pins that collision; telling a live one from an abandoned one needs an
+    age cutoff with no measurement behind it. Orphans are for the operator to
+    remove between runs, when nothing is writing.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, staged = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp",
@@ -316,16 +313,16 @@ class ShardWithheld(Exception):
 def _gzip_frame_is_plausible(path: Path) -> bool:
     """Reject the two zero-cost wreckage shapes without reading the body.
 
-    A resume walks every already-published shard, so the completion check runs
-    ~1,200 times before the first new job; the full decompress below is ~9MB of
-    shared scratch each. An empty file and a file whose tail extents were lost
-    to a crash (NULs, so a CRC32/ISIZE trailer of all zeros) are both decidable
-    from two seeks, and those are the shapes the unfsynced writer left behind.
+    A resume checks every already-published shard before the first new job; the
+    full decompress below is ~9MB of shared scratch each. An empty file and a
+    file whose tail extents are lost to a crash (NULs, so a CRC32/ISIZE trailer
+    of all zeros) are both decidable from two seeks, and those are the shapes an
+    unfsynced writer can leave behind.
 
     An OSError PROPAGATES. This says "the bytes on disk are wreckage", and a
     file that cannot be opened right now -- ESTALE, EIO, EPERM during a resume
     walk over ~1,200 shards on shared scratch -- has said nothing about its
-    bytes. Answering False there is what let a transient mount fault rescore and
+    bytes. Answering False there lets a transient mount fault rescore and
     overwrite a good shard.
     """
     size = path.stat().st_size
@@ -341,8 +338,8 @@ def _gzip_frame_is_plausible(path: Path) -> bool:
 def published_output_is_readable(path: Path) -> bool:
     """Whether an existing output file is a finished shard or wreckage.
 
-    The completion check was `final_path.exists()`, which cannot tell the two
-    apart: a truncated or NUL-filled gzip left by a crash reads as complete, so
+    `final_path.exists()` cannot tell the two apart: a truncated or NUL-filled
+    gzip left by a crash reads as complete, so
     the shard is never regenerated and the corruption surfaces one stage later
     as a BadGzipFile in the belief build.
 
@@ -360,17 +357,17 @@ def published_output_is_readable(path: Path) -> bool:
     serialized short -- passes both checks above and is not a shard. Tracked
     across chunks rather than within the last one -- a payload of exactly 1 (mod
     1MiB) bytes ends its last read on the lone trailing newline, which rstrips
-    to empty and condemned a perfectly good shard to be rescored.
+    to empty and condemns a perfectly good shard to be rescored.
 
-    Only a CORRUPT-BYTES failure answers False. A bare OSError -- the shard is
-    fine, the mount is not -- raises `ShardWithheld` instead, because the
-    caller's response to False is to regenerate ~50,000 verdicts and overwrite
-    the published file, and that replacement is not the same data (batched vLLM
-    at temperature 0 is not bitwise reproducible on an MoE, and `_cell_priority`
-    resolves repeats differently from the writer that produced the files on
-    disk). It withholds THIS shard rather than the run: raising SystemExit here
-    aborted all ~1,200 from inside the per-shard loop, which is the opposite of
-    what the sidecar-conflict branch does with the same kind of problem.
+    Only a CORRUPT-BYTES failure answers False. `_gzip_frame_is_plausible`
+    defines why a bare OSError says nothing about the shard's bytes. Such a fault
+    raises `ShardWithheld`, because the caller's response to False is to
+    regenerate ~50,000 verdicts and overwrite the published file, and that
+    replacement is not the same data (batched vLLM at temperature 0 is not
+    bitwise reproducible on an MoE, and `_cell_priority` resolves repeats
+    differently from the writer that produced the files on disk). It withholds
+    THIS shard rather than aborting the run, matching the sidecar-conflict branch
+    for the same kind of per-shard problem.
     """
     last = b""
     try:
@@ -410,10 +407,10 @@ def _settle_exception(future: cf.Future, exc: BaseException) -> None:
     """Fail a future unless it was already resolved.
 
     `set_exception` on a FINISHED future raises InvalidStateError, and that
-    raise used to happen INSIDE the batch failure handler, which walked every
-    future in the batch including the ones it had just resolved. The dispatcher
-    thread died there, so every later `post` enqueued into a queue nobody
-    drained and the shard hung with all its scored rows still in RAM.
+    batch failure handler walks every future, including ones it already
+    resolved. An unguarded call therefore raises inside the handler, kills the
+    dispatcher thread, and leaves the shard hung with its scored rows still in
+    RAM while later `post` calls enqueue into a queue nobody drains.
     """
     if not future.done():
         future.set_exception(exc)
@@ -433,10 +430,10 @@ def _chat_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
     """Translate one payload's whole-call arguments for ``llm.chat``.
 
     `continue_final_message` and `add_generation_prompt` are as load-bearing as
-    the template kwargs and used to be dropped: `build_probe_request` sets them
-    to keep the assistant PREFILL open, which is the only reason the verdict
-    sits at generated position 0. Closed off, the model opens a fresh turn and
-    the probe reads a position that is not the label.
+    the template kwargs. `build_probe_request` sets them to keep the assistant
+    PREFILL open, which is the only reason the verdict sits at generated
+    position 0. Without them, the model opens a fresh turn and the probe reads a
+    position that is not the label.
     """
     kwargs: dict[str, Any] = {}
     template = payload.get("chat_template_kwargs")
@@ -451,9 +448,9 @@ def _chat_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
 def _structured_output_support() -> tuple[str, Any] | None:
     """How THIS vLLM spells `response_format: {"type": "json_object"}`.
 
-    Renamed upstream (`guided_decoding` -> `structured_outputs`), so both names
-    are accepted; the caller raises if neither exists rather than degrading to
-    an unconstrained reply.
+    vLLM exposes both spellings (`guided_decoding` and `structured_outputs`)
+    across supported installs. The caller raises if neither exists rather than
+    degrading to an unconstrained reply.
     """
     try:
         from vllm import sampling_params as vllm_sampling_params
@@ -470,15 +467,15 @@ def _structured_output_support() -> tuple[str, Any] | None:
 
 
 class OfflineVllmClient:
-    """Batch concurrent post calls through one long-lived vllm.LLM.
+    """UNEXERCISED AGAINST REAL vLLM: batch posts through one long-lived vllm.LLM.
 
-    UNEXERCISED AGAINST REAL vLLM. No machine in this repo's reach can load a
-    26B model, so every test of this class installs its own `sys.modules['vllm']`
-    stub and therefore asserts against shapes the test file itself defines --
-    the batching, the failure isolation and the response translation are pinned,
-    the engine's actual behaviour is not. The corpus path runs --backend server,
-    where each job is its own request; treat this backend as unvalidated until
-    someone runs it on a GPU.
+    No machine in this repo's reach can load a 26B model, so every test of this
+    class installs its own `sys.modules['vllm']` stub and therefore asserts
+    against shapes the test file itself defines -- the batching, the failure
+    isolation and the response translation are pinned, the engine's actual
+    behaviour is not. The corpus path runs --backend server, where each job is
+    its own request; treat this backend as unvalidated until someone runs it on
+    a GPU.
     """
 
     # Preflight reports the transport it could not reach. An offline run
@@ -540,10 +537,9 @@ class OfflineVllmClient:
             )
         future: cf.Future = cf.Future()
         self.requests.put((json, future))
-        # BOUNDED, where this used to `del timeout` and wait forever. An
-        # unbounded wait turns any dispatcher failure into a hung run: every
-        # worker parks here, the pool never drains, and the shard produces no
-        # output at all rather than a per-job error.
+        # BOUNDED. An unbounded future.result() turns any dispatcher failure into
+        # a hung run: every worker parks here, the pool never drains, and the
+        # shard produces no output at all rather than a per-job error.
         return future.result(timeout=self.timeout if timeout is None else timeout)
 
     @staticmethod
@@ -584,11 +580,11 @@ class OfflineVllmClient:
         }
         response_format = payload.get("response_format") or {}
         if response_format.get("type") == "json_object":
-            # The relation-nature call forces a JSON reply, and dropping that
-            # here did not fail -- the model answered free text, the object did
-            # not parse, `relation_note` returned "", and the [Complex] claim
-            # was scored without the rejection note the variant exists for. Same
-            # job, different verdict, depending only on the backend.
+            # The relation-nature call forces a JSON reply. Dropping that here
+            # yields free text: the object does not parse, `relation_note`
+            # returns "", and the [Complex] claim is scored without the rejection
+            # note the variant exists for. Same job, different verdict, depending
+            # only on the backend.
             if self.structured_outputs is None:
                 raise RuntimeError(
                     "this vLLM exposes neither StructuredOutputsParams nor "
@@ -636,12 +632,11 @@ class OfflineVllmClient:
                 return
             # ONE BAD JOB MUST NOT FAIL ITS NEIGHBOURS. llm.chat() is
             # all-or-nothing, so a single unprocessable conversation (an
-            # over-length prompt is the likely one) failed every future beside
-            # it -- batch_size is --workers, 64 by default -- and
-            # score_job_with_retries re-batched with the same offender, so the
-            # cost multiplied by --retries instead of isolating. Re-running the
-            # group one conversation at a time costs one extra pass over a batch
-            # that already failed and narrows the failure to the actual row.
+            # over-length prompt is the likely one) fails every future beside it
+            # -- batch_size is --workers, 64 by default -- and retrying the same
+            # group multiplies the cost by --retries. Reissuing one conversation
+            # at a time costs one extra pass over the failed batch and narrows the
+            # failure to the actual row.
             for payload, future in zip(payloads, futures):
                 self._issue([payload], [future])
             return
@@ -693,12 +688,12 @@ class OfflineVllmClient:
                     batch.append(item)
 
                 # ONE llm.chat PER TEMPLATE GROUP. The chat template arguments
-                # are per-CALL, so a batch may only hold conversations that
-                # agree on them. Reading them off payloads[0] let whichever
-                # request happened to arrive first inside the 2 ms window decide
-                # the thinking channel and the prefill geometry for every
-                # other job in the batch -- same input, different verdict, by
-                # thread timing and unrecorded in the output.
+                # are per-CALL, so a batch may only hold conversations that agree
+                # on them. Reading them from payloads[0] lets whichever request
+                # arrives first inside the 2 ms window decide the thinking channel
+                # and prefill geometry for every other job in the batch -- same
+                # input, different verdict, by thread timing and unrecorded in the
+                # output.
                 groups: dict[tuple, list] = {}
                 for item in batch:
                     groups.setdefault(_template_signature(item[0]), []).append(item)
@@ -725,22 +720,17 @@ class OfflineVllmClient:
 class MonolithicPrompt:
     """Reuse the repo's commit-first disconfirm_relnature workflow."""
 
-    # THREE SYMBOLS THIS CLASS WAS WRITTEN AGAINST NO LONGER EXIST, and the
-    # replacements are not renames — they are the point of the K2/X1 unification
-    # this branch predates by 48 commits:
+    # indra_belief.verdict.parse_verdict is the SINGLE reader for the live path,
+    # the batch replay, and every profile. A hand-rolled parser here would make
+    # this runner a fourth reading of the corpus and would differ under
+    # truncation.
     #
-    #   parse_structured + derive_verdict -> indra_belief.verdict.parse_verdict
-    #       One parser reads every reply, on the live path and the batch replay,
-    #       under every profile. The retired pair also differed from the live
-    #       reading under truncation, so hand-rolling them here would have made
-    #       this runner a fourth reading of the corpus.
-    #   _NATURE_LABEL -> prepared_execution.relation_mismatch_note
-    #       The label table and the mismatch sentence have one owner; a byte
-    #       change there must move the live and batch prompts together, which a
-    #       local copy in this file would silently break.
+    # prepared_execution.relation_mismatch_note OWNS the label table and the
+    # mismatch sentence, so a byte change there must move the live and batch
+    # prompts together. A local copy in this file is therefore FORBIDDEN.
     #
-    # The class's own docstring says "reuse the repo's workflow". On this tree
-    # that means delegating to those owners rather than importing their parts.
+    # The class's own docstring says "reuse the repo's workflow": delegate to
+    # those owners rather than importing their parts.
     def __init__(self, variant: str = DEFAULT_VARIANT):
         from indra_belief.scorers.monolithic import scorer as mono
         from indra_belief.scorers.monolithic._prompts_relation import (
@@ -752,12 +742,10 @@ class MonolithicPrompt:
         from indra_belief.prepared_execution import relation_mismatch_note
         from indra_belief.verdict import parse_verdict
 
-        # WAS a pinned import of DISCONFIRM_SYSTEM_PROMPT. Pinning made the
-        # runner structurally incapable of the no-CoT path: a variant is a
-        # COHERENT SET — verdict-first prompt, thinking suppressed, temperature
-        # 0 — and a runner that borrowed one member of that set and hard-coded
-        # the rest could only ever send an inconsistent request. Reading the
-        # whole set off one object is what keeps the three from drifting.
+        # A variant is a COHERENT SET — verdict-first prompt, thinking suppressed,
+        # temperature 0. Borrowing one member of that set and hard-coding the rest
+        # creates an inconsistent request; reading the whole set from one object
+        # keeps the three from drifting and preserves the no-CoT path.
         try:
             self.variant = mono.VARIANTS[variant]
         except KeyError:
@@ -852,9 +840,9 @@ class MonolithicPrompt:
 
         `indra_belief.verdict` is the single reader for every path. The two-text
         attempt is kept because it is this runner's own contract with a local
-        model that may put the answer in either channel; what is no longer local
-        is the READING, so a reply that scores here scores identically on the
-        live scorer and the batch replay.
+        model that may put the answer in either channel; the READING is
+        CENTRALISED, so a reply that scores here scores identically on the live
+        scorer and the batch replay.
 
         An unreadable reply stays (None, None). Parsing never fabricates a
         probability from categorical output.
@@ -959,12 +947,9 @@ def score_job(
         }
 
     variant = prompt.variant
-    # The variant's own declarations, not this runner's defaults. Reasoning is
-    # the one that used to be MISSING ENTIRELY: the body below carried model,
-    # messages, max_tokens and temperature, and nothing else — so the thinking
-    # channel was whatever the served chat template happened to default to. On
-    # gemma-4 that is ON, and at 60M evidences an unasked-for CoT is the entire
-    # bill.
+    # The variant's own declarations, not this runner's defaults. The variant
+    # declares reasoning because gemma-4's served chat template defaults thinking
+    # ON, and at 60M evidences an unasked-for CoT is the entire bill.
     #
     # `reasoning_wire_keys` rather than a literal, because "no CoT" is not one
     # key: vLLM/Ollama-served Gemma silently DROPS `reasoning_effort="none"` and
@@ -1352,10 +1337,11 @@ def run_provenance(args, prompt: MonolithicPrompt,
 
     The published file is a bare {stmt_hash: {source_hash: cell}} dict, so the
     model, the prompt and the acquisition route of `probe_delta_logit` are
-    nowhere in it and stage 4's --model/--variant are unverifiable assertions: a
-    run scored under `disconfirm_relnature_rf` and believed under the default
-    resolves a profile fitted for a prompt it never sent, then publishes that
-    claim in its manifest. The filter belongs here too -- the output NAME
+    nowhere in it, so stage 4 (`scripts/build_corpus_beliefs.py`) treats
+    --model/--variant as unverifiable assertions: a run scored under
+    `disconfirm_relnature_rf` and believed under the default resolves a profile
+    fitted for a prompt it never sent, then publishes that claim in its manifest.
+    The filter belongs here too -- the output NAME
     carries the --limit but not `--gene-stmt-hashes`, so a filtered file
     otherwise satisfies an unfiltered rerun and every remaining shard is skipped
     as complete.
@@ -1399,16 +1385,16 @@ def read_shard_provenance(meta_path: Path) -> dict[str, Any] | None:
     """What a published shard records about itself, or None if it records nothing.
 
     ABSENCE AND FAILURE ARE DIFFERENT ANSWERS, and only one of them is consent.
-    A bare `except Exception: return None` made a transient mount fault --
+    A bare `except Exception: return None` makes a transient mount fault --
     ESTALE/EIO/EPERM during a resume walk over ~1,200 shards on shared scratch,
-    or a sidecar whose extents were lost mid-write -- indistinguishable from
-    "this shard predates sidecars", and that routed the fault onto the
-    sidecar-less path where absence never disagrees with anything. The shard was
-    then accepted as matching a configuration nobody had read.
+    or a sidecar whose extents are lost mid-write -- indistinguishable from
+    "this shard predates sidecars". That routes the fault onto the sidecar-less
+    path, where absence never disagrees with anything, and accepts the shard as
+    matching a configuration nobody read.
 
-    FileNotFoundError alone is the unrecorded case: the ~1,200 shards the live
-    run published have no sidecar at all, and they must stay joinable. Every
-    other failure withholds the shard it belongs to.
+    FileNotFoundError alone is the unrecorded case: the live published shards
+    have no sidecar at all, and they must stay joinable. Every other failure
+    withholds the shard it belongs to.
     """
     try:
         with meta_path.open(encoding="utf-8") as fh:
@@ -1444,13 +1430,12 @@ def partial_path(output_dir: Path, shard_index: int, limit: int | None,
                  provenance: dict[str, Any]) -> Path:
     """The per-job append log for one shard of one run.
 
-    Keyed on the RUN, not just the shard: the name this replaces carried only
-    the index and the limit, so interrupting a `disconfirm_relnature_rf` shard
-    and restarting under the default would have loaded the first variant's rows
-    as done and published one file whose verdicts came from two prompts, with
-    margins from a variant that reads none. The same argument is why
-    `run_provenance` carries max_tokens and temperature: a restart under a
-    different ceiling is the same defect with a quieter symptom.
+    Keyed on the RUN, not just the shard: a name carrying only the index and the
+    limit lets a `disconfirm_relnature_rf` shard restart under the default, load
+    the first variant's rows as done, and publish one file whose verdicts come
+    from two prompts, with margins from a variant that reads none. The same
+    argument is why `run_provenance` carries max_tokens and temperature: a
+    restart under a different ceiling is the same defect with a quieter symptom.
     """
     digest = hashlib.sha256(
         json.dumps(provenance, sort_keys=True, default=str).encode("utf-8")
@@ -1572,17 +1557,17 @@ def run_shard(
     )
     progress = tqdm(total=total, initial=len(done), desc="Scoring", unit="job")
 
-    # BLOCK-BUFFERED, deliberately. The version this restores flushed every row
-    # and was removed as costing "an fsync per job", which it never was: it was
-    # a line-buffered append, and the per-row overhead is single-digit
-    # microseconds. No figure is quoted because two machines here disagreed by
-    # ~18x on the same comparison -- it is a property of the disk, not of the
-    # code, and the decision does not turn on it.
+    # BLOCK-BUFFERED, deliberately. The rejected per-row-flush alternative is a
+    # line-buffered append, not "an fsync per job"; its per-row overhead is
+    # single-digit microseconds. No figure is quoted because two machines here
+    # disagree by ~18x on the same comparison -- it is a property of the disk,
+    # not of the code, and the decision does not turn on it.
     #
     # The cost of having no log at all is the whole shard: an interruption
     # discarded up to 50,000 scored rows, and a scheduler slot shorter than one
-    # shard makes zero net progress while every restart looks healthy. A crash
-    # now costs the last ~8KB of rows instead of all of them.
+    # shard makes zero net progress while every restart looks healthy. With the
+    # block-buffered partial log, a crash costs the last ~8KB of rows instead of
+    # all of them.
     with partial.open("a") as partial_fh:
         with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
             inflight: set[cf.Future] = set()
@@ -1650,14 +1635,13 @@ def run_shard(
     # number rather than an absent one. Below the threshold one bad row still
     # must not block a shard, which is why this is a fraction and not zero.
     #
-    # BOTH CLASSES COUNT. Gating on the transient class alone was adopted to
-    # break an unclearable wedge and cost the gate its purpose: a client
-    # returning the same unreadable reply to every job produced a shard whose
-    # every cell is verdict="error" at exit 0, so a systematically broken prompt
-    # or input baked itself into the corpus silently -- the exact failure this
-    # gate exists to prevent. The wedge is broken at the other end instead: the
-    # only escape is the operator raising --max-error-fraction, which makes
-    # publishing unclearable failures a deliberate act rather than a default.
+    # BOTH CLASSES COUNT. Gating on the transient class alone breaks the gate's
+    # purpose: a client returning the same unreadable reply to every job produces
+    # a shard whose every cell is verdict="error" at exit 0, so a systematically
+    # broken prompt or input enters the corpus silently. The unclearable-failure
+    # wedge is broken at the other end: the only escape is the operator raising
+    # --max-error-fraction, which makes publication a deliberate act rather than
+    # a default.
     #
     # The SPLIT is still reported, because the two remedies differ: a transient
     # failure clears on a rerun of the same command, a deterministic one -- a
@@ -1810,9 +1794,9 @@ def build_parser() -> argparse.ArgumentParser:
              "clear.",
     )
     # max-tokens and timeout DEFAULT TO THE REGISTRY, matching
-    # scripts/run_rasmachine_monolithic.py. They used to be hardcoded here at
-    # 1000/180, which silently overrode the registry entry for every run: a
-    # 1000-token cap truncates 16.7% of calls under the production
+    # scripts/run_rasmachine_monolithic.py. Caller-local 1000/180 defaults
+    # silently override the registry entry for every run: a 1000-token cap
+    # truncates 16.7% of calls under the production
     # reasoning-first prompt (measured, n=60: p50 574, p90 1507, max 4353), and
     # a truncated read costs the full wall clock while yielding no verdict.
     # A ceiling belongs with the model, not with one of its callers.
@@ -1938,25 +1922,19 @@ def preflight(client, endpoint: str, model_id: str, prompt) -> None:
                 "perfectly healthy.\n  Check that the serving stack supports "
                 "top_logprobs on chat completions."
             )
-        # A 'logprobs came back' check is NOT enough, and this used to stop
-        # there. The reader locates the margin by the EMITTED TOKEN matching a
-        # label, so a tokenizer that emits " correct" with a leading space, or
-        # "correct\"" with the quote attached, returns None -- silently, per row,
-        # forever. Verdicts still land, the run looks healthy, and 60M margins
-        # are null. MEASURED: both variants return None today.
-        #
-        # So the preflight issues a REAL SCORING REQUEST and parses it with the
-        # function the runner uses, `label_margin_from_payload`.
-        #
-        # An earlier version of this check issued `build_probe_request` instead
-        # and claimed it was "parsed the same way". It is not, and the
-        # difference is exactly the hazard: the probe route forces the label to
-        # generated position 0 with a prefill and looks it up among that
+        # The preflight must issue a REAL SCORING REQUEST and parse it with the
+        # runner's own reader, `label_margin_from_payload`. A 'logprobs came back'
+        # check is NOT enough: the reader locates the margin by the EMITTED TOKEN
+        # matching a label, so a tokenizer that emits " correct" with a leading
+        # space, or "correct\"" with the quote attached, returns None -- silently,
+        # per row, forever. Verdicts still land, the run looks healthy, and 60M
+        # margins are null. MEASURED: both variants return None today. A
+        # `build_probe_request` is NOT a substitute: the probe route forces the
+        # label to generated position 0 with a prefill and looks it up among that
         # position's alternatives, so it CANNOT exhibit the emitted-token
         # mismatch. The in-call route scans for the first position whose EMITTED
-        # token is a label, which is what a leading space or an attached quote
-        # breaks. The check validated the one route that could not fail and left
-        # the one that does unprotected.
+        # token is a label, which is exactly what a leading space or an attached
+        # quote breaks.
         job = {
             "stmt_type": "Activation",
             "user_message": "CLAIM: A [Activation] B\nEVIDENCE: A activates B.",
@@ -2018,12 +1996,11 @@ def main() -> int:
 
     from indra_belief.model_client import LOCAL_MODELS, canonical_model_name
 
-    # CANONICALISE FIRST. The registry resolves aliases and this lookup did not,
-    # so a renamed entry -- `vllm-local` -> `vllm-gemma-4-26b` -- would reject a
-    # collaborator's existing command line with "unknown model registry entry"
-    # while the alias it was renamed under resolved perfectly everywhere else.
-    # The calibration profile is keyed on the CANONICAL name too, so resolving
-    # here is what makes an aliased run and a canonical run the same run.
+    # CANONICALISE FIRST. The registry resolves aliases, so a raw lookup can
+    # reject `vllm-local` -> `vllm-gemma-4-26b` with "unknown model registry
+    # entry" even though the alias resolves everywhere else. The calibration
+    # profile is keyed on the CANONICAL name too, so resolving here makes an
+    # aliased run and a canonical run the same run.
     args.model = canonical_model_name(args.model)
     if args.model not in LOCAL_MODELS:
         raise SystemExit(f"unknown model registry entry: {args.model}")
@@ -2057,9 +2034,8 @@ def main() -> int:
         )
     # Built HERE, before the [config] line and the banner that both read it.
     # An unknown --variant must fail before any shard is opened, and both of
-    # those lines report properties OF this object — deferring construction is
-    # how the previous version of this function came to raise NameError on
-    # every invocation.
+    # those lines report properties OF this object, so construction must precede
+    # them.
     prompt = MonolithicPrompt(args.variant)
     print(
         f"[config] model={args.model} served_id={args.model_id} "
@@ -2075,11 +2051,10 @@ def main() -> int:
     # is the difference between ECE 0.045 and ECE 0.237 with nothing downstream
     # able to tell which it got.
     #
-    # Hashed off the CONSTRUCTED PROMPT OBJECT, not a re-import of one variant's
-    # constant. While the runner pinned DISCONFIRM_SYSTEM_PROMPT the two were the
-    # same string; the moment --variant could change what is sent, a re-import
-    # would have reported the calibration status of a prompt this run never
-    # used — a banner that is confidently wrong is worse than no banner.
+    # Hashed off the CONSTRUCTED PROMPT OBJECT, not a separate import of one
+    # variant's constant. Such a constant can disagree with --variant and report
+    # the calibration status of a prompt this run never uses — a banner that is
+    # confidently wrong is worse than no banner.
     import hashlib
 
     from indra_belief.calibration_constants import calibration_banner
@@ -2118,9 +2093,9 @@ def main() -> int:
         client_context = httpx.Client(limits=limits, timeout=args.timeout)
 
     # A WITHHELD SHARD MUST NOT HALT THE OTHER 1,199. Returning on the first
-    # non-zero code meant one bad window cost every shard queued behind it --
+    # non-zero code makes one bad window cost every shard queued behind it --
     # far more expensive than the missing-evidence defect the gate protects
-    # against, and invisible until someone read the exit code. Each withheld
+    # against, and invisible until someone reads the exit code. Each withheld
     # shard is named at the end and the run exits non-zero ONCE.
     withheld: list[str] = []
     with client_context as client:

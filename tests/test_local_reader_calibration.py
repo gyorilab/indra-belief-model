@@ -1,17 +1,20 @@
 """The self-hosted reader reaches the calibrated belief, not the fallback.
 
-This is the exit condition of the self-hosting arc, as a test.
+A self-hosted run resolves the registered calibration profile rather than
+falling back to the source-counting hard gate.
 
 Before it, `calibration_for("local-gemma-4-26b", ...)` returned None for every
 prompt, so a self-hosted run silently used the source-counting hard gate — the
 behaviour the reading model exists to replace. There was no error and no
 warning; a run produced plausible numbers from the wrong formula.
 
-The registered profile was earned on the four-leg G2 gate (2026-08-13):
+The registered profile clears the four-leg G2 gate for lower ECE, non-inferior
+AUROC, non-inferior err-F1, and default-off/hard-path byte identity; measured
+2026-08-13:
 
     ECE    0.231 -> 0.052        AUROC  0.793 -> 0.808
     err-F1 0.796 -> 0.800        delta +0.004, CI [-0.009, +0.019] non-inferior
-    E4 byte-identity             tests/test_soft_belief.py, 17 passed
+    default-off and explicit hard paths byte-identical  tests/test_soft_belief.py, 17 passed
 
 Every assertion below fails if the profile is removed from `_FITTED_CONFIGS`, is
 flipped to disabled, or is keyed on a different prompt. A test that passed either
@@ -94,7 +97,7 @@ def test_the_registered_counts_reproduce_the_shipped_weights():
 
 
 def test_the_calibrated_belief_differs_from_the_fallback():
-    """The point of the arc: the same evidence must produce a DIFFERENT number.
+    """The load-bearing assertion: the same evidence must produce a DIFFERENT number.
 
     If these two agreed, registering the profile would have changed nothing and
     every other assertion here would be decoration.

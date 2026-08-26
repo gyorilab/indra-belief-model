@@ -33,20 +33,26 @@ _FIXED_BEDROCK_RESPONSES_ENDPOINT = (
 
 
 # Model registry — name → (base_url, model_id, notes)
+# The registry-wide token floor for any entry that can receive the production
+# reasoning-first prompt is `max_tokens: 8192`. The local Gemma, vLLM, and
+# Ollama lanes pair that ceiling with `timeout: 900`; other transports retain
+# route-specific deadlines. Measurement (2026-08-12): 60 monolithic
+# `disconfirm_relnature_rf` calls against gemma-4-26b produced output-token p50
+# 574, p90 1507, and max 4353. A 1000-token ceiling truncates 16.7% (Wilson
+# [0.093, 0.280]); 8192 truncates 0/60 (Wilson [0.000, 0.060]). A cap is a
+# CEILING, not a reservation: an entry that never emits 8k tokens pays nothing
+# for permitting them. A truncated read costs the full wall clock and yields no
+# verdict; on paths without the withholding policy, it can contribute a verdict
+# recovered from mid-chain-of-thought text. `tests/test_token_cap_floor.py`
+# enforces the 8192-token floor across every registry entry.
 LOCAL_MODELS: dict[str, dict] = {
     "vllm-gemma-4-26b": {
         "base_url": "http://127.0.0.1:8000/v1",
         "model_id": "google/gemma-4-26B-A4B-it",
         "reasoning_in_content": False,
-        # 1000/120 raised to 8192/900 on 2026-08-12. MEASURED on 60 monolithic
-        # calls with the production reasoning-first prompt: output tokens p50
-        # 574, p90 1507, max 4353 — so a 1000 cap truncates 16.7% of calls
-        # (Wilson [0.093, 0.280]) while 8192 truncates 0/60 ([0.000, 0.060]).
-        # A truncated read costs the full wall clock and yields no verdict, and
-        # on this path it is NOT withheld, so it can contribute a mid-thought
-        # verdict. The served id must match `--served-model-name` byte-for-byte
-        # or reader_configuration_for_run nulls the prompt and calibration can
-        # never resolve.
+        # The shared ceiling applies. The served id must match
+        # `--served-model-name` byte-for-byte or reader_configuration_for_run
+        # nulls the prompt and calibration can never resolve.
         "max_tokens": 8192,
         "timeout": 900,
         # A CLAIM ABOUT HOW THE SERVER IS LAUNCHED, not a property of vLLM.
@@ -64,10 +70,9 @@ LOCAL_MODELS: dict[str, dict] = {
         "base_url": "http://localhost:11434/v1",
         "model_id": "gemma3:27b",
         "reasoning_in_content": False,
-        # 1000/120 raised to 8192/900 on 2026-08-12, same measurement as
-        # vllm-local. gemma3:27b is not a reasoning model, so its own output is
-        # shorter — but the cap is a CEILING, not a reservation, and the old
-        # value silently truncated any reasoning-first prompt sent here.
+        # gemma3:27b is not a reasoning model and its own output is shorter, but
+        # the shared cap is a ceiling and a tight one silently truncates any
+        # reasoning-first prompt routed here.
         "max_tokens": 8192,
         "timeout": 900,
     },
@@ -76,10 +81,9 @@ LOCAL_MODELS: dict[str, dict] = {
         "model_id": "dealignai/Qwen3.5-VL-122B-A10B-4bit-MLX-CRACK",
         "reasoning_in_content": True,  # CoT is emitted in content
         "typical_tokens": 2500,
-        # 8000 -> 8192 on 2026-08-12. 8000 sat just under the measured floor —
-        # the near-miss a round number invites. This reader emits its CoT in
-        # `content` and has the largest `typical_tokens` in the registry, so it
-        # is the entry least able to afford a tight ceiling.
+        # The shared ceiling matters most here: this reader emits its CoT in
+        # `content` and carries the largest `typical_tokens` in the registry, so
+        # it is the entry least able to afford a tight ceiling.
         "max_tokens": 8192,
         "timeout": 180,
     },
@@ -106,26 +110,24 @@ LOCAL_MODELS: dict[str, dict] = {
         "model_id": "mlx-community/gemma-4-26b-a4b-it-8bit",
         "reasoning_in_content": False,  # separate reasoning field (mlx spelling)
         "typical_tokens": 400,
-        # Measured on an M5 Max at 20.9-29.3 tok/s, mean 25.2, over the 16
-        # --workers 1 monolithic calls for the 8-bit MoE: the reasoning-
-        # first prompt spends 700-1500 tokens deliberating before the JSON, so
-        # the old 1000/60s pair truncated mid-thought and then timed out. A
-        # truncated reply is not a cheap failure here — it costs the full wall
-        # clock and yields no verdict.
+        # The shared floor applies here. Measured on an M5 Max at 20.9-29.3
+        # tok/s, mean 25.2, over 16 `--workers 1` monolithic calls on the 8-bit
+        # MoE; the production reasoning-first prompt spends 700-1500 tokens
+        # deliberating before the JSON. At a 1000-token/60s bound, the reply is
+        # truncated mid-thought and then timed out.
         #
-        # Raised 4096 -> 8192 on 2026-08-12 by operator decision, to cut the
-        # measured cap-hit rate before the calibration fit run. At 4096 the rate
-        # was 2/88 sampled rows (pooled, Wilson [0.0063, 0.0791]) while the
-        # largest UNTRUNCATED call observed was 3695 tokens — 90.2% of that cap,
-        # i.e. the tail was pressed right against it. 8192 leaves 2.2x headroom
-        # over the observed maximum. The rate at this cap is re-measured rather
-        # than assumed: a cap hit still costs full wall clock, so the surcharge
-        # per hit roughly doubles even as hits become rarer.
+        # Tail measurement (2026-08-12): the 4096 cap-hit rate is 2/88 sampled
+        # rows (pooled, Wilson [0.0063, 0.0791]), and the largest untruncated call
+        # observed is 3695 tokens. A 4096 ceiling leaves the tail pressed against
+        # it at 90.2%; 8192 leaves 2.2x headroom over the observed maximum. The
+        # rate at this cap remains a measurement rather than an assumption. A cap
+        # hit still costs full wall clock; at 8192, hits are rarer but the
+        # surcharge per hit is roughly twice as large.
         "max_tokens": 8192,
         "timeout": 900,
         "supports_logprobs": True,
-        # RAISED 11 -> 1024 on 2026-08-13, and this DEPENDS ON A LOCAL PATCH to
-        # the serving venv. Stock mlx_lm.server hard-codes
+        # PATCH DEPENDENCY: this value DEPENDS ON A LOCAL PATCH to the serving
+        # venv. Stock mlx_lm.server hard-codes
         # `_validate("top_logprobs", int, min_val=0, max_val=11, whitelist=[-1])`
         # at server.py:1245, and 11 is nowhere near enough at a forced verdict
         # position: measured, the LOSING label sits at rank 42 / 83 / 168 across
@@ -141,9 +143,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "model_id": "mlx-community/gemma-4-31b-it-8bit",
         "reasoning_in_content": False,
         "typical_tokens": 400,
-        # This entry carried the literal "1000/60s pair" that the 26b comment
-        # above records as catastrophic — truncating mid-thought and then timing
-        # out. Raised to 8192/900 on 2026-08-12 to match its 26b sibling.
+        # Same ceiling and wall clock as its 26b sibling, for the same reason.
         "max_tokens": 8192,
         "timeout": 900,
     },
@@ -222,10 +222,9 @@ LOCAL_MODELS: dict[str, dict] = {
         "torch_dtype": "bfloat16",
         "device": "mps",
         "typical_tokens": 800,
-        # 4096 -> 8192 on 2026-08-12. `enable_thinking` is True here, so this
-        # reader deliberates before answering and its output distribution is
-        # unmeasured; a ceiling costs nothing when it is not reached, while a
-        # truncated read costs the full wall clock and yields no verdict.
+        # The shared ceiling applies because `enable_thinking` is True: this
+        # reader deliberates before answering, its output distribution is
+        # unmeasured, and a ceiling costs nothing when it is not reached.
         "max_tokens": 8192,
         "timeout": 300,
         "persona": (
@@ -263,13 +262,13 @@ LOCAL_MODELS: dict[str, dict] = {
     #
     # base_url is the mantle `/openai/v1` root FOR GEMMA 4 (the OpenAI SDK
     # appends /chat/completions, /responses, /models). Mantle routes are
-    # PER-MODEL and the wrong-route error is MISLEADING — verified 2026-06-18
-    # with this exact token:
+    # PER-MODEL and the wrong-route error is MISLEADING. A probe on 2026-06-18
+    # with this exact token shows:
     #   gemma-4-26b-a4b : 200 on /openai/v1 ; on /v1 → 401 {"code":"access_denied",
     #                     "message":"Berm is not enabled for this account"}. That
-    #                     401 is NOT an account/IAM/provisioning problem — it's
-    #                     just the wrong route (the earlier "Gemma 4 not
-    #                     provisioned, needs AWS" read was this confound).
+    #                     401 is the wrong route, NOT an
+    #                     account/IAM/provisioning problem; treating model-list
+    #                     access as inference access creates this confound.
     #   gemma-3-27b-it / gpt-oss : 200 on /v1 ; on /openai/v1 → 400 "isn't
     #                     supported on this route".
     # ⇒ a Gemma-3 / gpt-oss entry must use base_url `.../api.aws/v1`, NOT
@@ -292,12 +291,12 @@ LOCAL_MODELS: dict[str, dict] = {
     "bedrock-gemma-4-26b": {
         # Same weights as gemma-remote / gemma-google (gemma-4-26b-a4b), served
         # by Bedrock with no local GPU / tailscale hop. Gemma DOES reason on
-        # Bedrock — but the CHAT COMPLETIONS API DROPS the CoT (probed
-        # 2026-06-19: zero reasoning at every reasoning_effort on
-        # /chat/completions). Only the RESPONSES API surfaces it, so this entry
+        # Bedrock, but a probe on 2026-06-19 shows that the CHAT COMPLETIONS API
+        # DROPS the CoT: zero reasoning at every reasoning_effort on
+        # /chat/completions. Only the RESPONSES API surfaces it, so this entry
         # uses backend="bedrock_responses_raw" (POST /openai/v1/responses) with
-        # reasoning_effort="high" (only "high" engages a reasoning item;
-        # medium/none → none, verified). reasoning_in_content=False ⇒ raw_text =
+        # reasoning_effort="high"; only "high" engages a reasoning item, while
+        # medium/none returns none. reasoning_in_content=False ⇒ raw_text =
         # reasoning + answer, so the verdict parse sees both. Gemma is
         # mantle-only (no Converse route) and uses the /openai/v1 path.
         "backend": "bedrock_responses_raw",
@@ -317,25 +316,27 @@ LOCAL_MODELS: dict[str, dict] = {
         "timeout": 600,
     },
     # ── Reasoning-isolation twins ────────────────────────────────────────────
-    # One per paid comparison arm, differing from their thinking sibling in
-    # exactly one field: reasoning_effort "high" -> "none". Everything else
-    # (backend, endpoint pins, TLS bundle, byte bounds, model_id, max_tokens)
-    # is copied verbatim, so a paired run isolates reasoning mode and nothing
-    # else. The three GEMMA twins keep the surviving `bedrock_responses_raw`
-    # paid lane on purpose: its recorded canonical wire body is the ONLY artifact
+    # One per paid comparison arm, differing from its thinking sibling in
+    # exactly one field: reasoning_effort is "high" in the sibling and "none"
+    # in the twin. Everything else (backend, endpoint pins, TLS bundle, byte
+    # bounds, model_id, max_tokens) is copied verbatim, so a paired run isolates
+    # reasoning mode and nothing else. The three GEMMA twins use the
+    # `bedrock_responses_raw` paid lane on
+    # purpose: its recorded canonical wire body is the ONLY artifact
     # that can prove reasoning was actually off — the
     # provider's own token accounting cannot (gemma reports
     # reasoning_tokens=0 while returning real CoT; glm-5 omits the field).
     #
-    # What "none" does on each wire, verified in bedrock_*_transport.py:
-    #   Responses lane (gemma): `if reasoning_effort and != "none"` — the
-    #     `reasoning` key is OMITTED entirely (bedrock_responses_transport.py
-    #     :625-627), and a literal reasoning.effort=="none" is rejected by the
-    #     request validator (:658).
-    #   Chat lane (glm-5): the twin now rides `openai_compat`; because it declares
-    #     `strict_openai_compat: True`, `reasoning_wire_keys(effort, strict=True)`
-    #     returns `{"reasoning_effort": effort}` alone, so `"reasoning_effort":
-    #     "none"` still goes on the wire — the same wire intent as before.
+    # Wire behavior for "none" in bedrock_*_transport.py:
+    #   Responses lane (gemma): `build_bedrock_responses_body` at
+    #     bedrock_responses_transport.py:243-244 omits the `reasoning` key when
+    #     reasoning_effort is "none". `_validate_request_body` at
+    #     bedrock_responses_transport.py:275-276 rejects a literal
+    #     reasoning.effort=="none".
+    #   Chat lane (glm-5): the twin declares `strict_openai_compat: True`, so
+    #     `reasoning_wire_keys(effort, strict=True)` returns
+    #     `{"reasoning_effort": effort}` alone and `"reasoning_effort": "none"`
+    #     goes on the `openai_compat` wire.
     "bedrock-gemma-4-26b-noreason": {
         "backend": "bedrock_responses_raw",
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
@@ -399,7 +400,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "timeout": 600,
     },
     # ── AWS Bedrock mantle — additional open-weight models on the /v1 route ──
-    # Verified 2026-06-19 with AWS_BEARER_TOKEN_BEDROCK: each returns 200 on
+    # A probe on 2026-06-19 with AWS_BEARER_TOKEN_BEDROCK shows each returns 200 on
     # `.../api.aws/v1/chat/completions` and 400 "isn't supported on this route"
     # on /openai/v1 (the INVERSE of gemma-4, which is /openai/v1-only). Bare
     # mantle ids from `GET .../v1/models`. openai_compat backend, strict (mantle
@@ -408,7 +409,7 @@ LOCAL_MODELS: dict[str, dict] = {
     # emit a separate reasoning_content (or inline <think>); the scorer's
     # tolerant verdict parse reads both. Per-token billed by AWS.
     #
-    # REASONING (probed 2026-06-19, to approximate gemma-remote's medium CoT):
+    # REASONING PROBE (2026-06-19, approximating gemma-remote's medium CoT):
     # mantle's reasoning_effort scale is COARSE — thinking is OFF at unset / none
     # / medium and only engages at "high" (the param is ACCEPTED, no 400, at
     # every level). And only deepseek-v3.2 + kimi-k2.5 deliberate at all: at
@@ -467,11 +468,11 @@ LOCAL_MODELS: dict[str, dict] = {
         "timeout": 600,
     },
     # Z.ai GLM-5 — frontier reasoning model, the largest reasoner reachable on
-    # the mantle endpoint. Probed 2026-06-19: surfaces CoT via Chat Completions
+    # the mantle endpoint. A probe on 2026-06-19 shows CoT surfaces via Chat Completions
     # reasoning_effort="high" -> reasoning_content (rc=1098; medium/none = none),
     # the SAME plain path as deepseek/kimi — no Responses API or Converse needed.
     # max_tokens is high on purpose: at "high" glm-5 spends the budget on
-    # reasoning_content and can emit the verdict JSON late (probe showed empty
+    # reasoning_content and can emit the verdict JSON late (the probe records empty
     # content at max_tokens=3000), so 32000 keeps room for CoT + verdict and
     # avoids truncation to verdict=None. reasoning_in_content=False ⇒ raw_text =
     # reasoning + answer for the verdict parse.
@@ -487,10 +488,11 @@ LOCAL_MODELS: dict[str, dict] = {
         "timeout": 600,
     },
     # ── Small/mid open-weight reasoners (mantle /v1 chat, reasoning_content) ──
-    # Probed 2026-06-19: all surface CoT via chat-completions reasoning_effort="high"
+    # A probe on 2026-06-19 shows all surface CoT via chat-completions
+    # reasoning_effort="high"
     # (same path as deepseek/kimi/glm), so plain openai_compat. Cheaper/faster
     # alternatives to the big reasoners; favor-latest picks across two size bands.
-    # gpt-oss reasons HERE (chat), not via Responses — verified, contra some docs.
+    # gpt-oss reasons HERE (chat), not via Responses, contrary to some docs.
     "bedrock-nemotron-nano-3-30b": {  # 31.6B/3.2B active MoE, Dec 2025 — best small cap/cost
         "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1",
         "model_id": "nvidia.nemotron-nano-3-30b",
@@ -546,8 +548,8 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 32000,
         "timeout": 600,
     },
-    # OpenAI GPT-5.5 — Responses-API-ONLY on Bedrock (probed 2026-06-19: Chat
-    # Completions AND /v1/responses both 400; only /openai/v1/responses works).
+    # OpenAI GPT-5.5 — Responses-API-ONLY on Bedrock. A probe on 2026-06-19 shows
+    # Chat Completions AND /v1/responses both 400; only /openai/v1/responses works.
     # Reuses backend="bedrock_responses". reasoning_effort="high" engages thinking
     # (usage.output_tokens_details.reasoning_tokens > 0), BUT GPT reasoning is
     # ENCRYPTED — the reasoning output item carries only an (empty) summary, no
@@ -566,7 +568,7 @@ LOCAL_MODELS: dict[str, dict] = {
         "timeout": 600,
     },
     # Gemma 4 31B (dense, newest Gemma) — like bedrock-gemma it reasons ONLY via
-    # the Responses API (chat-completions drops the CoT, probed 2026-06-19), so
+    # the Responses API. A probe on 2026-06-19 shows chat-completions drops the CoT, so
     # backend=bedrock_responses_raw on the /openai/v1 route. Heavier/slower dense
     # counterpart to the gemma-4-26b-a4b MoE already wired as bedrock-gemma.
     "bedrock-gemma-4-31b": {
@@ -587,8 +589,9 @@ LOCAL_MODELS: dict[str, dict] = {
         "timeout": 600,
     },
     # Gemma 4 E2B (~2.3B effective, tiny on-device tier) — the ONLY clean sub-10B
-    # reasoner on Bedrock: reasons only via the Responses API (probed rc=411,
-    # chat drops it), so backend=bedrock_responses_raw. Extreme-cheap floor;
+    # reasoner on Bedrock. A probe on 2026-06-19 shows it reasons only via the
+    # Responses API (rc=411; chat drops it), so backend=bedrock_responses_raw.
+    # Extreme-cheap floor;
     # capacity-gated for subtle relation logic — validate (n=1606) before trusting.
     # (Other sub-10B mantle models — ministral-3-3b, gemma-3-4b — are non-thinking;
     # our MedPsy-4B reasoner is local-only on noot-1, not on AWS.)
@@ -610,16 +613,16 @@ LOCAL_MODELS: dict[str, dict] = {
         "timeout": 300,
     },
     # AWS Bedrock CLAUDE (Anthropic) — native Converse API, NOT mantle/OpenAI.
-    # Verified 2026-06-18 (this same bearer token): Claude models reject BOTH
+    # A probe on 2026-06-18 with this same bearer token shows Claude models reject BOTH
     # mantle OpenAI routes (/chat/completions AND /responses → HTTP 400 "does not
     # support the '...' API"). They are served by the native Bedrock-runtime
     # Converse API, which the bearer token authenticates directly (no SigV4, no
-    # boto3). Two more gotchas, both verified:
+    # boto3). The same probe establishes two more gotchas:
     #   • model_id must be an INFERENCE-PROFILE id (us.* / global.*), NOT the bare
     #     catalog id — the models are inferenceTypesSupported=['INFERENCE_PROFILE'],
     #     so bare ids 400 with "the provided model identifier is invalid".
-    #   • there is NO claude-sonnet in this account's catalog — only
-    #     haiku-4-5, opus-4-7, opus-4-8 (the old bedrock-claude-sonnet 404'd).
+    #   • this account's catalog carries no claude-sonnet; a sonnet id 404s. The
+    #     catalog carries only haiku-4-5, opus-4-7, and opus-4-8.
     # backend="bedrock_converse" (see _call_bedrock_converse) maps
     # (system, messages) → Converse and parses output.message.content[].text +
     # usage.{input,output}Tokens. The DEFAULT monolithic path (no response_format,
@@ -728,18 +731,16 @@ def _parse_retry_delay(error_text: str, default: float = 30.0) -> float:
 # A retry must fire on a genuine 429 and on nothing else. An unrelated failure
 # whose body merely CONTAINS the digits "429" (a request id, a token count, a
 # byte offset) is not a rate limit, and retrying it just spends the same budget
-# again on the same failure. Two precise patterns replace a bare substring test.
+# again on the same failure. Two precise patterns implement this contract.
 #
-# The phrase set is EXACTLY the two literals the previous substring test used
-# ("rate limit", "resource_exhausted"), case-insensitively and nothing more.
-# Widening it is a live hazard, not a hypothetical one: an earlier revision added
-# "too many requests" / "quota exceeded" / a `[ _-]?` separator class, and that
-# turned a permanent HTTP 400 "Quota exceeded for this account" rejection into
-# five pointless retries of the same failure (155s of sleeps, five extra billed
-# POSTs). Those tokens are a trustworthy rate-limit signal only when the provider
-# ALSO reports 429 — via a structured status (rule 1) or in status position in the
-# text (rule 3) — both of which are already covered. As free body text they are
-# not evidence of throttling.
+# The phrase set is EXACTLY "rate limit" and "resource_exhausted",
+# case-insensitively and nothing more. Adding "too many requests", "quota
+# exceeded", or a `[ _-]?` separator class violates the contract: a permanent
+# HTTP 400 "Quota exceeded for this account" rejection then receives five
+# pointless retries (155s of sleeps and five extra billed POSTs). Those tokens
+# are a trustworthy rate-limit signal only when the provider ALSO reports 429,
+# via a structured status (rule 1) or status position in text (rule 3). As free
+# body text they are not evidence of throttling.
 _RATE_LIMIT_PHRASE_RE = __import__("re").compile(
     r"rate limit|resource_exhausted",
     flags=__import__("re").IGNORECASE,
@@ -753,9 +754,10 @@ _RATE_LIMIT_PHRASE_RE = __import__("re").compile(
 # `^` means start-of-string, not start-of-line: a payload that happens to wrap
 # onto a line beginning with 429 does not qualify.)
 #
-# This pattern may GROW toward the old substring test (every string it adds
-# already contains "429", so the old test was already True for it) but never
-# past it. The phrase set above may not grow past the old test at all.
+# `_RATE_LIMIT_STATUS_RE` may add only status-position forms accepted by the
+# differential oracle in tests/test_model_client_paid_lane_hardening.py. Every
+# such form contains "429", so the rule never widens beyond the reference
+# literal-429 predicate. `_RATE_LIMIT_PHRASE_RE` must remain the two exact phrases.
 _RATE_LIMIT_STATUS_RE = __import__("re").compile(
     r"(?:http(?:\s+error)?\s+|error code:\s*|status(?:[ _]code)?[\s:=]+"
     r"|code[\s:=]+|returned\s+)429\b"
@@ -768,16 +770,20 @@ _RATE_LIMIT_STATUS_RE = __import__("re").compile(
 def _provider_http_status(error: BaseException) -> int | None:
     """Structured HTTP status carried by a provider exception, or None.
 
-    This mirrored the retired spend guard's provider-exception status parser,
-    which read the identical candidate set under the same 100..599 bound. The
-    duplication was DELIBERATE: importing the append-only ledger module here
-    would have dragged it onto this client's error path, which the transport
-    layer must stay free of. If this provider surface grows a new status field,
-    update this list.
+    Only non-bool integers in the inclusive 100..599 range qualify. This parser
+    stays local: importing append-only ledger code would drag accounting onto the
+    transport error path, an import boundary guarded by
+    `scripts/check_import_boundary.py`. If this provider surface grows a new
+    status field, update this list.
     """
     candidates = [
-        # Stamped by this module's legacy Bedrock adapters; the name sits
-        # deliberately outside the spend-guard candidate set (see there).
+        # The legacy Bedrock lanes raise a plain RuntimeError that exposes none of
+        # `status`, `status_code`, `http_status`, `response`, or `transport_trace`;
+        # the code lives only under this private stamp. An external wrapper that
+        # reads conventional status names therefore classifies these lanes from
+        # message text alone. Pinned by
+        # tests/test_model_client_paid_lane_hardening.py::
+        # test_legacy_lane_error_hides_status_from_spend_guard_extractor.
         getattr(error, "_bedrock_http_status", None),
         getattr(error, "status_code", None),
         getattr(error, "status", None),
@@ -811,11 +817,10 @@ def _is_rate_limit_error(error: BaseException) -> bool:
     3. no structured status at all, and the text carries either an explicit
        rate-limit PHRASE or a 429 in STATUS POSITION                -> True
 
-    Relation to the predicate this replaced (`msg = str(e).lower()`;
-    `"429" in msg or "rate limit" in msg or "resource_exhausted" in msg`):
-    the new rule is a SUBSET of it for every error our transports raise —
-    nothing the old test refused to retry is now retried. Two deliberate
-    NARROWINGS, both pinned by the differential battery in
+    The differential oracle is the reference predicate (`msg = str(e).lower()`;
+    `"429" in msg or "rate limit" in msg or "resource_exhausted" in msg`). This
+    rule is a SUBSET for every error our transports raise. Two deliberate
+    NARROWINGS are pinned by the differential battery in
     tests/test_model_client_paid_lane_hardening.py:
 
       (a) an authoritative NON-429 status is never a rate limit regardless of
@@ -825,11 +830,11 @@ def _is_rate_limit_error(error: BaseException) -> bool:
           request id "9f-429-77", a token count `{"input_tokens": 429}`) is not
           a rate limit.
 
-    Rule 1 is the only text-independent rule. It cannot widen against the old
-    predicate in practice: every error these lanes raise stamps the code into
-    its own message (`Bedrock Converse HTTP 429: ...`), and provider SDK errors
+    Rule 1 is the only text-independent rule. It cannot widen against the
+    reference predicate in practice: every error these lanes raise stamps the
+    code into its own message (`Bedrock Converse HTTP 429: ...`), and provider SDK errors
     carrying `status_code` render it too (`Error code: 429 - {...}`), so a
-    structured 429 always comes with a "429" the old substring test also saw.
+    structured 429 always carries a "429" that the reference predicate accepts.
     """
     text = str(error)
     status = _provider_http_status(error)
@@ -865,7 +870,7 @@ def _read_body_within_deadline(
     `urlopen(req, timeout=N)` bounds each individual socket operation, not total
     wall time: a provider that dribbles one byte every N/2 seconds keeps every
     operation inside the timeout while the call runs unboundedly long. This is
-    the missing outer bound for the two legacy urllib lanes, which run
+    the absolute outer bound for the two legacy urllib lanes, which run
     synchronously in the scoring worker with no thread-pool wall cap.
 
     Local twin, deliberately NOT an import of
@@ -873,7 +878,7 @@ def _read_body_within_deadline(
     whose loop shape this mirrors (reach the socket via `resp.fp.raw._sock`,
     re-arm `settimeout(remaining)` before each 64KiB `read1`, re-check the
     deadline after each chunk). That method is welded to `_ResponseReadFailure`
-    and the sealed transport-trace contract — partial-body capture, framing
+    and the full transport-trace contract — partial-body capture, framing
     validation, replay evidence — and importing it would drag the trace
     machinery onto lanes that deliberately carry none of it.
 
@@ -977,12 +982,10 @@ def _build_trace(*, reasoning: str, reasoning_tokens: int, status: str,
     """The uniform reasoning-trace dict persisted per call. committed_justification
     is stamped later by the structured scorer (it owns the answer format).
 
-    `provider_source` names the field the reasoning ACTUALLY came from, and is
-    "" when none supplied any — it used to name the single field the code tried,
-    whether or not that field existed in the reply. `observed_message_keys` is
-    what the reply actually carried in that case, so `status: "none"` beside a
-    large `out_tokens` can be diagnosed from the durable record instead of being
-    read as "this model did not reason".
+    `provider_source` names the field the reasoning ACTUALLY came from and is ""
+    when no field supplies any. `observed_message_keys` records what the reply
+    carries, so `status: "none"` beside a large `out_tokens` is diagnosable from
+    the durable record instead of reading as "this model did not reason".
     """
     return {
         "free_cot": reasoning,
@@ -1089,9 +1092,9 @@ class ModelResponse:
     #
     # THREE-VALUED, and the distinction is load-bearing. A provider that
     # accepts `top_logprobs` and returns nothing must never be mistaken for a
-    # provider that was never asked — we have already measured exactly that
-    # failure on the Bedrock responses route for gemma, where the parameter is
-    # accepted and an EMPTY array comes back. Read `logprobs_status`, never
+    # provider that was never asked. This exact failure is measured on the
+    # Bedrock responses route for gemma: the parameter is accepted and an EMPTY
+    # array comes back. Read `logprobs_status`, never
     # `if response.logprobs:`:
     #   "not_requested" — logprobs is None; nobody asked.
     #   "unsupported"   — the registry says this route cannot supply them, so
@@ -1148,23 +1151,17 @@ class ModelClient:
     transformers_local) are dispatched on a class-level ThreadPoolExecutor and
     `result(timeout=N)` enforces a hard wall-time cap. All three dependency-free
     paid Bedrock transports (bedrock_converse, bedrock_responses, and
-    bedrock_responses_raw) are deliberately synchronous instead: an executor
-    timeout cannot cancel an already-running HTTP side effect, so dispatching them
-    would let a timeout abandon a still-billing request and create an
-    unobserved billed duplicate. What bounds each of them differs, and the
-    difference matters:
-      • the formal `*_raw` lane holds a monotonic ABSOLUTE deadline spanning
-        DNS/connect/TLS/send/read, and the sealed parent additionally owns the
-        outer absolute child-process deadline;
+    bedrock_responses_raw) run synchronously in the caller. An executor timeout
+    cannot cancel an already-running HTTP side effect; asynchronous dispatch
+    would abandon a still-billing request and create an unobserved billed
+    duplicate. Their bounds differ:
+      • the `bedrock_responses_raw` lane holds a monotonic ABSOLUTE deadline
+        spanning DNS/connect/TLS/send/read;
       • the two legacy urllib lanes (bedrock_converse, bedrock_responses) bound
         each individual socket operation at the configured timeout (300s
         converse, 600s responses) AND hold their own monotonic ABSOLUTE deadline
         across the body read (`_read_body_within_deadline`), so a slow-drip
-        response cannot outlive the configured timeout. They are NOT part of the
-        former sealed formal runner: its provider wire request built a canonical
-        wire body only for the `bedrock_responses_raw` backend and returned
-        `(None, None)` for every other backend — openai_compat included — so no
-        sealed-parent deadline applies to these two lanes.
+        response cannot outlive the configured timeout.
     In every case the request settles before control returns.
     """
     # Shared across instances; each call only consumes one slot for its
@@ -1442,9 +1439,9 @@ class ModelClient:
             },
         )
         # Absolute wall bound, armed BEFORE the first byte leaves. `open(...,
-        # timeout=timeout)` stays the per-operation connect/header bound; the
-        # deadline is what a slow-drip body cannot outlive now that this lane
-        # runs synchronously with no thread-pool wall cap.
+        # timeout=timeout)` is the per-operation connect/header bound. This lane
+        # runs synchronously in the caller, and its absolute deadline is the
+        # caller-visible wall bound that a slow-drip body cannot outlive.
         deadline = _time.monotonic() + timeout
         try:
             with self._bedrock_url_opener.open(req, timeout=timeout) as resp:
@@ -1456,26 +1453,27 @@ class ModelClient:
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")[:500]
             err = RuntimeError(f"Bedrock Converse HTTP {e.code}: {detail}")
-            # Authoritative status for _is_rate_limit_error, stamped under a name
-            # deliberately outside the retired spend guard's candidate set
-            # (status / status_code / http_status / response.status* /
-            # transport_trace.response_http_status), so that guard classified
-            # this lane from the unchanged message text alone.
+            # This plain RuntimeError exposes none of `status`, `status_code`,
+            # `http_status`, `response`, or `transport_trace`; the code lives only
+            # under the private `_bedrock_http_status`. An external wrapper that
+            # reads conventional names classifies this lane from message text
+            # alone. Pinned by tests/test_model_client_paid_lane_hardening.py::
+            # test_legacy_lane_error_hides_status_from_spend_guard_extractor.
             err._bedrock_http_status = e.code
             raise err from e
         except _LaneDeadlineExpired as e:
             # Signalled from INSIDE the `with`, handled here: the context manager
             # already ran `resp.__exit__`, so the billed request is settled before
-            # this TimeoutError can reach the caller. Message is the lane's
-            # existing one, byte for byte.
+            # this TimeoutError can reach the caller. The lane's TimeoutError
+            # message is byte-stable.
             raise TimeoutError(
                 f"Bedrock Converse request timed out after {timeout}s"
             ) from e
         except TimeoutError as e:
-            # This lane now runs in the caller (see call()), so its socket
-            # deadline IS the caller-visible deadline. Normalize to the same
-            # TimeoutError the raw transports raise, so classify_provider_failure
-            # and grounding's `type(e).__name__` abstain reason do not drift.
+            # This lane runs synchronously in the caller, so its socket deadline
+            # IS the caller-visible deadline. Normalization to the same
+            # TimeoutError the raw transports raise keeps classify_provider_failure
+            # and grounding's `type(e).__name__` abstain reason aligned.
             raise TimeoutError(
                 f"Bedrock Converse request timed out after {timeout}s"
             ) from e
@@ -1517,8 +1515,8 @@ class ModelClient:
         answer out of the output[] item list. Bearer-token auth, raw HTTP (no
         SDK), mirroring _call_bedrock_converse.
 
-        Verified 2026-06-19 against gemma-4: reasoning is gated to effort="high"
-        (medium/none → no reasoning item). CoT comes back as an output item of
+        A 2026-06-19 probe against gemma-4 shows reasoning is gated to
+        effort="high" (medium/none → no reasoning item). CoT comes back as an output item of
         type "reasoning" (content[].text); the answer is the "message" item's
         output_text block — the top-level `output_text` field is null here and
         must not be relied on.
@@ -1586,9 +1584,13 @@ class ModelClient:
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")[:500]
             err = RuntimeError(f"Bedrock Responses HTTP {e.code}: {detail}")
-            # Same private-attribute rationale as _call_bedrock_converse: an
-            # authoritative status for the rate-limit test that the spend-guard
-            # status extractor deliberately cannot see.
+            # Same plain-RuntimeError contract as _call_bedrock_converse: none of
+            # `status`, `status_code`, `http_status`, `response`, or
+            # `transport_trace` is exposed, and the code lives only under the
+            # private `_bedrock_http_status`. An external wrapper that reads the
+            # conventional names classifies this lane from message text alone.
+            # Pinned by tests/test_model_client_paid_lane_hardening.py::
+            # test_legacy_lane_error_hides_status_from_spend_guard_extractor.
             err._bedrock_http_status = e.code
             raise err from e
         except _LaneDeadlineExpired as e:
@@ -1754,8 +1756,8 @@ class ModelClient:
         `response_format` constrains the output. Pass
         `{"type": "json_object"}` to force JSON-only output on backends that
         support it. Sub-calls that consume JSON (parse_evidence, grounding)
-        opt in; backends that don't honor the constraint fall through to
-        the previous behavior (caller still parses tolerantly).
+        opt in; backends that don't honor the constraint leave output
+        unconstrained, and the caller still parses tolerantly.
 
         `reasoning_effort` (when set) overrides the per-model config's
         reasoning_effort. Pass "none" on sub-calls that are pure extraction
@@ -1782,8 +1784,10 @@ class ModelClient:
         response is stamped status="unsupported". This is deliberate: Google's
         strict OpenAI-compat endpoint 400s on unknown fields, and a 400 on
         every scoring call would be masked by the substrate-only fallback.
-        `max_top_logprobs` in the registry clamps k to what the route accepts
-        (mlx_lm.server rejects k > 11).
+        `max_top_logprobs` in the registry clamps k to what the route accepts.
+        Stock mlx_lm.server caps k at 11; the serving venv is patched, and the
+        registry entry is the authority. See the `local-gemma-4-26b` entry and
+        `scripts/serve_mlx.sh`.
         """
         import time as _time
 
@@ -1797,10 +1801,10 @@ class ModelClient:
 
         # 429 quota retries are bounded by this counter; everything else
         # raises on first occurrence (see retry doctrine above).
-        # Paid corpus runs wrap this client with the append-only spend guard.
-        # Their retry budget is owned by the runner's two-attempt execution
-        # identity, so an opaque in-client retry would evade the attempt ledger.
-        # Unguarded behavior remains unchanged.
+        # Paid corpus runs assign retry ownership to the runner's append-only
+        # attempt ledger and its two-attempt execution identity, so an opaque
+        # in-client retry would evade that ledger.
+        # Without the runner flag, the client owns up to five 429 retries.
         rate_limit_retries = (
             0 if getattr(self, "_spend_guard_disable_internal_retries", False) else 5
         )
@@ -1862,13 +1866,12 @@ class ModelClient:
                     # duplicate attempt.  All three billed raw-HTTP transports
                     # therefore execute in the scoring worker itself, so the
                     # request always settles before an error can reach the retry
-                    # ledger.  The formal *_raw lane is bounded by its
-                    # monotonic absolute transport deadline, with the sealed
-                    # parent owning the outer child-process deadline; the two
-                    # legacy urllib lanes are bounded by their per-socket-
-                    # operation timeout PLUS their own monotonic absolute
-                    # deadline over the body read, and normalize either expiry
-                    # to TimeoutError before it escapes.
+                    # ledger.  The bedrock_responses_raw lane is bounded by its
+                    # monotonic absolute transport deadline; the two legacy
+                    # urllib lanes are bounded by their per-socket-operation
+                    # timeout PLUS their own monotonic absolute deadline over
+                    # the body read, and normalize either expiry to TimeoutError
+                    # before it escapes.
                     elif self.backend == "bedrock_converse":
                         response = self._call_bedrock_converse(
                             system, messages, mt, temperature, timeout,

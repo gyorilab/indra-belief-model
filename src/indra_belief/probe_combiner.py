@@ -436,7 +436,7 @@ def fit_combiner(
     # sklearn.calibration.CalibratedClassifierCV was considered and rejected:
     # it retains fitted sklearn estimators (so cannot be JSON-frozen and
     # round-tripped), exposes no separated rank-preserving axis, and carries no
-    # in-sample guard -- the three things this node exists to provide.  The
+    # in-sample guard -- the three properties this function must provide.  The
     # estimator, splitter, and PAVA implementation below still all come from
     # sklearn; hashing likewise stays in indra_belief.hashing.
     splitter = StratifiedKFold(

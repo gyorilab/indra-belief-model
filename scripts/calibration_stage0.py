@@ -1,33 +1,49 @@
-"""Historical Calibration Stage C0 — reliability curve, zero model change.
+"""Shared calibration joins and metrics, plus the raw-belief headroom CLI.
 
-The decision gate (G0) for the whole calibration arc: it decides whether
-recalibration has enough AUPRC headroom to be worth doing at all. Touches NO
-production code path —
-it joins the existing eval_curation_v1 run outputs to gold and asks three
-questions:
+This module has two live roles.
 
-  C0.1  Verdict-conditional error anchors per reader (rand_corr / rand_rej) —
-        the two parameters Stage C1 would fit. Confidence axis is reported but
-        NOT fit (it has collapsed; see the printed mix).
-  C0.2  Tier-1 per-EVIDENCE reliability of the persisted grid ``score`` as a
-        forecast of ``gold == correct`` — reliability bins + ECE + Brier
-        (Murphy decomposition). Expected to be degenerate (~2 occupied bins)
-        because the grid score is near-binary once confidence collapses.
-  C0.3  Tier-2 per-STATEMENT raw-belief headroom — the DECISIVE test. Aggregate
-        the per-evidence verdicts through the production noise model
-        (``compute_gated_belief`` + RECALIBRATED_PRIORS, hard gate
-        ``included = verdict != 'incorrect'``) to a per-statement belief, then
-        measure AUROC / AUPRC vs per-statement gold (any-incorrect-wins).
+First, it is the shared join and metric layer for the calibration scripts.
+``scripts/calibration_ship_gate.py:67`` imports it as ``c0`` and calls
+``c0.load_jsonl`` at lines 204 and 212; ``scripts/calibration_stage1.py:32``
+imports it as ``c0`` and calls ``c0.brier_murphy``, ``c0.auroc``, and
+``c0.auprc`` at lines 152 and 157. ``tests/test_metrics.py:131`` pins
+``auroc``, ``auprc``, ``brier_murphy``, and ``reliability_bins`` as the same
+objects exported by ``indra_belief.metrics``, preventing served metrics and
+ship-gate measurements from silently diverging.
+``tests/test_metrics_export.py::test_stage0_join_collapses_duplicate_curators_and_scored_pairs``
+pins ``build_gold_index``'s duplicate-curator collapse.
 
-G0 read: if the per-statement belief AUPRC has no headroom over the base rate
-(and AUROC ~ 0.5), a monotone post-hoc map cannot manufacture discrimination —
-the lever is upstream (reader / grounding), and Stages C1-C3 should not fire.
+Second, the standalone CLI asks whether per-statement belief discriminates
+gold at all, beyond its base rate. G0 is the JSON artifact's ``g0`` block;
+its criterion is (AUROC - 0.5) > 0.03 AND
+(AUPRC - base_rate) > 0.02.
 
-Join is the canonical (matches_hash, source_hash) PAIR used by
-eval_curation_compare.py (source_hash alone is not unique — version-skew lesson).
-This retained baseline groups Tier-2 by the historical gold ``pa_hash`` grain;
-the current production/formal surfaces use run ``stmt_hash`` and live in
-``results.py`` / ``calibration_ship_gate.py``.
+The script reports three measurements:
+
+  - Verdict-conditional error anchors ``rand_corr`` / ``rand_rej``, the two
+    parameters required by the confusion-fitted reader profile in
+    ``indra_belief.calibration_constants.profile_from_confusion``, as fed by
+    ``calibration_stage1.fit_reader_profile``. The confidence axis is reported
+    but NOT fit because it has collapsed; see the printed mix.
+  - Per-EVIDENCE reliability of the persisted grid ``score`` as a forecast of
+    ``gold == correct``: reliability bins + ECE + Brier (Murphy
+    decomposition). This is expected to be degenerate at ~2 occupied bins
+    because the grid score is near-binary once confidence collapses.
+  - Per-STATEMENT belief headroom — the DECISIVE measurement — through
+    ``compute_gated_belief`` + RECALIBRATED_PRIORS under the production hard
+    gate ``included = verdict != 'incorrect'``, measured as AUROC / AUPRC
+    against per-statement gold (any-incorrect-wins).
+
+No headroom means fitting a calibration profile cannot help, because
+a monotone post-hoc map cannot manufacture discrimination — the lever is upstream
+(reader / grounding).
+
+The join key is the canonical (matches_hash, source_hash) PAIR used by
+``eval_curation_compare.py``; source_hash alone is not unique. This CLI groups
+the per-statement tier by gold ``pa_hash``, while the production/formal surfaces
+group by run ``stmt_hash`` in ``src/indra_belief/results.py`` and
+``scripts/calibration_ship_gate.py``. Measurements at the two grains are not
+comparable.
 
     PYTHONPATH=src python scripts/calibration_stage0.py \
         --gold data/benchmark/eval_curation_v1.jsonl \
@@ -87,9 +103,9 @@ def load_jsonl(p: str | Path) -> list[dict]:
 #      compare instead requires exactly one candidate (len(cand) == 1);
 #   3. pair-dedup in join_model that RAISES on conflicting scored verdicts for a
 #      duplicated pair (compare does no dedup).
-# The two build_gold_index collapses were MEASURED byte-equal on both real golds
-# today (collapse_diff_pairs=0 on eval_curation_v1 n=1606 + external_curator_gold
-# _v1 n=578), so the divergence is a latent-drift guard, not an active mismatch.
+# The two build_gold_index collapses satisfy collapse_diff_pairs == 0 on
+# eval_curation_v1 (n=1606) and external_curator_gold_v1 (n=578), so the
+# divergence is a latent-drift guard, not an active mismatch.
 # -----------------------------------------------------------------------------
 def _collapse_gold_rows(rows: list[dict]) -> dict | None:
     """Collapse multi-curator rows without a last-write-wins label.
@@ -186,8 +202,8 @@ def per_statement_belief(joined) -> list[dict]:
     the production hard gate (included = verdict != 'incorrect') and
     RECALIBRATED_PRIORS. gold = any-incorrect-wins over the statement's tags.
     """
-    # Group into statements by pa_hash (the preassembled-statement unit the rest
-    # of the calibration arc uses, C2.4) — not matches_hash, which is finer.
+    # Group by pa_hash, the preassembled-statement unit; not matches_hash, which
+    # is finer.
     by_stmt: dict[int, dict] = defaultdict(lambda: {"ev": [], "tags": [], "indra_belief": None})
     for g, s in joined:
         mh = g.get("pa_hash") or g.get("matches_hash")
@@ -218,7 +234,7 @@ def per_statement_belief(joined) -> list[dict]:
 
 # ---- per-model analysis ------------------------------------------------------
 def analyze(name: str, joined, parse_null, missed) -> dict:
-    # C0.1 — verdict-conditional anchors
+    # Verdict-conditional error anchors (rand_corr / rand_rej).
     cells = defaultdict(int)  # (verdict, gold_correct) -> n
     conf = defaultdict(int)
     for g, s in joined:
@@ -232,14 +248,13 @@ def analyze(name: str, joined, parse_null, missed) -> dict:
     rand_corr = ci / (ci + cc) if (ci + cc) else float("nan")   # P(gold=incorrect|verdict=correct)
     rand_rej = ic / (ic + ii) if (ic + ii) else float("nan")    # P(gold=correct|verdict=incorrect)
 
-    # C0.2 — Tier-1 per-evidence reliability of the grid score.
+    # Per-evidence reliability of the grid `score`.
     #
-    # A row with no score is EXCLUDED, not imputed. This previously substituted
-    # 0.5, which is not a value the grid can produce: it invented a measurement
-    # for a row the model never successfully answered, placed it at exactly the
-    # neutral point where ECE is most sensitive, and gave it a mid-rank position
-    # in AUROC/AUPRC. An absent measurement is absent; the count is reported so
-    # the exclusion is visible rather than silent.
+    # A row with no score is EXCLUDED, not imputed. Imputing 0.5 is invalid: the
+    # grid cannot produce it, so it invents a measurement for a row the model
+    # never answered, lands it exactly where ECE is most sensitive, and gives it
+    # a mid-rank position in AUROC/AUPRC. An absent measurement is absent; the
+    # count is reported so the exclusion is visible rather than silent.
     ev_pairs = [(s["score"], is_gold_correct(g["tag"]))
                 for g, s in joined if s.get("score") is not None]
     n_unscored = len(joined) - len(ev_pairs)
@@ -256,7 +271,7 @@ def analyze(name: str, joined, parse_null, missed) -> dict:
         "n_unscored_excluded": n_unscored,
     }
 
-    # C0.3 — Tier-2 per-statement raw-belief headroom (DECISIVE)
+    # Per-statement raw-belief headroom (DECISIVE).
     stmt = per_statement_belief(joined)
     bel = [r["belief"] for r in stmt]
     lab = [r["gold_correct"] for r in stmt]
@@ -291,7 +306,7 @@ def analyze(name: str, joined, parse_null, missed) -> dict:
         "n_multi": len(multi),
     }
 
-    # G0 verdict per model: headroom = AUROC meaningfully > 0.5 AND AUPRC > base rate
+    # The `g0` artifact block records headroom: AUROC meaningfully > 0.5 AND AUPRC > base rate.
     a = t2["all"]
     headroom_auroc = (a["auroc"] - 0.5) if a else float("nan")
     headroom_auprc = (a["auprc_correct"] - a["base_rate_correct"]) if a else float("nan")

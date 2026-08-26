@@ -223,7 +223,7 @@ def test_write_run_export_emits_three_files(tmp_path):
     assert meta["cost"]["n_evidence_costed"] == 0
     assert meta["cost"]["n_evidence_unavailable"] == 0
     assert meta["schema_version"] == 8
-    # E5: soft_calibration block baked per run. model "m" is unfitted → named-
+    # soft_calibration block is baked per run. model "m" is unfitted → named-
     # unavailable with a reason, never an imputed zero.
     assert meta["soft_calibration"]["status"] == "unavailable"
     assert meta["soft_calibration"]["soft_weights"] is None
@@ -548,7 +548,7 @@ def _confirmed_read_export(tmp_path, model):
 
 
 def test_canonical_belief_is_calibrated_for_remote_fitted_reader(tmp_path):
-    # K1: a FITTED reader configuration → canonical belief is the calibrated
+    # A FITTED reader configuration → canonical belief is the calibrated
     # arm and shifts off the hard gate on a confirmed read.
     per_stmt = _confirmed_read_export(tmp_path, model="remote-gemma-4-26b")
     assert len(per_stmt) == 1

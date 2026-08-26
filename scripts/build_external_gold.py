@@ -1,4 +1,4 @@
-"""E4 — build an EXTERNAL human-curation gold set from third-party (non-pair)
+"""Build an EXTERNAL human-curation gold set from third-party (non-pair)
 INDRA curators.
 
 Why this exists (vs build_curation_eval.py): build_curation_eval.py draws its gold
@@ -11,12 +11,12 @@ gold never saw.
 
 Feasibility (measured by a curation-universe probe, since removed):
 no single non-pair curator clears n>=100 balanced (best is imke.ditters at
-bal_ceiling 82). So we POOL all non-pair curators (the plan's documented
-contingency). The keyed /curation/list payload carries ev_json (evidence text +
-source_api + pmid) and pa_json (subject/object canonical names + stmt_type +
-matches_hash) INLINE, so every row is materialized from the list payload alone —
-no second by-hash fetch, no fragile local hash-join. Pooled ev_json-recoverable
-balance: 109 correct / 518 incorrect -> balanced ceiling 218, ample for n>=100.
+bal_ceiling 82). So all non-pair curators are pooled. The keyed /curation/list
+payload carries ev_json (evidence text + source_api + pmid) and pa_json
+(subject/object canonical names + stmt_type + matches_hash) INLINE, so every
+row is materialized from the list payload alone — no second by-hash fetch, no
+fragile local hash-join. Pooled ev_json-recoverable balance: 109 correct /
+518 incorrect -> balanced ceiling 218, ample for n>=100.
 
 Design (mirrors build_curation_eval.py exactly where it can):
 - PAIR EXCLUSION: ben.gyori / bachmanjohn curations are dropped before gold is
@@ -61,7 +61,7 @@ from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
 
 DATA = ROOT / "data" / "benchmark"
 OUT = DATA / "external_gold_v1.jsonl"
-SEED = 20260623  # date-less seed per the brief; fixed for reproducibility
+SEED = 20260623  # fixed for reproducibility; changing it re-draws the sample
 
 # The two pair curators whose judgement backs ALL prior gold. Excluded so the
 # external gold is a genuinely held-out human population.

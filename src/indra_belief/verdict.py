@@ -102,8 +102,9 @@ _VERDICT_PHRASES = (
     #
     # From haohangyan's scale_up branch, where it was written against
     # `_prompts.py`'s parser before this module became that parser's single
-    # owner. Carried here rather than there, because there is nothing left in
-    # `_prompts.py` to carry it — that is the whole point of the K2 unification.
+    # owner. Carried here rather than there, because `_prompts.py` no longer
+    # parses replies: this module is the single parser, on the live path and on
+    # the batch replay, under every profile.
     #
     # It is not redundant with the pattern above it. That one requires a COLON
     # (`verdict: correct`) or a linking verb (`verdict is correct`); a local
@@ -165,10 +166,10 @@ class ResponseLike(Protocol):
     raw_text: str
 
 
-# Deliberate deviation from the node's original literal draft: `call_log` is
-# per-call state, so it must not live in a module-level mapping where a shallow
-# copy would share one list for the process lifetime. Each caller supplies a
-# fresh list. There is no sentence to probe here, so score absence is explicit.
+# `call_log` is per-call state, so it must not live in a module-level mapping
+# where a shallow copy would share one list for the process lifetime. Each caller
+# supplies a fresh list. There is no sentence to probe here, so score absence is
+# explicit.
 NO_TEXT_RESULT: Mapping[str, Any] = MappingProxyType({
     "score": None,
     "verdict": "correct",

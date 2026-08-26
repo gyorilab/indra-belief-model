@@ -1,11 +1,11 @@
-"""E5 — per-run calibration-product export (the math→viewer seam).
+"""Per-run calibration-product export (the math→viewer seam).
 
-Locks the three E5 guarantees under export schema v8 / metrics schema v3:
+Locks three guarantees under export schema v8 / metrics schema v3:
 
 1. STATEMENT CONTRACT — calibrated belief remains statement-level, internal join
    keys never leak, and unfitted configurations retain a named hard fallback.
 
-2. metrics.json CONTRACT — the C4/C5 schema: schema_version, two tiers
+2. metrics.json CONTRACT — the served schema: schema_version, two tiers
    (ev/stmt), the stable per-arm block {n, ece, auroc, auprc, brier,
    reliability, resolution, uncertainty, confusion{tp,fp,fn,tn}, bins[8]},
    named-empty tiers/arms (status+reason, no imputed zeros).
@@ -141,8 +141,8 @@ def test_per_statement_is_additive_only(tmp_path):
             _row(2, 33, "correct", 0.8)]
     run, corp = _write(tmp_path, rows, _corpus())
 
-    # Run WITHOUT the belief_* keys would be the pre-E5 shape; we assert here that
-    # the only keys beyond a fixed pre-E5 set are the four belief_* keys.
+    # A run WITHOUT the belief_* keys is the shape this export extended; we assert
+    # here that the only keys beyond that fixed prior set are the four belief_* keys.
     _ev, per_stmt, _meta, _metrics = build_run_export(run, corp, run_id="r", model="gemma")
     assert len(per_stmt) == 1
     s = per_stmt[0]
@@ -613,7 +613,7 @@ def test_stage0_join_collapses_duplicate_curators_and_scored_pairs():
     assert joined[0][0]["tag"] == "incorrect"
 
 
-# ── 4. statement-heuristics instrument (I1–I4, E10) — additive + first-class ───
+# ── 4. statement-heuristics instrument — additive + first-class ──────────────
 
 STATEMENT_INSTRUMENT_KEYS = {"gold_statement", "coherence_summary"}
 COHERENCE_KEYS = {"n_dedup_groups", "n_distinct_sources", "n_correct", "n_incorrect",

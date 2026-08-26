@@ -1,18 +1,19 @@
-"""Calibration Stage C1/G2 — confusion-profile measurement reference.
+"""Confusion-profile measurement reference for the G2 ship gate.
 
-The reusable functions here join and split statements, tally a reader's 2×2
-verdict×gold confusion matrix, and compare the hard-gate baseline with the
-current hybrid log-odds belief. ``scripts/calibration_ship_gate.py`` imports
-these helpers for the G2 ship gate.
+``scripts/calibration_ship_gate.py`` imports this module as ``c1`` and calls
+``c1.fit_reader_profile`` when fitting each reader at line 585 and
+``c1.metric_block`` when evaluating each belief arm at line 388.
+``tests/test_soft_belief.py:77`` pins ``soft_belief`` as the reference that the
+production ``statement_belief`` path must reproduce.
 
 The confusion cells are authoritative for the reader profile. From them,
-``profile_from_confusion``
-derives sensitivity, false-positive rate, the confirm/reject log-likelihood
-ratios, and the fit-set prior. ``soft_belief`` then mirrors production: it
-averages weights within each correlated source, sums independent-source evidence
-with the prior log-odds, and applies a stable sigmoid. Confirmations retain the
-explicit, separately fitted source-reliability floor used by production, making
-the final value a hybrid calibration score rather than a pure posterior.
+``profile_from_confusion`` derives sensitivity, false-positive rate, the
+confirm/reject log-likelihood ratios, and the fit-set prior. ``soft_belief``
+then mirrors production: it averages weights within each correlated source,
+sums independent-source evidence with the prior log-odds, and applies a stable
+sigmoid. Confirmations retain the explicit, separately fitted source-reliability
+floor used by production, making the final value a hybrid calibration score
+rather than a pure posterior.
 """
 from __future__ import annotations
 
@@ -42,7 +43,7 @@ PRIORS = RECALIBRATED_PRIORS
 
 
 def statements_from_joined(joined) -> list[dict]:
-    """Group a legacy joined stream, preferring pa_hash then matches_hash."""
+    """Group a ``(gold, scored)`` stream produced by ``calibration_stage0.join_model``."""
     by_stmt: dict[int, dict] = defaultdict(lambda: {"ev": [], "tags": []})
     for g, s in joined:
         # Statement id is pa_hash on the eval/holdout golds; the external

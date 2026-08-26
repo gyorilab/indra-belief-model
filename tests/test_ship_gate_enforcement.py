@@ -2,9 +2,9 @@
 
 ``scripts/calibration_ship_gate.py`` is named a *gate*: it must fail the process
 on missing or failed evidence. A gate that exits 0 on a non-pass cannot stop a
-ship (this was the pre-2026-07-15 behaviour — main() always returned 0). This
-test pins the missing-evidence case, the worst one, because "no evidence" must
-never read as a green ship.
+ship. ``main()`` returning 0 unconditionally is the exact failure this regression
+pins. This test pins the missing-evidence case, the worst one, because "no
+evidence" must never read as a green ship.
 """
 import subprocess
 import sys

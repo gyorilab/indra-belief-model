@@ -1,7 +1,7 @@
 """Assemble the multi-curator gold: your anchor + a curator-spread sample over the
 other 37, balanced 1:1 and de-skewed by stmt_type.
 
-Pipeline (knobs chosen with the user 2026-06-30):
+Pipeline:
   1. gold rows from the re-fetched evidence (build_rasmachine_eval.gold_rows_for over
      recovered_curation_statements.json + every non-ben/bachman curation).
   2. DE-CONTAMINATE: drop any (mh,sh) in a prior holdout/eval/fewshot/benchmark/

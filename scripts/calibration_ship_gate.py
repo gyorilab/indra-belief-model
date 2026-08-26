@@ -1,8 +1,11 @@
-"""Calibration C2.5 — hybrid log-odds belief ship gate.
+"""Hybrid log-odds belief ship gate.
 
-This script derives a reader measurement profile from its training confusion
-cells, recomputes the hybrid log-odds belief on independent gold, and evaluates the
-four G2 legs. The lead leg is error-detection F1 with bootstrap CIs. This is a
+G2 is this repository's name for the four-leg gate below. Generated reports
+print it, and ``src/indra_belief/calibration_gate.py:83`` and
+``tests/test_local_reader_calibration.py:10`` cite it when referring to this
+gate. This script derives a reader measurement profile from its training
+confusion cells, recomputes the hybrid log-odds belief on independent gold, and
+evaluates all four legs. Error-detection F1 with bootstrap CIs leads. This is a
 DETERMINISTIC recompute from stored verdicts: no new LLM spend.
 
 Why a belief threshold (and not the production verdict_statement)
@@ -25,7 +28,8 @@ G2 SHIP GATE (all four legs, per reader; lead = err-F1; calibrated arm key = 'cl
   2. AUROC      : AUROC(calibrated) >= AUROC(hard) - EPS
   3. err-F1     : lower 95% bootstrap bound of ΔerrF1 >= -NI_MARGIN (non-inferior),
                   each arm at its own train-selected tau*
-  4. E4 identity: tests/test_soft_belief.py byte-identity green  [asserted elsewhere]
+  4. E4 identity: byte-identity of the soft path, locked by tests/test_soft_belief.py,
+                  surfaced as CLI flag ``--e4-identity-pass`` and JSON key ``e4_identity``  [asserted elsewhere]
   Brier-resolution is reported as a diagnostic, NOT gated (noise-dominated at n~342).
 
 The 0.154 non-inferiority margin is the historically observed medpsy-4B
@@ -405,9 +409,11 @@ def eval_reader(test_statements, profile, thresholds, join_diagnostics=None) -> 
 def gate(ev, *, e4_identity_pass: bool = False) -> dict:
     """The four-leg G2 gate, per reader.
 
-    E4 is an external test-suite result, so callers must assert it explicitly.
-    The default is deliberately false: a standalone metrics recompute must never
-    silently manufacture a green compatibility leg.
+    E4 is the external test-suite result for byte-identity of the soft path,
+    locked by ``tests/test_soft_belief.py``. Callers assert it explicitly with
+    ``--e4-identity-pass``, and the gate records the result under the
+    ``e4_identity`` JSON key. The default is deliberately false: a standalone
+    metrics recompute must never silently manufacture a green compatibility leg.
     """
     hard = ev["metrics"]["hard"]
     clean = ev["metrics"]["clean"]

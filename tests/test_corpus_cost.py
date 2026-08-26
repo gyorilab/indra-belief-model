@@ -1,4 +1,5 @@
-"""Tests for cost estimation (Phase 0.1 helper)."""
+"""Tests for ``src/indra_belief/corpus/cost.py::estimate_cost`` — the pre-run
+projection of LLM calls, tokens and USD for a corpus run."""
 
 from __future__ import annotations
 
@@ -69,8 +70,8 @@ def test_estimate_override_prices():
 def test_estimate_rasmachine_scale_sonnet():
     """Full-rasmachine projection at ONE call per evidence.
 
-    The task-graph 0.1 figure this used to assert (~$264, bounded 200-350) was
-    computed at the decomposed scorer's five calls per evidence. That
+    The ~$264 figure this used to assert (bounded 200-350) was computed at the
+    decomposed scorer's five calls per evidence. That
     architecture is gone; the monolithic scorer issues one call, so the honest
     projection is a fifth of it. The number moved because the thing being
     estimated moved, not because an assumption drifted.

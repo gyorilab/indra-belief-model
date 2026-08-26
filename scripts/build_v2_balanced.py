@@ -1,7 +1,7 @@
 """Carve a BALANCED, type-de-skewed gold out of rasmachine_v2_gold.jsonl.
 
-Composition decision (2026-06-30): the eval gold must be 1:1 correct/incorrect and
-must not be dominated by Complex. Two cuts are emitted so the cost is visible:
+The eval gold is 1:1 correct/incorrect and must not be dominated by Complex. Two
+cuts are emitted so the cost is visible:
 
   * stratified  — stratified 1:1 by stmt_type (build_curation_eval's blessed rule:
                   per type take min(#c,#i) of EACH class, so the type marginal is

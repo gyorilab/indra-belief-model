@@ -10,10 +10,8 @@ The runner is deliberately evidence-pair/grading oriented:
 * output metadata pins the input hash, model registry entry, prompt variant,
   and active system-prompt hash.
 
-The current monolithic implementation has evolved beyond the historical v12
-commit. ``--variant baseline`` selects its baseline prompt path and is the
-closest current-code comparison to v12. The current production default is
-``disconfirm_relnature_rf``.
+``--variant baseline`` selects the baseline prompt path. The production default,
+``disconfirm_relnature_rf``, uses a different prompt path.
 
 Examples
 --------

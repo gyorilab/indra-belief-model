@@ -194,12 +194,13 @@ def _default_eval_paths(holdout_arg: str) -> list[Path]:
     # Frozen representative-curation milestones are independent evaluation gold
     # and must remain disjoint from every prompt/few-shot source.
     paths.extend(sorted(benchmark.glob("representative_indra_curations_*.jsonl")))
-    # Holdout from CLI (and the small v15 sample, always)
+    # CLI holdout plus the always-appended small sample
     paths.append(Path(holdout_arg))
     sample = benchmark / "holdout_v15_sample.jsonl"
     if sample not in paths:
         paths.append(sample)
-    # D4 held-back sample (used as overfit guard) — must be contamination-free.
+    # Optional held-back overfit-guard sample, checked when present —
+    # must be contamination-free.
     d4 = benchmark / "holdout_d4_held_back.jsonl"
     if d4.exists() and d4 not in paths:
         paths.append(d4)
@@ -283,7 +284,7 @@ def find_contamination(
                     # one substring report per fewshot example is enough
                     break
 
-        # Paraphrase contamination (S6 fix): a fewshot may share a long
+        # Paraphrase contamination: a fewshot may share a long
         # distinctive substring with an eval record without either fully
         # containing the other (e.g., paraphrased shortening). Catch this
         # by sliding a 50-char window from the fewshot across each eval
