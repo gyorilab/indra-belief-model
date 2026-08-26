@@ -54,6 +54,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 VALID_VERDICTS = {"correct", "incorrect"}
+VARIANT_CHOICES = (
+    "baseline",
+    "disconfirm",
+    "disconfirm_relnature",
+    "disconfirm_relnature_rf",
+    "disconfirm_relnature_rf_noconf",
+    "verdict_only",
+)
 STOP_REQUESTED = False
 
 
@@ -192,11 +200,22 @@ def compute_metrics(
     }
 
 
+def _fsync_path(path: Path) -> None:
+    """Force this file's or directory's contents to stable storage."""
+    handle = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(handle)
+    finally:
+        os.close(handle)
+
+
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    _fsync_path(tmp)
     tmp.replace(path)
+    _fsync_path(path.parent)
 
 
 def _ensure_append_boundary(path: Path) -> None:
@@ -263,14 +282,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--variant",
-        choices=(
-            "baseline",
-            "disconfirm",
-            "disconfirm_relnature",
-            "disconfirm_relnature_rf",
-            "disconfirm_relnature_rf_noconf",
-            "verdict_only",
-        ),
+        choices=VARIANT_CHOICES,
         default="baseline",
         help="baseline is the closest current-code path to historical v12; "
         "disconfirm_relnature_rf is the current production default.",
@@ -318,6 +330,15 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("--progress-every must be >= 1")
 
 
+def _registry_variant(cli_name: str) -> str:
+    """Resolve the CLI spelling to the scorer registry key.
+
+    The scorer registry keys the baseline prompt as the empty string, while the
+    CLI spells it ``baseline``; every other CLI name is the registry key verbatim.
+    """
+    return "" if cli_name == "baseline" else cli_name
+
+
 def _iter_pending_jobs(
     gold_rows: list[dict[str, Any]],
     done_indices: set[int],
@@ -333,10 +354,9 @@ def main() -> int:
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
 
+    registry_variant = _registry_variant(args.variant)
     # The scorer chooses its prompt variant at import time.
-    os.environ["MONO_VARIANT"] = (
-        "" if args.variant == "baseline" else args.variant
-    )
+    os.environ["MONO_VARIANT"] = registry_variant
 
     from indra_belief.data.corpus import CorpusIndex
     from indra_belief.model_client import (
@@ -373,9 +393,10 @@ def main() -> int:
     # actually selected. `mono.ACTIVE_SYSTEM_PROMPT` was a single module-level
     # global; it no longer exists, and once variants landed it could not have been
     # right anyway — every variant would have recorded the same sha. The registry
-    # keyed by `--variant` is the same one the scorer dispatches on.
+    # selected by the resolved `--variant` value is the same one the scorer
+    # dispatches on.
     prompt_sha256 = hashlib.sha256(
-        mono.VARIANTS[args.variant].system_prompt.encode("utf-8")
+        mono.VARIANTS[registry_variant].system_prompt.encode("utf-8")
     ).hexdigest()
 
     # Say out loud whether this run will be calibrated. An unfitted (model,

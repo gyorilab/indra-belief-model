@@ -16,6 +16,41 @@ assert SPEC and SPEC.loader
 runner = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runner)
 
+from indra_belief.scorers.monolithic import scorer as mono
+
+
+def test_every_cli_variant_resolves_to_a_registered_nonempty_prompt():
+    parser = runner._build_parser()
+
+    for name in runner.VARIANT_CHOICES:
+        args = parser.parse_args(["--variant", name])
+        resolved = runner._registry_variant(args.variant)
+
+        assert mono.VARIANTS[resolved].system_prompt
+
+
+def test_default_cli_variant_resolves_to_a_registered_nonempty_prompt():
+    args = runner._build_parser().parse_args([])
+    resolved = runner._registry_variant(args.variant)
+
+    assert mono.VARIANTS[resolved].system_prompt
+
+
+def test_registry_variant_only_translates_baseline():
+    resolved = runner._registry_variant("baseline")
+
+    assert resolved == ""
+    assert mono.VARIANTS[resolved] is mono.VARIANTS[""]
+    for name in runner.VARIANT_CHOICES:
+        if name != "baseline":
+            assert runner._registry_variant(name) == name
+
+
+def test_every_named_registry_variant_is_offered_by_the_cli():
+    named_registry_variants = {name for name in mono.VARIANTS if name}
+
+    assert named_registry_variants <= set(runner.VARIANT_CHOICES)
+
 
 def test_metrics_distinguish_accuracy_coverage_and_strict_accuracy():
     gold = [

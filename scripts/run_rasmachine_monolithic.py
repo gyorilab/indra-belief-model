@@ -44,7 +44,6 @@ from indra_belief.probes.calibration import (  # noqa: E402
     DEFAULT_CALIBRATION_PATH,
     SENTENCE_SCORE_CONTRACT_VERSION,
     SENTENCE_SCORE_KIND,
-    replace_sentence_score,
     supports_sentence_calibration,
 )
 from indra_belief.probes.reader import DIRECT_PROBE_ID  # noqa: E402
@@ -76,19 +75,6 @@ def _score_one(stmt: Any, evidence: Any, client: ModelClient, max_tokens: int | 
     # calibration. Do not issue the forced-verdict probe twice here.
     return monolithic_scorer.score_statement(
         stmt, evidence, client, max_tokens=max_tokens
-    )
-
-    statement = _statement_metadata(stmt)
-    return replace_sentence_score(
-        result,
-        {
-            "subject": statement["subject"],
-            "object": statement["object"],
-            "stmt_type": statement["stmt_type"],
-            "evidence_text": str(getattr(evidence, "text", None) or ""),
-        },
-        client,
-        record_id=_sentence_probe_record_id("", 0, 0, evidence),
     )
 
 
@@ -535,15 +521,16 @@ def _unmetered_client(model: str) -> ModelClient:
     if canonical.startswith("claude-") or config is None:
         raise ValueError(
             "this utility accepts configured local/self-hosted models only; "
-            "use the comparison CLI for provider-backed runs"
+            "configure unknown models in the registry; provider-backed runs use "
+            "scripts/run_vllm_gold_eval.py"
         )
     base_url = str(config.get("base_url") or "")
     if config.get("api_key_env") or base_url.startswith("https://") or str(
         config.get("backend") or ""
     ).startswith("bedrock_"):
         raise ValueError(
-            "provider-backed models must run through python -m "
-            "indra_belief.comparison run"
+            "provider-backed models must run through "
+            "scripts/run_vllm_gold_eval.py"
         )
     return ModelClient(canonical)
 

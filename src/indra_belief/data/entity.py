@@ -7,6 +7,7 @@ identity information through the scoring pipeline.
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from functools import lru_cache
 
@@ -437,31 +438,59 @@ def _competing_candidates(text_results, claim_db, claim_id):
 
 # --- Cached helpers (shared across all entities) ---
 
+_GILDA_FAILURES: dict[str, int] = {"ground": 0, "get_names": 0}
+_GILDA_FAILURES_LOCK = threading.Lock()
+
+
+def _note_gilda_failure(op: str, *args: object) -> None:
+    with _GILDA_FAILURES_LOCK:
+        _GILDA_FAILURES[op] += 1
+    message = (
+        "gilda.ground failed for %r; treating as no grounding"
+        if op == "ground"
+        else "gilda.get_names failed for (%s, %s); treating as no names"
+    )
+    log.warning(message, *args, exc_info=True)
+
+
+def gilda_failure_counts() -> dict[str, int]:
+    with _GILDA_FAILURES_LOCK:
+        return dict(_GILDA_FAILURES)
+
+
 @lru_cache(maxsize=4096)
+def _ground_cached(name: str):
+    import gilda
+
+    return gilda.ground(name) or []
+
+
 def _cached_ground(name: str):
-    import gilda
     try:
-        return gilda.ground(name) or []
+        return _ground_cached(name)
     except Exception:
-        log.debug("gilda.ground failed for %r; treating as no grounding", name, exc_info=True)
+        _note_gilda_failure("ground", name)
         return []
 
 
 @lru_cache(maxsize=4096)
+def _get_names_cached(db: str, db_id: str) -> list[str]:
+    import gilda
+
+    return gilda.get_names(db, db_id)
+
+
 def _cached_get_names(db: str, db_id: str) -> list[str]:
-    import gilda
     try:
-        return gilda.get_names(db, db_id)
+        return _get_names_cached(db, db_id)
     except Exception:
-        log.debug("gilda.get_names failed for (%s, %s); treating as no names", db, db_id, exc_info=True)
+        _note_gilda_failure("get_names", db, db_id)
         return []
 
 
 @lru_cache(maxsize=4096)
-def _cached_get_desc(db: str, db_id: str) -> tuple[str, bool]:
-    if db != "HGNC":
-        return "", False
-    names = _cached_get_names(db, db_id)
+def _get_desc_cached(db: str, db_id: str) -> tuple[str, bool]:
+    names = _get_names_cached(db, db_id)
     descs = sorted(
         [n for n in names if len(n) > 12 and n[0].isupper()],
         key=len, reverse=True,
@@ -469,6 +498,16 @@ def _cached_get_desc(db: str, db_id: str) -> tuple[str, bool]:
     desc = descs[0] if descs else ""
     pseudo = any("pseudogene" in n.lower() for n in names)
     return desc, pseudo
+
+
+def _cached_get_desc(db: str, db_id: str) -> tuple[str, bool]:
+    if db != "HGNC":
+        return "", False
+    try:
+        return _get_desc_cached(db, db_id)
+    except Exception:
+        _note_gilda_failure("get_names", db, db_id)
+        return "", False
 
 
 def _filter_aliases(aliases: list[str], entity_name: str, canonical: str) -> list[str]:
