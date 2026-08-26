@@ -101,6 +101,25 @@ LOCAL_MODELS: dict[str, dict] = {
         # indra_belief.probes.calibration._SENTENCE_CALIBRATIONS.
         "max_top_logprobs": 1024,
     },
+    # This names the same WEIGHTS as `vllm-gemma-4-26b` but deliberately uses a
+    # DIFFERENT key because it is a different execution path. Batched offline
+    # vLLM at temperature 0 is not a bitwise replay: the gold-eval and shard
+    # paths were measured to disagree on about 10% of identical evidences. It
+    # therefore carries no fitted profile, and the corpus runner keeps naming
+    # `vllm-gemma-4-26b` so its calibration identity does not change.
+    "vllm-offline-gemma-4-26b": {
+        "backend": "vllm_offline",
+        "model_id": "google/gemma-4-26B-A4B-it",
+        "reasoning_in_content": False,
+        "max_tokens": 8192,
+        "timeout": 900,
+        "supports_logprobs": True,
+        # The engine is CONSTRUCTED with this value, so no request can be
+        # rejected for exceeding its max-logprobs setting after the model load.
+        "max_top_logprobs": 1024,
+        "gpu_memory_utilization": 0.9,
+        "batch_size": 64,
+    },
     "ollama-gemma-3-27b": {
         "base_url": "http://localhost:11434/v1",
         "model_id": "gemma3:27b",
@@ -1212,9 +1231,12 @@ class ModelClient:
 
     Wall-time guard: SDK/local backends (openai_compat, anthropic,
     transformers_local) are dispatched on a class-level ThreadPoolExecutor and
-    `result(timeout=N)` enforces a hard wall-time cap. All three dependency-free
-    paid Bedrock transports (bedrock_converse, bedrock_responses, and
-    bedrock_responses_raw) run synchronously in the caller. An executor timeout
+    `result(timeout=N)` enforces a hard wall-time cap. The vllm_offline transport
+    runs synchronously in the caller because its post() already settles through
+    a bounded future and the shared eight-slot pool would cap batch fill at
+    eight. All three dependency-free paid Bedrock transports (bedrock_converse,
+    bedrock_responses, and bedrock_responses_raw) also run synchronously in the
+    caller. An executor timeout
     cannot cancel an already-running HTTP side effect; asynchronous dispatch
     would abandon a still-billing request and create an unobserved billed
     duplicate. Their bounds differ:
@@ -1289,6 +1311,8 @@ class ModelClient:
                 )
             if self.backend == "openai_compat":
                 self._setup_openai_client()
+            elif self.backend == "vllm_offline":
+                self._setup_vllm_offline_client()
             elif self.backend == "transformers_local":
                 self._setup_transformers_client()
             elif self.backend == "bedrock_converse":
@@ -1378,6 +1402,37 @@ class ModelClient:
             base_url=self.config["base_url"],
             api_key=api_key,
         )
+
+    def _setup_vllm_offline_client(self):
+        """Record engine construction state without loading the 26B model."""
+        import threading
+
+        self._client = None
+        self._vllm_offline_lock = threading.Lock()
+        self._vllm_offline_engine_kwargs = {
+            "batch_size": int(self.config.get("batch_size", 64)),
+            "gpu_memory_utilization": float(
+                self.config.get("gpu_memory_utilization", 0.9)
+            ),
+            "max_logprobs": self.config.get("max_top_logprobs"),
+            "timeout": self.config.get("timeout"),
+        }
+
+    def _get_vllm_offline_client(self):
+        """Build the in-process engine once, lazily and under a construction lock."""
+        client = self._client
+        if client is None:
+            with self._vllm_offline_lock:
+                client = self._client
+                if client is None:
+                    from indra_belief.vllm_offline import OfflineVllmClient
+
+                    client = OfflineVllmClient(
+                        self.config["model_id"],
+                        **self._vllm_offline_engine_kwargs,
+                    )
+                    self._client = client
+        return client
 
     def _setup_anthropic_client(self):
         import anthropic
@@ -1944,7 +1999,20 @@ class ModelClient:
         try:
             while True:
                 try:
-                    if self.backend == "openai_compat":
+                    if self.backend == "vllm_offline":
+                        # Run in the caller: post() already holds its own BOUNDED
+                        # future.result(timeout=...). Routing through the
+                        # class-level eight-slot _WALL_POOL would cap engine
+                        # batch fill at eight regardless of the caller's worker
+                        # count, silently destroying the batching this backend
+                        # exists for.
+                        response = self._call_vllm_offline(
+                            system, messages, mt, temperature, timeout,
+                            response_format=response_format,
+                            reasoning_effort=reasoning_effort,
+                            top_logprobs=eff_top_logprobs,
+                        )
+                    elif self.backend == "openai_compat":
                         response = self._invoke_with_wall_timeout(
                             self._call_openai_compat, timeout,
                             system, messages, mt, temperature, timeout,
@@ -2112,6 +2180,102 @@ class ModelClient:
                 call_row["transport_trace"] = transport_trace
             self._get_call_log().append(call_row)
             raise
+
+    def _call_vllm_offline(
+        self, system: str, messages: list[dict], mt: int, temp: float, timeout: int,
+        response_format: dict | None = None,
+        reasoning_effort: str | None = None,
+        top_logprobs: int | None = None,
+    ) -> ModelResponse:
+        from types import SimpleNamespace
+
+        body = {
+            "model": self.config["model_id"],
+            "messages": [{"role": "system", "content": system}] + messages,
+            "max_tokens": mt,
+            "temperature": temp,
+        }
+        if top_logprobs is not None:
+            body["logprobs"] = True
+            body["top_logprobs"] = top_logprobs
+        if response_format is not None:
+            body["response_format"] = response_format
+        effort = (
+            reasoning_effort
+            if reasoning_effort is not None
+            else self.config.get("reasoning_effort")
+        )
+        # OpenAI's SDK hoists extra_body fields onto the request. This raw
+        # transport must put the same reasoning controls inline at the top level,
+        # matching indra_belief.probes.reader.build_probe_request.
+        body.update(reasoning_wire_keys(effort))
+
+        response = self._get_vllm_offline_client().post(
+            "/chat/completions", json=body, timeout=timeout
+        )
+        response.raise_for_status()
+        payload = response.json()
+        choice = payload["choices"][0]
+        message = choice.get("message") or {}
+        content = message.get("content") or ""
+        reasoning_content = message.get("reasoning_content")
+        reasoning_field = message.get("reasoning")
+        reasoning = reasoning_content or reasoning_field or ""
+        if self.config.get("reasoning_in_content"):
+            raw_text = content
+        else:
+            raw_text = (reasoning + "\n" + content) if reasoning else content
+
+        finish = choice.get("finish_reason") or "stop"
+        usage = payload.get("usage") or {}
+        reasoning_tokens = _reasoning_tokens(usage)
+        if top_logprobs is None:
+            norm_lp, lp_status = None, "not_requested"
+        else:
+            raw_logprobs = choice.get("logprobs")
+            logprobs_view = (
+                SimpleNamespace(**raw_logprobs)
+                if isinstance(raw_logprobs, dict)
+                else raw_logprobs
+            )
+            choice_view = SimpleNamespace(**choice)
+            choice_view.logprobs = logprobs_view
+            norm_lp = _normalize_openai_logprobs(choice_view)
+            if norm_lp is None:
+                norm_lp, lp_status = [], "empty"
+            else:
+                lp_status = "ok" if norm_lp else "empty"
+
+        if reasoning_content:
+            provider_source = "vllm_offline.message.reasoning_content"
+        elif reasoning_field:
+            provider_source = "vllm_offline.message.reasoning"
+        else:
+            provider_source = ""
+        return ModelResponse(
+            content=content,
+            reasoning=reasoning,
+            tokens=int(usage.get("completion_tokens", -1)),
+            raw_text=raw_text,
+            finish_reason=finish,
+            prompt_tokens=int(usage.get("prompt_tokens", -1)),
+            logprobs=norm_lp,
+            logprobs_status=lp_status,
+            reasoning_trace=_build_trace(
+                reasoning=reasoning,
+                reasoning_tokens=reasoning_tokens,
+                status=_classify_reasoning(
+                    reasoning,
+                    reasoning_tokens,
+                    inline=bool(self.config.get("reasoning_in_content")),
+                ),
+                provider_source=provider_source,
+                observed_message_keys=tuple(message),
+                backend=self.backend,
+                model_id=self.config.get("model_id"),
+                finish_reason=finish,
+            ),
+        )
 
     def _call_openai_compat(
         self, system: str, messages: list[dict], mt: int, temp: float, timeout: int,

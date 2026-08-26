@@ -63,8 +63,9 @@ def test_no_registry_entry_disappears_silently():
     deletion fail loudly; adding a model is then a deliberate one-line update
     here, which is the right amount of friction for changing what we can serve.
     """
-    assert len(LOCAL_MODELS) == 31, (
-        f"registry has {len(LOCAL_MODELS)} entries, expected 31. If you ADDED a "
+    # `vllm-offline-gemma-4-26b` is the added thirty-second registry entry.
+    assert len(LOCAL_MODELS) == 32, (
+        f"registry has {len(LOCAL_MODELS)} entries, expected 32. If you ADDED a "
         "model, update this number. If you did not, an entry was deleted — check "
         "for an edit that matched the wrong anchor."
     )

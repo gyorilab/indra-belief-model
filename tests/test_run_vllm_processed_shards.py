@@ -19,6 +19,19 @@ assert SPEC and SPEC.loader
 runner = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runner)
 
+import indra_belief.vllm_offline
+
+
+def test_runner_uses_the_core_offline_vllm_transport():
+    assert (
+        runner.OfflineVllmClient
+        is indra_belief.vllm_offline.OfflineVllmClient
+    )
+
+
+def test_runner_does_not_own_an_offline_vllm_transport_class():
+    assert "class OfflineVllmClient" not in SCRIPT.read_text()
+
 
 def write_jobs(path: Path, jobs: list[dict]) -> None:
     with gzip.open(path, "wt") as fh:
@@ -777,13 +790,15 @@ def test_a_batch_does_not_inherit_the_first_payloads_template_arguments(monkeypa
     # one batch reads queued,queued,chat,chat; no batching reads
     # queued,chat,queued,chat.
     events: list[tuple[str, str]] = []
-    real_signature = runner._template_signature
+    real_signature = indra_belief.vllm_offline._template_signature
 
     def recording_signature(payload):
         events.append(("queued", payload["messages"][-1]["content"]))
         return real_signature(payload)
 
-    monkeypatch.setattr(runner, "_template_signature", recording_signature)
+    monkeypatch.setattr(
+        indra_belief.vllm_offline, "_template_signature", recording_signature
+    )
 
     def chat(conversations):
         events.append(("chat", conversations[0][-1]["content"]))
