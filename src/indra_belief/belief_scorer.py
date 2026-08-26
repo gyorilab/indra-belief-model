@@ -107,17 +107,19 @@ class LLMBeliefScorer(_BeliefScorerBase):
         self.max_tokens = max_tokens
         self.variant = variant
         self.dedup = dedup
-        # Opt-in: use the direct logit probe's continuous weight of evidence in
-        # place of the two per-verdict constants. Requires rows carrying a
-        # measured `weight_of_evidence`
-        # (a probe-capable client) and a fitted profile; rows without one keep
-        # their verdict weight, so enabling it before a probe run is a no-op.
-        # UNEVALUATED at statement grain in this additive form — see
-        # statement_belief's docstring. `StatementBelief.weighting` records which
-        # rule produced each number.
-        # None defers to statement_belief's AUTO: engage measured weights
-        # wherever rows carry them and a profile resolved. Explicit True/False
-        # still demand or refuse.
+        # None (the constructor default) defers to
+        # `src/indra_belief/statement_belief.py::statement_belief`'s AUTO.
+        # The default AUTO engages the measured weight the moment a stack has BOTH a
+        # row carrying a numeric `weight_of_evidence` AND a fitted reader profile;
+        # it stays on the verdict weight otherwise. Explicit True DEMANDS the path
+        # and raises without a profile; explicit False REFUSES it. The direct
+        # logit probe's continuous weight replaces the two per-verdict constants
+        # and requires a probe-capable client plus a fitted profile; rows without
+        # a measured weight keep their verdict weight. The additive form remains
+        # UNEVALUATED at statement grain; see the docstring for
+        # `src/indra_belief/statement_belief.py::statement_belief`.
+        # `src/indra_belief/statement_belief.py::StatementBelief.weighting`
+        # records which rule produced each number.
         from indra_belief.statement_belief import AUTO as _WEIGHTS_AUTO
 
         self.probe_weights = _WEIGHTS_AUTO if probe_weights is None else probe_weights

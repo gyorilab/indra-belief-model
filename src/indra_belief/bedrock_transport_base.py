@@ -1,17 +1,20 @@
-"""Shared, dependency-free stack for the formal Bedrock raw transports.
+"""Shared, dependency-free stack for the formal Bedrock Responses raw transport.
 
-Both the Responses and Chat-Completions raw transports enforce the same
-bounded, proxy-free, redirect-free, ambient-trust-free HTTP posture.  The
-byte-identical machinery that posture is built from — the monotonic deadline
-connection mixin, the bounded DNS resolver, the pinned-TLS context factory,
-the response-framing/header validators — lives here once so each transport keeps only its own
-API-specific request-body builder, payload parser, and control flow.
+The Responses lane in
+`src/indra_belief/bedrock_responses_transport.py::RawBedrockResponsesTransport`
+is the only raw transport that imports this base. The shared posture machinery
+— the monotonic deadline connection mixin, bounded DNS resolver, pinned-TLS
+context factory, and response-framing/header validators — lives here as a
+stdlib-only leaf, an invariant enforced by
+`tests/test_bedrock_responses_transport.py::test_only_stdlib_import_roots_are_in_bedrock_transport_base`.
 
-The lane-labelled helpers (the deadline mixin, ``_resolve_host_bounded``, and
-``_safe_endpoint``) take their per-lane strings as parameters so each transport
-reproduces its own error text char-for-char.  Nothing here is aware of a
-particular API; the canonical-JSON codec and the exception taxonomy stay with
-each transport because their ``ValueError`` messages are per-lane.
+The lane-labelled helpers
+(`src/indra_belief/bedrock_transport_base.py::_DeadlineConnectionMixin`,
+`src/indra_belief/bedrock_transport_base.py::_resolve_host_bounded`, and
+`src/indra_belief/bedrock_transport_base.py::_safe_endpoint`) take per-lane
+strings as parameters, preserving lane-specific error text without binding this
+base to a particular API. The canonical-JSON codec and exception taxonomy stay
+with the Responses transport because its ``ValueError`` messages are lane-specific.
 """
 from __future__ import annotations
 

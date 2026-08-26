@@ -62,27 +62,3 @@ this file tracks names, not line-level contents.)
 
 ### Analysis probes & reports (produce a specific artifact)
 - `belief_headtohead.py`, `cost_report.py`, `text_miner_baselines.py`.
-
-### Comparison-run supervisors (shell, hand-run)
-- `supervise_comparison_all.sh`, `supervise_comparison_arm.sh`,
-  `monitor_comparison_fleet.sh`.
-
-  All three take an optional plan path and derive their arm list from it, so one
-  fleet can supervise `data/comparison/run_plan.json` (the 2026-07 thinking run)
-  and another `data/comparison_noreason/run_plan.json` without edits. Defaults
-  reproduce the historical invocation exactly. Two environment knobs on
-  `supervise_comparison_arm.sh` control sleep behaviour: `SUPERVISOR_CAFFEINATE`
-  (default 1, holds a no-sleep assertion) and `NETFAIL_KILL_TICKS` (default 4;
-  lower it when the machine is expected to sleep, so fewer attempt ordinals burn
-  on wake — the run-plan contract caps `max_attempts` at ten).
-
-  `monitor_comparison_fleet.sh` replaces the untracked
-  `data/comparison/supervisor/fleet_monitor.sh`: it RESTARTS a dead supervisor
-  instead of only reporting one.
-
-### Paid-run preflight
-- `verify_reasoning_disabled.py` — proves a reasoning-off arm really is
-  reasoning-off before the paid run starts. The provider's token accounting
-  cannot show this (gemma reports `reasoning_tokens=0` while returning real
-  CoT; glm-5 omits the field), so the check reads the canonical wire body the
-  paid-lane transports build. Static mode is free; `--live` spends ~$0.01.

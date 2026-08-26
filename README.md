@@ -28,7 +28,12 @@ Native INDRA Statement + Evidence objects, resolved through `ScoringRecord`:
 {"verdict": "correct", "confidence": "high"}
 ```
 
-Mapped to a continuous score: `{correct+high: 0.95, correct+medium: 0.80, ..., incorrect+high: 0.05}`.
+The parsed `(verdict, confidence)` pair is closed-set audit output and is not
+converted into a probability (`src/indra_belief/verdict.py::Verdict`). At
+`src/indra_belief/scorers/monolithic/scorer.py::score`,
+`src/indra_belief/probes/calibration.py::replace_sentence_score` attaches
+`score`: the calibrated sentence probability when the client can perform a
+fitted direct-probe read, otherwise `None`.
 
 ## How it works
 
@@ -36,7 +41,7 @@ Model: gemma-4-26b (Ollama remote or local MLX 8-bit).
 
 ### Production scoring architecture
 
-The CLI default is the monolithic scorer: a deterministic LLM call per
+The CLI default is the monolithic scorer: an LLM call per
 `(Statement, Evidence)` pair with type-adaptive contrastive examples (a second
 call fires only for `[Complex]` claims — see Tier 2). A decomposed four-probe
 scorer used to sit beside it for ablations; it lost on holdout_cc and has been
@@ -59,9 +64,10 @@ removed (git history holds it).
   objection to a structured field before it rationalizes a verdict (negation,
   hedging, family/member equivalence, relation-direction reversal).
 - Seven adaptive contrastive pairs (14 examples) selected by statement type.
-- One deterministic LLM call per pair at low temperature — plus, for `[Complex]`
-  claims, a focused relation-nature step (Gilda-grounded entity aliases) that
-  rejects a non-binding relationship mistaken for a Complex.
+- One LLM call per pair at temperature 0.1 — low but nonzero, so replies are not
+  bit-reproducible, and what is fixed per pair is the rendered prompt. For
+  `[Complex]` claims, a focused relation-nature step (Gilda-grounded entity
+  aliases) rejects a non-binding relationship mistaken for a Complex.
 
 The default variant is `disconfirm_relnature_rf` (set `MONO_VARIANT=""` for
 the plain six-rule baseline; `MONO_VARIANT=disconfirm` for disconfirm without
@@ -234,12 +240,16 @@ token logprobs from. Bedrock's gemma-4 routes accept `top_logprobs` and return
 an empty array, so `p_raw` cannot be measured there at all. Two consequences
 for callers:
 
-- `top_logprobs` is capped at **11**, so a caller that assumes a larger ceiling
-  gets a 400 rather than a truncated list:
-  `grep -n 'top_logprobs' ~/.venvs/mlx-serve/lib/python3.12/site-packages/mlx_lm/server.py`
-  → `self._validate("top_logprobs", int, min_val=0, max_val=11, whitelist=[-1])`.
-  The registry mirrors the cap as `max_top_logprobs` so callers clamp before the
-  request (`grep -n max_top_logprobs src/indra_belief/model_client.py`).
+- Stock `mlx_lm.server` caps `top_logprobs` at **11**. That is not enough at a
+  forced verdict position: the losing label was measured at rank 42/83/168, and
+  k=11 yielded no usable `p_raw` in three of four cases. The serving venv carries
+  a local patch raising the validator ceiling;
+  `src/indra_belief/model_client.py::LOCAL_MODELS` declares
+  `max_top_logprobs: 1024` for `local-gemma-4-26b` on the assumption that patch
+  is present. Rebuilding or upgrading the venv silently restores 11; the
+  resulting registry/server mismatch records a per-row `score_error` rather
+  than a calibrated score. See
+  `scripts/serve_mlx.sh::LOCAL PATCH REQUIRED` for the patch commands.
 - Serve at `temperature 0.0` — the script's default, and a correctness
   precondition for scoring, because the sampled verdict must be reproducible.
   The logprobs themselves are indifferent to it: `mlx_lm` computes
@@ -280,7 +290,7 @@ Any `claude-*` model name routes to the Anthropic backend automatically.
 | `num_ctx` | Ollama-specific: context window size (passed via `extra_body`) |
 | `timeout` | Seconds before retry — increase for large models or slow hardware |
 | `supports_logprobs` | `True` if the route actually returns `choices[].logprobs.content[]`. Absent/`False` means the field is accepted and ignored — the Bedrock gemma-4 failure mode |
-| `max_top_logprobs` | Server-enforced ceiling on `top_logprobs`. `mlx_lm.server` validates with `max_val=11` and 400s above it — **NOT** the usual OpenAI/vLLM 20 |
+| `max_top_logprobs` | Server-enforced ceiling on `top_logprobs`. Stock `mlx_lm.server` validates with `max_val=11` and 400s above it; the shipped `local-gemma-4-26b` entry declares 1024 because its serving venv is locally patched as documented in `scripts/serve_mlx.sh::LOCAL PATCH REQUIRED` |
 
 ## Usage
 
@@ -309,7 +319,7 @@ client = ModelClient("gemma-remote")
 verdicts = score_statement(stmt, client)
 # verdicts is list[dict], one per evidence:
 #   verdicts[i]["verdict"]    → "correct" | "incorrect" | None
-#   verdicts[i]["score"]      → 0.95 (correct+high) … 0.05 (incorrect+high)
+#   verdicts[i]["score"]      → calibrated sentence probability; None without a fitted calibration/probe read
 #   verdicts[i]["confidence"] → "high" | "medium" | "low"
 #   verdicts[i]["tier"]       → which scoring path produced the verdict
 ```
@@ -547,7 +557,7 @@ src/indra_belief/
   scorers/
     scorer.py              # Public score_statement / score_evidence + benchmark main
     monolithic/            # The scorer (the only architecture)
-    _shared.py             # Verdict→score mapping + JSON extraction, shared
+    _shared.py             # Greek normalization + JSON extraction, shared
       scorer.py            # MONO_VARIANT dispatch (default disconfirm_relnature_rf)
       _prompts.py          # Baseline six-rule system prompt
       _prompts_disconfirm.py  # Commit-first disconfirm prompt + backstop
@@ -573,7 +583,6 @@ data/
 scripts/
   run_rasmachine_monolithic.py  # Production scoring runner
   check_contamination.py        # Pre-eval gate: examples must not overlap holdout
-  check_doc_anchors.py          # Live-doc guard: referenced implementation files exist
   serve_mlx.sh                  # Local MLX reader on Apple Silicon (the one logprob-capable route)
 
 .github/workflows/

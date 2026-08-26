@@ -38,19 +38,16 @@ from indra_belief.statement_belief import statement_belief
 # carries the calibrated p_hat; `score_error` carries its failure.
 #
 # `weight_of_evidence` — the same reading as an additive weight — is
-# deliberately NOT in this
-# set. It became reachable when `statement_belief(probe_weights=True)` landed,
-# and that path is OPT-IN: the invariant is no longer "the probe never reaches
-# belief" but "the probe never reaches belief UNLESS ASKED". Both halves are
-# pinned below; a default that silently consumed it would fail
-# `test_belief_is_invariant_to_the_probe_output`.
+# deliberately NOT in this set because it is CONSUMABLE. Under AUTO it engages
+# by default wherever it was actually measured; `probe_weights=False` still
+# refuses it, and a bare hard gate never engages it.
 PROBE_OUTPUT_FIELDS = ("score", "score_error")
 
 # Everything `replace_sentence_score` WRITES. Kept separate from
 # PROBE_OUTPUT_FIELDS above because the two sets answer different questions:
 # what the producer emits, versus what belief must never read unasked.
-# `weight_of_evidence` is in this set and not that one — it is consumable, but
-# only under an explicit flag.
+# `weight_of_evidence` is in this set and not that one — it is consumable under
+# AUTO wherever it was actually measured.
 PROBE_WRITTEN_FIELDS = ("score", "score_error", "weight_of_evidence",
                         "probe_delta_logit")
 

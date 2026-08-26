@@ -30,6 +30,7 @@ import hashlib
 import json
 import os
 import signal
+import socket
 import sqlite3
 import sys
 from collections import Counter
@@ -61,6 +62,10 @@ def _request_stop(signum, _frame) -> None:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _current_claim() -> dict[str, Any]:
+    return {"host": socket.gethostname(), "pid": os.getpid(), "since": _now()}
 
 
 def corpus_json_to_tsv(corpus_path: Path, out_path: Path) -> int:
@@ -571,6 +576,13 @@ def _build_parser() -> argparse.ArgumentParser:
              "the assertion is recorded in the manifest",
     )
     parser.add_argument(
+        "--accept-claim",
+        default=None,
+        metavar="HOST:PID",
+        help="take over a running manifest by naming its recorded owner claim; "
+             "asserts the named process is gone",
+    )
+    parser.add_argument(
         "--limit-input-rows",
         type=int,
         default=None,
@@ -647,6 +659,12 @@ def main() -> int:
         "all_evidence": bool(args.all_evidence),
         **source_identity,
     }
+    # scripts/build_processed_grounding_shards.py::main needs a claim because
+    # input_rows_consumed / next_shard_index are one mutable cursor that two
+    # resumes would advance over the same input rows; in contrast,
+    # scripts/run_vllm_processed_shards.py::publish_atomically uniquely stages
+    # each shard, so concurrent writers there are a designed-for case.
+    claim = _current_claim()
 
     if manifest_path.exists():
         if not args.resume:
@@ -690,6 +708,46 @@ def main() -> int:
                 + json.dumps(mismatches, sort_keys=True)
                 + remedy
             )
+        owner = manifest.get("owner")
+        if owner is not None and manifest.get("status") == "running":
+            owner_host = owner.get("host")
+            owner_pid = owner.get("pid")
+            recorded_claim = f"{owner_host}:{owner_pid}"
+            ours = owner_host == claim["host"] and owner_pid == claim["pid"]
+            if not ours and args.accept_claim != recorded_claim:
+                if owner_host == claim["host"]:
+                    try:
+                        os.kill(owner_pid, 0)
+                    except ProcessLookupError:
+                        print(
+                            f"  taking over abandoned claim {recorded_claim}",
+                            flush=True,
+                        )
+                    except PermissionError:
+                        raise SystemExit(
+                            f"{manifest_path} is claimed by {recorded_claim}; "
+                            "if that process is gone, resume with "
+                            f"--accept-claim {recorded_claim}"
+                        )
+                    else:
+                        raise SystemExit(
+                            f"{manifest_path} is claimed by {recorded_claim}; "
+                            "if that process is gone, resume with "
+                            f"--accept-claim {recorded_claim}"
+                        )
+                else:
+                    raise SystemExit(
+                        f"{manifest_path} is claimed by {recorded_claim}; "
+                        "if that process is gone, resume with "
+                        f"--accept-claim {recorded_claim}"
+                    )
+            elif not ours:
+                print(
+                    f"  taking over claim {recorded_claim} by operator assertion",
+                    flush=True,
+                )
+        manifest["owner"] = claim
+        _write_json_atomic(manifest_path, manifest)
     else:
         existing_shards = list(output_dir.glob("grounded-*.jsonl.gz"))
         if existing_shards:
@@ -699,6 +757,7 @@ def main() -> int:
         manifest = {
             **identity,
             "status": "new",
+            "owner": claim,
             "created_at": _now(),
             "input_rows_consumed": 0,
             "next_shard_index": 0,
@@ -722,6 +781,7 @@ def main() -> int:
             {
                 **identity,
                 "status": status,
+                "owner": claim if status == "running" else None,
                 "updated_at": _now(),
                 "input_rows_consumed": durable_consumed,
                 "next_shard_index": writer.shard_index,

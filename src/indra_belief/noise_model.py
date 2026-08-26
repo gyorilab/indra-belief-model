@@ -110,6 +110,9 @@ def compute_edge_reliability_from_counts(
     return max(0.0, min(1.0, 1.0 - p_incorrect))
 
 
+# Status: helper for
+# ``src/indra_belief/noise_model.py::compute_edge_reliability_with_contradiction``
+# and its behavioural tests only; see that definition's retention note.
 def compute_edge_reliability(
     sources: list[str],
     evidence_count: int,
@@ -151,6 +154,20 @@ def compute_edge_reliability(
     return compute_edge_reliability_from_counts(per_source, priors)
 
 
+# STATUS: unreachable from current producers, deliberately retained.
+# ``src/indra_belief/scorers/monolithic/scorer.py::score_statement`` returns one
+# verdict per (Statement, Evidence) and never a regulation direction, so no
+# current producer emits ``regulation_type``. The contradiction entry points
+# are called only by
+# ``tests/test_noise_model.py::TestEdgeReliabilityWithContradiction``,
+# ``tests/test_noise_model.py::TestGatedBeliefWithContradiction``, and
+# ``tests/test_soft_belief.py::test_contradiction_forwards_soft_kwargs``.
+# They faithfully implement the contradiction formula from the same published
+# source as the rest of this module; its run-producing bytes are recorded by
+# the four comparison manifests. Dormancy is a producer-set property, not a
+# wrong formula: a direction-emitting producer reaches them unchanged. Their
+# tests pin the behaviour, and deleting them would also amputate
+# ``src/indra_belief/noise_model.py::compute_edge_reliability``.
 def compute_edge_reliability_with_contradiction(
     edges: list[dict],
     priors: dict[str, tuple[float, float]] | None = None,
@@ -480,6 +497,15 @@ def compute_gated_belief(
     )
 
 
+# STATUS: unreachable from current producers, deliberately retained for the
+# same published-formula, producer-set, and behavioural-test reasons recorded
+# at
+# ``src/indra_belief/noise_model.py::compute_edge_reliability_with_contradiction``.
+# ``src/indra_belief/scorers/monolithic/scorer.py::score_statement`` emits no
+# ``regulation_type``; a direction-emitting producer would re-reach this
+# implementation unchanged, while
+# ``tests/test_noise_model.py::TestGatedBeliefWithContradiction`` and
+# ``tests/test_soft_belief.py::test_contradiction_forwards_soft_kwargs`` pin it.
 def compute_gated_belief_with_contradiction(
     evidence: list[dict],
     priors: dict[str, tuple[float, float]] | None = None,

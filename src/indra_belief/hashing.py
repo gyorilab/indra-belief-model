@@ -2,13 +2,13 @@
 
 This is the single home for the strict canonical JSON codec and the sha256
 primitives every consumer imports. It is deliberately dependency-free so that
-`contracts.py`, `assemble.py`, and `metrics.py` all share ONE byte-exact
+`src/indra_belief/probe_combiner.py::fit_combiner`,
+`src/indra_belief/prepared_execution.py::prompt_sha256`, and
+`src/indra_belief/probes/battery.py::probe_digest` all share ONE byte-exact
 implementation — the producer/consumer digest contract is then structural, not
 a copy-paste coincidence.
 
-The encoder here is ensure_ascii=False (raw UTF-8). The on-disk spend-ledger
-encoder in `spend_guard._ledger_json_bytes` is a SEPARATE, ensure_ascii=True
-codec and is intentionally not routed through here (see that module).
+The encoder here is ensure_ascii=False (raw UTF-8).
 """
 
 from __future__ import annotations

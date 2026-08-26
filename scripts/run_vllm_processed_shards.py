@@ -1102,9 +1102,9 @@ def _read_probe_delta(client, endpoint, model_id, job):
     )
 
     # The width is NOT a caller knob. It is measured (losing-label rank median 6,
-    # max 15 over 40 records on MLX) and widens on demand, so every caller reads
-    # the same number and a stack that ranks differently is discovered by
-    # probe_widen_count() rather than papered over by a command-line guess.
+    # max 15 over 40 records on MLX) and widens on demand. This path widens
+    # silently, so a stack whose losing-label rank differs costs one extra call
+    # per affected record with no counter behind it.
     top_logprobs = PROBE_FIRST_TRY_TOP_LOGPROBS
 
     record = {
@@ -1130,7 +1130,7 @@ def _read_probe_delta(client, endpoint, model_id, job):
         # width is measured on MLX, so a stack that ranks differently would lose
         # readings with nothing to show for it. Widening keeps the parity: one
         # extra call on a rare record, never a lost measurement.
-        ceiling = min(PROBE_TOP_LOGPROBS, max(top_logprobs, PROBE_TOP_LOGPROBS))
+        ceiling = PROBE_TOP_LOGPROBS
         if ceiling <= top_logprobs:
             return None
         try:
@@ -1351,8 +1351,10 @@ def run_provenance(args, prompt: MonolithicPrompt,
     --max-tokens loaded the first ceiling's rows as done and published one file
     whose verdicts came from two ceilings, with nothing able to see it. The
     digest already blocked a variant switch for exactly that reason.
-    `temperature` is the EFFECTIVE one -- what score_job sends -- since the
-    variant overrides the flag.
+    `temperature` is the EFFECTIVE temperature of the VERDICT call -- what
+    score_job sends -- since the variant overrides the flag. The [Complex]
+    relation-nature sub-call is not covered: it fixes its own temperature and
+    this field does not record it.
     """
     variant = prompt.variant
     return {
@@ -1443,19 +1445,25 @@ def partial_path(output_dir: Path, shard_index: int, limit: int | None,
     return output_dir / f".verdicts-{shard_tag(shard_index, limit)}.{digest}.partial.jsonl"
 
 
-def load_partial(path: Path) -> dict[str, dict[str, Any]]:
-    """Load the latest attempt for each job, ignoring a truncated last line."""
+def load_partial(path: Path) -> tuple[dict[str, dict[str, Any]], int]:
+    """Keep the latest attempt per job and drop incomplete rows.
+
+    Any line that is not a complete row is dropped. A crash-truncated tail is
+    the expected cause, but corruption can occur anywhere in the append log.
+    """
     latest: dict[str, dict[str, Any]] = {}
+    dropped = 0
     if not path.exists():
-        return latest
+        return latest, dropped
     with path.open() as fh:
         for line in fh:
             try:
                 row = json.loads(line)
                 latest[str(row["job_id"])] = row
             except (json.JSONDecodeError, KeyError, TypeError):
+                dropped += 1
                 continue
-    return latest
+    return latest, dropped
 
 
 def ensure_append_boundary(path: Path) -> None:
@@ -1537,7 +1545,7 @@ def run_shard(
     total = sum(1 for _ in iter_jobs(input_path, args.limit, stmt_hashes))
     output_dir.mkdir(parents=True, exist_ok=True)
     partial = partial_path(output_dir, shard_index, args.limit, provenance)
-    latest: dict[str, dict[str, Any]] = load_partial(partial)
+    latest, dropped_lines = load_partial(partial)
     done = {key for key, row in latest.items() if valid_result(row)}
     ensure_append_boundary(partial)
 
@@ -1555,6 +1563,11 @@ def run_shard(
         f"shard={shard_index} jobs={total:,} resumed={len(done):,} "
         f"workers={args.workers} retries={args.retries}"
     )
+    if dropped_lines:
+        print(
+            f"partial={partial.name} dropped_lines={dropped_lines:,} "
+            "(not complete rows)"
+        )
     progress = tqdm(total=total, initial=len(done), desc="Scoring", unit="job")
 
     # BLOCK-BUFFERED, deliberately. The rejected per-row-flush alternative is a
@@ -1696,6 +1709,7 @@ def run_shard(
             "n_errors_deterministic": deterministic_errors,
             "n_duplicate_pairs": duplicates,
             "n_cells": evidence_results,
+            "n_partial_lines_dropped": dropped_lines,
         },
     )
     write_final_atomic(final_path, payload)
@@ -1842,7 +1856,8 @@ def offline_max_logprobs(model_config: dict[str, Any], variant,
     return max(widths) or None
 
 
-def preflight(client, endpoint: str, model_id: str, prompt) -> None:
+def preflight(client, endpoint: str, model_id: str, prompt, *,
+              probe: bool = False) -> None:
     """One request, before any shard is opened, to prove the server agrees.
 
     WHY THIS IS NOT OPTIONAL POLISH
@@ -1867,16 +1882,41 @@ def preflight(client, endpoint: str, model_id: str, prompt) -> None:
     variant = prompt.variant
     from indra_belief.model_client import reasoning_wire_keys
 
-    body = {
-        "model": model_id,
-        "messages": [{"role": "user", "content": "Reply with the single word ok."}],
-        "max_tokens": 4,
-        "temperature": variant.temperature if variant.temperature is not None else 0.0,
-        **reasoning_wire_keys(variant.reasoning_effort),
+    synthetic_job = {
+        "subject": "A",
+        "object": "B",
+        "stmt_type": "Activation",
+        "evidence_text": "A activates B.",
+        "user_message": "CLAIM: A [Activation] B\nEVIDENCE: A activates B.",
     }
-    if variant.in_call_label_logprobs:
-        body["logprobs"] = True
-        body["top_logprobs"] = variant.in_call_label_logprobs
+    direct_probe = bool(probe and not variant.in_call_label_logprobs)
+    if direct_probe:
+        from indra_belief.probes.reader import (
+            PROBE_FIRST_TRY_TOP_LOGPROBS,
+            build_probe_request,
+        )
+
+        body = build_probe_request(
+            synthetic_job,
+            model_id=model_id,
+            top_logprobs=PROBE_FIRST_TRY_TOP_LOGPROBS,
+            inline_extra_body=True,
+        )
+    else:
+        body = {
+            "model": model_id,
+            "messages": [
+                {"role": "user", "content": "Reply with the single word ok."}
+            ],
+            "max_tokens": 4,
+            "temperature": (
+                variant.temperature if variant.temperature is not None else 0.0
+            ),
+            **reasoning_wire_keys(variant.reasoning_effort),
+        }
+        if variant.in_call_label_logprobs:
+            body["logprobs"] = True
+            body["top_logprobs"] = variant.in_call_label_logprobs
 
     try:
         response = client.post(endpoint, json=body, timeout=120)
@@ -1885,6 +1925,12 @@ def preflight(client, endpoint: str, model_id: str, prompt) -> None:
         # endpoint, so blaming --base-url for an in-process engine's refusal
         # sent the operator to debug a server that was never involved.
         transport = getattr(client, "transport_description", None)
+        probe_hint = (
+            f"\n  the direct probe needs --max-logprobs "
+            f"{PROBE_FIRST_TRY_TOP_LOGPROBS}; restart with that capacity, or "
+            "drop --probe to run without this measurement."
+            if direct_probe else ""
+        )
         raise SystemExit(
             f"[preflight] cannot reach {transport or endpoint}: "
             f"{type(exc).__name__}: {exc}\n"
@@ -1892,12 +1938,19 @@ def preflight(client, endpoint: str, model_id: str, prompt) -> None:
                "is not used on this backend."
                if transport else
                "  is the server up, and does --base-url point at it?")
+            + probe_hint
         ) from None
 
     if response.status_code >= 400:
         detail = response.text[:400]
         hint = ""
-        if variant.in_call_label_logprobs and "logprob" in detail.lower():
+        if direct_probe:
+            hint = (
+                f"\n  the direct probe needs --max-logprobs "
+                f"{PROBE_FIRST_TRY_TOP_LOGPROBS}; restart with that capacity, "
+                "or drop --probe to run without this measurement."
+            )
+        elif variant.in_call_label_logprobs and "logprob" in detail.lower():
             hint = (
                 f"\n  the server refused a {variant.in_call_label_logprobs}-wide "
                 "logprob window. Restart it with\n"
@@ -1909,6 +1962,53 @@ def preflight(client, endpoint: str, model_id: str, prompt) -> None:
         raise SystemExit(
             f"[preflight] server returned {response.status_code}: {detail}{hint}"
         )
+
+    if direct_probe:
+        from indra_belief.probes.reader import (
+            PROBE_TOP_LOGPROBS,
+            ProbeReadError,
+            ProbeTopKError,
+            probe_reading_from_payload,
+        )
+
+        # This proves the FIRST-TRY width only. A missing label is the normal
+        # widen-on-demand case: the run retries at PROBE_TOP_LOGPROBS (1024),
+        # which a server launched at --max-logprobs 128 would still reject. The
+        # preflight deliberately does not spend a second request to discover it.
+        try:
+            reading = probe_reading_from_payload(
+                response.json(), top_k=PROBE_FIRST_TRY_TOP_LOGPROBS
+            )
+        except ProbeTopKError as exc:
+            print(
+                f"[preflight] direct probe route works, but the first-try "
+                f"top-{PROBE_FIRST_TRY_TOP_LOGPROBS} window missed a label "
+                f"({exc}); the run will widen on demand to "
+                f"top-{PROBE_TOP_LOGPROBS}",
+                flush=True,
+            )
+        except ProbeReadError as exc:
+            raise SystemExit(
+                f"[preflight] the direct probe response was unreadable: "
+                f"{type(exc).__name__}: {exc}\n"
+                f"  restart with --max-logprobs "
+                f"{PROBE_FIRST_TRY_TOP_LOGPROBS}, or drop --probe to run "
+                "without this measurement."
+            ) from None
+        except Exception as exc:
+            raise SystemExit(
+                f"[preflight] the direct probe response could not be decoded: "
+                f"{type(exc).__name__}: {exc}\n"
+                f"  restart with --max-logprobs "
+                f"{PROBE_FIRST_TRY_TOP_LOGPROBS}, or drop --probe to run "
+                "without this measurement."
+            ) from None
+        else:
+            print(
+                f"[preflight] direct probe readable on this stack "
+                f"(delta_logit {reading.delta_logit:+.3f})",
+                flush=True,
+            )
 
     if variant.in_call_label_logprobs:
         from indra_belief.probes.reader import label_margin_from_payload
@@ -1935,12 +2035,8 @@ def preflight(client, endpoint: str, model_id: str, prompt) -> None:
         # mismatch. The in-call route scans for the first position whose EMITTED
         # token is a label, which is exactly what a leading space or an attached
         # quote breaks.
-        job = {
-            "stmt_type": "Activation",
-            "user_message": "CLAIM: A [Activation] B\nEVIDENCE: A activates B.",
-        }
         try:
-            system, messages = prompt.request(job)
+            system, messages = prompt.request(synthetic_job)
             probe_body = {
                 "model": model_id,
                 "messages": [{"role": "system", "content": system}] + messages,
@@ -2099,8 +2195,13 @@ def main() -> int:
     # shard is named at the end and the run exits non-zero ONCE.
     withheld: list[str] = []
     with client_context as client:
-        preflight(client, args.base_url.rstrip("/") + "/chat/completions",
-                  args.model_id, prompt)
+        preflight(
+            client,
+            args.base_url.rstrip("/") + "/chat/completions",
+            args.model_id,
+            prompt,
+            probe=bool(args.probe),
+        )
         for shard in shards:
             outcome = run_shard(shard, args, client, prompt, stmt_hashes,
                                 provenance)

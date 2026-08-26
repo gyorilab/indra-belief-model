@@ -18,6 +18,7 @@ can express assistant continuation.
 """
 from __future__ import annotations
 
+import logging
 import math
 from types import SimpleNamespace
 from collections.abc import Mapping
@@ -27,6 +28,9 @@ from typing import Any, NamedTuple
 from indra_belief.logprobs import label_probability
 from indra_belief.model_client import _normalize_openai_logprobs
 from indra_belief.probes.battery import LABELS, probe_by_id, render
+
+
+logger = logging.getLogger(__name__)
 
 
 DIRECT_PROBE_ID = "pol.verdict_direct"
@@ -61,9 +65,13 @@ PROBE_FIRST_TRY_TOP_LOGPROBS = 128
 
 # How often the first try was too narrow. The 128 default is measured on MLX
 # (losing-label rank median 6, max 15 over 40 records); another stack may rank
-# differently, and without a count the first run there teaches us nothing. Read
-# it after a run: a high rate means re-measure the width for that stack rather
-# than paying a second call on most records.
+# differently. This module-level total is per process and resets on import, so
+# multiprocess shard workers each own a counter. It covers only
+# ``src/indra_belief/probes/reader.py::read_probe``;
+# ``scripts/run_vllm_processed_shards.py::_read_probe_delta`` has a separate
+# widen-on-demand path that never increments it. The first local widen logs a
+# warning; a high count means re-measure the width for that stack rather than
+# paying a second call on most records.
 _WIDENED = 0
 
 
@@ -357,6 +365,14 @@ def read_probe(
             raise
         global _WIDENED
         _WIDENED += 1
+        if _WIDENED == 1:
+            logger.warning(
+                "Probe logprob window widened from first-try width %d to route "
+                "ceiling %d; a stack that widens often ranks labels differently "
+                "from MLX, so re-measure PROBE_FIRST_TRY_TOP_LOGPROBS there",
+                top_k,
+                ceiling,
+            )
         return _issue(ceiling)
 
 

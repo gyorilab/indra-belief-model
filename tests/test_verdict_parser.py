@@ -244,14 +244,10 @@ def test_the_unified_reading_is_narrower_on_exactly_one_axis(text):
     `**Verdict** correct` and on the word "verdict" anywhere in a sentence. What
     survives of that narrowing is the ANCHOR: a line must BEGIN with the keyword.
 
-    THE DECISION THIS TEST NAMED HAS NOW BEEN TAKEN. The previous version of
-    this docstring said: "A separator-free 'verdict correct' is ... most likely
-    to be a fragment of the INSTRUCTION rather than an answer ... If a future
-    backend produces it, this test is where the decision to widen gets made."
-    That backend arrived — a local instruction model served over vLLM on
-    haohangyan's scale_up branch, which emits one field per line with no
-    punctuation — so `verdict correct` and `Conclusion incorrect` moved OUT of
-    this list and into `tests/test_verdict_bare_line_form.py`.
+    The separator-free bare-line forms `verdict correct` and
+    `Conclusion incorrect` live in `tests/test_verdict_bare_line_form.py`
+    because a local instruction model served over vLLM emits one field per line
+    with no punctuation.
 
     Both original cautions were checked before widening rather than waived:
 

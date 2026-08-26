@@ -204,7 +204,7 @@ def statement_belief(
     ``calibration_for_run(run_path, model)``. When present, the canonical scalar
     uses calibrated log-likelihood ratios; ``None`` selects the hard-gate fallback.
 
-    ``probe_weights`` swaps the two per-verdict constants for the CONTINUOUS
+    ``probe_weights`` (default ``AUTO``) swaps the two per-verdict constants for the CONTINUOUS
     weight the direct logit probe measures, read from each row's
     ``weight_of_evidence``. The
     aggregation is unchanged — see ``evidence_weights.belief_from_weights``,
@@ -213,16 +213,15 @@ def statement_belief(
     verdict weight, so a
     partially-probed statement degrades read by read instead of failing whole.
 
-    OFF BY DEFAULT, and not because the question is settled. It cannot be a
-    default: the probe is calibrated for one serving stack and returns nothing on
-    the others, so a default-on flag would silently change belief on the client
-    that has it and not on those that do not. It is also UNEVALUATED in this
-    additive form — the recorded statement-grain NO-GO (+0.004 AUROC, CI
-    spanning zero, ECE 0.0199 -> 0.0388) replaced the per-evidence SCORE rather
-    than supplying the measured weight. Callers who enable it are choosing an
-    unmeasured
-    scalar deliberately, and ``StatementBelief.weighting`` records which one they
-    got.
+    The default AUTO engages the measured weight the moment a stack has BOTH a
+    row carrying a numeric ``weight_of_evidence`` AND a fitted reader profile; it
+    stays on the verdict weight otherwise. Explicit True DEMANDS the path and
+    raises without a profile; explicit False REFUSES it. The additive form remains
+    UNEVALUATED at statement grain: the recorded statement-grain NO-GO (+0.004
+    AUROC, CI spanning zero, ECE 0.0199 -> 0.0388) replaced the per-evidence SCORE
+    rather than supplying the measured weight additively. Nobody has to enable it;
+    ``src/indra_belief/statement_belief.py::StatementBelief.weighting`` names
+    which rule produced a given number.
     """
     if priors is None:
         priors = RECALIBRATED_PRIORS

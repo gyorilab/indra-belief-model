@@ -13,7 +13,7 @@ Pipeline:
      identical type marginal across classes). mock7ee is pooled as one curator.
 
 Outputs external_curator_gold_v1.jsonl + its trimmed statements JSON (one scoring
-call per pair). Contamination-guarded at the end.
+call per pair). Contamination-guarded at the end; the guard's result is the exit code.
 
     PYTHONPATH=src .venv/bin/python scripts/build_multicurator_gold.py [--cap 40]
 """
@@ -197,9 +197,14 @@ def main() -> int:
     try:
         import check_contamination as cc
         contam = cc.find_contamination(eval_paths=[gold_out])
-        print(f"contamination guard: {'CLEAN ✓' if not contam else f'{len(contam)} OVERLAP(S)!'}")
     except Exception as e:  # noqa: BLE001
-        print(f"contamination guard skipped: {type(e).__name__}: {e}")
+        print(f"contamination guard FAILED to run: {type(e).__name__}: {e}")
+        print(f"UNVERIFIED outputs: {gold_out}, {stmts_out}")
+        return 1
+    if contam:
+        print(f"contamination guard: {len(contam)} OVERLAP(S)!")
+        return 1
+    print("contamination guard: CLEAN ✓")
     return 0
 
 

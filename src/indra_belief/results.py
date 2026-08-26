@@ -211,6 +211,8 @@ def _probability_or_none(value: Any) -> float | None:
 
 def _sentence_score_export_contract(
     run_meta: dict[str, Any],
+    *,
+    meta_unreadable: str | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     """Authenticate the meaning of raw ``score`` before exporting it.
 
@@ -238,12 +240,17 @@ def _sentence_score_export_contract(
     }
     output = dict(expected)
     if not isinstance(declared, dict):
-        output.update(
-            status="unavailable",
-            reason=(
+        reason = (
+            meta_unreadable
+            if meta_unreadable is not None
+            else (
                 "run metadata does not identify raw score as the calibrated "
                 "sentence probability; legacy values were not exported"
-            ),
+            )
+        )
+        output.update(
+            status="unavailable",
+            reason=reason,
         )
         return False, output
 
@@ -376,16 +383,19 @@ def _count_trace_status(per_ev: list[dict]) -> dict[str, int]:
     return out
 
 
-def _read_run_meta(run_path: str) -> dict[str, Any]:
+def _read_run_meta(run_path: str) -> tuple[dict[str, Any], str | None]:
     """Best-effort read of the run's sibling ``<run>.meta.json`` (run_id, model)."""
     meta_path = re.sub(r"\.jsonl$", ".meta.json", run_path)
     if os.path.exists(meta_path):
         try:
             with open(meta_path) as f:
-                return json.load(f)
-        except (OSError, json.JSONDecodeError):
-            pass
-    return {}
+                return json.load(f), None
+        except (OSError, json.JSONDecodeError) as exc:
+            return {}, (
+                f"run's meta sidecar {meta_path!r} was present but could not be read "
+                f"({type(exc).__name__})"
+            )
+    return {}, None
 
 
 _HASH_MASK = (1 << 64) - 1
@@ -585,7 +595,9 @@ def _soft_calibration_block(
     }
 
 
-METRICS_SCHEMA_VERSION = 4  # the metrics.json contract the viewer pins
+METRICS_SCHEMA_VERSION = 4  # stamped into metrics.json by src/indra_belief/results.py::build_run_export
+# Exact pin: tests/test_metrics_export.py::test_metrics_schema_version_is_4
+# Lower-bound pin: tests/test_statement_rollup_both_rules.py::test_schema_version_advertises_the_new_block
 # v4: + tiers.stmt.by_rollup — the SAME statements scored against BOTH statement
 #     gold rules. Additive: every pre-existing key keeps its any-incorrect-wins
 #     meaning. Reported rather than switched because the two rules do not favour
@@ -1069,10 +1081,11 @@ def build_run_export(
     Tier-1 per-evidence + Tier-2 three-way per-statement ECE/AUROC/AUPRC/Brier +
     reliability bins, keyed per run + model. Named-empty when no gold is baked.
     """
-    rmeta = _read_run_meta(run_path)
+    rmeta, meta_unreadable = _read_run_meta(run_path)
     run_id = run_id or rmeta.get("run_id")
     raw_score_is_calibrated, sentence_score_meta = _sentence_score_export_contract(
-        rmeta
+        rmeta,
+        meta_unreadable=meta_unreadable,
     )
     # Canonicalize the recorded model name (host-prefix + full tag) so every
     # export — incl. legacy runs recorded under abbreviated names — reads

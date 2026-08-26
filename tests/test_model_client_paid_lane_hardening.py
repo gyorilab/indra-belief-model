@@ -127,6 +127,17 @@ def _http_error(code: int, body: str) -> urllib.error.HTTPError:
     )
 
 
+class _TrackingErrorBody(io.BytesIO):
+    def __init__(self, body: bytes) -> None:
+        super().__init__(body)
+        self.read_calls: list[tuple[int, int]] = []
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = super().read(size)
+        self.read_calls.append((size, len(chunk)))
+        return chunk
+
+
 def _poison_wall_pool(monkeypatch) -> None:
     def _boom(self, fn, timeout, *args, **kwargs):
         raise AssertionError(
@@ -399,6 +410,43 @@ def test_legacy_lane_error_hides_status_from_spend_guard_extractor(backend):
         assert not hasattr(err, attr), attr
     # ...while the client-side twin does read the private stamp.
     assert _provider_http_status(err) == 503
+
+
+@pytest.mark.parametrize(
+    "backend, label",
+    [
+        ("bedrock_converse", "Converse"),
+        ("bedrock_responses", "Responses"),
+    ],
+)
+def test_legacy_http_error_body_is_bounded_and_contract_is_unchanged(
+    backend, label
+):
+    client = _legacy_client(backend)
+    payload = b"detail:" + b"x" * (4 * 64 * 1024)
+    body = _TrackingErrorBody(payload)
+    error = urllib.error.HTTPError(
+        "https://bedrock-fixture.invalid/v1/x",
+        503,
+        "fixture",
+        {},  # type: ignore[arg-type]
+        body,
+    )
+
+    def _open(req, timeout=None):
+        raise error
+
+    _install_opener(client, _open)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        client.call("sys", [{"role": "user", "content": "hi"}])
+
+    err = excinfo.value
+    assert type(err) is RuntimeError
+    assert str(err) == f"Bedrock {label} HTTP 503: {payload[:500].decode()}"
+    assert err._bedrock_http_status == 503
+    assert body.read_calls == [(64 * 1024, 64 * 1024)]
+    assert body.closed
 
 
 # ── (g) _is_rate_limit_error truth table ─────────────────────────────────────

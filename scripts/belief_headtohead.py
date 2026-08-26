@@ -356,6 +356,16 @@ def main() -> None:
             "verdict_statement_counts": dict(vcounts),
         },
     }
+    if n_joined == 0:
+        raise SystemExit(
+            f"[{args.label}] REFUSING to emit a measurement: 0 of {n_run} run rows "
+            f"joined to gold ({n_unmatched} unmatched, {n_invalid_key} invalid key). "
+            "Every metric below would be computed over an empty set and would print "
+            "as 0.000 rather than as absent. Check the run and the gold share a "
+            "statement key: monolithic runs carry `stmt_hash`, vLLM gold-eval runs "
+            "carry `matches_hash`."
+        )
+
     out_json = Path(args.out_json)
     out_md = Path(args.out_md)
     if out_json.exists() and not args.force:
@@ -409,16 +419,6 @@ def main() -> None:
     L.append(f"verdict_statement counts: {dict(vcounts)}.\n")
     with out_md.open("w") as f:
         f.write("\n".join(L))
-
-    if n_joined == 0:
-        raise SystemExit(
-            f"[{args.label}] REFUSING to emit a measurement: 0 of {n_run} run rows "
-            f"joined to gold ({n_unmatched} unmatched, {n_invalid_key} invalid key). "
-            "Every metric below would be computed over an empty set and would print "
-            "as 0.000 rather than as absent. Check the run and the gold share a "
-            "statement key: monolithic runs carry `stmt_hash`, vLLM gold-eval runs "
-            "carry `matches_hash`."
-        )
 
     # console
     print(f"[{args.label}] coverage {n_joined}/{n_run} → {len(stmts)} statements "

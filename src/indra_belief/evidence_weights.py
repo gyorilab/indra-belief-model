@@ -16,23 +16,25 @@ verdict, taken from the reader's confusion matrix:
 That discards the margin. A verdict given at 0.99 and one given at 0.51 carry
 identical weight. The direct verdict probe measures that margin and already
 returns it in exactly this currency — ``CalibratedProbeReading.weight_of_evidence``, the
-calibrated log-odds relative to the fit base rate — and nothing consumes it.
+calibrated log-odds relative to the fit base rate.
 
 (The published source spells this weight ``ell`` — the letter used for it in
 that formula. It is the same quantity under a name that says what it is.)
 
-``noise_model`` is a PUBLISHED implementation: its bytes are recorded under
-``implementation.notes.implementation_components.noise_model`` in the four
-``data/comparison/models/*/manifest.json`` bundles, and the module still matches
-that record. Threading a per-row weight through it would break that
-correspondence, so this module is the generalization instead: the same
-aggregation, taking a weight per evidence rather than deriving it from a
-verdict. (That record is provenance, not a lock. Nothing in this tree enforces
-it -- the function that computed it, ``comparison/llm.py::_implementation_digest``,
-was retired with the paid benchmark harness. What actually holds ``noise_model``
-still is behavioural: tests/test_noise_model.py, tests/test_soft_belief.py,
+``noise_model`` is a PUBLISHED implementation: the bytes that produced the four
+runs under ``data/comparison/models/*/manifest.json`` are recorded there, at
+``implementation.notes.implementation_components.noise_model``. That record is
+provenance for those runs, not a lock on the file — prose edits move the hash
+without touching behaviour, so a mismatch means "this file is not byte-for-byte
+what ran", never "the aggregation changed". What holds the aggregation still is
+behavioural: tests/test_noise_model.py, tests/test_soft_belief.py,
 tests/test_statement_belief_truth_table.py, and the exact-reduction property
-below.)
+below. Threading a per-row weight through it would change the AGGREGATION, which
+those tests do pin, so this module is the generalization instead: the same
+aggregation, taking a weight per evidence rather than deriving it from a
+verdict. (Nothing recomputes the record: the function that produced it,
+``comparison/llm.py::_implementation_digest``, was retired with the paid
+benchmark harness.)
 
 WHY THIS IS NOT A SECOND BELIEF MODEL
 -------------------------------------
@@ -43,17 +45,24 @@ function VERDICT-DERIVED weights and it must reproduce
 formula with the weight lifted into an argument, and the test is what keeps that
 true rather than the comment claiming it.
 
-STATUS: NOT WIRED INTO PRODUCTION, DELIBERATELY
------------------------------------------------
+STATUS: PRODUCTION PATH, DATA-ENGAGED
+-------------------------------------
+``src/indra_belief/statement_belief.py::_probe_weighted_belief`` imports this
+module. The default AUTO engages the measured weight the moment a stack has BOTH
+a row carrying a numeric ``weight_of_evidence`` AND a fitted reader profile; it
+stays on the verdict weight otherwise. Explicit True DEMANDS the path and raises
+without a profile; explicit False REFUSES it.
+
+``scripts/build_corpus_beliefs.py::apply_weights`` attaches those measured
+weights before ``src/indra_belief/statement_belief.py::statement_belief``, so the
+corpus route reaches this aggregation.
+
 Carrying the probe into statement belief was MEASURED as a loss once already:
 per sentence +0.020 AUROC (95% CI [+0.007, +0.033]), but per statement +0.004
 with the interval spanning zero and ECE worsening 0.0199 -> 0.0388. That test
 replaced the per-evidence SCORE; it never supplied a measured weight
-additively, which is the
-form the aggregation actually consumes. This module exists so that the
-better-posed version can be measured — not because the question is settled.
-
-Until a measurement says otherwise, production keeps the verdict path.
+additively, which is the form this function consumes. That better-posed
+version remains unmeasured.
 """
 from __future__ import annotations
 

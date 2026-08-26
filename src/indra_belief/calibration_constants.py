@@ -43,6 +43,8 @@ from .model_client import LOCAL_MODELS, canonical_model_name
 # A reader fit is scoped to both the served model and the scoring prompt.  These
 # are SHA-256 hashes of the exact monolithic ``system`` strings persisted in the
 # fit-run call logs.  The full digest is pinned; prefixes are display-only.
+# The baseline ``system`` string this pin addresses is no longer in-tree; this digest is the fit run's persisted string.
+# Re-pinning it to the current baseline would silently re-key the fitted ``gemma_remote`` / ``medpsy_remote`` profiles.
 BASELINE_PROMPT_SHA256 = "b4463821674084172f5f7237aa3e91048f8a57b32bd68e79bfe7a8aaf43f4581"
 REASONING_FIRST_PROMPT_SHA256 = "07377e338ff2835fbb7cc5e714f047db7cfca1b76ed05e98622752d99fa1d364"
 # The verdict-first, reasoning-off contract. It is a DIFFERENT prompt from the

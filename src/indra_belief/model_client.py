@@ -12,17 +12,48 @@ Design principles:
    result and injecting it into the prompt (see
    `scorer._format_entity_lookups`), not by native tool-calling — the
    model ignored tool results after committing a verdict in pass one.
-3. This module is pure transport — verdict parsing and score mapping
-   live in `scorers/_prompts.py`.
+3. Transport only: verdict parsing lives in
+   `src/indra_belief/verdict.py::parse_response`; this module maps nothing to
+   a score.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 
+# The transport's default sampling temperature is 0.1. Downstream prose calls
+# the scoring call "deterministic" to mean fixed-low-temperature, not zero
+# (`src/indra_belief/scorers/monolithic/scorer.py::_score_categorical`,
+# `src/indra_belief/scorers/monolithic/scorer.py::score_statement`). The other
+# literal mirrors remain local rather than importing this transport constant:
+# `src/indra_belief/prepared_execution.py::PreparedCall.temperature`,
+# `src/indra_belief/prepared_execution.py::PreparedExecution.temperature`,
+# `src/indra_belief/prepared_execution.py::prepare_from_record`,
+# `src/indra_belief/prepared_execution.py::prepare_from_replay_row`,
+# `src/indra_belief/scorers/monolithic/_prompts_relation.py::resolve_relation_nature`,
+# `src/indra_belief/scorers/monolithic/scorer.py::ScoringVariant.temperature`,
+# and `src/indra_belief/scorers/monolithic/scorer.py::_prepare`. A variant that
+# reads in-call label logprobs must set temperature zero because
+# `src/indra_belief/model_client.py::ModelClient.call` refuses `top_logprobs`
+# above zero.
+DEFAULT_CALL_TEMPERATURE = 0.1
+
+
 # Formal Bedrock raw-HTTP adapters load exactly this PEM bundle.  They never
 # consult SSL_CERT_FILE/SSL_CERT_DIR or urllib's platform-default trust store.
 # The publication runtime binds these bytes separately from this source file.
+# Exactly nine `src/indra_belief/model_client.py::LOCAL_MODELS` entries reach
+# it. Explicit pins: `bedrock-gemma-4-26b`, `bedrock-gemma-4-26b-noreason`,
+# `bedrock-gemma-4-31b-noreason`, `bedrock-gemma-4-e2b-noreason`,
+# `bedrock-gemma-4-31b`, and `bedrock-gemma-4-e2b`; fallbacks through
+# `src/indra_belief/model_client.py::ModelClient._setup_bedrock_token`:
+# `bedrock-gpt-5.5`, `bedrock-claude-haiku-4-5`, and
+# `bedrock-claude-opus-4-8`. Every other bedrock-named entry uses the OpenAI
+# SDK through `src/indra_belief/model_client.py::ModelClient._setup_openai_client`
+# and never reaches this path. `/private/etc/ssl/cert.pem` is macOS-only; on
+# Linux, pass `bedrock_ca_bundle=` and `bedrock_ca_bundle_sha256=` to
+# `src/indra_belief/model_client.py::ModelClient.__init__`, or set
+# `tls_ca_bundle` on the registry entry.
 _FIXED_BEDROCK_TLS_CA_BUNDLE = "/private/etc/ssl/cert.pem"
 _FIXED_BEDROCK_TLS_CA_BUNDLE_SHA256 = (
     "9dae8d76e55cb08991f2b672d58999ea15560d910759c16b544f843bdffbb994"
@@ -33,6 +64,10 @@ _FIXED_BEDROCK_RESPONSES_ENDPOINT = (
 
 
 # Model registry — name → (base_url, model_id, notes)
+# `typical_tokens` is descriptive metadata — observed output-token scale
+# read by no code; `max_tokens` is the enforced ceiling
+# (`src/indra_belief/model_client.py::LOCAL_MODELS`,
+# `src/indra_belief/model_client.py::ModelClient.call`).
 # The registry-wide token floor for any entry that can receive the production
 # reasoning-first prompt is `max_tokens: 8192`. The local Gemma, vLLM, and
 # Ollama lanes pair that ceiling with `timeout: 900`; other transports retain
@@ -148,6 +183,10 @@ LOCAL_MODELS: dict[str, dict] = {
         "timeout": 900,
     },
     "remote-gemma-4-26b": {
+        # Host 100.97.101.59 is the noot-1 ROCm gateway, serving Gemma
+        # through Ollama over Tailscale
+        # (`src/indra_belief/model_client.py::LOCAL_MODELS`,
+        # `README.md::Remote Ollama`).
         "base_url": "http://100.97.101.59:11434/v1",
         # Gateway serves gemma via ollama under this exact id; other id
         # spellings return 400 ("Invalid model name"). Match it exactly.
@@ -194,7 +233,13 @@ LOCAL_MODELS: dict[str, dict] = {
         # tokens per parse_evidence call, true sustainable throughput is
         # ~5 req/min — so concurrency above 2 just burns the budget on
         # bursts then waits 15s for the OpenAI client retry. Keep this
-        # conservative; --workers can override per-run if quota changes.
+        # conservative. `concurrency_hint` is advisory metadata read by no
+        # active code path; its helper has no callers
+        # (`src/indra_belief/model_client.py::concurrency_hint`). Each runner
+        # sets per-run concurrency solely through its own `--workers`
+        # (`scripts/run_vllm_gold_eval.py::_build_parser`,
+        # `scripts/run_vllm_processed_shards.py::build_parser`,
+        # `scripts/run_rasmachine_monolithic.py::_build_parser`).
         "concurrency_hint": 2,
     },
     "google-gemma-4-31b": {
@@ -863,7 +908,8 @@ def _response_socket(resp):
 
 
 def _read_body_within_deadline(
-    resp, *, absolute_deadline: float, lane_label: str
+    resp, *, absolute_deadline: float, lane_label: str,
+    max_bytes: int | None = None,
 ) -> bytes:
     """Read a response body under a monotonic ABSOLUTE deadline.
 
@@ -883,17 +929,28 @@ def _read_body_within_deadline(
     machinery onto lanes that deliberately carry none of it.
 
     Fallback: when `resp.fp.raw._sock` resolves to None there is no socket to
-    bound, so the body is read in a single `resp.read()` call. That covers every
-    non-HTTP opener, including the in-repo fakes whose `read()` takes no size
-    argument (tests/test_reasoning_trace.py, tests/test_bedrock_responses_transport.py).
+    bound. With no cap this preserves the single `resp.read()` call; with a cap
+    it attempts `resp.read(max_bytes)` and slices a no-argument read when the
+    response does not accept a size
+    (`src/indra_belief/model_client.py::_read_body_within_deadline`).
     """
     import time as _time
 
     if _response_socket(resp) is None:
-        return resp.read()
+        if max_bytes is None:
+            return resp.read()
+        if max_bytes <= 0:
+            return b""
+        try:
+            return resp.read(max_bytes)[:max_bytes]
+        except TypeError:
+            return resp.read()[:max_bytes]
     read_one = getattr(resp, "read1", None) or resp.read
     chunks: list[bytes] = []
+    total = 0
     while True:
+        if max_bytes is not None and total >= max_bytes:
+            break
         remaining = absolute_deadline - _time.monotonic()
         if remaining <= 0:
             raise _LaneDeadlineExpired(lane_label)
@@ -904,12 +961,18 @@ def _read_body_within_deadline(
         sock = _response_socket(resp)
         if sock is not None:
             sock.settimeout(remaining)
-        chunk = read_one(64 * 1024)
+        read_size = 64 * 1024
+        if max_bytes is not None:
+            read_size = min(read_size, max_bytes - total)
+        chunk = read_one(read_size)
         if _time.monotonic() >= absolute_deadline:
             raise _LaneDeadlineExpired(lane_label)
         if not chunk:
             break
+        if max_bytes is not None:
+            chunk = chunk[:max_bytes - total]
         chunks.append(chunk)
+        total += len(chunk)
     return b"".join(chunks)
 
 
@@ -1164,9 +1227,14 @@ class ModelClient:
         response cannot outlive the configured timeout.
     In every case the request settles before control returns.
     """
-    # Shared across instances; each call only consumes one slot for its
-    # duration. 8 max workers covers single-threaded scoring + a few
-    # concurrent ModelClient instances without bloat.
+    # This class-level, process-wide pool has 8 slots shared by every instance
+    # and caller thread. Submit is followed immediately by `future.result`, so
+    # queue wait counts against the provider timeout budget; more than 8
+    # concurrent ModelClient workers can time out before their call reaches the
+    # wire. The operator-overridable gold runner defaults to 8 workers
+    # (`src/indra_belief/model_client.py::ModelClient._invoke_with_wall_timeout`,
+    # `scripts/run_vllm_gold_eval.py::_build_parser`,
+    # `scripts/run_vllm_gold_eval.py::main`).
     import concurrent.futures as _cf
     _WALL_POOL = _cf.ThreadPoolExecutor(max_workers=8,
                                         thread_name_prefix="mc-wall")
@@ -1255,6 +1323,17 @@ class ModelClient:
 
     def _invoke_with_wall_timeout(self, fn, timeout: int, *args, **kwargs):
         """Run `fn(*args, **kwargs)` with a hard wall-time cap.
+
+        The class-level pool has eight slots shared by every ModelClient
+        instance and caller thread in the process. `future.result(timeout=...)`
+        is called immediately after submit, so executor queue wait is charged
+        to the provider timeout budget in practice. More than eight concurrent
+        ModelClient workers can therefore raise TimeoutError before their call
+        reaches the wire. The gold runner defaults to eight workers but permits
+        operator overrides
+        (`src/indra_belief/model_client.py::ModelClient._invoke_with_wall_timeout`,
+        `scripts/run_vllm_gold_eval.py::_build_parser`,
+        `scripts/run_vllm_gold_eval.py::main`).
 
         Only SDK and local backends are dispatched here — never a billed
         dependency-free Bedrock transport, which runs synchronously in the
@@ -1451,7 +1530,16 @@ class ModelClient:
                     ).decode("utf-8")
                 )
         except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", errors="replace")[:500]
+            try:
+                with e:
+                    detail = _read_body_within_deadline(
+                        e,
+                        absolute_deadline=deadline,
+                        lane_label="Converse",
+                        max_bytes=64 * 1024,
+                    ).decode("utf-8", errors="replace")[:500]
+            except (_LaneDeadlineExpired, OSError):
+                detail = ""
             err = RuntimeError(f"Bedrock Converse HTTP {e.code}: {detail}")
             # This plain RuntimeError exposes none of `status`, `status_code`,
             # `http_status`, `response`, or `transport_trace`; the code lives only
@@ -1582,7 +1670,16 @@ class ModelClient:
                     ).decode("utf-8")
                 )
         except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", errors="replace")[:500]
+            try:
+                with e:
+                    detail = _read_body_within_deadline(
+                        e,
+                        absolute_deadline=deadline,
+                        lane_label="Responses",
+                        max_bytes=64 * 1024,
+                    ).decode("utf-8", errors="replace")[:500]
+            except (_LaneDeadlineExpired, OSError):
+                detail = ""
             err = RuntimeError(f"Bedrock Responses HTTP {e.code}: {detail}")
             # Same plain-RuntimeError contract as _call_bedrock_converse: none of
             # `status`, `status_code`, `http_status`, `response`, or
@@ -1735,7 +1832,7 @@ class ModelClient:
         system: str,
         messages: list[dict],
         max_tokens: int | None = None,
-        temperature: float = 0.1,
+        temperature: float = DEFAULT_CALL_TEMPERATURE,
         response_format: dict | None = None,
         reasoning_effort: str | None = None,
         kind: str = "unknown",
@@ -1799,16 +1896,22 @@ class ModelClient:
             len(m.get("content", "") or "") for m in messages
         )
 
-        # 429 quota retries are bounded by this counter; everything else
-        # raises on first occurrence (see retry doctrine above).
-        # Paid corpus runs assign retry ownership to the runner's append-only
-        # attempt ledger and its two-attempt execution identity, so an opaque
-        # in-client retry would evade that ledger.
-        # Without the runner flag, the client owns up to five 429 retries.
+        # Classification is status-authoritative via
+        # `src/indra_belief/model_client.py::_is_rate_limit_error`. The budget
+        # is five in-client retries, or zero when the caller sets
+        # `src/indra_belief/model_client.py::ModelClient._spend_guard_disable_internal_retries`;
+        # server-requested delay comes from
+        # `src/indra_belief/model_client.py::_parse_retry_delay` and is clamped
+        # to [0, 3600s] (`src/indra_belief/model_client.py::ModelClient.call`).
         rate_limit_retries = (
             0 if getattr(self, "_spend_guard_disable_internal_retries", False) else 5
         )
         t_start = _time.time()
+        effective_reasoning_effort = (
+            reasoning_effort
+            if reasoning_effort is not None
+            else self.config.get("reasoning_effort")
+        )
 
         # Resolve the logprobs ask against what this route can actually do.
         # `eff_top_logprobs is None` means "do not put the field on the wire".
@@ -1901,6 +2004,8 @@ class ModelClient:
                         "out_tokens": response.tokens,
                         "finish_reason": response.finish_reason,
                         "max_tokens": mt,
+                        "temperature": temperature,
+                        "reasoning_effort": effective_reasoning_effort,
                         # Layer B capture — persist raw LLM I/O for tracing.
                         # Lets the viewer reconstruct what the model saw and
                         # what it said. Cost: ~1-10KB per call (typical) up
@@ -1966,6 +2071,8 @@ class ModelClient:
                 "out_tokens": 0,
                 "finish_reason": None,
                 "max_tokens": mt,
+                "temperature": temperature,
+                "reasoning_effort": effective_reasoning_effort,
                 "error": type(e).__name__,
                 "error_detail": str(e),
                 "system": system,

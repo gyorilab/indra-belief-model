@@ -4,14 +4,26 @@
 USD a `score_corpus` run will consume. The auditor's natural pre-run
 "what will this cost?" check before clicking Go.
 
-Empirical anchor:
-  - The deterministic substrate resolves only ~1.2% of records to zero
-    LLM calls; ~68.5% use all four LLM probes per evidence.
-  - Plus ~1 LLM call per evidence for grounding verification.
-  - Avg ~400 tokens per LLM call (~330 in + ~70 out → 5:1 ratio).
+Measured anchor (selected-final attempts in each of four comparison arms):
+  - Each arm has 32,479 evidence executions and 49,012 calls: 29,341
+    ``monolithic``, 17,024 ``relation_nature``, and 2,647
+    ``monolithic_tool_context``, or 1.51 calls per evidence.  Each of the
+    31,988 LLM-eligible executions has one monolithic-family call; the
+    relation-nature sub-call is added where eligible, and tool context replaces
+    the ordinary monolithic kind for a minority.  The other 491 executions have
+    no call.
+  - Provider-reported monolithic input medians are 3,634--3,730 tokens (pooled
+    3,709, approximately 3,730).  Output medians are 264 for gemma-4-31b, 356
+    for gemma-4-e2b, 457 for gemma-4-26b, and 485 for glm-5; aggregate input to
+    output ratios span 5.4:1--11.5:1.
 
-Defaults bake the conservative assumption (substrate ≤2%, ~5 LLM calls
-per evidence). Override per project.
+The ``src/indra_belief/corpus/cost.py::estimate_cost`` defaults of 1.0 call,
+330 input tokens, and 70 output tokens describe a short, non-deliberating
+single call.  The shipped monolithic prompt is neither: its roughly 5:1 ratio
+survives, but the input and output anchors are about 11x and 4--7x low,
+respectively.  A caller projecting a real corpus run should pass explicit
+``avg_input_tokens_per_call`` and ``avg_output_tokens_per_call`` measured from
+that arm's ``reader_attempts.jsonl``.
 """
 
 from __future__ import annotations

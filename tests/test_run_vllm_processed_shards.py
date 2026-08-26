@@ -1043,6 +1043,81 @@ def test_preflight_blames_the_engine_not_the_base_url_on_the_offline_backend():
     )
 
 
+def test_probe_preflight_requires_the_window_only_when_probe_is_requested():
+    """A direct probe run proves its real route; a plain run does not inherit it."""
+    import pytest as _pytest
+
+    class Response:
+        def __init__(self, status_code, text):
+            self.status_code = status_code
+            self.text = text
+
+    class Client:
+        def __init__(self):
+            self.posts = []
+
+        def post(self, _endpoint, *, json, timeout):
+            self.posts.append(json)
+            if json.get("top_logprobs"):
+                return Response(400, "logprob window rejected")
+            return Response(200, "ok")
+
+    prompt = runner.MonolithicPrompt("disconfirm_relnature_rf")
+    probing = Client()
+    with _pytest.raises(SystemExit) as excinfo:
+        runner.preflight(probing, "http://vllm/v1/chat/completions", "served",
+                         prompt, probe=True)
+    message = str(excinfo.value)
+    assert "--max-logprobs" in message and "--probe" in message
+    assert len(probing.posts) == 1
+    assert probing.posts[0]["top_logprobs"] == 128
+    assert probing.posts[0]["continue_final_message"] is True
+
+    plain = Client()
+    runner.preflight(plain, "http://vllm/v1/chat/completions", "served", prompt)
+    assert len(plain.posts) == 1
+    assert "top_logprobs" not in plain.posts[0]
+    assert "continue_final_message" not in plain.posts[0]
+
+
+def test_probe_preflight_treats_a_first_window_label_miss_as_a_pass(capsys):
+    """ProbeTopKError proves the route and leaves widening to the live run."""
+
+    class Response:
+        status_code = 200
+        text = "ok"
+
+        def json(self):
+            return {
+                "choices": [{
+                    "logprobs": {"content": [{
+                        "token": "correct",
+                        "logprob": -0.1,
+                        "top_logprobs": [
+                            {"token": "correct", "logprob": -0.1}
+                        ],
+                    }]}
+                }]
+            }
+
+    class Client:
+        def __init__(self):
+            self.posts = []
+
+        def post(self, _endpoint, *, json, timeout):
+            self.posts.append(json)
+            return Response()
+
+    client = Client()
+    prompt = runner.MonolithicPrompt("disconfirm_relnature_rf")
+    runner.preflight(client, "http://vllm/v1/chat/completions", "served", prompt,
+                     probe=True)
+
+    printed = capsys.readouterr().out
+    assert len(client.posts) == 1
+    assert "first-try" in printed and "widen on demand" in printed
+
+
 # ── retries, reconciliation, publication ──────────────────────────────────────
 
 
@@ -1728,6 +1803,15 @@ def test_a_scored_shard_records_the_configuration_that_produced_it(tmp_path):
     assert len(meta["prompt_sha256"]) == 64
     assert meta["margin_route"] == "pol.verdict_incall"
     assert meta["n_jobs"] == 2 and meta["n_errors"] == 0
+    assert meta["n_partial_lines_dropped"] == 0
+
+    # Sidecars published before the count existed remain valid: only the fixed
+    # provenance identity is compared when deciding whether a shard is joinable.
+    del meta["n_partial_lines_dropped"]
+    runner.write_shard_meta(runner.meta_path_for(final), meta)
+    resumed = _ScoringClient()
+    outcome, _ = _score_shard(tmp_path, _shard_jobs(2), resumed)
+    assert outcome.code == 0 and not resumed.posts
 
 
 # ── the publication gate, and what it may count ───────────────────────────────
@@ -2350,11 +2434,27 @@ def test_a_crash_truncated_partial_line_cannot_swallow_the_next_row(tmp_path):
         fh.write(json.dumps({"job_id": "3:0", "verdict": "incorrect",
                              "confidence": "high"}) + "\n")
 
-    latest = runner.load_partial(partial)
+    latest, dropped = runner.load_partial(partial)
     assert set(latest) == {"1:0", "3:0"}, (
         f"the row appended after a truncated line was lost: {sorted(latest)}"
     )
+    assert dropped == 1
     assert partial.read_text().count("\n") == 3
+
+
+def test_a_corrupt_middle_partial_line_does_not_hide_later_rows(tmp_path):
+    """Corruption is counted wherever it occurs, not only at a crash tail."""
+    partial = tmp_path / ".verdicts-000007.abc.partial.jsonl"
+    before = {"job_id": "1:0", "verdict": "correct", "confidence": "high"}
+    after = {"job_id": "3:0", "verdict": "incorrect", "confidence": "low"}
+    partial.write_text(
+        json.dumps(before) + "\n" + "{not complete JSON\n" + json.dumps(after) + "\n"
+    )
+
+    latest, dropped = runner.load_partial(partial)
+
+    assert latest == {"1:0": before, "3:0": after}
+    assert dropped == 1
 
 
 def test_the_append_boundary_does_not_grow_a_healthy_log(tmp_path):

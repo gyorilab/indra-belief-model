@@ -21,9 +21,23 @@ axis, which is why the two stages are exposed separately.
 This is the k-feature generalisation of
 ``calibration_constants.py::profile_from_confusion``.  It deliberately does
 not import, modify, or replace that shipped production belief calibration: the
-2x2-confusion map is closed-form by design.  Nothing here is wired into the
-belief math, and this module neither imports nor mutates
-``src/indra_belief/noise_model.py``.
+2x2-confusion map is closed-form by design.  This module is the fitted map on
+the live belief path: ``src/indra_belief/probes/calibration.py`` imports
+``src/indra_belief/probe_combiner.py::FrozenCombiner``,
+``src/indra_belief/probe_combiner.py::to_logit``, and
+``src/indra_belief/probe_combiner.py::LOGIT_EPS``;
+``src/indra_belief/probes/calibration.py::calibrate_probe`` and
+``src/indra_belief/probes/calibration.py::weight_of_evidence`` turn a
+``src/indra_belief/probes/reader.py::ProbeReading`` into a
+``weight_of_evidence``; and
+``src/indra_belief/statement_belief.py::statement_belief`` takes
+``probe_weights=AUTO`` by default, with
+``src/indra_belief/statement_belief.py::_probe_weighted_belief`` consuming that
+weight whenever a row carries one and a fitted reader profile exists.  A change
+here is therefore a belief-math change, not an offline experiment.
+``scripts/fit_incall_calibration.py::main`` calls
+``src/indra_belief/probe_combiner.py::fit_combiner``.  This module neither
+imports nor mutates ``src/indra_belief/noise_model.py``.
 
 The isotonic knots are learned from out-of-fold decisions, whereas
 ``raw_logit`` uses the full-data logistic refit, so the two sit on slightly
