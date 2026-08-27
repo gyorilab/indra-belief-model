@@ -108,14 +108,13 @@ data/comparison/error_reviews/
 data/comparison/error_review_admin/
 
 # Reasoning-off twin of the run above, same scale and the same reason to ignore.
-# The two small config files ARE tracked: they are the experiment's definition,
+# The three small config files ARE tracked: they are the experiment's definition,
 # they are kilobytes, and the run above taught us the cost of a run_plan that
 # exists only on one Mac. `/*` rather than `/` because git cannot re-include a
 # file whose parent DIRECTORY is excluded.
 data/comparison_noreason/*
 !data/comparison_noreason/run_plan.json
 !data/comparison_noreason/inputs.json
-!data/comparison_noreason/aggregation.json
 !data/comparison_noreason/pricing.json
 
 # Verdict-only run: same scale again, plus a 57 MB derived replay substrate.

@@ -204,7 +204,8 @@ had no prompt-digest constraint at all.** (The manifest's 17,257 / 33,413 counts
 workloads — the same rows plus 22 of 52 `alternate_prompt_sensitivity` rows.) The goldens now record the note-case digest itself under a fixed
 literal, assert the insertion coordinates, and prove the coordinates *are* enforced by
 tampering with the byte offset and requiring a `ReplayError`. **[V]** at
-`tests/test_prepared_execution_goldens.py`.
+`tests/test_prepared_execution_goldens.py` (retired: the test went with the
+paid comparison harness, and its goldens fixture followed it out of the tree).
 
 ### 2.6 Guards that could not fail
 

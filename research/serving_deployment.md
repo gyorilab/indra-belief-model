@@ -573,7 +573,8 @@ The order that keeps published digests intact:
    or it falls through to no profile at all.
 
 **A guard warning that would otherwise be discovered the hard way.** [V]
-`tests/test_prepared_execution_goldens.py` monkeypatches `ScoringRecord.resolve_entities`
+`tests/test_prepared_execution_goldens.py` (since retired with the paid comparison
+harness, along with its goldens fixture) monkeypatches `ScoringRecord.resolve_entities`
 to a no-op and injects stored rows from `data/comparison/grounding_replay/entities.jsonl`
 ([M] 6,479 rows, mtime Jul 20 02:21). **The goldens will not catch a regression in the
 default grounding path** — they deliberately do not run it. The test that would is

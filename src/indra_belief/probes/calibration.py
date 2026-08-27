@@ -81,11 +81,14 @@ def _validate_probe_profile() -> None:
 MIN_PROBE_TOP_LOGPROBS = 256
 
 # Serving identity -> fitted artifact. The key includes the SERVED model id, not
-# just the registry name, because delta_logit magnitudes are substrate-specific:
-# the same weights read in-process and over HTTP correlate at r=0.955 but differ
-# 2.4x in range and disagree in sign on 10% of rows. An isotonic map fitted on
-# one serving stack is therefore not valid on another, exactly as a reader
-# confusion profile is not valid across prompts.
+# just the registry name, because delta_logit magnitudes are substrate-specific.
+# MEASURED over 1,075 paired reads of the same weights in-process and over HTTP
+# (`data/probe_battery/http_base1_scores.json`, probe `pol.verdict_direct`):
+# they correlate at r=0.935, differ 2.2x in range, and DISAGREE IN SIGN ON 20.6%
+# of rows -- one read calls the evidence confirming where the other calls it
+# disconfirming. An isotonic map fitted on one serving stack is therefore not
+# valid on another, exactly as a reader confusion profile is not valid across
+# prompts.
 #
 # To add a substrate: read raw delta_logits on it (which
 # `probe_reading_supported` now permits without a calibration), fit an isotonic,
