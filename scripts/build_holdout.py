@@ -24,6 +24,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from indra_belief.curation import is_gold_correct  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _gold_output import add_rebuild_flag, guard_outputs  # noqa: E402
+
 DATA = ROOT / "data" / "benchmark"
 
 # Explicit set of source_hashes used as contrastive examples in v6/v7 prompts
@@ -81,6 +84,13 @@ def load_pairs(path: Path) -> set[tuple[str, str]]:
 
 
 def main(seed: int = 42, n_correct: int = 100, n_incorrect: int = 100):
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0])
+    add_rebuild_flag(parser)
+    guard_outputs([DATA / "holdout.jsonl"], rebuild=parser.parse_args().rebuild)
+
     random.seed(seed)
 
     # Load all exclusion sets

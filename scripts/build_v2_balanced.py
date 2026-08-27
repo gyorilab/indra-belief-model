@@ -29,6 +29,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from build_curation_eval import stratified_balanced  # noqa: E402  (blessed 1:1-by-type rule)
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _gold_output import add_rebuild_flag, guard_outputs  # noqa: E402
+
 GOLD = ROOT / "data" / "benchmark" / "rasmachine_v2_gold.jsonl"
 OUT_STRAT = ROOT / "data" / "benchmark" / "rasmachine_v2_balanced_gold.jsonl"
 OUT_CAP = ROOT / "data" / "benchmark" / "rasmachine_v2_balanced_capped_gold.jsonl"
@@ -62,6 +65,13 @@ def capped(rows, rng):
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0])
+    add_rebuild_flag(parser)
+    guard_outputs([OUT_STRAT, OUT_CAP], rebuild=parser.parse_args().rebuild)
+
     rows = [json.loads(l) for l in open(GOLD) if l.strip()]
     print(f"full v2 gold: {complex_share(rows)}")
 

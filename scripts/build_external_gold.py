@@ -59,6 +59,9 @@ from build_curation_eval import (  # noqa: E402 — reuse, don't duplicate
 )
 from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _gold_output import add_rebuild_flag, guard_outputs  # noqa: E402
+
 DATA = ROOT / "data" / "benchmark"
 OUT = DATA / "external_gold_v1.jsonl"
 SEED = 20260623  # fixed for reproducibility; changing it re-draws the sample
@@ -263,6 +266,13 @@ def aggregate_external_pairs(data: list[dict]) -> dict[tuple[int, int], dict]:
 
 
 def main(seed: int = SEED) -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0])
+    add_rebuild_flag(parser)
+    guard_outputs([OUT, OUT.with_suffix('.meta.json')], rebuild=parser.parse_args().rebuild)
+
     rng = random.Random(seed)
     url, key = _load_env()
     print("pulling /curation/list (keyed list-all) ...", flush=True)

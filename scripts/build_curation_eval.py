@@ -49,6 +49,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import check_contamination as cc  # noqa: E402 — single source of truth for the fewshot universe
 from indra_belief.curation import aggregate_gold, is_gold_correct  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _gold_output import add_rebuild_flag, guard_outputs  # noqa: E402
+
 DATA = ROOT / "data" / "benchmark"
 BENCHMARK = DATA / "belief_benchmark.jsonl"
 OUT = DATA / "eval_curation_v1.jsonl"
@@ -227,6 +230,13 @@ def stratified_balanced(fresh: list[dict], rng: random.Random) -> tuple[list[dic
 
 
 def main(seed: int = SEED) -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0])
+    add_rebuild_flag(parser)
+    guard_outputs([OUT, OUT.with_suffix('.meta.json')], rebuild=parser.parse_args().rebuild)
+
     rng = random.Random(seed)
 
     leakage, per_file = load_leakage_pairs()
