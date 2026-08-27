@@ -249,13 +249,15 @@ USER belief
 # §3.4 measures the first ground at 10.9-19.7 s and ~2 GB RSS, and the first
 # FPLX lookup at 7.5 s and ~7.5 GB RSS — a healthcheck that did that would blow
 # the timeout, thrash the page cache, and race the warm-up it is supposed to be
-# observing. The imports alone cost a median 2.2 s in this image (n=9
-# in-container runs of `import gilda, indra.statements`, range 1.7-2.6 s), so the
-# 10 s timeout carries ~4x headroom over the slowest sample observed; that margin
-# is the reason the timeout is left at the batch file's value rather than raised.
-# An earlier single-sample 3.30 s reading is superseded: quoted to three
-# significant figures it did not reproduce, and the headroom argument never
-# depended on the precision.
+# observing. The imports alone (`import gilda, indra.statements`) cost
+# 1.416/1.594/4.911 s min/median/max across 24 in-container samples, and the
+# spread is LOAD-DEPENDENT: dividing the 10 s timeout by each condition's slowest
+# sample gives 6.15x with no induced loaders, 5.86x in an already-running
+# container, and only 2.04x under induced load. A single attempt is therefore
+# thin under load, and `--retries=3` is what carries resilience there — not the
+# timeout. Earlier readings that quoted a headroom multiple without recording the
+# load condition are superseded, because a latency number that does not travel
+# with its load cannot be reproduced or bounded.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c 'import os,sys,gilda,indra.statements; sys.exit(0 if os.path.isdir(os.environ["PYSTOW_HOME"]) and os.path.isdir(os.environ["INDRA_RESOURCES"]) else 1)' || exit 1
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# D6 of deferred hypergraph: block git commit when source files of
+# Block git commit when source files of
 # tracked-types are present in the working tree but not staged. Several
-# cycles shipped broken on clean checkouts because new .ts / .svelte /
-# .py / .mjs files were added but never `git add`'d.
+# cycles shipped broken on clean checkouts because new source files were
+# added but never `git add`'d. It scans for the extensions this repo
+# actually tracks, which SOURCE_EXT_REGEX below is the single source of.
 #
 # Install:
 #   git config core.hooksPath .githooks

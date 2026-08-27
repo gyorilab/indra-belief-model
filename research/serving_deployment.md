@@ -1063,9 +1063,9 @@ the configured `--retries=3` is what carries resilience there. Because the forme
 measurement recorded no load condition, it cannot be reproduced or bounded by load — the
 condition must travel with the latency number. (The earlier single `3.30 s` wall-clock
 reading remains superseded; these 24 serial, condition-labelled samples now replace it.)
-[V] `Dockerfile.live`'s HEALTHCHECK comment still carries the superseded 2.2 s median,
-1.7–2.6 s range and roughly fourfold headroom text; this node may not edit that file, so
-correcting the comment is owed to that file's owner.
+`Dockerfile.live`'s HEALTHCHECK comment carried the superseded 2.2 s median,
+1.7–2.6 s range and roughly fourfold headroom text; it now carries these
+condition-labelled figures instead.
 Calling `gilda.ground()` there would not fit: §3.4 measures first-ground at 10.9-19.7 s and
 ~2 GB RSS.
 

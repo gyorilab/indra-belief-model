@@ -48,6 +48,8 @@ data/results/*
 !data/results/eval_curation_v1_compare.md
 !data/results/calibration_ship_gate_external.md
 !data/results/calibration_ship_gate_external.json
+!data/results/calibration_ship_gate_local.md
+!data/results/calibration_ship_gate_local.json
 
 # The /paper comparison artifacts. Tracked because the viewer READS them: without
 # them every figure on /paper gates to "unavailable" on a fresh clone, and nobody
@@ -71,13 +73,22 @@ data/results/*
 # Un-ignoring a directory un-ignores everything in it, and a later `!` rule only
 # ADDS — so the raw rows need an explicit re-exclude or they ride along.
 data/results/per_evidence_comparison_20260727/per_evidence_pairs.jsonl
-reports/
+reports/*
+# One exception, force-added and kept: the PI-facing curation brief is a
+# published document rather than generated output, and a citation in
+# data/results names it.
+!reports/curation_eval_brief_for_PIs.md
 data/corpus_export/
 # Generated corpus inputs (statement JSONs reproduced via eval_to_statements_json
-# from the benchmark corpus). The two tracked fixtures —
-# synthetic_demo.json + sampled_statements_rasmachine_v1.pkl — stay tracked
-# (already committed; gitignore does not untrack). Force-add a new one if needed.
-data/corpora/
+# from the benchmark corpus). Three fixtures are tracked — synthetic_demo.json,
+# sampled_statements_rasmachine_v1.pkl and external_curator_gold_v2_statements
+# .json, the last named by research/corpus_belief_runbook.md as a runbook input.
+# `/*` rather than `/` because git cannot re-include a file whose parent
+# DIRECTORY is excluded; force-add a new one if needed.
+data/corpora/*
+!data/corpora/synthetic_demo.json
+!data/corpora/sampled_statements_rasmachine_v1.pkl
+!data/corpora/external_curator_gold_v2_statements.json
 scripts/realistic_gate_results.json
 scripts/composition_benchmark.json
 
