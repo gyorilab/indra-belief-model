@@ -62,3 +62,20 @@ this file tracks names, not line-level contents.)
 
 ### Analysis probes & reports (produce a specific artifact)
 - `belief_headtohead.py`, `cost_report.py`, `text_miner_baselines.py`.
+
+### Smoke tests
+
+Two tiers each, and the default tier of both is free and opens no socket.
+
+- `smoke_end_to_end.py` — the scoring path itself: an INDRA Statement and its
+  Evidence in, a calibrated belief out. The hermetic tier checks that every
+  registry entry constructs or refuses for a named missing credential, that
+  every backend is reachable, that the in-process vLLM engine still batches past
+  the wall-pool width, that the reply parser handles the shapes models emit, and
+  that the lifted per-evidence aggregation reduces exactly to the published
+  model. `--live BASE_URL MODEL_ID` scores for real against a server you are
+  already running.
+- `smoke_bedrock_lanes.py` — the paid provider lanes: constructs each, builds
+  the exact request body its backend would send, and checks the raw transport's
+  pinned route and CA bundle. `--live` issues one minimal priced request per
+  model and requires `--yes`.
