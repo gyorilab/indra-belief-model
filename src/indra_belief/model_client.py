@@ -21,8 +21,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-# The transport's default sampling temperature is 0.1. Downstream prose calls
-# the scoring call "deterministic" to mean fixed-low-temperature, not zero
+# The transport's default sampling temperature is 0.1 — low, not zero, so two
+# calls on one input can disagree and a run reproduces in METHOD rather than
+# byte-for-byte. Call sites state the temperature rather than calling the call
+# "deterministic", a word that reads as temperature 0
 # (`src/indra_belief/scorers/monolithic/scorer.py::_score_categorical`,
 # `src/indra_belief/scorers/monolithic/scorer.py::score_statement`). The other
 # literal mirrors remain local rather than importing this transport constant:
@@ -393,9 +395,9 @@ LOCAL_MODELS: dict[str, dict] = {
     #
     # Wire behavior for "none" in bedrock_*_transport.py:
     #   Responses lane (gemma): `build_bedrock_responses_body` at
-    #     bedrock_responses_transport.py:243-244 omits the `reasoning` key when
+    #     bedrock_responses_transport.py::build_bedrock_responses_body omits the `reasoning` key when
     #     reasoning_effort is "none". `_validate_request_body` at
-    #     bedrock_responses_transport.py:275-276 rejects a literal
+    #     bedrock_responses_transport.py::_validate_request_body rejects a literal
     #     reasoning.effort=="none".
     #   Chat lane (glm-5): the twin declares `strict_openai_compat: True`, so
     #     `reasoning_wire_keys(effort, strict=True)` returns

@@ -3,7 +3,7 @@
 ``scripts/calibration_ship_gate.py`` imports this module as ``c1`` and calls
 ``c1.fit_reader_profile`` when fitting each reader at line 585 and
 ``c1.metric_block`` when evaluating each belief arm at line 388.
-``tests/test_soft_belief.py:77`` pins ``soft_belief`` as the reference that the
+``tests/test_soft_belief.py`` pins ``soft_belief`` as the reference that the
 production ``statement_belief`` path must reproduce.
 
 The confusion cells are authoritative for the reader profile. From them,

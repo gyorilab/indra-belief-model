@@ -687,7 +687,7 @@ def _score_categorical(
     needs_tool_use = flagged
     grounding_status = "flagged" if flagged else "all_match"
 
-    # --- Tier 2: single LLM call (deterministic, temp=0.1) ---
+    # --- Tier 2: single LLM call at temperature 0.1 ---
     if needs_tool_use:
         result = _score_with_tools(client, record, max_tokens, variant=variant,
                                    margin_out=margin_out)
@@ -780,8 +780,10 @@ def score_statement(
 ) -> dict:
     """Score a single INDRA Statement + Evidence pair.
 
-    Single deterministic LLM call per (Statement, Evidence) at temp=0.1
-    (with a tool-use variant when grounding is flagged).
+    One LLM call per (Statement, Evidence) at temperature 0.1, plus a
+    tool-use variant when grounding is flagged. Low temperature, not zero:
+    repeated calls on the same input can disagree, so a run is reproducible
+    in method rather than byte-for-byte.
 
     Args:
         statement: An `indra.statements.Statement` instance. Binary types

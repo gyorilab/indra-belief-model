@@ -1,8 +1,8 @@
 """Hybrid log-odds belief ship gate.
 
 G2 is this repository's name for the four-leg gate below. Generated reports
-print it, and ``src/indra_belief/calibration_gate.py:83`` and
-``tests/test_local_reader_calibration.py:10`` cite it when referring to this
+print it, and ``src/indra_belief/calibration_gate.py`` and
+``tests/test_local_reader_calibration.py`` cite it when referring to this
 gate. This script derives a reader measurement profile from its training
 confusion cells, recomputes the hybrid log-odds belief on independent gold, and
 evaluates all four legs. Error-detection F1 with bootstrap CIs leads. This is a

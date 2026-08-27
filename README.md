@@ -548,7 +548,11 @@ Contributor-facing rules to keep the repository legible:
 
 ```
 src/indra_belief/
-  model_client.py          # Model transport (OpenAI-compat + Anthropic)
+  model_client.py          # Model transport: the ONE client. Seven backends
+                           #   (OpenAI-compat, three Bedrock lanes, local
+                           #   transformers, in-process vLLM, Anthropic)
+  vllm_offline.py          # In-process vLLM engine behind model_client's
+                           #   vllm_offline backend; batches N calls into one
   noise_model.py           # INDRA SimpleScorer (parametric belief from source priors)
   statement_belief.py      # verdicts → hybrid log-odds score (hard-gate fallback)
   curation.py              # INDRA-curation gold rule + hash bridge + index
@@ -557,7 +561,7 @@ src/indra_belief/
   scorers/
     scorer.py              # Public score_statement / score_evidence + benchmark main
     monolithic/            # The scorer (the only architecture)
-    _shared.py             # Greek normalization + JSON extraction, shared
+    _shared.py             # JSON extraction from a model reply, shared
       scorer.py            # MONO_VARIANT dispatch (default disconfirm_relnature_rf)
       _prompts.py          # Baseline six-rule system prompt
       _prompts_disconfirm.py  # Commit-first disconfirm prompt + backstop
