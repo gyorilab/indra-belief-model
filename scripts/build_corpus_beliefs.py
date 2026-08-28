@@ -19,8 +19,9 @@ This joins the two halves of a shard pair and finishes the job:
 WHERE THE LOGITS ENTER
 ----------------------
 A persisted ``probe_delta_logit`` is a RAW log-odds and is meaningless across
-serving stacks: the same weights read in-process and over HTTP correlate at
-r=0.955 but differ 2.4x in range and disagree in sign on 10% of rows. So it is
+serving stacks: over 1,075 paired reads the same weights in-process and over
+HTTP correlate at r=0.935, differ 2.2x in range, and DISAGREE IN SIGN on 20.6%
+of rows (`data/probe_battery/http_base1_scores.json`). So it is
 converted to an additive weight ONLY through an isotonic registered for THIS
 (model, served_model_id), and only then does ``statement_belief`` consume it --
 which it already does by default, with no flag, wherever a row carries one.
