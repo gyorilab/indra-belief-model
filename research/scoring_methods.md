@@ -319,6 +319,32 @@ against alternatives ($w_s = 1/\sqrt{n_s}$, which assumes partial correlation; o
 a fitted $w_s$) on held-out data. It should be a measured choice, not an
 inherited one.
 
+**Tested, 2026-08-29 — the choice does not bind, and the reason narrows the
+question.** The per-read contribution $\ell(v)$ takes one of three values per
+source: $\max(\text{log\_lr\_confirm},\ \text{source\_logodds})$ for a
+confirmation, $\text{log\_lr\_reject}$ for a rejection, and
+$\text{source\_logodds}$ for an unscored read
+(`src/indra_belief/noise_model.py:326-330`). It does not vary with the *content*
+of the read — only with its verdict. So on a single-source statement, mean, sum,
+$1/\sqrt{n_s}$ and any fitted $w_s$ all return that source's single value, and
+the pooling rule is unreachable. Only a multi-source statement, or a source whose
+reads disagree with each other, can tell the alternatives apart at all.
+
+Restricted to the statements where the rule can change the answer, and measured
+on the pooled curation gold (not a tracked artifact — these numbers come from an
+off-tree analysis of a collaborator's 3.25M-statement corpus run), replacing the
+mean moved error-detection F1 by $+0.0021$, inside the noise; summing instead
+moved it by $-0.0075$. An earlier $+0.0207$ for the same substitution was an
+artifact of scoring it in-sample and over statements the rule cannot reach.
+
+The mean survives, but it survives the way an unexercised branch passes review.
+The result relocates the assumption rather than discharging it: $w_s$ was never
+the binding constraint on statement belief — the two-valued $\ell$ upstream of it
+is. A pooling rule can only combine the information its inputs carry, and a
+per-read weight that ignores everything about a read except its verdict carries
+one bit. The lever is §2 and §3 — what the reader emits, and how that is mapped —
+not §4.4.
+
 ---
 
 ## 5. The proposal is a strict generalization of the deployed estimator
@@ -473,7 +499,9 @@ complement.
    to add. Different readers on the same sentence share the sentence, so this is
    an approximation. It is the same assumption INDRA's noisy-OR already makes.
 2. **Perfect correlation within a source** ($w_s = 1/n_s$). Conservative, and
-   testable (§4.4).
+   tested (§4.4): the alternatives are within noise of it, because $\ell$ is
+   two-valued and the rule is unreachable on a single-source statement. The
+   assumption stands, but it is not what limits statement belief.
 3. **The calibration map transfers.** $\hat c$ is fitted on one gold set and
    applied elsewhere; if the new corpus differs in difficulty or composition, the
    map may not hold. Requires a held-out calibration set and periodic refitting.
