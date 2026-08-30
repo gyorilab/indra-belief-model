@@ -448,7 +448,7 @@ def _fmt(x, nd=3):
 def render(results) -> str:
     L = []
     e = L.append
-    e("# Calibration C2.5 — G2 ship gate (hybrid log-odds belief)")
+    e("# G2 ship gate — hybrid log-odds belief")
     e("")
     e("The lead leg — **error-detection F1 with bootstrap CIs** — plus the consolidated "
       "G2 verdict. A DETERMINISTIC recompute of production statement belief from stored "
@@ -514,7 +514,7 @@ def render(results) -> str:
           f"({'✓' if g['errf1']['pass'] else '✗'}); E4 byte-identity "
           f"{'✓' if g['e4_identity']['pass'] else '✗'}.")
         e("")
-        e("### Calibration + discrimination (3-arm; ECE/AUROC are the C1.2 legs)")
+        e("### Calibration + discrimination (3-arm; the ECE and AUROC legs)")
         e("")
         e("| arm | ECE | AUROC | AUPRC | Brier | resolution (diag) |")
         e("|---|---|---|---|---|---|")
