@@ -68,3 +68,25 @@ def test_eight_concurrent_calls_fit_without_any_reservation():
         futures = [callers.submit(client._invoke_with_wall_timeout, barrier.wait, 30)
                    for _ in range(8)]
         assert sorted(f.result() for f in futures) == list(range(8))
+
+
+def test_probe_path_finds_the_wall_timeout_by_its_current_name():
+    """`src/indra_belief/probes/reader.py::read_probe` reaches the circuit
+    breaker by duck-typing a PRIVATE name:
+
+        wall_timeout = getattr(client, "_invoke_with_wall_timeout", None)
+        ...
+        if callable(wall_timeout): ...
+        else: response = create(**request)
+
+    A rename would make that getattr return None and take the else branch, which
+    issues the call with no wall bound at all. The SDK's own `timeout` is
+    per-connection and per-chunk and does not cap total wall time — that is why
+    the wrapper exists — so the probe would lose its only real bound, silently
+    and with every test still green. This pins the coupling until the private
+    reach-through is replaced by a public one.
+    """
+    assert callable(getattr(ModelClient, "_invoke_with_wall_timeout", None)), (
+        "probes/reader.py::read_probe looks this name up with getattr and falls "
+        "back to an UNBOUNDED call when it is missing — rename it there too"
+    )

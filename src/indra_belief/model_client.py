@@ -1393,9 +1393,15 @@ class ModelClient:
         workers than that declares it with `ModelClient.reserve_wall_pool()`
         before starting them (`scripts/run_vllm_gold_eval.py::main`).
 
-        Only SDK and local backends are dispatched here — never a billed
-        dependency-free Bedrock transport, which runs synchronously in the
-        caller so a timeout cannot abandon a live paid request.
+        Exactly three backends are dispatched here: `openai_compat` (the
+        registry default when an entry declares no `backend` key, so most
+        entries), `anthropic`, and `transformers_local`. Everything else runs
+        synchronously in the caller, for two different reasons. The billed
+        Bedrock lanes do so because a timeout cannot abandon a live paid
+        request. `vllm_offline` does so because routing it here would cap engine
+        batch fill at the pool width and destroy the batching that backend
+        exists for — asserted by `scripts/smoke_end_to_end.py`, which drives 12
+        concurrent calls and requires the engine to batch more than eight.
 
         On timeout: raise TimeoutError immediately. The in-flight thread
         is abandoned (cannot cleanly cancel a running urllib3 request);
