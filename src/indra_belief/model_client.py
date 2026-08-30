@@ -1251,17 +1251,50 @@ class ModelClient:
         response cannot outlive the configured timeout.
     In every case the request settles before control returns.
     """
-    # This class-level, process-wide pool has 8 slots shared by every instance
-    # and caller thread. Submit is followed immediately by `future.result`, so
-    # queue wait counts against the provider timeout budget; more than 8
-    # concurrent ModelClient workers can time out before their call reaches the
-    # wire. The operator-overridable gold runner defaults to 8 workers
-    # (`src/indra_belief/model_client.py::ModelClient._invoke_with_wall_timeout`,
-    # `scripts/run_vllm_gold_eval.py::_build_parser`,
-    # `scripts/run_vllm_gold_eval.py::main`).
+    # This class-level, process-wide pool is shared by every instance and caller
+    # thread. Submit is followed immediately by `future.result`, so a QUEUED task
+    # is pure loss twice over: its wait is charged to the provider timeout budget,
+    # and against a batching server it caps batch fill at the pool width no matter
+    # how many workers the caller runs. Eight is a floor, not a ceiling — a caller
+    # driving more concurrent workers must widen the pool with
+    # `reserve_wall_pool()` BEFORE starting them, or it silently gets eight-way
+    # concurrency while believing it asked for more.
     import concurrent.futures as _cf
-    _WALL_POOL = _cf.ThreadPoolExecutor(max_workers=8,
+    import threading as _threading
+    _WALL_POOL_WORKERS = 8
+    _WALL_POOL = _cf.ThreadPoolExecutor(max_workers=_WALL_POOL_WORKERS,
                                         thread_name_prefix="mc-wall")
+    _WALL_POOL_LOCK = _threading.Lock()
+
+    @classmethod
+    def reserve_wall_pool(cls, workers: int) -> int:
+        """Widen the shared wall-timeout pool to admit `workers` concurrent calls.
+
+        Returns the resulting pool width. GROWS ONLY: a smaller request is a
+        no-op, so one caller cannot starve another that already reserved more.
+
+        Call this before spawning the worker threads, not from inside them. The
+        pool object is replaced rather than resized (a ThreadPoolExecutor cannot
+        be resized); tasks already running on the old executor finish there and
+        its threads exit when they drain, which is why growing mid-flight is safe
+        but shrinking is not offered.
+
+        The cost of a wider pool is a higher ceiling on abandoned threads: a
+        wall-timeout cannot cancel a running request, so each timeout may strand
+        one thread until the transport reaps it, and the pool width caps how many
+        can be stranded at once. That ceiling is not new work — a caller running N
+        concurrent workers has already committed to N threads — but it is the
+        reason this is an explicit reservation rather than an unbounded pool.
+        """
+        if workers <= cls._WALL_POOL_WORKERS:
+            return cls._WALL_POOL_WORKERS
+        with cls._WALL_POOL_LOCK:
+            if workers <= cls._WALL_POOL_WORKERS:
+                return cls._WALL_POOL_WORKERS
+            cls._WALL_POOL = cls._cf.ThreadPoolExecutor(
+                max_workers=workers, thread_name_prefix="mc-wall")
+            cls._WALL_POOL_WORKERS = workers
+        return cls._WALL_POOL_WORKERS
 
     def __init__(
         self,
@@ -1350,16 +1383,15 @@ class ModelClient:
     def _invoke_with_wall_timeout(self, fn, timeout: int, *args, **kwargs):
         """Run `fn(*args, **kwargs)` with a hard wall-time cap.
 
-        The class-level pool has eight slots shared by every ModelClient
-        instance and caller thread in the process. `future.result(timeout=...)`
-        is called immediately after submit, so executor queue wait is charged
-        to the provider timeout budget in practice. More than eight concurrent
-        ModelClient workers can therefore raise TimeoutError before their call
-        reaches the wire. The gold runner defaults to eight workers but permits
-        operator overrides
-        (`src/indra_belief/model_client.py::ModelClient._invoke_with_wall_timeout`,
-        `scripts/run_vllm_gold_eval.py::_build_parser`,
-        `scripts/run_vllm_gold_eval.py::main`).
+        The class-level pool is shared by every ModelClient instance and caller
+        thread in the process, and is eight slots wide until someone widens it.
+        `future.result(timeout=...)` is called immediately after submit, so
+        executor queue wait is charged to the provider timeout budget in
+        practice: running more concurrent ModelClient workers than the pool has
+        slots throttles them to the pool width, and at the extreme raises
+        TimeoutError before the call reaches the wire. A caller that drives more
+        workers than that declares it with `ModelClient.reserve_wall_pool()`
+        before starting them (`scripts/run_vllm_gold_eval.py::main`).
 
         Only SDK and local backends are dispatched here — never a billed
         dependency-free Bedrock transport, which runs synchronously in the
@@ -1369,7 +1401,7 @@ class ModelClient:
         is abandoned (cannot cleanly cancel a running urllib3 request);
         urllib3's transport timeout will eventually reap it. The leak is
         bounded — at most one zombie thread per timeout incident, and
-        the pool's max_workers=8 caps total concurrent leaks.
+        the current pool width caps how many can be stranded at once.
 
         The OpenAI SDK's `timeout` field is per-connection / per-chunk and
         does NOT bound total wall time on streaming generations: a call can

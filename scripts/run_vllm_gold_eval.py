@@ -494,6 +494,12 @@ def main() -> int:
     index.load()
 
     client = ModelClient(args.model)
+    # ModelClient routes non-Bedrock backends through a process-wide wall-timeout
+    # pool that is eight slots wide by default. Without this reservation, asking
+    # for more than eight workers below buys nothing: the extra threads queue on
+    # that pool, the server sees eight concurrent requests instead of --workers,
+    # and the wait is charged to each call's timeout budget.
+    ModelClient.reserve_wall_pool(args.workers)
 
     def resolve_job(item: tuple[int, dict[str, Any]]):
         row_index, gold_row = item
