@@ -714,6 +714,10 @@ def _run(args: argparse.Namespace) -> int:
     ) as progress:
         _progress(progress, "started", **meta)
         iterator = iter(_items(stmts, done))
+        # The default of 1 never reaches it, but an operator raising --workers
+        # past the wall-timeout pool's eight slots would otherwise get eight-way
+        # concurrency and no signal that the rest were queueing.
+        ModelClient.reserve_wall_pool(args.workers)
         executor = futures.ThreadPoolExecutor(
             max_workers=args.workers, thread_name_prefix="rasmachine"
         )
