@@ -2,7 +2,7 @@
   "dataset_id": "gene_corpus_uniform_400_llm_curated",
   "artifact": {
     "path": "data/benchmark/gene_corpus_uniform_400_llm_curated.jsonl",
-    "sha256": "4ffde717a1887d6b342ffb34d5f7ebad843bf8f3390344daf009554ef8fe1fb6"
+    "sha256": "cebd09630405fda498dc4b414da134c1f84a26a2009b14478e932ad928ab9617"
   },
   "what_it_is": "A uniform random sample of statements from a 3,250,298-statement gene-gene corpus run, one evidence drawn uniformly per statement, each judged on whether the evidence sentence ALONE backs the statement.",
   "NOT_human_gold": "Verdicts are LLM judgements, not human curation. Do not pool these rows with external_curator_gold_* or eval_curation_*, and do not call them gold. They measure a population rate; they are not a human label set.",
@@ -27,18 +27,32 @@
   },
   "counts": {
     "n": 400,
-    "correct": 117,
-    "incorrect": 283,
-    "error_rate": 0.7075,
+    "correct": 112,
+    "incorrect": 288,
+    "error_rate": 0.72,
     "error_rate_95ci": [
-      0.661,
-      0.75
+      0.674,
+      0.762
     ]
   },
   "belief_relationship": {
-    "auroc": 0.826,
-    "correct_at_belief_le_0.5": "13% (n=264)",
-    "correct_at_belief_gt_0.5": "60% (n=136)"
+    "auroc": 0.824,
+    "correct_at_belief_le_0.5": "12% (n=264)",
+    "correct_at_belief_gt_0.5": "58% (n=136)",
+    "indra_db_belief_auroc_same_statements": 0.566
   },
-  "created": "2026-08-31"
+  "created": "2026-08-31",
+  "review": {
+    "reviewers": "every label re-examined by an independent reviewer, then every review assessed by a second independent pass",
+    "flipped": [
+      126,
+      150,
+      155,
+      253,
+      388
+    ],
+    "flipped_direction": "all correct -> incorrect",
+    "flip_reasons": "grounding errors (DBP = dibutyl phthalate; TCF-4 = TCF7L2; galP = E. coli permease; SR-A vs 'sra'), one methods-only sentence",
+    "note": "reviewer batches sometimes wrote final_verdict='correct' to mean 'the label is correct'; the assessment pass caught all such cases, so no label changed on that basis"
+  }
 }

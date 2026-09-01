@@ -73,12 +73,15 @@ A uniform random draw of 400 statements from a 3,250,298-statement gene-gene
 corpus run, one evidence sampled uniformly per statement, judged on whether the
 evidence sentence ALONE backs the statement. Not class-balanced, no selection on
 the label, so unlike the sets above it *does* carry a population rate:
-**70.8% incorrect [66.1, 75.0]**. Belief ranks that outcome at AUROC 0.826 —
-13% correct at belief <= 0.5, 60% above it.
+**72.0% incorrect [67.4, 76.2]**. Belief ranks that outcome at AUROC 0.83 —
+13% correct at belief <= 0.5, 58% above it; the INDRA DB belief on the same
+statements ranks at 0.56.
 
 **The verdicts are LLM judgements, not human curation.** Two independent judges
 agreed on 376/390 (96.4%) with a third adjudicating the rest, against a written
-standard calibrated on ten hand-curated items. That is enough to estimate a rate;
+standard calibrated on ten hand-curated items; every label was then re-examined
+by a reviewer and every review by an assessor, which moved five labels (all
+correct -> incorrect, four of them grounding errors). That is enough to estimate a rate;
 it is not a human label set. Do not pool these rows with `external_curator_gold_*`
 or `eval_curation_*`, and do not call them gold. `.meta.json` records the seed,
 the frame, the standard, and the retrieval endpoint.
