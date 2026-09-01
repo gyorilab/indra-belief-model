@@ -13,7 +13,10 @@ every consumer reads it.
 Two producers is correct: their inputs genuinely differ (a live record resolves
 entities through Gilda and renders few-shot examples at call time; a replay row
 carries pre-rendered parts and resolves its prompt components by sha256 ref).
-Two ASSEMBLERS was the defect.
+Two ASSEMBLERS was the defect. The harness that consumed the batch producer has
+since been retired; the producer stays because `data/comparison/grounding_replay/`
+remains a published artifact, and `tests/test_prepared_execution_parity.py`
+replays it to hold the live assembly to the digests those runs were scored under.
 
 THE ONE STRUCTURAL CONSTRAINT: the relation-nature note is only known AFTER the
 relation sub-call returns, so a PreparedExecution cannot be a frozen message
@@ -36,8 +39,8 @@ when exactly one parser reads every reply. The constant below states that; a
 per-instance copy of it only obscured it.
 
 Home. Top level of the package, next to `hashing.py` / `metrics.py` /
-`curation.py`, because both `scorers.monolithic` and
-`comparison.replay` consume it and neither may own it.
+`curation.py`, because `scorers.monolithic`, `data.scoring_record` and
+`scripts/run_vllm_processed_shards.py` all consume it and none may own it.
 
 Relation text. `relation_user_message` and `relation_mismatch_note` are the only
 copies of the relation sub-call question and mismatch-note rendering. A byte
@@ -55,17 +58,12 @@ from indra_belief.hashing import canonical_sha256
 class ContractError(ValueError):
     """A committed contract no longer holds.
 
-    Defined here rather than in `comparison.contracts` for the same reason this
-    module owns the request: BOTH sides raise it and neither may own it.
     `ReplayError` below is a ContractError, and a base class may not live deeper
-    in the tree than the subclass that needs it — reaching into the comparison
-    harness for it was the one import that ran core -> research, in a module
-    whose own Home note already argues the rule it was breaking.
-
-    `comparison.contracts` re-exports the name, exactly as `comparison.replay`
-    re-exports `ReplayError`, so every `from ...comparison.contracts import
-    ContractError`, every `except ContractError`, `RunnerError(ContractError)`
-    and every `pytest.raises(ContractError)` still binds THIS class.
+    in the tree than the subclass that needs it — reaching outward into the batch
+    harness for this base was the one import that ran core -> research, in a
+    module whose own Home note already argues the rule it was breaking. That
+    harness is gone; the class stays in the core, pinned there by
+    `tests/test_import_boundary.py`.
     """
 
 # The main call's `kind` is a function of the route and nothing else. A route
@@ -146,10 +144,8 @@ def relation_mismatch_note(
 class ReplayError(ContractError):
     """A frozen replay substrate no longer reproduces its committed request.
 
-    Defined here rather than in `comparison.replay` because `assert_replay_digests`
-    — the only place the digest contract is enforced — lives here now.
-    `comparison.replay` re-exports the name, so every existing
-    `except ReplayError` / `pytest.raises(ReplayError)` still binds this class.
+    Raised by `prepare_from_replay_row` and by `assert_replay_digests` — the only
+    place the digest contract is enforced — so it lives beside them.
     """
 
 

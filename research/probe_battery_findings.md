@@ -2,8 +2,9 @@
 
 > **Provenance note (2026-08-25).** This is a historical record. The repository
 > was later cut to prod infrastructure plus the future-LLM compare loop, so some
-> paths cited below name code that no longer exists — the comparison harness, the
-> spend ledger, the viewer, the paper-replication lane, the probe battery. The
+> paths cited below name code that no longer exists, `scripts/eval_probe_battery.py`
+> among them; `research/README.md` tracks which documents still describe live code.
+> The battery itself is live, at `src/indra_belief/probes/battery.py`. The
 > measurements and conclusions stand as recorded; git history holds the code they
 > were measured against. No guard checks these citations any more.
 

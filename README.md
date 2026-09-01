@@ -115,13 +115,27 @@ Headline baselines measured during iteration: gemma-4-26b + adaptive bank + voti
 
 ### Dependencies
 
-```bash
-pip install gilda indra openai anthropic   # anthropic only for the claude-* path
+Python 3.10+ (CI pins 3.12). From a clean checkout:
 
-# Download the benchmark corpus (460MB, not included in repo)
-# Place at data/benchmark/indra_benchmark_corpus.json.gz
-# Source: https://doi.org/10.5281/zenodo.7559353
+```bash
+python -m venv .venv && . .venv/bin/activate
+python -m pip install -e ".[dev]"        # gilda + indra + openai/anthropic + test and script deps
+
+python -m pytest -q                          # 15 tests skip without the untracked data tree
+python scripts/check_contamination.py        # few-shot examples must not overlap an eval file
+python scripts/check_import_boundary.py      # no core module may import the research harness
+python scripts/smoke_end_to_end.py           # 5 checks, hermetic: no socket, no credential
 ```
+
+CI runs `pytest` and the contamination guard (`.github/workflows/ci.yml`); the
+boundary guard and the smoke check are local. `PYTHONPATH=src` substitutes for
+the editable install when running the scorer and the scripts — the form used
+throughout this README — but the test suite still needs the `[dev]` extra for its
+analysis dependencies.
+
+The benchmark corpus (460MB) is not in the repo: download it from
+[Zenodo 7559353](https://doi.org/10.5281/zenodo.7559353) and place it at
+`data/benchmark/indra_benchmark_corpus.json.gz`.
 
 ### Model configuration
 
@@ -374,9 +388,11 @@ source reliability alone. Correlated reads from the same source are averaged,
 independent sources are summed with the explicit fit-set prior, and a sigmoid
 converts the resulting log-odds to belief.
 
-Production currently enables two exact configurations: remote Gemma with prompt
-fingerprint `b44638216740…` (4/4 on the independent holdout) and reasoning-first
-Bedrock Gemma with `07377e338ff2…` (4/4 on external curator gold). Remote MedPsy's
+Production registers seven exact configurations and enables six: remote Gemma
+with prompt fingerprint `b44638216740…`, reasoning-first Bedrock Gemma with and
+without verbalized confidence (`07377e338ff2…`, `bad4cb2d9f89…`), deliberated
+local MLX Gemma (`07377e338ff2…`), and the verdict-only local MLX and vLLM
+readers (`cd14d9e74d2e…`). Remote MedPsy's
 `b44638216740…` profile remains a measured diagnostic candidate but is disabled:
 its matched holdout failed the ECE leg (3/4), while its external run used the
 different `07377e338ff2…` prompt and cannot validate that fit. Missing, mixed, or
@@ -393,6 +409,16 @@ mixed.
 
 The `soft=` argument name is retained for API compatibility; it now accepts this
 measurement profile, not survival weights.
+
+To drive that chain from an existing INDRA pipeline instead of assembling it by
+hand, `src/indra_belief/belief_scorer.py::LLMBeliefScorer` implements INDRA's own
+`BeliefScorer` socket — `BeliefEngine(scorer=LLMBeliefScorer(client))` — and
+resolves its calibration profile from the client and variant by itself. It reads
+evidence text where INDRA's other scorers count sources, so it spends one
+provider call per evidence: check `estimate_calls(statements)` first. It raises
+`UnscorableStatement` rather than returning a float it did not measure, because a
+missing belief reads back as `1.0`; `score_statements_detailed` returns the
+tallies and a `float | None` belief.
 
 ### Representative INDRA curations
 
@@ -555,6 +581,7 @@ src/indra_belief/
                            #   vllm_offline backend; batches N calls into one
   noise_model.py           # INDRA SimpleScorer (parametric belief from source priors)
   statement_belief.py      # verdicts → hybrid log-odds score (hard-gate fallback)
+  belief_scorer.py         # LLMBeliefScorer: the above as an indra.belief.BeliefScorer
   curation.py              # INDRA-curation gold rule + hash bridge + index
   metrics.py               # Binary confusion P/R/F1 + ECE calibration
   results.py               # Run-result loading + row shaping

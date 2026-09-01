@@ -3,12 +3,13 @@
 The single source of truth for **model size**, the static capability axis that
 sits beside cost. Like the cost price table, this is curated, sourced, and baked
 into each run's export (`export_meta.model_meta`) so it TRAVELS with the run —
-the viewer holds no model-size table of its own.
+`scripts/frontier_report.py` reads it off each export and holds no model-size
+table of its own.
 
 Two honesty rules, mirroring the cost contract:
   - Closed-weight models (gpt-5.5, claude-*) have UNDISCLOSED parameter counts.
-    Their size is `status="unknown"`, never a guessed number — the viewer drops
-    them to an "unknown size" rail rather than plotting a fabricated point.
+    Their size is `status="unknown"`, never a guessed number — a size axis drops
+    them rather than plotting a fabricated point.
   - MoE models carry BOTH `total_b` (headline size, the plotted axis) and
     `active_b` (params per forward pass); dense models have `active_b=None`.
 
@@ -49,9 +50,10 @@ MODEL_PARAMS: dict[str, tuple[float, float | None, str]] = {
 # Param keys whose size is an ESTIMATE/inference, not a confirmed published spec
 # for that exact model — exact count undisclosed (glm-5), inferred from the base
 # version (deepseek-v3.2←V3, kimi-k2.5←K2), a family approximation (minimax), or
-# provisional (no recorded run). Surfaced so the plot can render these as hollow
-# dots (estimated x) the same way estimated COST renders hollow — one rule, both
-# axes. Published-exact sizes (gemma, qwen3, nemotron, gpt-oss, medpsy) are NOT here.
+# provisional (no recorded run). Exported beside the cost side's "estimated"
+# status so one rule covers both axes: a reader can tell an inferred x from a
+# published one. Published-exact sizes (gemma, qwen3, nemotron, gpt-oss, medpsy)
+# are NOT here.
 ESTIMATED_SIZE_KEYS: frozenset[str] = frozenset({
     "deepseek-v3.2",
     "kimi-k2.5",
@@ -109,7 +111,7 @@ def model_size(model: str) -> dict:
             "is_open": True,
             # estimated: the size is inferred/undisclosed for this exact model
             # (vs a confirmed published spec) — the size-axis analogue of an
-            # estimated cost. Drives the hollow-dot rendering.
+            # estimated cost.
             "estimated": key in ESTIMATED_SIZE_KEYS,
             "source": source,
         }

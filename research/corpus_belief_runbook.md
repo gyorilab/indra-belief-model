@@ -1,11 +1,19 @@
 # Corpus-scale belief with logits — runbook
 
-> **Status: pipeline complete and rehearsed end to end 2026-08-18; the
-> production calibration is NOT yet fitted.** Every stage below has been run
-> against real production statements on a local MLX gemma-4-26b. No profile
-> exists for `vllm-gemma-4-26b`, so a corpus run today produces valid verdicts and
-> HARD-GATE beliefs. Fitting that profile is stage 3, and it is the one stage
-> that must run on the target hardware.
+> **Status: pipeline complete and rehearsed end to end 2026-08-18; fitted on the
+> target stack, registered only in part.** Every stage below has been run against
+> real production statements — on a local MLX gemma-4-26b, and for stage 3 on the
+> vLLM stack itself. `vllm-gemma-4-26b` + `verdict_only` has a registered belief
+> profile; its in-call isotonic is fitted and gated but its artifact is withheld
+> (§Known limits).
+
+So a corpus run against `vllm-gemma-4-26b` today:
+
+| the run | what it produces |
+|---|---|
+| default, `--variant verdict_only` | verdicts and profile-weighted beliefs; margins are persisted but weight nothing |
+| stage 4 `--require-calibrated` | refuses: no isotonic is registered for this stack |
+| `--variant disconfirm_relnature_rf` | verdicts and HARD-GATE beliefs — no profile is fitted for that prompt on this reader |
 
 Turns 60M INDRA evidences into a `{stmt_hash: belief}` table, using the LLM's
 own verdict-token logits as a per-evidence weight of evidence.
@@ -302,8 +310,8 @@ named by ROUTE for that reason — `margin_route` says which quantity the curve
 was fitted on, and a key that hardcoded "in-call" contradicted it on the
 `--variant disconfirm_relnature_rf` path.
 
-Until stage 3 lands this prints `NONE — every row keeps its verdict weight`,
-which is the honest state and still worth running: correct-but-uncalibrated
+Until that row is registered this prints `NONE — every row keeps its verdict
+weight`, which is the honest state and still worth running: correct-but-uncalibrated
 beats absent.
 
 ## Failure modes the pipeline refuses rather than absorbs
@@ -360,10 +368,9 @@ Each of these once produced a well-formed artifact and a zero exit code.
   registered. The first real exercise of the vLLM reader is the run itself.
 - **The vLLM isotonic is not registered yet.** `incall_vllm.json` is fitted and
   gated but lives on cluster scratch, so the row in `_INCALL_CALIBRATIONS` is
-  deliberately withheld until the file is committed beside it. Stage 4 with
-  `--require-calibrated` therefore refuses — correctly, and by its own message
-  rather than a `FileNotFoundError`. Scoring is unaffected: it gates on the
-  profile alone, which IS registered.
+  deliberately withheld until the file is committed beside it, for the reason §3
+  gives. Scoring is unaffected: it gates on the profile alone, which IS
+  registered.
 - **The vLLM profile is the weakest-cited row in the table.** Its counts and
   gold digest are pinned, but its fit ran on `/scratch` with no `--report`
   artifact, so the Brier and ECE in its note cannot be re-derived by anyone

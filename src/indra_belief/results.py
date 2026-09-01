@@ -1,8 +1,8 @@
 """Run-output enrichment + the bucket taxonomy — the single source of truth.
 
 Turns a raw monolithic scoring run (``data/results/<run>.jsonl``) into the
-consumable export the viewer *and* collaborators read, without any one-off
-script in the loop:
+consumable export collaborators *and* ``scripts/frontier_report.py`` read,
+without any one-off script in the loop:
 
   per_evidence.jsonl  one (statement, evidence) row — RasMachine belief vs. our
                       per-evidence score, the model's verdict/confidence/reasoning,
@@ -339,7 +339,7 @@ def call_log_cost(call_log: list[dict]) -> dict:
 
 # Free chain-of-thought can run long (gemma plaintext ~1.5k chars); clip it for
 # the per-evidence export the way `reasoning` is clipped, but keep the full length
-# so the viewer can show a "truncated" affordance. The status / tokens /
+# so a reader can tell a clipped trace from a complete one. The status / tokens /
 # committed-justification fields are small and always kept.
 _FREE_COT_CLIP = 4000
 
@@ -349,7 +349,7 @@ def compact_reasoning_trace(rt: Any) -> dict | None:
 
     Keeps the small, always-useful fields (status, reasoning_tokens, provenance,
     committed support/objection) verbatim and clips the free CoT. Returns None
-    for legacy rows (no trace) so the viewer can distinguish "no trace recorded"
+    for legacy rows (no trace) so a reader can distinguish "no trace recorded"
     from a present-but-empty trace."""
     if not isinstance(rt, dict):
         return None
@@ -614,8 +614,8 @@ METRICS_SCHEMA_VERSION = 4  # stamped into metrics.json by src/indra_belief/resu
 
 
 def _metric_block(scores: list[float], labels: list[bool], tau: float) -> dict:
-    """The stable per-arm metric unit the viewer reads: {n, ece, auroc, auprc, brier,
-    reliability, resolution, uncertainty, confusion{tp,fp,fn,tn}, bins[8]}.
+    """The stable per-arm metric unit ``metrics.json`` publishes: {n, ece, auroc,
+    auprc, brier, reliability, resolution, uncertainty, confusion{tp,fp,fn,tn}, bins[8]}.
 
     All math reuses src/indra_belief/metrics.py (the same definitions
     calibration_ship_gate.py goes through → served numbers cross-check exactly).
@@ -1116,8 +1116,8 @@ def build_run_export(
     }
 
     # Per-run gold: baked in at export time from the run's OWN curation source,
-    # so the viewer reads gold straight off the run (switches per run, nothing
-    # global). None → no gold key written, viewer falls back to its legacy index.
+    # so gold reads straight off the run (switches per run, nothing global).
+    # None → the export's `gold` block is null and both metric tiers are named-empty.
     gold_map = load_gold_map(gold_path) if gold_path else None
 
     rows: dict[tuple[int, int], dict] = {}
@@ -1245,7 +1245,7 @@ def build_run_export(
             "gen_out_tokens": out_tok,
             # Uniform CoT capture (status + tokens + provenance + committed
             # support/objection). None on legacy rows scored before the trace
-            # existed; the viewer falls back to `reasoning` then.
+            # existed; `reasoning` is the fallback there.
             "reasoning_trace": rtrace,
             # observed LLM cost (computed once here, where the full call_log is in
             # scope). output_tokens is the call_log SUM (distinct from tokens /
@@ -1482,8 +1482,9 @@ def build_run_export(
             "usd_per_1k_evidence": (round(cost_total / n_rows_costed * 1000, 4)
                                     if n_rows_costed > 0 else None),
         },
-        # 'soft_calibration' (not 'calibration') to avoid collision with the
-        # viewer's existing Validity.calibration (belief-vs-INDRA residual {n,mae,bias}).
+        # 'soft_calibration' (not 'calibration') so it never collides with the
+        # belief-vs-INDRA residual {n,mae,bias} that already went by that name;
+        # the key is frozen by every export already written.
         "soft_calibration": _soft_calibration_block(
             model, reader_configuration, calib, fitted_calib
         ),
@@ -1497,8 +1498,8 @@ def build_run_export(
             ),
         },
         # Ground-truth model size (params), so F1 can be read over scale, not just
-        # cost. Static model metadata baked per-run (travels with the run; viewer
-        # holds no size table). Closed models -> status 'unknown' (never guessed).
+        # cost. Static model metadata baked per-run (travels with the run; readers
+        # hold no size table). Closed models -> status 'unknown' (never guessed).
         "model_meta": model_size(model or "unknown"),
         # v6: + metrics.json calibration products (Tier-1/Tier-2) + per-statement
         # three-way belief (belief_hard/parametric/soft + belief_verdict_statement)
@@ -1532,7 +1533,7 @@ def write_run_export(
     """Build + write the export for ``run_path``. Returns the meta dict.
 
     ``out_dir`` defaults to ``data/exports/<run_id>/`` so each run gets its own
-    self-describing export the viewer discovers by globbing ``export_meta.json``.
+    self-describing export, discoverable by globbing ``export_meta.json``.
     ``gold_path`` (optional) bakes per-run gold from that curation source.
     """
     per_ev, per_stmt, meta, metrics = build_run_export(
@@ -1548,8 +1549,8 @@ def write_run_export(
         json.dump(per_stmt, f, ensure_ascii=False)
     with open(os.path.join(out_dir, "export_meta.json"), "w") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
-    # The per-run calibration-product contract the viewer serves
-    # byte-exact (no downstream recompute).
+    # The per-run calibration-product contract, served byte-exact
+    # (no downstream recompute).
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(metrics, f, ensure_ascii=False, indent=2)
     return meta

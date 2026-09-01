@@ -1,7 +1,7 @@
 # Belief scoring: methods
 
 A self-contained account of how a belief score is computed, what each step
-assumes, and what we propose to change. Every term is defined at first use.
+assumes, and what is still open. Every term is defined at first use.
 Numbers are measured from this repository unless marked otherwise.
 
 ---
@@ -32,15 +32,15 @@ grains are involved:
 
 The remainder is organised as three layers: producing a per-evidence number
 (§2), making that number mean what it says (§3), and pooling across evidence
-(§4). §5 gives a reduction result linking the proposal to the deployed system,
-§6 turns source reliability into an empirical question, §7 covers evaluation,
-and §8 lists the assumptions.
+(§4). §5 shows that the continuous estimator reduces exactly to the verdict-only
+one, §6 turns source reliability into an empirical question, §7 covers
+evaluation, and §8 lists the assumptions.
 
 ---
 
 ## 2. Layer 1 — the per-evidence score
 
-### 2.1 What is deployed now
+### 2.1 The superseded design: a verbalized-confidence grid
 
 A language model is shown the claim, entity aliases, and the evidence sentence,
 and is asked to emit two categorical labels:
@@ -48,15 +48,18 @@ and is asked to emit two categorical labels:
 - **verdict** $\in$ {`correct`, `incorrect`}
 - **confidence** $\in$ {`high`, `medium`, `low`}
 
-The pair is mapped to a number through a fixed six-cell lookup table
-(`scorers/_shared.py`):
+The pair used to be mapped to a number through a fixed six-cell lookup table:
 
 | | high | medium | low |
 |---|---|---|---|
 | correct | 0.95 | 0.80 | 0.65 |
 | incorrect | 0.05 | 0.20 | 0.35 |
 
-Two properties of this design matter.
+That grid is retired. `src/indra_belief/verdict.py` still parses the confidence
+label — it remains useful audit output — but refuses to convert it into a
+probability. The per-evidence number now comes from §2.2 where the serving stack
+allows it, and from the verdict's own log-likelihood ratio (§5) otherwise. Two
+properties of the retired design are why.
 
 **It is a verbalized confidence measure.** In the uncertainty-quantification
 literature, methods that obtain uncertainty by *asking the model to state its own
@@ -67,10 +70,9 @@ that reflexive methods "in general do not demonstrate good performance", and
 that the reflexive baseline P(True) "in most cases is not better than random"
 for models below frontier scale.
 
-**The six values are assigned, not estimated.** No derivation for 0.95, 0.80,
-0.65, 0.35, 0.20 or 0.05 exists anywhere in the repository. They are an *ordinal*
-encoding of two labels, and treating them as probabilities is a modelling choice
-made silently.
+**The six values were assigned, not estimated.** No derivation for 0.95, 0.80,
+0.65, 0.35, 0.20 or 0.05 was ever recorded. They are an *ordinal* encoding of two
+labels, and treating them as probabilities was a modelling choice made silently.
 
 We observe both failure modes directly. Under the verdict-only prompt, three of
 four models emit `high` on 98–99% of executions — a confidence field that takes
@@ -78,7 +80,7 @@ one value carries no information. And when the same eight executions are scored
 through a model that exposes its output distribution, the model's own posterior
 ranges from 0.679 to 0.99997 across rows that the table maps identically to 0.95.
 
-### 2.2 What we propose
+### 2.2 What replaced it: the label's own probability
 
 Read the probability from the model's output distribution instead.
 
@@ -119,6 +121,15 @@ the label itself.
 | 0/5 | 0.70576 | 0.95 |
 | 0/4 | 0.67916 | 0.95 |
 
+This is the deployed per-evidence measurement wherever it can be obtained:
+`logprobs.label_probability` computes $p^{\text{raw}}$ from the returned
+distribution, `probes/reader.py` reads the label's log-odds at a prefilled
+verdict position, and `probes/calibration.py` maps that reading through the
+fitted map of §3 into a weight of evidence. `statement_belief` consumes the
+measured weight the moment a row carries one and the reader has a fitted
+profile; a row without one falls back, read by read, to the verdict-only weight
+of §5.
+
 ### 2.3 Availability constraint
 
 Information-based methods require access to the output distribution. The
@@ -129,6 +140,13 @@ the generated text **black-box**. Measured against our provider:
 |---|---|---|
 | GLM-5 | chat completions | returned, with top-*k* alternatives |
 | gemma-4-26b / 31b / e2b | responses | parameter accepted, **empty array returned** |
+
+Locally served gemma does return them, but only with the window widened: at a
+forced verdict position JSON formatting tokens crowd the losing label as far
+down as rank 168, past both `mlx_lm.server`'s hard cap of 11 and vLLM's default
+of 20. See
+`scripts/serve_mlx.sh` and the `max_top_logprobs` entries in `model_client.py`,
+which is where a route asserts it was launched that way.
 
 If a model cannot be made to return them, the black-box substitute in the same
 benchmark is **LabelProb**: sample $K$ outputs and estimate the label probability
@@ -184,17 +202,21 @@ ranking cannot degrade any ranking-based metric.
 Use PAVA when only the calibrated value is wanted; use CIR when ties would be
 destructive downstream.
 
-### 3.3 Why this replaces the table
+### 3.3 Why this replaced the table
 
-The six-cell table is a calibration map with six assigned values and no fitting
+The six-cell table was a calibration map with six assigned values and no fitting
 procedure. Isotonic regression is a calibration map with zero assigned values,
-fitted to data. The proposal removes six free constants and adds no hyperparameters.
+fitted to data. The replacement removed six free constants and added no
+hyperparameters.
 
 ---
 
 ## 4. Layer 3 — pooling evidence into a statement belief
 
-### 4.1 What is deployed: a noisy-OR
+### 4.1 The noisy-OR, now the unfitted fallback
+
+`statement_belief` selects this "hard gate" only for a reader with no fitted
+profile; a fitted reader is scored by §4.3. The analysis below is why.
 
 In Bayesian networks, the **noisy-OR** model expresses a binary effect produced
 by several independent causes, each of which may independently fail to produce
@@ -242,17 +264,17 @@ succeeded?* Its value is **monotone non-decreasing in evidence count**. For
 | belief | 0.488 | 0.737 | 0.851 | 0.904 | 0.929 | 0.940 |
 
 Adding evidence can only raise belief. **The form has no representation for
-disconfirming evidence.** This is why the deployed code must physically *delete*
+disconfirming evidence.** This is why the hard gate must physically *delete*
 rejected reads before scoring, and drop a source entirely when none of its
-evidence survives — the "hard gate" is a workaround for a functional form that
-cannot express a negative.
+evidence survives — it is a workaround for a functional form that cannot express
+a negative.
 
 The cost is measured elsewhere in this repository: the noisy-OR assigns identical
 65% → 95% trajectories to sources whose measured accuracy spans 12%–80%, and
 `reach` **anti**-correlates with correctness (48% → 31%). Those are properties of
 the functional form, not of the priors.
 
-### 4.3 The proposal: pooling weights of evidence in log-odds
+### 4.3 The fitted path: pooling weights of evidence in log-odds
 
 Define the **odds** of an event with probability $p$ as $p/(1-p)$, and the
 **log-odds** or **logit** as
@@ -314,10 +336,10 @@ matter how much evidence it supplies. This is the *maximally conservative*
 correlation correction — it assumes reads within a source are perfectly
 correlated, contributing no independent information.
 
-We propose keeping it, stating it as an explicit assumption, and testing it
-against alternatives ($w_s = 1/\sqrt{n_s}$, which assumes partial correlation; or
-a fitted $w_s$) on held-out data. It should be a measured choice, not an
-inherited one.
+It was kept as an explicit assumption and tested against alternatives
+($w_s = 1/\sqrt{n_s}$, which assumes partial correlation; or a fitted $w_s$) on
+held-out data, so that it would be a measured choice rather than an inherited
+one.
 
 **Tested, 2026-08-29 — the choice does not bind, and the reason narrows the
 question.** The per-read contribution $\ell(v)$ takes one of three values per
@@ -347,11 +369,11 @@ not §4.4.
 
 ---
 
-## 5. The proposal is a strict generalization of the deployed estimator
+## 5. The continuous estimator is a strict generalization of the verdict-only one
 
-The deployed system also aggregates in log-odds, but with a per-verdict weight
-of evidence derived from a $2\times2$ **confusion matrix** — the cross-tabulation
-of model verdict against curator label:
+Where no probe measurement is available, the same log-odds aggregation runs on a
+per-verdict weight of evidence derived from a $2\times2$ **confusion matrix** —
+the cross-tabulation of model verdict against curator label:
 
 |  | gold correct | gold incorrect |
 |---|---|---|
@@ -376,11 +398,13 @@ per read:
 
 $$\hat c_{\text{confirm}} = \sigma(-0.0025 + 1.5030) = 0.8177, \qquad \hat c_{\text{reject}} = \sigma(-0.0025 - 1.8936) = 0.1306$$
 
-**So the deployed estimator is the proposed estimator restricted to two atoms.**
-The six-cell table's apparent granularity is not present in the statement belief;
-only the verdict survives.
+**So the verdict-only estimator is the continuous one restricted to two atoms.**
+The six-cell table's apparent granularity was never present in the statement
+belief; only the verdict survived.
 
-There is one exception. The deployed code applies a floor to confirming reads,
+There is one exception, still in the deployed code and carried into the
+continuous path as a floor on any reading that favours `correct`
+(`evidence_weights.probe_weight`). On a verdict it reads
 
 $$\ell(\text{correct}) = \max\bigl(W_{\text{confirm}},\; \operatorname{logit}(1 - (\text{syst}_s + \text{rand}_s))\bigr)$$
 
@@ -389,9 +413,9 @@ reader profile. The second term is a **reliability logit**, not a likelihood
 ratio, so combining them under a maximum is not an application of Bayes' rule —
 the code documents this explicitly and calls the result a hybrid.
 
-Running both estimators on identical reads:
+Running the estimator with and without that floor, on identical reads:
 
-| reads | deployed | proposed | difference |
+| reads | with floor | floor removed | difference |
 |---|---|---|---|
 | reach:+ | 0.817654 | 0.817654 | 0 |
 | reach:+, reach:+ | 0.817654 | 0.817654 | 0 |
@@ -404,10 +428,10 @@ The two agree **exactly** wherever the floor does not bind, and differ only wher
 it does. `trips` has reliability logit $+1.9277 > W_{\text{confirm}} = +1.5030$,
 so the floor fires; `reach` ($-0.0480$) and `sparser` ($-0.2655$) never do.
 
-This makes the migration defensible: the proposal generalizes the deployed
-estimator from two atoms to a continuum, and removes precisely the one element
-the implementation itself identifies as non-Bayesian. Existing validation carries
-over wherever the floor is inactive.
+The migration therefore splits in two. Generalizing from two atoms to a
+continuum shipped (§2.2), and existing validation carries over wherever the
+floor is inactive. Removing the floor — the one element the implementation
+itself identifies as non-Bayesian — has not; §6 is how that gets settled.
 
 ---
 
@@ -472,12 +496,12 @@ data, so this changes little numerically and removes an arbitrary choice.
 
 *Expected Calibration Error (ECE)* — the bin-weighted mean gap between mean
 forecast and observed frequency — is *not* partition-invariant in general, and
-should be reported with its partition stated. In the special case of the deployed
-six-cell table it happens to be exact rather than approximate, because the
-attainable scores are 0.15 apart and the deployed bin edges isolate each one; we
+should be reported with its partition stated. In the special case of the
+six-cell table it happened to be exact rather than approximate, because the
+attainable scores were 0.15 apart and the bin edges isolated each one; we
 verified ECE is identical to six decimals under every equal-width partition with
-≥7 bins. Once scores are continuous this exactness disappears, and the bin-free
-estimator becomes the appropriate choice.
+≥7 bins. Wherever a probe now supplies a continuous score, that exactness is
+gone and the bin-free estimator is the appropriate choice.
 
 Finally, thresholded metrics. Reporting error-detection F1 at a chosen cut-off
 $\tau$ requires selecting $\tau$, and Vashurin et al. note that such choices have
@@ -519,20 +543,20 @@ complement.
 
 ## 9. Summary of the change
 
-| | deployed | proposed |
+| | before | now |
 |---|---|---|
-| per-evidence score | verbalized label → 6 assigned constants | renormalised token probability |
-| distinct values per read | 2 (0.8177 / 0.1306) | continuous on $(0,1)$ |
+| per-evidence score | verbalized label → 6 assigned constants | renormalised token probability where the serving stack returns one, the verdict's log-LR otherwise |
+| distinct values per read | 2 (0.8177 / 0.1306) | continuous on $(0,1)$ when probed, those 2 otherwise |
 | calibration | none (the table *is* the map) | isotonic / CIR, 0 hyperparameters |
-| pooling | log-odds sum, with a non-Bayesian floor | log-odds sum of weights of evidence |
+| pooling | noisy-OR over sources, monotone in evidence count | log-odds sum of weights of evidence; the noisy-OR remains the unfitted fallback |
 | disconfirming evidence | reads deleted, sources dropped | negative weight, no special case |
-| source reliability | hard-coded maximum | fitted coefficient, or dropped if not significant |
-| assigned constants removed | — | 6 grid values, the floor (the 0.5 parse fallback was already removed in `a10df62`; an unparseable reply is typed absence, not a fabricated midpoint) |
+| source reliability | hard-coded maximum | unchanged, and the remaining open question (§6) |
+| assigned constants | 6 grid values, a 0.5 parse fallback | both gone (the fallback in `a10df62`) — an unparseable reply is typed absence, not a fabricated midpoint |
 
 The estimator is not new — it is naive Bayes in log-odds, which is what the
-deployed system already approximates. What changes is that the per-read input
-becomes a measurement rather than a lookup, and the one step that was not derived
-from Bayes' rule is removed.
+verdict-only form already approximates. What changed is that the per-read input
+became a measurement rather than a lookup. The one step not derived from Bayes'
+rule, the source floor, is still in place.
 
 ---
 

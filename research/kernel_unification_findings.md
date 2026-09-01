@@ -2,10 +2,10 @@
 
 > **Provenance note (2026-08-25).** This is a historical record. The repository
 > was later cut to prod infrastructure plus the future-LLM compare loop, so some
-> paths cited below name code that no longer exists — the comparison harness, the
-> spend ledger, the viewer, the paper-replication lane, the probe battery. The
-> measurements and conclusions stand as recorded; git history holds the code they
-> were measured against. No guard checks these citations any more.
+> paths cited below name code that no longer exists; `research/README.md` tracks
+> which documents still describe live code. The measurements and conclusions
+> stand as recorded; git history holds the code they were measured against. No
+> guard checks these citations any more.
 
 A durable record of the refactor arc that landed as `a10df62` ("one semantic kernel
 for the live and batch scoring paths", 44 files, +21,673/-901) on `kernel-unification`,
