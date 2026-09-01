@@ -1,0 +1,44 @@
+{
+  "dataset_id": "gene_corpus_uniform_400_llm_curated",
+  "artifact": {
+    "path": "data/benchmark/gene_corpus_uniform_400_llm_curated.jsonl",
+    "sha256": "4ffde717a1887d6b342ffb34d5f7ebad843bf8f3390344daf009554ef8fe1fb6"
+  },
+  "what_it_is": "A uniform random sample of statements from a 3,250,298-statement gene-gene corpus run, one evidence drawn uniformly per statement, each judged on whether the evidence sentence ALONE backs the statement.",
+  "NOT_human_gold": "Verdicts are LLM judgements, not human curation. Do not pool these rows with external_curator_gold_* or eval_curation_*, and do not call them gold. They measure a population rate; they are not a human label set.",
+  "sampling": {
+    "frame": "gene_beliefs.json, 3,250,298 matches_hash keys",
+    "unit": "statement, then one evidence uniformly within it",
+    "method": "seeded shuffle of the sorted key list",
+    "seed": 20260901,
+    "drawn": 411,
+    "retained": 400,
+    "dropped": "11 with no retrievable evidence text",
+    "class_balanced": false
+  },
+  "evidence_source": "https://db.indra.bio/statements/from_hash/<hash>",
+  "judging": {
+    "judges": 2,
+    "independent": true,
+    "agreement": "376/390 = 96.4%",
+    "disagreements_adjudicated_by": "a third judge shown both reasons",
+    "calibration": "10 items curated by hand first, used as worked examples",
+    "standard": "grounding error, entity absent, polarity inverted, direction reversed, unsupported site/specificity, wrong relation type, or hypothesis-only -> incorrect; ties go to incorrect"
+  },
+  "counts": {
+    "n": 400,
+    "correct": 117,
+    "incorrect": 283,
+    "error_rate": 0.7075,
+    "error_rate_95ci": [
+      0.661,
+      0.75
+    ]
+  },
+  "belief_relationship": {
+    "auroc": 0.826,
+    "correct_at_belief_le_0.5": "13% (n=264)",
+    "correct_at_belief_gt_0.5": "60% (n=136)"
+  },
+  "created": "2026-08-31"
+}

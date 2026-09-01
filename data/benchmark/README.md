@@ -24,7 +24,7 @@ matching the `source_api` mix within type; `build_external_gold.py`,
 `build_multicurator_gold.py` and `build_v2_balanced.py` all import it.
 `eval_curation_v1.meta.json` and `external_gold_v1.meta.json` declare it:
 `"balance": "1:1 forced"`. The older holdouts are exactly 1:1 too
-(`holdout.jsonl`, `holdout_v7_original.jsonl` 100/100; `holdout_v5.jsonl`,
+(`holdout.jsonl` 100/100; `holdout_v5.jsonl`,
 `eval_set_v4.jsonl` 50/50); no meta file records the mechanism for those.
 
 That was the right call for the purpose: on a skewed set accuracy is dominated by
@@ -66,6 +66,22 @@ statement, so 1000 evidences drawn that way carry the precision of 250.
 
 Judge selection, prompt work, threshold and calibration fitting, error-detection
 F1 between arms — any question of the form "does A beat B at catching errors".
+
+## `gene_corpus_uniform_400_llm_curated.jsonl`
+
+A uniform random draw of 400 statements from a 3,250,298-statement gene-gene
+corpus run, one evidence sampled uniformly per statement, judged on whether the
+evidence sentence ALONE backs the statement. Not class-balanced, no selection on
+the label, so unlike the sets above it *does* carry a population rate:
+**70.8% incorrect [66.1, 75.0]**. Belief ranks that outcome at AUROC 0.826 —
+13% correct at belief <= 0.5, 60% above it.
+
+**The verdicts are LLM judgements, not human curation.** Two independent judges
+agreed on 376/390 (96.4%) with a third adjudicating the rest, against a written
+standard calibrated on ten hand-curated items. That is enough to estimate a rate;
+it is not a human label set. Do not pool these rows with `external_curator_gold_*`
+or `eval_curation_*`, and do not call them gold. `.meta.json` records the seed,
+the frame, the standard, and the retrieval endpoint.
 
 ## What a population rate would need
 

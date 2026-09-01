@@ -603,7 +603,7 @@ src/indra_belief/
     corpus.py              # CorpusIndex: source_hash → Statement lookup
     example_bank.json      # Type-specific contrastive pairs
 data/
-  benchmark/
+  benchmark/             # Gold sets + manifests — inventoried in data/benchmark/README.md
     holdout.jsonl          # 200-record balanced evaluation set
     holdout_large.jsonl    # 4,625-record half-corpus evaluation
     example_pairs.json     # Entity pairs excluded from holdouts
