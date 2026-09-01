@@ -1,0 +1,48 @@
+{
+  "dataset_id": "gene_corpus_uniform_400_all_evidence_llm_curated",
+  "artifact": {
+    "path": "data/benchmark/gene_corpus_uniform_400_all_evidence_llm_curated.jsonl",
+    "sha256": "14b96c9fb0e93647ea9a4ef2705180fc25480c95a9b5bb7caa5c0507fc006bab"
+  },
+  "what_it_is": "EVERY evidence sentence of 400 statements drawn uniformly from a 3,250,298-statement gene-gene corpus run. Each (statement, sentence) pair judged on whether that sentence ALONE backs the statement. Supersedes the one-sentence-per-statement set for any statement-grain question.",
+  "NOT_human_gold": "Verdicts are LLM judgements, not human curation. Do not pool with external_curator_gold_* or eval_curation_*, and do not call them gold.",
+  "sampling": {
+    "frame": "gene_beliefs.json, 3,250,298 matches_hash keys",
+    "seed": 20260901,
+    "unit": "statement drawn uniformly; ALL of its evidence then retrieved",
+    "statements": 400,
+    "evidence_sentences": 1346,
+    "class_balanced": false
+  },
+  "judging": {
+    "judges": 2,
+    "model": "opus",
+    "independent": true,
+    "agreement": "1320/1346 = 98.1%",
+    "disagreements_adjudicated": 26
+  },
+  "rates": {
+    "evidence_grain_error": 0.578,
+    "evidence_grain_95ci": [
+      0.551,
+      0.604
+    ],
+    "statement_error_any_evidence_supports": 0.6825,
+    "statement_error_any_95ci": [
+      0.635,
+      0.726
+    ],
+    "statement_error_all_evidence_supports": 0.7975,
+    "statement_error_all_95ci": [
+      0.755,
+      0.834
+    ]
+  },
+  "auroc": {
+    "llm_belief_any": 0.842,
+    "indra_db_belief_any": 0.634,
+    "llm_belief_all": 0.822,
+    "indra_db_belief_all": 0.532
+  },
+  "created": "2026-08-31"
+}

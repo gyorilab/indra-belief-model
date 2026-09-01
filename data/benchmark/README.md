@@ -86,6 +86,21 @@ it is not a human label set. Do not pool these rows with `external_curator_gold_
 or `eval_curation_*`, and do not call them gold. `.meta.json` records the seed,
 the frame, the standard, and the retrieval endpoint.
 
+## `gene_corpus_uniform_400_all_evidence_llm_curated.jsonl`
+
+The same 400 statements with **every** evidence sentence judged — 1,346 pairs,
+not one sampled sentence each. Use this for anything at statement grain; the
+one-sentence file above cannot answer a statement-level question when 37% of
+statements have more than one evidence.
+
+Rates: **57.8% of evidence sentences** fail to support their statement
+[55.1, 60.4]. At statement grain, **68.2%** have no supporting sentence at all
+[63.5, 72.6], and **79.8%** have at least one unsupported sentence [75.5, 83.4].
+Two Opus judges agreed on 1,320/1,346 (98.1%); 26 went to a third.
+
+Against the same statements, ranking "does any evidence support it": LLM belief
+AUROC **0.842**, INDRA DB belief **0.634**.
+
 ## What a population rate would need
 
 A fresh probability sample drawn at **evidence** grain with recorded inclusion
