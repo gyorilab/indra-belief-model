@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-09-01, commit `COMMIT_PLACEHOLDER`. State only: what the system *is* lives in
+As of 2026-09-01, commit `d6695e6`. State only: what the system *is* lives in
 [README.md](README.md), how belief is computed in
 [research/scoring_methods.md](research/scoring_methods.md).
 
@@ -62,7 +62,7 @@ As of 2026-09-01, commit `COMMIT_PLACEHOLDER`. State only: what the system *is* 
   `gemma_bedrock_rf` was refitted off (as do `gemma_remote` and `medpsy_remote`).
   MLX throughput has deferred the refit: `holdout_large_fit` is 4,303 rows at
   ~19 s/row deliberated, roughly a day of local scoring. The nine leaked rows in
-  that gold are not the reason — excluding them moves no log-LR by more than
+  `eval_curation_v1` are not the reason — excluding them moves no log-LR by more than
   0.009 nats.
 - **Verdict-only profiles trade calibration for discrimination** — Brier and AUROC
   improve while ECE roughly doubles. A consumer thresholding on belief feels that.
