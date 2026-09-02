@@ -66,6 +66,10 @@ def _short(s: str, n: int = 80) -> str:
 # consistent with the Source-1 silent-zero import bug this guard later fixed.
 # Both artifacts are sha-frozen (FIT_GOLD_SHA256, prompt_sha), so the leak
 # cannot be edited away without refitting; it is recorded here instead.
+# MEASURED 2026-09-01 to be immaterial: refitting gemma_remote, local_gemma_mlx
+# and medpsy_remote with the nine rows excluded moves every log-likelihood
+# ratio by <= 0.009 nats (all nine were read correctly by all three readers —
+# the expected direction at 9/1604 of the fit set).
 # A stale key (leak gone) or a new finding both fail the guard — see
 # tests/test_contamination_guard_sources.py::test_known_leaks_waiver_is_exact.
 KNOWN_LEAKS = frozenset({

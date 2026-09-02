@@ -36,7 +36,9 @@ Source-1 silent-zero import bug. Gold and prompt are both sha-frozen, so
 `check_contamination.py` waives exactly these eleven findings by key
 (`KNOWN_LEAKS`) and fails on any new one. Surfaced 2026-09-01, when the guard
 began deriving its eval set from the calibration profiles instead of a
-hand-maintained list that never included the fit golds.
+hand-maintained list that never included the fit golds. Measured the same day
+to be immaterial: refitting the three profiles fitted here with the nine rows
+excluded moves every log-likelihood ratio by ≤ 0.009 nats.
 
 That was the right call for the purpose: on a skewed set accuracy is dominated by
 the majority class and a judge that flags nothing scores well, so error-detection

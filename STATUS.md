@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-08-31, commit `5c801ff`. State only: what the system *is* lives in
+As of 2026-09-01, commit `COMMIT_PLACEHOLDER`. State only: what the system *is* lives in
 [README.md](README.md), how belief is computed in
 [research/scoring_methods.md](research/scoring_methods.md).
 
@@ -24,8 +24,16 @@ As of 2026-08-31, commit `5c801ff`. State only: what the system *is* lives in
   One is `disabled`: `medpsy_remote` (3/4 gate, ECE leg failed). Any other
   (model, prompt) pair resolves to `None` and stays on the hard gate.
 - **Checks, all green here.** After `python -m pip install -e ".[dev]"`:
-  - `python -m pytest -q` — 1052 passed.
-  - `python scripts/check_contamination.py` — CLEAN.
+  - `python -m pytest -q` — 1054 passed. On a clean checkout (`git worktree`
+    of HEAD, no gitignored artifacts) 1039 pass and 15 skip; every skip names
+    the absent run or replay it needs, and CI runs `-rs` so the list is in the
+    log rather than hidden inside a pass count.
+  - `python scripts/check_contamination.py` — CLEAN. Its eval set is derived
+    from `_PROFILE_META` (fit + validation gold of every profile, all tracked)
+    plus the representative-curation snapshots and `--holdout`; 17 enumerated
+    overlaps (`KNOWN_LEAKS`, nine `eval_curation_v1` rows that match v6/v7
+    prompt examples, measured immaterial at ≤ 0.009 nats on every fitted
+    log-LR) are waived by exact key and anything new fails.
   - `python scripts/check_import_boundary.py` — CLEAN, 62 first-party imports
     across 39 core modules.
   - `python scripts/smoke_end_to_end.py` — 5 checks, hermetic (no socket, no
@@ -34,7 +42,7 @@ As of 2026-08-31, commit `5c801ff`. State only: what the system *is* lives in
 
 ## Known broken / limited
 
-- **The vLLM in-call isotonic is deliberately withheld from the registry.** Its row
+- **The vLLM in-call isotonic is deliberately withheld from the registry.** (Unblocked only by the `/scratch` artifact.) Its row
   in `src/indra_belief/probes/calibration.py::_INCALL_CALIBRATIONS` is commented out
   because the fitted artifact (`incall_vllm.json`) exists only on cluster scratch.
   Registering a row whose file no checkout has would flip
@@ -42,22 +50,22 @@ As of 2026-08-31, commit `5c801ff`. State only: what the system *is* lives in
   instead of its own refusal message. Withheld, `--require-calibrated` refuses
   namedly; scoring is unaffected, gating on the belief profile, which *is*
   registered. Add the row in the same commit as the file.
-- **`vllm_gemma_verdict_only` is the weakest-cited profile.** Counts and gold
+- **`vllm_gemma_verdict_only` is the weakest-cited profile.** (Unblocked only by the `/scratch` runs.) Counts and gold
   digest are pinned, but its fit and validation runs point at
   `/scratch/h.yan/data/gold_results`, untracked — nobody else can re-derive the
   Brier and ECE in its note. Re-fitting with `--report` closes it.
-- **No test runs against a real vLLM server.** `tests/test_shard_runner_no_cot.py`
+- **No test runs against a real vLLM server.** (Needs a served vLLM; none runs on this host.) `tests/test_shard_runner_no_cot.py`
   drives the `--backend server` path, logprobs included, but against a local stub;
   the offline-backend tests stub `sys.modules['vllm']`. Nothing exercises a served
   model, so a served-side regression surfaces only in a corpus run.
 - **`local_gemma_mlx` still carries the `eval_curation_v1` skew** that
-  `gemma_bedrock_rf` was refitted off. MLX throughput has deferred the refit.
+  `gemma_bedrock_rf` was refitted off (as do `gemma_remote` and `medpsy_remote`).
+  MLX throughput has deferred the refit: `holdout_large_fit` is 4,303 rows at
+  ~19 s/row deliberated, roughly a day of local scoring. The nine leaked rows in
+  that gold are not the reason — excluding them moves no log-LR by more than
+  0.009 nats.
 - **Verdict-only profiles trade calibration for discrimination** — Brier and AUROC
   improve while ECE roughly doubles. A consumer thresholding on belief feels that.
-- **A clean checkout runs a smaller suite.** Some tests are guarded on artifacts
-  that are not in the repository (run outputs, corpora,
-  `data/comparison/grounding_replay`); they skip rather than fail, so the pass
-  count alone will not tell you they did not run.
 
 ## Open
 

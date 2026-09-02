@@ -50,6 +50,11 @@ data/results/*
 !data/results/calibration_ship_gate_external.json
 !data/results/calibration_ship_gate_local.md
 !data/results/calibration_ship_gate_local.json
+# The validation gold two enabled profiles pin by sha (HOLDOUT_GOLD_SHA256);
+# a clean checkout must hold every gold its profiles cite.
+!data/results/cc_holdout_cc/
+data/results/cc_holdout_cc/*
+!data/results/cc_holdout_cc/holdout_cc.jsonl
 
 # The /paper comparison artifacts. Tracked because the viewer READS them: without
 # them every figure on /paper gates to "unavailable" on a fresh clone, and nobody
