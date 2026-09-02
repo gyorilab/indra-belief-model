@@ -1,6 +1,6 @@
 # Deploying the belief model: the two bulk domains, the realtime path, and what blocks each
 
-> **Provenance (2026-09-01):** citations of `research/serving_architecture.md` and `research/serving_deployment.md` below name documents removed from the tree (OBSOLETE-TOPOLOGY); git history holds them. The measurements quoted from them are unchanged.
+> **Provenance (2026-09-01):** citations of `research/serving_architecture.md`, `research/serving_deployment.md` and `Dockerfile.live` below name files removed from the tree (the docs as OBSOLETE-TOPOLOGY; the image as an unconsumed capability record); git history holds them. The measurements quoted from them are unchanged.
 
 > **Provenance note (2026-08-25).** This is a historical record. The repository
 > was later cut to prod infrastructure plus the future-LLM compare loop, so some
