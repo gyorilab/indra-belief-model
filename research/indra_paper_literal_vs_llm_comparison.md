@@ -169,7 +169,7 @@ identical panel and metric.
   (`Training Belief ML Models.ipynb`, `classifiers.py`, `belief_models.py`,
   `group_curations.py`) match `data/benchmark/indra_paper_2023.manifest.json`
   **byte-for-byte**.
-- Assembled statements: `data/benchmark/indra_benchmark_corpus.pkl`
+- Assembled statements: `data/_cold/benchmark/indra_benchmark_corpus.pkl`
   (sha `ed64a240…`, 894,939 statements, verified). All 1,689 curated statement
   hashes are present.
 - Curated labels + counts: the repo's own

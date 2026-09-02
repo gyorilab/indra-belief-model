@@ -9,7 +9,7 @@ venv/
 
 # Large data files (download separately)
 data/benchmark/indra_benchmark_corpus.json.gz
-data/benchmark/indra_benchmark_corpus.pkl
+data/_cold/
 data/benchmark/indra_assembly_curations.json
 data/benchmark/indra_db_20250916/
 
@@ -78,7 +78,6 @@ reports/*
 # published document rather than generated output, and a citation in
 # data/results names it.
 !reports/curation_eval_brief_for_PIs.md
-data/corpus_export/
 # Generated corpus inputs (statement JSONs reproduced via eval_to_statements_json
 # from the benchmark corpus). Three fixtures are tracked — synthetic_demo.json,
 # sampled_statements_rasmachine_v1.pkl and external_curator_gold_v2_statements
