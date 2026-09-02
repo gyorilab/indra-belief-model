@@ -128,7 +128,7 @@ def load_exclude_pairs() -> tuple[set[tuple[int, int]], dict[str, int]]:
     per_file: dict[str, int] = {}
     seen: set[Path] = set()
     for pat in EXCLUDE_GLOBS:
-        for path in sorted(DATA.glob(pat)):
+        for path in sorted([*DATA.glob(pat), *(DATA / "archive").glob(pat)]):
             if path == OUT or path in seen:
                 continue
             seen.add(path)

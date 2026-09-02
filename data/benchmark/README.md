@@ -15,7 +15,7 @@ rate would need*.
 | `external_curator_gold_v1.jsonl` | 578 | 289 / 289 |
 | `external_gold_v1.jsonl` | 154 | 77 / 77 |
 | `rasmachine_v2_gold.jsonl` | 304 | 246 / 58 |
-| `holdout_cc_rebuilt.jsonl` | 465 | 207 / 258 |
+| `archive/holdout_cc_rebuilt.jsonl` | 465 | 207 / 258 |
 
 The first four are exactly 1:1 because a sampler made them so.
 `scripts/build_curation_eval.py::stratified_balanced` takes
@@ -23,9 +23,20 @@ The first four are exactly 1:1 because a sampler made them so.
 matching the `source_api` mix within type; `build_external_gold.py`,
 `build_multicurator_gold.py` and `build_v2_balanced.py` all import it.
 `eval_curation_v1.meta.json` and `external_gold_v1.meta.json` declare it:
-`"balance": "1:1 forced"`. The older holdouts are exactly 1:1 too
-(`holdout.jsonl` 100/100; `holdout_v5.jsonl`,
+`"balance": "1:1 forced"`. The older holdouts (now under `archive/`) are
+exactly 1:1 too (`holdout.jsonl` 100/100; `holdout_v5.jsonl`,
 `eval_set_v4.jsonl` 50/50); no meta file records the mechanism for those.
+
+**Known leak (waived, enumerated):** nine of `eval_curation_v1.jsonl`'s 1,606
+rows overlap the monolithic prompt's v6/v7 contrastive examples — six share
+the sentence itself, three more only the entity pair. Five of the six leaked
+source_hashes sit verbatim in `build_holdout.py::V6_V7_EXAMPLE_HASHES`, the
+rows the builders were meant to exclude — consistent with the guard's old
+Source-1 silent-zero import bug. Gold and prompt are both sha-frozen, so
+`check_contamination.py` waives exactly these eleven findings by key
+(`KNOWN_LEAKS`) and fails on any new one. Surfaced 2026-09-01, when the guard
+began deriving its eval set from the calibration profiles instead of a
+hand-maintained list that never included the fit golds.
 
 That was the right call for the purpose: on a skewed set accuracy is dominated by
 the majority class and a judge that flags nothing scores well, so error-detection
@@ -129,11 +140,17 @@ venue.
 
 - `belief_benchmark.jsonl` — 9,342 curations by the two expert curators, 58%
   correct; the pool `build_curation_eval.py` draws from. Not corpus-drawn either.
-- `holdout*.jsonl`, `eval_set_v4.jsonl`, `fewshot_pool*.jsonl` — earlier splits
-  off that pool, carrying the raw curation `tag` rather than a `gold` field.
+- `archive/` — closed-finding splits of that pool (`holdout*.jsonl`,
+  `eval_set_v4.jsonl`, `fewshot_pool*.jsonl`, `probe_relation_logic.jsonl`,
+  `holdout_cc_rebuilt.jsonl`, the orphaned `example_pairs.json`): every row is
+  contained in `belief_benchmark.jsonl`, nothing reads them at runtime, and
+  they persist because result manifests under `data/results/` cite them by
+  path. Gold-builder exclusion globs sweep `archive/` too. The live exceptions
+  stay at top level: `holdout_large.jsonl` (default guard holdout) and
+  `holdout_large_fit.jsonl` / `eval_curation_v1.jsonl` (profile fit golds).
 - `rasmachine_v1_gold.jsonl` (60) and `rasmachine_v2_balanced_*.jsonl` (114, 64)
   — Rasmachine cuts, the latter two `stratified_balanced` carvings of
-  `rasmachine_v2_gold.jsonl`. `probe_relation_logic.jsonl` (199, 100/99) is a
-  relation-logic probe.
+  `rasmachine_v2_gold.jsonl`. `archive/probe_relation_logic.jsonl`
+  (199, 100/99) is a relation-logic probe.
 - `multi_evidence_statement_gold_*.jsonl` — statement-grain gold
   (`statement_gold`), for aggregation experiments, not per-evidence scoring.

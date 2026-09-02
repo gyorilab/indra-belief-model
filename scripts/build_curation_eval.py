@@ -117,7 +117,7 @@ def load_leakage_pairs() -> tuple[set[tuple[int, int]], dict[str, int]]:
     per_file: dict[str, int] = {}
     seen_files: set[Path] = set()
     for pat in LEAKAGE_GLOBS:
-        for path in sorted(DATA.glob(pat)):
+        for path in sorted([*DATA.glob(pat), *(DATA / "archive").glob(pat)]):
             if path == OUT or path in seen_files:
                 continue
             seen_files.add(path)

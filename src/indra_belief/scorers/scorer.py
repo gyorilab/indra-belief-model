@@ -43,8 +43,9 @@ def main():
         description="Evidence quality scorer (INDRA native)"
     )
     parser.add_argument("--model", default="gemma-remote")
-    parser.add_argument("--holdout",
-                        default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
+    parser.add_argument("--holdout", required=True,
+                        help="eval gold JSONL to score, e.g. "
+                             "data/benchmark/holdout_large.jsonl")
     parser.add_argument("--output",
                         default=str(ROOT / "data" / "results" / "scorer_output.jsonl"))
     parser.add_argument("--limit", type=int, default=None)

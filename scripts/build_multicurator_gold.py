@@ -75,7 +75,7 @@ def excl_pairs(gold_out: Path | None = None) -> set[tuple[int, int]]:
     # This repo already learned the lesson elsewhere: a hand-maintained list
     # makes "unguarded" the DEFAULT for a new file, and a glob inverts it. A
     # new benchmark set is now excluded-from on the commit that adds it.
-    for p in sorted(BENCH.glob("*.jsonl")):
+    for p in sorted(BENCH.rglob("*.jsonl")):
             if p in (gold_out or GOLD_OUT,):
                 continue
             for line in p.open():

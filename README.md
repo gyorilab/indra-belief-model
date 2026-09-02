@@ -94,6 +94,7 @@ Types with bank examples: Activation (2 pairs), Inhibition (2), Phosphorylation,
 ```bash
 PYTHONPATH=src python -m indra_belief.scorers.scorer \
     --model gemma-remote \
+    --holdout data/benchmark/holdout_large.jsonl
 ```
 
 ## Design decisions we already paid for
@@ -604,9 +605,8 @@ src/indra_belief/
     example_bank.json      # Type-specific contrastive pairs
 data/
   benchmark/             # Gold sets + manifests — inventoried in data/benchmark/README.md
-    holdout.jsonl          # 200-record balanced evaluation set
     holdout_large.jsonl    # 4,625-record half-corpus evaluation
-    example_pairs.json     # Entity pairs excluded from holdouts
+    archive/               # Closed-finding splits kept for result-manifest provenance
   exports/<run>/           # Per-run exports (per_statement.json + per_evidence.jsonl + export_meta.json)
   corpora/                 # Sampled INDRA Statement dumps to score
   results/                 # Evaluation results

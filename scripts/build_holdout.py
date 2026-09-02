@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _gold_output import add_rebuild_flag, guard_outputs  # noqa: E402
 
 DATA = ROOT / "data" / "benchmark"
+ARCHIVE = DATA / "archive"  # closed-finding splits live here
 
 # Explicit set of source_hashes used as contrastive examples in v6/v7 prompts
 V6_V7_EXAMPLE_HASHES = {
@@ -89,22 +90,22 @@ def main(seed: int = 42, n_correct: int = 100, n_incorrect: int = 100):
     parser = argparse.ArgumentParser(
         description=__doc__.splitlines()[0])
     add_rebuild_flag(parser)
-    guard_outputs([DATA / "holdout.jsonl"], rebuild=parser.parse_args().rebuild)
+    guard_outputs([ARCHIVE / "holdout.jsonl"], rebuild=parser.parse_args().rebuild)
 
     random.seed(seed)
 
     # Load all exclusion sets
     excluded_hashes = set()
     excluded_hashes |= load_hashes(DATA / "holdout_set.jsonl")      # old holdout
-    excluded_hashes |= load_hashes(DATA / "eval_set_v4.jsonl")       # v4 eval
-    excluded_hashes |= load_hashes(DATA / "fewshot_pool_v4.jsonl")   # v4 pool
-    excluded_hashes |= load_hashes(DATA / "fewshot_pool.jsonl")      # legacy pool
+    excluded_hashes |= load_hashes(ARCHIVE / "eval_set_v4.jsonl")       # v4 eval
+    excluded_hashes |= load_hashes(ARCHIVE / "fewshot_pool_v4.jsonl")   # v4 pool
+    excluded_hashes |= load_hashes(ARCHIVE / "fewshot_pool.jsonl")      # legacy pool
     excluded_hashes |= V6_V7_EXAMPLE_HASHES
 
     excluded_pairs = set()
     excluded_pairs |= EXAMPLE_PAIRS
-    excluded_pairs |= load_pairs(DATA / "fewshot_pool_v4.jsonl")
-    excluded_pairs |= load_pairs(DATA / "fewshot_pool.jsonl")
+    excluded_pairs |= load_pairs(ARCHIVE / "fewshot_pool_v4.jsonl")
+    excluded_pairs |= load_pairs(ARCHIVE / "fewshot_pool.jsonl")
 
     print(f"Exclusions:")
     print(f"  source_hashes: {len(excluded_hashes)}")
@@ -151,7 +152,7 @@ def main(seed: int = 42, n_correct: int = 100, n_incorrect: int = 100):
         print(f"  {t}: {c}")
 
     # Write
-    out = DATA / "holdout.jsonl"
+    out = ARCHIVE / "holdout.jsonl"
     with open(out, "w") as f:
         for r in sample:
             f.write(json.dumps(r) + "\n")

@@ -10,8 +10,9 @@ Sources of fewshot examples (the things the model sees during inference):
      (any "quoted" sentence followed by an arrow → is treated as an example)
 
 Eval/benchmark files checked:
-  - data/benchmark/calibration_*.jsonl
-  - data/benchmark/holdout_*.jsonl
+  - every fit gold + validation gold pinned by a calibration profile
+    (indra_belief.calibration_constants._PROFILE_META)
+  - data/benchmark/representative_indra_curations_*.jsonl
   - --holdout PATH (CLI override; defaults to holdout_large.jsonl)
 
 Contamination definition:
@@ -29,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -53,6 +55,40 @@ def _norm(s: str) -> str:
 
 def _short(s: str, n: int = 80) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
+
+
+# Known, enumerated leakage — waived by EXACT key, never by glob. Nine of
+# eval_curation_v1.jsonl's 1,606 rows overlap the monolithic prompt's v6/v7
+# contrastive examples: six share the sentence itself, three more only the
+# entity pair. Five of the six leaked source_hashes sit verbatim in
+# build_holdout.py's V6_V7_EXAMPLE_HASHES and the sixth pair (Actin, CDK9) in
+# its EXAMPLE_PAIRS — the exact rows the builders were meant to exclude —
+# consistent with the Source-1 silent-zero import bug this guard later fixed.
+# Both artifacts are sha-frozen (FIT_GOLD_SHA256, prompt_sha), so the leak
+# cannot be edited away without refitting; it is recorded here instead.
+# A stale key (leak gone) or a new finding both fail the guard — see
+# tests/test_contamination_guard_sources.py::test_known_leaks_waiver_is_exact.
+KNOWN_LEAKS = frozenset({
+    ("exact", "eval_curation_v1.jsonl", "2441ec0e8fe0", "2441ec0e8fe0"),
+    ("exact", "eval_curation_v1.jsonl", "53a6dd5c2ab2", "53a6dd5c2ab2"),
+    ("exact", "eval_curation_v1.jsonl", "7d9fc2d4a532", "7d9fc2d4a532"),
+    ("exact", "eval_curation_v1.jsonl", "9eaa64610f0d", "9eaa64610f0d"),
+    ("exact", "eval_curation_v1.jsonl", "a6e280f4affe", "a6e280f4affe"),
+    ("pair", "eval_curation_v1.jsonl", "2441ec0e8fe0", "2f016d119a3c"),
+    ("pair", "eval_curation_v1.jsonl", "3b816809a251", "0793aacfcd04"),
+    ("pair", "eval_curation_v1.jsonl", "53a6dd5c2ab2", "2f016d119a3c"),
+    ("pair", "eval_curation_v1.jsonl", "a6e280f4affe", "8f5acb9a69bb"),
+    ("paraphrase_overlap", "eval_curation_v1.jsonl", "61db2e811e32", "1e600859d718"),
+    ("substring_in_eval", "eval_curation_v1.jsonl", "61db2e811e32", "1e600859d718"),
+})
+
+
+def _leak_key(c: dict) -> tuple[str, str, str, str]:
+    """Stable identity of one finding: kind, eval file, and 12-hex digests of
+    the normalized fewshot evidence and eval-side match."""
+    def h(s: str) -> str:
+        return hashlib.sha256(_norm(s).encode()).hexdigest()[:12]
+    return (c["kind"], c["file"], h(c["evidence"]), h(c["eval_evidence"]))
 
 
 class SourceImportError(RuntimeError):
@@ -185,25 +221,26 @@ def _load_eval_evidence(path: Path) -> list[dict]:
 
 
 def _default_eval_paths(holdout_arg: str) -> list[Path]:
-    """Calibration files are always checked. Holdout files are checked by
-    default; --holdout CLI flag overrides which holdout to scan."""
+    """Eval golds come from the calibration profiles themselves: the fit gold
+    and validation gold of every profile in ``_PROFILE_META``. A profile that
+    points at a new gold is guarded on the commit that points it there — no
+    hand-maintained path list to forget. The frozen representative-curation
+    milestones and the CLI --holdout are appended on top."""
+    from indra_belief import calibration_constants as cal
+
     benchmark = ROOT / "data" / "benchmark"
     paths: list[Path] = []
-    # All calibration files
-    paths.extend(sorted(benchmark.glob("calibration_*.jsonl")))
+    for name in cal._PROFILE_META:
+        profile = cal._named_profile(name)
+        validation = profile.get("validation") or {}
+        for gold in (profile.get("fit_gold"), validation.get("gold")):
+            if gold:
+                paths.append(ROOT / gold)
     # Frozen representative-curation milestones are independent evaluation gold
     # and must remain disjoint from every prompt/few-shot source.
     paths.extend(sorted(benchmark.glob("representative_indra_curations_*.jsonl")))
-    # CLI holdout plus the always-appended small sample
+    # CLI holdout (defaults to holdout_large.jsonl)
     paths.append(Path(holdout_arg))
-    sample = benchmark / "holdout_v15_sample.jsonl"
-    if sample not in paths:
-        paths.append(sample)
-    # Optional held-back overfit-guard sample, checked when present —
-    # must be contamination-free.
-    d4 = benchmark / "holdout_d4_held_back.jsonl"
-    if d4.exists() and d4 not in paths:
-        paths.append(d4)
     # Deduplicate while preserving order
     seen = set()
     uniq = []
@@ -332,6 +369,12 @@ def main():
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
     paths = _default_eval_paths(args.holdout)
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f"ERROR: eval gold pinned by a profile is missing: {p}",
+                  file=sys.stderr)
+        return 2
 
     # Source breakdown for the report
     by_source: dict[str, int] = {}
@@ -346,13 +389,19 @@ def main():
         print(f"  [{exists:^7}] {p.relative_to(ROOT) if p.is_absolute() else p}")
 
     contam = find_contamination(examples=examples, eval_paths=paths)
+    known = [c for c in contam if _leak_key(c) in KNOWN_LEAKS]
+    new = [c for c in contam if _leak_key(c) not in KNOWN_LEAKS]
 
-    if not contam:
-        print("\nCLEAN — no contamination detected.")
+    if known:
+        print(f"\nKNOWN — {len(known)} enumerated overlap(s) waived "
+              "(see KNOWN_LEAKS provenance in this script).")
+
+    if not new:
+        print("\nCLEAN — no contamination beyond the enumerated set.")
         return 0
 
-    print(f"\nCONTAMINATED — {len(contam)} overlap(s):\n")
-    for c in contam:
+    print(f"\nCONTAMINATED — {len(new)} new overlap(s):\n")
+    for c in new:
         print(f"  [{c['kind']}] {c['source']}")
         print(f"    fewshot:  {_short(c['evidence'])}")
         print(f"    eval ({c['file']}): {_short(c['eval_evidence'])}")

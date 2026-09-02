@@ -93,7 +93,7 @@ def test_the_shipped_v2_is_disjoint_from_every_prior_set():
     v2 = pairs(bench / "external_curator_gold_v2.jsonl")
     assert len(v2) > 500
     for other in ("external_curator_gold_v1", "eval_curation_v1", "holdout_large",
-                  "fewshot_pool"):
+                  "archive/fewshot_pool"):
         path = bench / f"{other}.jsonl"
         if path.exists():
             assert not (v2 & pairs(path)), f"v2 overlaps {other}"

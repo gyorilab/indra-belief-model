@@ -87,3 +87,34 @@ def test_every_declared_source_loads_nonempty_or_fails_loud():
 def test_representative_curation_gold_is_in_default_eval_guard():
     paths = cc._default_eval_paths(str(ROOT / "data/benchmark/holdout_large.jsonl"))
     assert ROOT / "data/benchmark/representative_indra_curations_400.jsonl" in paths
+
+
+def test_every_profile_gold_is_in_default_eval_guard():
+    """The guard derives its eval set from the calibration profiles, so the
+    gold a profile is fitted or validated on can never silently fall out of
+    the contamination scan — and a pinned gold must exist on disk."""
+    from indra_belief import calibration_constants as cal
+
+    paths = set(cc._default_eval_paths(
+        str(ROOT / "data/benchmark/holdout_large.jsonl")))
+    for name in cal._PROFILE_META:
+        profile = cal._named_profile(name)
+        validation = profile.get("validation") or {}
+        for gold in filter(None, [profile.get("fit_gold"), validation.get("gold")]):
+            assert ROOT / gold in paths, f"{name}: {gold} not guarded"
+            assert (ROOT / gold).exists(), f"{name}: pinned gold missing: {gold}"
+
+
+def test_known_leaks_waiver_is_exact():
+    """The v6/v7-example leak into eval_curation_v1 is waived by exact key,
+    never by glob. Every KNOWN_LEAKS key must still match a live finding — a
+    stale key means the leak was fixed and the waiver must shrink — and the
+    full scan must produce nothing beyond the enumerated set."""
+    examples = cc.load_all_examples()
+    paths = cc._default_eval_paths(
+        str(ROOT / "data/benchmark/holdout_large.jsonl"))
+    contam = cc.find_contamination(examples=examples, eval_paths=paths)
+    keys = {cc._leak_key(c) for c in contam}
+    assert keys == set(cc.KNOWN_LEAKS), (
+        f"stale waiver keys: {set(cc.KNOWN_LEAKS) - keys}; "
+        f"new findings: {keys - set(cc.KNOWN_LEAKS)}")
