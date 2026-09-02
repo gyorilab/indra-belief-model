@@ -1426,7 +1426,6 @@ def build_run_export(
         "run_id": run_id,
         "model": model,
         "generated_from": {"run": run_path, "corpus": corpus_path, "gold": gold_path},
-        "companion_report": "reports/rasmachine_belief_comparison.html",
         "gold": ({
             "source": gold_path,
             "covered": sum(1 for r in per_ev if r.get("gold")),

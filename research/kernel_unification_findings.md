@@ -1,5 +1,7 @@
 # Kernel unification: what was fixed, what was refuted, what is still owed
 
+> **Provenance (2026-09-01):** citations of `research/serving_architecture.md` and `research/serving_deployment.md` below name documents removed from the tree (OBSOLETE-TOPOLOGY); git history holds them. The measurements quoted from them are unchanged.
+
 > **Provenance note (2026-08-25).** This is a historical record. The repository
 > was later cut to prod infrastructure plus the future-LLM compare loop, so some
 > paths cited below name code that no longer exists; `research/README.md` tracks

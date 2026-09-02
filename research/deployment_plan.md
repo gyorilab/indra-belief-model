@@ -1,5 +1,7 @@
 # Deploying the belief model: the two bulk domains, the realtime path, and what blocks each
 
+> **Provenance (2026-09-01):** citations of `research/serving_architecture.md` and `research/serving_deployment.md` below name documents removed from the tree (OBSOLETE-TOPOLOGY); git history holds them. The measurements quoted from them are unchanged.
+
 > **Provenance note (2026-08-25).** This is a historical record. The repository
 > was later cut to prod infrastructure plus the future-LLM compare loop, so some
 > paths cited below name code that no longer exists; `research/README.md` tracks

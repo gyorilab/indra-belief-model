@@ -2,7 +2,8 @@
 """Reproducible capability probe: does this reader return usable token logprobs?
 
 Our only prior evidence that a route does or does not supply logprobs is a table
-committed into research/serving_architecture.md — a point-in-time observation
+committed into research/serving_architecture.md (removed 2026-09-01; in git
+history) — a point-in-time observation
 with no script behind it. This is that script. It answers, for any model in
 `LOCAL_MODELS`, the question the belief work actually depends on:
 

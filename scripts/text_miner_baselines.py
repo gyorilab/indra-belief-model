@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -208,6 +209,8 @@ def main() -> None:
         ],
     }
 
+    for out in (args.out_json, args.out_md):
+        os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     with open(args.out_json, "w") as f:
         json.dump(artifact, f, indent=2)
 
